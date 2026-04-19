@@ -17,7 +17,7 @@ Supabase validates every `redirectTo` against the project's Redirect URL allowli
 
 2. **Set Site URL**
    - Change **Site URL** from `http://localhost:3000` to your production URL
-   - **Recommended**: `https://app.shepi.ai` (or your actual production domain)
+   - **Set to**: `https://shepi.ai`
    - **Important**: Do NOT set this to localhost — it's the fallback for production
 
 3. **Add Redirect URLs**
@@ -31,12 +31,12 @@ Supabase validates every `redirectTo` against the project's Redirect URL allowli
    http://localhost:8080/reset-password
    ```
    
-   **Production URLs** (replace `app.shepi.ai` with your actual domain):
+   **Production URLs:**
    ```
-   https://app.shepi.ai/**
-   https://app.shepi.ai/auth
-   https://app.shepi.ai/auth/callback
-   https://app.shepi.ai/reset-password
+   https://shepi.ai/**
+   https://shepi.ai/auth
+   https://shepi.ai/auth/callback
+   https://shepi.ai/reset-password
    ```
 
 4. **Save Configuration**
@@ -112,12 +112,12 @@ Supabase's redirect validation:
 ## Production Deployment
 
 When deploying to production:
-1. Ensure **Site URL** in dashboard = production domain (e.g., `https://app.shepi.ai`)
+1. Ensure **Site URL** in dashboard = `https://shepi.ai`
 2. Ensure **Redirect URLs** include all production routes:
-   - `https://app.shepi.ai/**`
-   - `https://app.shepi.ai/auth`
-   - `https://app.shepi.ai/auth/callback`
-   - `https://app.shepi.ai/reset-password`
+   - `https://shepi.ai/**`
+   - `https://shepi.ai/auth`
+   - `https://shepi.ai/auth/callback`
+   - `https://shepi.ai/reset-password`
 
 ## Reference
 - Supabase Auth Docs: https://supabase.com/docs/guides/auth/redirect-urls
