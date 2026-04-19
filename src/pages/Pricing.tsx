@@ -387,7 +387,7 @@ const Pricing = () => {
             </div>
             <CardHeader>
               <CardTitle>Done-For-You</CardTitle>
-              <CardDescription>For buyers, sellers, brokers, or PE firms who need it done right</CardDescription>
+              <CardDescription>For anyone who needs it done right</CardDescription>
               <div className="mt-4">
                 <span className="text-4xl font-bold text-primary">{PRICING.doneForYou.display}</span>
                 <span className="text-muted-foreground">{PRICING.doneForYou.period}</span>
@@ -434,7 +434,7 @@ const Pricing = () => {
                   </Link>
                 )}
                 <p className="text-xs text-muted-foreground text-center">
-                  Ideal for buyers, sellers, brokers, or PE firms who need speed, clarity, and lender-ready diligence.
+                  Ideal for anyone who needs speed, clarity, and lender-ready diligence.
                 </p>
               </div>
             </CardContent>
@@ -491,29 +491,6 @@ const Pricing = () => {
                       'Subscribe Now'
                     )}
                   </Button>
-                )}
-                {!hasActiveSubscription && (
-                  <div className="mt-2">
-                    {!showMonthlyPromo ? (
-                      <button
-                        type="button"
-                        onClick={() => setShowMonthlyPromo(true)}
-                        className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 mx-auto"
-                      >
-                        <Tag className="w-3 h-3" />
-                        Have a promo code?
-                      </button>
-                    ) : (
-                      <div className="flex gap-2">
-                        <Input
-                          placeholder="Enter code"
-                          value={monthlyPromoCode}
-                          onChange={(e) => setMonthlyPromoCode(e.target.value)}
-                          className="h-8 text-xs"
-                        />
-                      </div>
-                    )}
-                  </div>
                 )}
                 <p className="text-xs text-muted-foreground text-center">
                   Best for brokers, accountants, searchers, and PE teams with ongoing deal flow
