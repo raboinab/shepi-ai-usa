@@ -71,8 +71,9 @@ const corsHeaders = {
    suggested_adjustment_amount: number;
    ai_analysis: object;
    source_data: object;
-   flag_category?: FlagCategory;
- }
+  flag_category?: FlagCategory;
+  classification_context?: object;
+}
 
   // The `flagged_transactions` table has a UNIQUE constraint on:
   // (project_id, transaction_date, description, amount)
@@ -1073,7 +1074,7 @@ Return ONLY the JSON array.`;
        
        // Batch GL entries
        for (let i = 0; i < index.glEntries.length; i += GL_BATCH_SIZE) {
-        const batch = index.glEntries.slice(i, i + BATCH_SIZE);
+        const batch = index.glEntries.slice(i, i + GL_BATCH_SIZE);
         try {
           const aiResults = await analyzeGLBatchWithAI(batch, industry);
           
@@ -1105,7 +1106,7 @@ Return ONLY the JSON array.`;
               classification_context: {
                 industry: industry || 'general',
                 source: 'GL Transaction Analysis',
-                rules_applied: [flag.flag_type, flag.is_reclassification ? 'reclassification' : 'adjustment']
+                rules_applied: [result.flag_type, result.is_reclassification ? 'reclassification' : 'adjustment']
               },
               source_data: { original_transaction: tx },
             });

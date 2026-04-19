@@ -56,7 +56,7 @@ export function buildBreakdownGrid(dealData: DealData, config: BreakdownConfig):
     : baseColumns;
 
   const frozenColumns = showDetail ? 4 : 1;
-  const ec = showDetail ? { acctNo: "", fsLine: "", sub1: "" } : {};
+  const ec: Record<string, string> = showDetail ? { acctNo: "", fsLine: "", sub1: "" } : {};
 
   const buildSection = (sectionLabel: string, isAdjusted: boolean): GridRow[] => {
     const prefix = isAdjusted ? "adj-" : "";
