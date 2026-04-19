@@ -101,7 +101,8 @@ Deno.serve(async (req) => {
     });
   } catch (err) {
     console.error("ai-backend-proxy error:", err);
-    return new Response(JSON.stringify({ error: err.message || "Proxy error" }), {
+    const message = err instanceof Error ? err.message : "Proxy error";
+    return new Response(JSON.stringify({ error: message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
