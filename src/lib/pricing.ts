@@ -14,7 +14,7 @@ export const PRICING = {
     display: "$4,000",
     period: "/project",
     name: "Done-For-You",
-    stripePriceId: "price_1T5tqeP5elf35CKlgc9anpzn",
+    stripePriceId: "price_1TO31eP5elf35CKlvFWoVrUk",
   },
   dfyUpgradeFromPerProject: {
     amount: 2000,
