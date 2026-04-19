@@ -1,5 +1,18 @@
 project_id = "mdgmessqbfebrbvjtndz"
 
+[auth]
+site_url = "https://shepi.ai"
+additional_redirect_urls = [
+  "http://localhost:8080/**",
+  "http://localhost:8080/auth",
+  "http://localhost:8080/auth/callback",
+  "http://localhost:8080/reset-password",
+  "https://shepi.ai/**",
+  "https://shepi.ai/auth",
+  "https://shepi.ai/auth/callback",
+  "https://shepi.ai/reset-password"
+]
+
 [functions]
   [functions.ai-backend-proxy]
     verify_jwt = false
