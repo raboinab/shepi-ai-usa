@@ -27,9 +27,14 @@ async function fetchSubscriptionStatus(): Promise<SubscriptionData> {
   if (!session) return DEFAULTS;
 
   const { data, error } = await supabase.functions.invoke('check-subscription');
-  if (error) throw error;
+  if (error) {
+    console.error('[useSubscription] Error:', error);
+    throw error;
+  }
 
-  return {
+  console.log('[useSubscription] Raw response:', data);
+
+  const result = {
     hasActiveSubscription: data.hasActiveSubscription || false,
     subscriptionEnd: data.subscriptionEnd || null,
     paidProjects: data.paidProjects || [],
@@ -38,6 +43,9 @@ async function fetchSubscriptionStatus(): Promise<SubscriptionData> {
     activeProjectCount: data.activeProjectCount ?? 0,
     monthlyProjectLimit: data.monthlyProjectLimit ?? 3,
   };
+
+  console.log('[useSubscription] Parsed result:', result);
+  return result;
 }
 
 export function useSubscription() {
