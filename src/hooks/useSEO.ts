@@ -89,4 +89,7 @@ export function useSEO({
     updateMeta('meta[name="twitter:image"]', absoluteImage);
     updateMeta('meta[name="twitter:card"]', "summary_large_image");
   }, [title, description, canonical, noindex, ogImage, ogType]);
+
+  // Return null so callers can render `{useSEO(...)}` inline as a ReactNode.
+  return null;
 }
