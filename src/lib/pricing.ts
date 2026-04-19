@@ -10,18 +10,18 @@ export const PRICING = {
     stripePriceId: "price_1T5toZP5elf35CKlGuxS6JKU",
   },
   doneForYou: {
-    amount: 3500,
-    display: "$3,500",
+    amount: 4000,
+    display: "$4,000",
     period: "/project",
     name: "Done-For-You",
     stripePriceId: "price_1T5tqeP5elf35CKlgc9anpzn",
   },
   dfyUpgradeFromPerProject: {
-    amount: 1500,
-    display: "$1,500",
+    amount: 2000,
+    display: "$2,000",
     period: "/project",
     name: "DFY Upgrade",
-    // = doneForYou.amount - perProject.amount ($3,500 - $2,000)
+    // = doneForYou.amount - perProject.amount ($4,000 - $2,000)
   },
   monthly: {
     amount: 4000,
