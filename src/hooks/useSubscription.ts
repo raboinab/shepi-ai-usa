@@ -54,7 +54,8 @@ export function useSubscription() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['subscription-status'],
     queryFn: fetchSubscriptionStatus,
-    // Uses global staleTime (5 min) from QueryClient defaults
+    staleTime: 30 * 1000, // Reduced from 5min to 30sec for faster updates
+    gcTime: 60 * 1000, // Garbage collect after 1min instead of default
   });
 
   const status = data ?? DEFAULTS;
