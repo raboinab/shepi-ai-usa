@@ -8,11 +8,17 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
 };
 
-// Stripe LIVE price IDs – validated 2026-03-01
-const MONTHLY_PRICE_ID = "price_1T5tqMP5elf35CKl2e0TJebW";        // $4,000 recurring monthly
-const PER_PROJECT_PRICE_ID = "price_1T5toZP5elf35CKlGuxS6JKU";    // $2,000 one-time per project
-const MONTHLY_OVERAGE_PRICE_ID = "price_1T6FKzP5elf35CKl5F1XyETh"; // $1,000 one-time monthly overage slot
-const DONE_FOR_YOU_PRICE_ID = "price_1T5tqeP5elf35CKlgc9anpzn";   // $3,500 one-time done-for-you
+// Mirror of src/lib/pricing.ts — keep in sync when prices change.
+// Stripe LIVE price IDs – validated 2026-03-01.
+const PRICING = {
+  perProject:     { amount: 2000, stripePriceId: "price_1T5toZP5elf35CKlGuxS6JKU" },
+  doneForYou:     { amount: 4000, stripePriceId: "price_1TO31eP5elf35CKlvFWoVrUk" },
+  monthly:        { amount: 5000, stripePriceId: "price_1TO33aP5elf35CKlC4eFMpm2" },
+  monthlyOverage: { amount: 1000, stripePriceId: "price_1T6FKzP5elf35CKl5F1XyETh" },
+} as const;
+
+const DFY_UPGRADE_DELTA_CENTS = (PRICING.doneForYou.amount - PRICING.perProject.amount) * 100;
+const DFY_UPGRADE_CREDIT_DOLLARS = String(PRICING.perProject.amount);
 
 // Promo codes blocked for monthly plan (case-insensitive check)
 const MONTHLY_BLOCKED_CODES = ["BETA100"];
@@ -117,7 +123,7 @@ serve(async (req) => {
       }
     }
 
-    const priceId = planType === "monthly" ? MONTHLY_PRICE_ID : planType === "monthly_overage" ? MONTHLY_OVERAGE_PRICE_ID : planType === "done_for_you" ? DONE_FOR_YOU_PRICE_ID : PER_PROJECT_PRICE_ID;
+    const priceId = planType === "monthly" ? PRICING.monthly.stripePriceId : planType === "monthly_overage" ? PRICING.monthlyOverage.stripePriceId : planType === "done_for_you" ? PRICING.doneForYou.stripePriceId : PRICING.perProject.stripePriceId;
     const mode = planType === "monthly" ? "subscription" : "payment";
 
     const metadata: Record<string, string> = {
@@ -129,7 +135,7 @@ serve(async (req) => {
     }
     if (isUpgrade) {
       metadata.upgrade_from = upgradeFromTier!;
-      metadata.credit_applied = "2000";
+      metadata.credit_applied = DFY_UPGRADE_CREDIT_DOLLARS;
     }
 
     // Build line items: use price_data for upgrade delta, otherwise standard price ID
@@ -139,9 +145,9 @@ serve(async (req) => {
             currency: "usd",
             product_data: {
               name: "Done-For-You Upgrade",
-              description: "Upgrade existing project to Done-For-You ($2,000 credit applied from prior payment)",
+              description: `Upgrade existing project to Done-For-You ($${DFY_UPGRADE_CREDIT_DOLLARS} credit applied from prior payment)`,
             },
-            unit_amount: 150000, // $1,500
+            unit_amount: DFY_UPGRADE_DELTA_CENTS,
           },
           quantity: 1,
         }]

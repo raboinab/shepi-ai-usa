@@ -117,7 +117,7 @@ export const DfyStatusBanner = ({ projectId, serviceTier }: DfyStatusBannerProps
             Upgrade to Done-For-You and let a CPA handle your Quality of Earnings analysis end-to-end.
             {isUpgradeEligible && (
               <span className="block text-xs text-muted-foreground mt-1">
-                $2,000 credit applied from your existing project payment.
+                {PRICING.perProject.display} credit applied from your existing project payment.
               </span>
             )}
           </span>
