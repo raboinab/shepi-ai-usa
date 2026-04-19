@@ -1,0 +1,1 @@
+ALTER TABLE public.user_credits ADD COLUMN credit_type text NOT NULL DEFAULT 'per_project';

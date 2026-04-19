@@ -1,0 +1,1 @@
+ALTER TABLE public.user_credits ADD COLUMN IF NOT EXISTS total_credits_purchased integer NOT NULL DEFAULT 0;

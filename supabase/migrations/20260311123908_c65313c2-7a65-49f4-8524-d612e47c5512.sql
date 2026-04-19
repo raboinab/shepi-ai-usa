@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX IF NOT EXISTS idx_adjustment_proofs_adj_id_type ON public.adjustment_proofs (adjustment_id, verification_type);

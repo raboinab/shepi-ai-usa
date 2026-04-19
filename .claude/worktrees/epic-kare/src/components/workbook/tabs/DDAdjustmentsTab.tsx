@@ -1,0 +1,71 @@
+import { useMemo } from "react";
+import { SpreadsheetGrid } from "../SpreadsheetGrid";
+import type { DealData, GridData, GridRow } from "@/lib/workbook-types";
+import { adjustmentCells } from "../shared/tabHelpers";
+
+interface TabProps { dealData: DealData; onDataChange?: (data: DealData) => void; tabIndex?: 1 | 2; }
+
+/**
+ * DD Adjustments tab - shows all adjustments in a ledger-style grid.
+ * Tab 4 shows Management adjustments; Tab 5 shows DD + Pro Forma adjustments.
+ */
+export function DDAdjustmentsTab({ dealData, tabIndex = 1 }: TabProps) {
+  const gridData = useMemo((): GridData => {
+    const adj = dealData.adjustments;
+    const { periods, aggregatePeriods } = dealData.deal;
+
+    const columns: GridData["columns"] = [
+      { key: "label", label: "Description", width: 240, frozen: true, format: "text" },
+      { key: "adjNo", label: "Adj #", width: 60, frozen: true, format: "text" },
+      { key: "adjType", label: "Type", width: 60, frozen: true, format: "text" },
+      { key: "acctNo", label: "Account #", width: 80, frozen: true, format: "text" },
+      { key: "fsLine", label: "FS Line Item", width: 140, frozen: true, format: "text" },
+      ...aggregatePeriods.map(ap => ({ key: ap.id, label: ap.shortLabel, width: 110, format: "currency" as const })),
+      ...periods.map(p => ({ key: p.id, label: p.shortLabel, width: 100, format: "currency" as const })),
+    ];
+
+    const emptyCols = { adjNo: "", adjType: "", acctNo: "", fsLine: "" };
+
+    // Tab 4 = Management adjustments, Tab 5 = DD + PF adjustments
+    const filterTypes = tabIndex === 1 ? ["MA"] : ["DD", "PF"];
+    const filtered = adj.filter(a => filterTypes.includes(a.type));
+    const sectionLabel = tabIndex === 1 ? "Management Adjustments" : "Due Diligence & Pro Forma Adjustments";
+
+    const rows: GridRow[] = [
+      { id: "hdr", type: "section-header", label: sectionLabel, cells: { label: sectionLabel, ...emptyCols } },
+      ...filtered.map((a, i) => ({
+        id: `adj-${a.id}`,
+        type: "data" as const,
+        editable: true,
+        indent: 1,
+        cells: {
+          label: a.label || a.notes || `Adjustment ${i + 1}`,
+          adjNo: `${a.type}-${i + 1}`,
+          adjType: a.type,
+          acctNo: a.tbAccountNumber,
+          fsLine: a.intent,
+          ...adjustmentCells(dealData, a.amounts),
+        },
+      })),
+    ];
+
+    // Total row
+    const totalCells: Record<string, number> = {};
+    for (const p of periods) {
+      totalCells[p.id] = filtered.reduce((s, a) => s + (a.amounts[p.id] || 0), 0);
+    }
+    for (const ap of aggregatePeriods) {
+      totalCells[ap.id] = ap.monthPeriodIds.reduce((s, mpid) =>
+        s + filtered.reduce((ss, a) => ss + (a.amounts[mpid] || 0), 0), 0);
+    }
+    rows.push({ id: "total", type: "total", cells: { label: `Total ${sectionLabel}`, ...emptyCols, ...totalCells } });
+
+    if (filtered.length === 0) {
+      rows.push({ id: "empty", type: "data", cells: { label: "No adjustments entered", ...emptyCols } });
+    }
+
+    return { columns, rows, frozenColumns: 5 };
+  }, [dealData, tabIndex]);
+
+  return <SpreadsheetGrid data={gridData} />;
+}

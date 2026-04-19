@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    
+    <!-- Preconnect to Google Fonts to reduce critical chain -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    
+    <!-- Google Fonts - loaded asynchronously to avoid render blocking -->
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'" />
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" /></noscript>
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Lora:wght@400;500;600;700&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'" />
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:wght@400;500;600;700&display=swap" /></noscript>
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'" />
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" /></noscript>
+    
+    <!-- Favicon (PNG first for Google crawler compatibility) -->
+    <link rel="icon" href="/favicon.png" sizes="32x32" type="image/png" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    
+    <!-- Usercentrics Cookie Consent Tool - Non-blocking -->
+    <link rel="preconnect" href="//privacy-proxy.usercentrics.eu">
+    <link rel="preload" href="//privacy-proxy.usercentrics.eu/latest/uc-block.bundle.js" as="script">
+    <script>
+      // Safe initialization function for Usercentrics
+      window.initUsercentrics = function() {
+        try {
+          if (typeof uc !== 'undefined' && uc.setCustomTranslations) {
+            uc.setCustomTranslations('https://termageddon.ams3.cdn.digitaloceanspaces.com/translations/');
+          }
+        } catch (e) {
+          console.warn('Usercentrics initialization warning:', e);
+        }
+      };
+    </script>
+    <script 
+      type="application/javascript" 
+      src="https://privacy-proxy.usercentrics.eu/latest/uc-block.bundle.js" 
+      defer
+      onerror="console.warn('Usercentrics block script failed to load')"
+    ></script>
+    <script 
+      id="usercentrics-cmp" 
+      src="https://app.usercentrics.eu/browser-ui/latest/loader.js" 
+      data-settings-id="wdKZE5PYZ37tuQ" 
+      defer
+      onload="window.initUsercentrics()"
+      onerror="console.warn('Usercentrics loader failed to load')"
+    ></script>
+    
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-1K5JB4QZ9J"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-1K5JB4QZ9J');
+    </script>
+    
+    <!-- Site-wide static meta -->
+    <meta name="author" content="shepi" />
+    <meta property="og:site_name" content="shepi" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="shepi — AI-Assisted Quality of Earnings Analysis" />
+
+    <!--
+      Per-page SEO (title, description, canonical, OG, Twitter, robots)
+      is injected by useSEO() in src/hooks/useSEO.ts on every route.
+      Hardcoded values were removed because they caused Googlebot and social
+      crawlers to treat every URL as a duplicate of the homepage (canonical
+      pointed to '/').
+      Bootstrap defaults below give crawlers a sensible fallback if JS fails.
+    -->
+    <title>shepi — AI-Assisted Quality of Earnings Analysis</title>
+    <meta name="description" content="AI-assisted quality of earnings analysis and EBITDA adjustments for M&amp;A due diligence." />
+    <meta name="robots" content="index, follow" />
+    <meta name="googlebot" content="index, follow, max-video-preview:-1, max-image-preview:large, max-snippet:-1" />
+  </head>
+
+  <body>
+    <div id="root">
+      <!-- Boot screen shown while React loads -->
+      <div style="min-height: 100vh; display: flex; align-items: center; justify-content: center; background-color: #0a0a0f; color: #a0a0a0; font-family: system-ui, -apple-system, sans-serif;">
+        <div style="text-align: center;">
+          <div style="width: 40px; height: 40px; border: 3px solid #333; border-top-color: #6366f1; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 16px;"></div>
+          <div style="font-size: 14px;">Loading...</div>
+        </div>
+      </div>
+      <style>
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      </style>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    
+    <!-- Favicon (PNG first for Google crawler compatibility) -->
+    <link rel="icon" href="/favicon.png" sizes="32x32" type="image/png" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    
+    <!-- Usercentrics Cookie Consent Tool - Non-blocking -->
+    <link rel="preconnect" href="//privacy-proxy.usercentrics.eu">
+    <link rel="preload" href="//privacy-proxy.usercentrics.eu/latest/uc-block.bundle.js" as="script">
+    <script>
+      // Safe initialization function for Usercentrics
+      window.initUsercentrics = function() {
+        try {
+          if (typeof uc !== 'undefined' && uc.setCustomTranslations) {
+            uc.setCustomTranslations('https://termageddon.ams3.cdn.digitaloceanspaces.com/translations/');
+          }
+        } catch (e) {
+          console.warn('Usercentrics initialization warning:', e);
+        }
+      };
+    </script>
+    <script 
+      type="application/javascript" 
+      src="https://privacy-proxy.usercentrics.eu/latest/uc-block.bundle.js" 
+      defer
+      onerror="console.warn('Usercentrics block script failed to load')"
+    ></script>
+    <script 
+      id="usercentrics-cmp" 
+      src="https://app.usercentrics.eu/browser-ui/latest/loader.js" 
+      data-settings-id="wdKZE5PYZ37tuQ" 
+      defer
+      onload="window.initUsercentrics()"
+      onerror="console.warn('Usercentrics loader failed to load')"
+    ></script>
+    
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-1K5JB4QZ9J"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-1K5JB4QZ9J');
+    </script>
+    
+    <!-- Primary Meta Tags -->
+    <title>AI Quality of Earnings Software | QoE Analysis Platform | Shepi</title>
+    <meta name="description" content="AI quality of earnings analysis for M&amp;A due diligence. Upload financials, get EBITDA adjustments and lender-ready QoE reports in hours. Quality of earnings AI built for deal teams, PE firms, and searchers.">
+    <meta name="author" content="Shepi" />
+    <meta name="keywords" content="quality of earnings AI, AI quality of earnings, quality of earnings, QoE analysis, QoE software, M&amp;A due diligence, EBITDA adjustments, financial due diligence, deal analysis, private equity, investment banking">
+    
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://shepi.ai/" />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://shepi.ai/" />
+    <meta property="og:image" content="https://shepi.ai/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Shepi — AI-Assisted Quality of Earnings Analysis" />
+    <meta property="og:site_name" content="Shepi" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:url" content="https://shepi.ai/" />
+    <meta name="twitter:image" content="https://shepi.ai/og-image.png" />
+    
+    
+    
+    
+    <!-- Additional SEO -->
+    <meta name="robots" content="index, follow" />
+    <meta name="googlebot" content="index, follow, max-video-preview:-1, max-image-preview:large, max-snippet:-1" />
+    <meta property="og:title" content="AI Quality of Earnings Software | QoE Analysis Platform | Shepi">
+  <meta name="twitter:title" content="AI Quality of Earnings Software | QoE Analysis Platform | Shepi">
+  <meta property="og:description" content="AI quality of earnings analysis for M&amp;A due diligence. Upload financials, get EBITDA adjustments and lender-ready QoE reports in hours. Quality of earnings AI built for deal teams, PE firms, and searchers.">
+  <meta name="twitter:description" content="AI quality of earnings analysis for M&amp;A due diligence. Upload financials, get EBITDA adjustments and lender-ready QoE reports in hours. Quality of earnings AI built for deal teams, PE firms, and searchers.">
+</head>
+
+  <body>
+    <div id="root">
+      <!-- Boot screen shown while React loads -->
+      <div style="min-height: 100vh; display: flex; align-items: center; justify-content: center; background-color: #0a0a0f; color: #a0a0a0; font-family: system-ui, -apple-system, sans-serif;">
+        <div style="text-align: center;">
+          <div style="width: 40px; height: 40px; border: 3px solid #333; border-top-color: #6366f1; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 16px;"></div>
+          <div style="font-size: 14px;">Loading...</div>
+        </div>
+      </div>
+      <style>
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      </style>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

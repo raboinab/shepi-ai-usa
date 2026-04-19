@@ -1,0 +1,518 @@
+-- ================================================
+-- SHEPI DATABASE SCHEMA
+-- Complete database setup for Shepi AI application
+-- ================================================
+
+-- 1. Create custom types
+CREATE TYPE public.app_role AS ENUM ('admin', 'moderator', 'user');
+CREATE TYPE public.workflow_status AS ENUM ('pending', 'running', 'completed', 'failed', 'cancelled');
+CREATE TYPE public.workflow_type AS ENUM ('sync_sheet', 'process_documents', 'generate_report');
+CREATE TYPE public.proof_validation_status AS ENUM ('pending', 'validated', 'rejected', 'needs_review');
+
+-- 2. Create tables
+
+-- profiles table
+CREATE TABLE IF NOT EXISTS public.profiles (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  full_name text,
+  company text,
+  avatar_url text,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now(),
+  UNIQUE(user_id)
+);
+
+-- user_roles table
+CREATE TABLE IF NOT EXISTS public.user_roles (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  role app_role NOT NULL,
+  created_at timestamptz DEFAULT now(),
+  UNIQUE(user_id, role)
+);
+
+-- projects table
+CREATE TABLE IF NOT EXISTS public.projects (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  client_name text,
+  target_company text,
+  industry text,
+  transaction_type text,
+  fiscal_year_end text,
+  status text DEFAULT 'draft',
+  current_phase integer DEFAULT 1,
+  current_section integer DEFAULT 1,
+  wizard_data jsonb DEFAULT '{}'::jsonb,
+  periods jsonb DEFAULT '[]'::jsonb,
+  google_sheet_id text,
+  google_sheet_url text,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+-- documents table
+CREATE TABLE IF NOT EXISTS public.documents (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid NOT NULL,
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  file_path text NOT NULL,
+  file_type text,
+  file_size integer,
+  category text,
+  account_type text,
+  account_label text,
+  institution text,
+  period_start date,
+  period_end date,
+  coverage_validated boolean DEFAULT false,
+  processing_status text DEFAULT 'pending',
+  docuclipper_job_id text,
+  parsed_summary jsonb,
+  created_at timestamptz DEFAULT now()
+);
+
+-- subscriptions table
+CREATE TABLE IF NOT EXISTS public.subscriptions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  stripe_customer_id text,
+  stripe_subscription_id text,
+  plan_type text NOT NULL,
+  status text DEFAULT 'inactive',
+  current_period_start timestamptz,
+  current_period_end timestamptz,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+-- workflows table
+CREATE TABLE IF NOT EXISTS public.workflows (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid NOT NULL,
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  workflow_type workflow_type NOT NULL,
+  status workflow_status DEFAULT 'pending',
+  progress_percent integer DEFAULT 0,
+  current_step text,
+  steps jsonb DEFAULT '[]'::jsonb,
+  input_payload jsonb DEFAULT '{}'::jsonb,
+  output_payload jsonb,
+  error_message text,
+  error_details jsonb,
+  retry_count integer DEFAULT 0,
+  started_at timestamptz,
+  completed_at timestamptz,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+-- company_info table (for QuickBooks connections)
+CREATE TABLE IF NOT EXISTS public.company_info (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid NOT NULL,
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  company_name text,
+  realm_id text,
+  auth_code text,
+  bearer_token text,
+  refresh_token text,
+  token_expires_at timestamptz,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+-- docuclipper_jobs table
+CREATE TABLE IF NOT EXISTS public.docuclipper_jobs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  document_id uuid NOT NULL,
+  project_id uuid NOT NULL,
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  job_id text NOT NULL,
+  status text DEFAULT 'submitted',
+  extracted_data jsonb,
+  transaction_count integer,
+  period_start date,
+  period_end date,
+  error_message text,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+-- adjustment_proofs table
+CREATE TABLE IF NOT EXISTS public.adjustment_proofs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid NOT NULL,
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  adjustment_id text NOT NULL,
+  document_id uuid,
+  validation_status proof_validation_status DEFAULT 'pending',
+  validation_score integer,
+  validated_at timestamptz,
+  ai_analysis jsonb DEFAULT '{}'::jsonb,
+  key_findings text[] DEFAULT '{}',
+  red_flags text[] DEFAULT '{}',
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+-- project_payments table
+CREATE TABLE IF NOT EXISTS public.project_payments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id uuid NOT NULL,
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  stripe_payment_intent_id text,
+  amount integer NOT NULL,
+  status text DEFAULT 'pending',
+  paid_at timestamptz,
+  expires_at timestamptz,
+  created_at timestamptz DEFAULT now()
+);
+
+-- contact_submissions table
+CREATE TABLE IF NOT EXISTS public.contact_submissions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  email text NOT NULL,
+  message text NOT NULL,
+  created_at timestamptz DEFAULT now()
+);
+
+-- 3. Create database functions
+
+-- has_role function (for RLS)
+CREATE OR REPLACE FUNCTION public.has_role(_user_id uuid, _role app_role)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.user_roles
+    WHERE user_id = _user_id
+      AND role = _role
+  )
+$$;
+
+-- handle_new_user trigger function
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  INSERT INTO public.profiles (user_id, full_name)
+  VALUES (NEW.id, NEW.raw_user_meta_data ->> 'full_name');
+  RETURN NEW;
+END;
+$$;
+
+-- update_updated_at trigger function
+CREATE OR REPLACE FUNCTION public.update_updated_at_column()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
+-- 4. Create triggers
+
+-- Auto-create profile on user signup
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- Update timestamps
+DROP TRIGGER IF EXISTS update_profiles_updated_at ON profiles;
+CREATE TRIGGER update_profiles_updated_at BEFORE UPDATE ON profiles FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_projects_updated_at ON projects;
+CREATE TRIGGER update_projects_updated_at BEFORE UPDATE ON projects FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_subscriptions_updated_at ON subscriptions;
+CREATE TRIGGER update_subscriptions_updated_at BEFORE UPDATE ON subscriptions FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_workflows_updated_at ON workflows;
+CREATE TRIGGER update_workflows_updated_at BEFORE UPDATE ON workflows FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_company_info_updated_at ON company_info;
+CREATE TRIGGER update_company_info_updated_at BEFORE UPDATE ON company_info FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_docuclipper_jobs_updated_at ON docuclipper_jobs;
+CREATE TRIGGER update_docuclipper_jobs_updated_at BEFORE UPDATE ON docuclipper_jobs FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_adjustment_proofs_updated_at ON adjustment_proofs;
+CREATE TRIGGER update_adjustment_proofs_updated_at BEFORE UPDATE ON adjustment_proofs FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- 5. Enable RLS on all tables
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_roles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE subscriptions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE workflows ENABLE ROW LEVEL SECURITY;
+ALTER TABLE company_info ENABLE ROW LEVEL SECURITY;
+ALTER TABLE docuclipper_jobs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE adjustment_proofs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE project_payments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE contact_submissions ENABLE ROW LEVEL SECURITY;
+
+-- 6. Create RLS policies (only if they don't exist)
+
+-- Profiles policies
+DO $$ BEGIN
+  CREATE POLICY "Users can view their own profile" ON profiles FOR SELECT USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Users can insert their own profile" ON profiles FOR INSERT WITH CHECK (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Users can update their own profile" ON profiles FOR UPDATE USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Admins can view all profiles" ON profiles FOR SELECT USING (has_role(auth.uid(), 'admin'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- User roles policies
+DO $$ BEGIN
+  CREATE POLICY "Users can view their own roles" ON user_roles FOR SELECT USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- Projects policies
+DO $$ BEGIN
+  CREATE POLICY "Users can view their own projects" ON projects FOR SELECT USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Users can create their own projects" ON projects FOR INSERT WITH CHECK (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Users can update their own projects" ON projects FOR UPDATE USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Users can delete their own projects" ON projects FOR DELETE USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Admins can view all projects" ON projects FOR SELECT USING (has_role(auth.uid(), 'admin'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- Documents policies
+DO $$ BEGIN
+  CREATE POLICY "Users can view their project documents" ON documents FOR SELECT USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Users can upload documents to their projects" ON documents FOR INSERT WITH CHECK (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Users can update their documents" ON documents FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Users can delete their documents" ON documents FOR DELETE USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Admins can view all documents" ON documents FOR SELECT USING (has_role(auth.uid(), 'admin'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- Subscriptions policies
+DO $$ BEGIN
+  CREATE POLICY "Users can view their own subscription" ON subscriptions FOR SELECT USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Users can insert their own subscription" ON subscriptions FOR INSERT WITH CHECK (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Users can update their own subscription" ON subscriptions FOR UPDATE USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Admins can view all subscriptions" ON subscriptions FOR SELECT USING (has_role(auth.uid(), 'admin'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- Workflows policies
+DO $$ BEGIN
+  CREATE POLICY "Users can view their own workflows" ON workflows FOR SELECT USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Users can create their own workflows" ON workflows FOR INSERT WITH CHECK (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Users can update their own workflows" ON workflows FOR UPDATE USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Admins can view all workflows" ON workflows FOR SELECT USING (has_role(auth.uid(), 'admin'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- Company info policies
+DO $$ BEGIN
+  CREATE POLICY "Users can view their own company info" ON company_info FOR SELECT USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Users can create company info for their projects" ON company_info FOR INSERT WITH CHECK (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Users can update their own company info" ON company_info FOR UPDATE USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Users can delete their own company info" ON company_info FOR DELETE USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Admins can view all company info" ON company_info FOR SELECT USING (has_role(auth.uid(), 'admin'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- Docuclipper jobs policies
+DO $$ BEGIN
+  CREATE POLICY "Users can view their own docuclipper jobs" ON docuclipper_jobs FOR SELECT USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Users can create their own docuclipper jobs" ON docuclipper_jobs FOR INSERT WITH CHECK (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Users can update their own docuclipper jobs" ON docuclipper_jobs FOR UPDATE USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Admins can view all docuclipper jobs" ON docuclipper_jobs FOR SELECT USING (has_role(auth.uid(), 'admin'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- Adjustment proofs policies
+DO $$ BEGIN
+  CREATE POLICY "Users can view their own adjustment proofs" ON adjustment_proofs FOR SELECT USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Users can create their own adjustment proofs" ON adjustment_proofs FOR INSERT WITH CHECK (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Users can update their own adjustment proofs" ON adjustment_proofs FOR UPDATE USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Users can delete their own adjustment proofs" ON adjustment_proofs FOR DELETE USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Admins can view all adjustment proofs" ON adjustment_proofs FOR SELECT USING (has_role(auth.uid(), 'admin'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- Project payments policies
+DO $$ BEGIN
+  CREATE POLICY "Users can view their own project payments" ON project_payments FOR SELECT USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Users can insert their own project payments" ON project_payments FOR INSERT WITH CHECK (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Users cannot update payment records" ON project_payments FOR UPDATE USING (false);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Admins can view all project payments" ON project_payments FOR SELECT USING (has_role(auth.uid(), 'admin'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- Contact submissions policies
+DO $$ BEGIN
+  CREATE POLICY "Anyone can submit contact form" ON contact_submissions FOR INSERT WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Only admins can view contact submissions" ON contact_submissions FOR SELECT USING (has_role(auth.uid(), 'admin'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- 7. Create storage bucket (if not exists)
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('documents', 'documents', false)
+ON CONFLICT (id) DO NOTHING;
+
+-- Storage policies
+DO $$ BEGIN
+  CREATE POLICY "Users can upload documents" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'documents' AND auth.uid()::text = (storage.foldername(name))[1]);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Users can view their documents" ON storage.objects FOR SELECT USING (bucket_id = 'documents' AND auth.uid()::text = (storage.foldername(name))[1]);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE POLICY "Users can delete their documents" ON storage.objects FOR DELETE USING (bucket_id = 'documents' AND auth.uid()::text = (storage.foldername(name))[1]);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;

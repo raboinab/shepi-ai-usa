@@ -1,0 +1,1 @@
+ALTER TABLE public.canonical_transactions ADD COLUMN IF NOT EXISTS account_type TEXT;
