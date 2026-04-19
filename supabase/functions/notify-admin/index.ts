@@ -61,7 +61,7 @@ function buildWelcomeEmail(name: string): { subject: string; html: string } {
           <li><strong>Generate your QoE report</strong> — our AI helps you identify adjustments and build your analysis</li>
         </ul>
         <p>
-          <a href="https://shepi-ai.lovable.app/dashboard"
+          <a href="https://shepi.ai/dashboard"
              style="display: inline-block; background: #4a7c94; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600;">
             Create Your First Project →
           </a>

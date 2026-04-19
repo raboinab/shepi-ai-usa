@@ -31,7 +31,7 @@ function buildNudgeEmail(candidate: NudgeCandidate): { subject: string; html: st
             <li>Upload financial statements and CIMs</li>
             <li>Generate your first QoE report</li>
           </ul>
-          <p><a href="https://shepi-ai.lovable.app/dashboard" style="display: inline-block; background: #4a7c94; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 600;">Get Started →</a></p>
+          <p><a href="https://shepi.ai/dashboard" style="display: inline-block; background: #4a7c94; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 600;">Get Started →</a></p>
           <p style="color: #888; font-size: 13px;">Need help? Just reply to this email — we're happy to walk you through it.</p>
           <p style="color: #888; font-size: 12px;">— The shepi Team</p>
         </div>
@@ -51,7 +51,7 @@ function buildNudgeEmail(candidate: NudgeCandidate): { subject: string; html: st
             <li><strong>CIM Upload</strong> — Our AI extracts key deal metrics from your CIM</li>
             <li><strong>Automated QoE</strong> — Generate a Quality of Earnings report in minutes</li>
           </ul>
-          <p><a href="https://shepi-ai.lovable.app/dashboard" style="display: inline-block; background: #4a7c94; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 600;">Create Your First Project →</a></p>
+          <p><a href="https://shepi.ai/dashboard" style="display: inline-block; background: #4a7c94; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 600;">Create Your First Project →</a></p>
           <p style="color: #888; font-size: 13px;">Questions? Reply to this email or book a quick call with our team.</p>
           <p style="color: #888; font-size: 12px;">— The shepi Team</p>
         </div>
@@ -67,7 +67,7 @@ function buildNudgeEmail(candidate: NudgeCandidate): { subject: string; html: st
         <h2 style="color: #4a7c94;">Hi ${name} 👋</h2>
         <p>We haven't seen you on shepi in a while. We understand — deal diligence is busy work.</p>
         <p>If you'd like a quick walkthrough of how shepi can save you hours on your next QoE analysis, we'd love to show you.</p>
-        <p><a href="https://shepi-ai.lovable.app/dashboard" style="display: inline-block; background: #4a7c94; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 600;">Log Back In →</a></p>
+        <p><a href="https://shepi.ai/dashboard" style="display: inline-block; background: #4a7c94; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 600;">Log Back In →</a></p>
         <p>Or simply reply to schedule a 15-minute call with our team.</p>
         <p style="color: #888; font-size: 12px;">— The shepi Team</p>
       </div>
