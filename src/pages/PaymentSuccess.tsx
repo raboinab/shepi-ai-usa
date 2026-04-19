@@ -8,7 +8,7 @@ import ShepiLogo from "@/components/ShepiLogo";
 import { useSubscription } from "@/hooks/useSubscription";
 
 const PaymentSuccess = () => {
-  const __seoTags = useSEO({ title: "Payment Successful — shepi", noindex: true });
+  useSEO({ title: "Payment Successful — shepi", noindex: true });
 
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -19,8 +19,9 @@ const PaymentSuccess = () => {
   const planType = searchParams.get("plan");
   
   // Determine if payment is confirmed based on plan type
+  // Whitelisted users have hasActiveSubscription=true with 0 credits, so check that too
   const isPaymentConfirmed = (planType === "per_project" || planType === "done_for_you")
-    ? (projectCredits > 0 || paidProjects.length > 0)
+    ? (projectCredits > 0 || paidProjects.length > 0 || hasActiveSubscription)
     : hasActiveSubscription;
 
   // Auto-redirect when payment is confirmed
@@ -69,7 +70,6 @@ const PaymentSuccess = () => {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      {__seoTags}
       {/* Navigation */}
       <nav className="border-b border-border bg-card">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
