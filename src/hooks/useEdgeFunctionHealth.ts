@@ -40,11 +40,10 @@ const FUNCTION_DEFINITIONS: Omit<FunctionHealth, 'deployed' | 'statusCode' | 're
   { name: 'process-debt-schedule', authType: 'jwt', category: 'documents' },
   { name: 'process-material-contract', authType: 'jwt', category: 'documents' },
   
-  // Data Storage (4)
+  // Data Storage (3)
   { name: 'processed-data-create', authType: 'jwt', category: 'data' },
   { name: 'processed-data-list', authType: 'jwt', category: 'data' },
   { name: 'processed-data-get-by-document', authType: 'jwt', category: 'data' },
-  { name: 'db-proxy', authType: 'api-key', category: 'data' },
   
   // AI/Insights (7)
   { name: 'insights-chat', authType: 'jwt', category: 'ai' },
@@ -165,8 +164,8 @@ export function useEdgeFunctionHealth() {
         headers['Authorization'] = `Bearer ${session.access_token}`;
       }
       
-      // Use GET for functions that support it (like db-proxy health check)
-      const method = ['db-proxy', 'proactive-qb-refresh'].includes(funcDef.name) ? 'GET' : 'POST';
+      // Use GET for functions that support it as a health-check endpoint
+      const method = ['proactive-qb-refresh'].includes(funcDef.name) ? 'GET' : 'POST';
       const body = method === 'POST' ? JSON.stringify(getPayloadForFunction(funcDef.name)) : undefined;
       
       const response = await fetch(

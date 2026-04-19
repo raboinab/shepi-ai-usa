@@ -52,7 +52,7 @@ const TAB_TO_SECTION: Record<string, number> = {
 };
 
 const Workbook = () => {
-  useSEO({ title: "Workbook — shepi", noindex: true });
+  const __seoTags = useSEO({ title: "Workbook — shepi", noindex: true });
 
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -153,6 +153,7 @@ const Workbook = () => {
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
+        {__seoTags}
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
       </div>
     );

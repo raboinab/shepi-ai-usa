@@ -3,7 +3,7 @@ import { LegalPageLayout } from "@/components/LegalPageLayout";
 import { useSEO } from "@/hooks/useSEO";
 
 export default function EULA() {
-  useSEO({
+  const __seoTags = useSEO({
     title: "End User License Agreement — shepi",
     description: "Read shepi's End User License Agreement (EULA) for terms governing software use.",
     canonical: "https://shepi.ai/eula",
@@ -26,6 +26,7 @@ export default function EULA() {
 
   return (
     <LegalPageLayout title="End User License Agreement">
+      {__seoTags}
       <div 
         id="VjFSeU1EWmxOV2g1YVRCTVdrRTlQUT09"
         className="policy_embed_div"

@@ -8,7 +8,7 @@ import ShepiLogo from "@/components/ShepiLogo";
 import { useSubscription } from "@/hooks/useSubscription";
 
 const PaymentSuccess = () => {
-  useSEO({ title: "Payment Successful — shepi", noindex: true });
+  const __seoTags = useSEO({ title: "Payment Successful — shepi", noindex: true });
 
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -69,6 +69,7 @@ const PaymentSuccess = () => {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
+      {__seoTags}
       {/* Navigation */}
       <nav className="border-b border-border bg-card">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">

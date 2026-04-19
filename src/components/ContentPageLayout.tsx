@@ -51,7 +51,7 @@ export function ContentPageLayout({
   modifiedDate,
   heroAccent,
 }: ContentPageLayoutProps) {
-  useSEO({ title: seoTitle, description: seoDescription, canonical, ogImage: "/og-image.png" });
+  const __seoTags = useSEO({ title: seoTitle, description: seoDescription, canonical, ogImage: "/og-image.png" });
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeSection, setActiveSection] = useState("");
@@ -95,6 +95,7 @@ export function ContentPageLayout({
 
   return (
     <div className="min-h-screen bg-background">
+      {__seoTags}
       {/* Nav */}
       <header className="border-b border-border bg-card sticky top-0 z-40">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">

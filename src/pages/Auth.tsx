@@ -26,7 +26,7 @@ const authSchema = z.object({
 type AuthView = "login" | "signup" | "forgot";
 
 const Auth = () => {
-  useSEO({
+  const __seoTags = useSEO({
     title: "Sign In — shepi",
     description: "Sign in or create your Shepi account to access AI-assisted Quality of Earnings analysis.",
     canonical: "https://shepi.ai/auth",
@@ -257,6 +257,7 @@ const Auth = () => {
   if (isCheckingAuth) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4">
+        {__seoTags}
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
         <p className="text-muted-foreground">
           {authError ? authError : "Checking authentication..."}

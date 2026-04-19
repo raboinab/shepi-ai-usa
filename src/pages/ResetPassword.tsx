@@ -9,7 +9,7 @@ import { toast } from "@/hooks/use-toast";
 import { useSEO } from "@/hooks/useSEO";
 
 const ResetPassword = () => {
-  useSEO({
+  const __seoTags = useSEO({
     title: "Reset Password — shepi",
     description: "Set a new password for your shepi account.",
     canonical: "https://shepi.ai/reset-password",
@@ -71,6 +71,7 @@ const ResetPassword = () => {
   if (checking) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
+        {__seoTags}
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
       </div>
     );

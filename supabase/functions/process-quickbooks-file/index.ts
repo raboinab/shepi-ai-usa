@@ -485,7 +485,6 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const qbToJsonApiUrl = Deno.env.get("QBTOJSON_API_URL")?.trim().replace(/\/+$/, "");
     const qbToJsonApiKey = Deno.env.get("QBTOJSON_API_KEY")?.trim();
-    const dbProxyApiKey = Deno.env.get("QB_AUTH_API_KEY");
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
@@ -735,39 +734,26 @@ serve(async (req) => {
     // Determine source_type based on whether COA was derived from GL
     const sourceType = coaDerived ? 'derived_from_gl' : 'qbtojson';
 
-    // 6. Save to processed_data via db-proxy
+    // 6. Save to processed_data
     console.log(`[process-quickbooks-file] Saving to processed_data: data_type=${dataType}, records=${recordCount}`);
-    
-    const saveResponse = await fetch(`${supabaseUrl}/functions/v1/db-proxy`, {
-      method: "POST",
-      headers: {
-        "x-api-key": dbProxyApiKey || "",
-        "x-service-name": "process-quickbooks-file",
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        action: "query",
-        table: "processed_data",
-        operation: "insert",
-        data: {
-          project_id: doc.project_id,
-          user_id: doc.user_id,
-          source_type: sourceType,
-          data_type: dataType,
-          source_document_id: documentId,
-          data: dataToSave,
-          record_count: recordCount,
-          period_start: periodStart,
-          period_end: periodEnd,
-          validation_status: "pending"
-        }
-      })
-    });
 
-    const saveData = await saveResponse.json();
-    
-    if (!saveData.success) {
-      console.error("[process-quickbooks-file] Failed to save to processed_data:", saveData.error);
+    const { error: saveError } = await supabase
+      .from('processed_data')
+      .insert({
+        project_id: doc.project_id,
+        user_id: doc.user_id,
+        source_type: sourceType,
+        data_type: dataType,
+        source_document_id: documentId,
+        data: dataToSave,
+        record_count: recordCount,
+        period_start: periodStart,
+        period_end: periodEnd,
+        validation_status: "pending",
+      });
+
+    if (saveError) {
+      console.error("[process-quickbooks-file] Failed to save to processed_data:", saveError);
       // Don't throw - we still want to update the document status
     } else {
       console.log("[process-quickbooks-file] Successfully saved to processed_data");
@@ -783,69 +769,45 @@ serve(async (req) => {
       console.log(`[process-quickbooks-file] qbToJson did not derive COA, attempting fallback derivation...`);
       
       // Check if COA already exists for this project
-      const coaCheckResponse = await fetch(`${supabaseUrl}/functions/v1/db-proxy`, {
-        method: "POST",
-        headers: {
-          "x-api-key": dbProxyApiKey || "",
-          "x-service-name": "process-quickbooks-file",
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          action: "query",
-          table: "processed_data",
-          operation: "select",
-          filters: { 
-            project_id: doc.project_id,
-            data_type: "chart_of_accounts"
-          },
-          select: "id"
-        })
-      });
-      
-      const coaCheckData = await coaCheckResponse.json();
-      const existingCoaCount = coaCheckData.data?.length || 0;
-      
+      const { data: existingCoa, error: coaCheckError } = await supabase
+        .from('processed_data')
+        .select('id')
+        .eq('project_id', doc.project_id)
+        .eq('data_type', 'chart_of_accounts');
+
+      if (coaCheckError) {
+        console.error("[process-quickbooks-file] Failed to check existing COA:", coaCheckError);
+      }
+
+      const existingCoaCount = existingCoa?.length || 0;
+
       if (existingCoaCount === 0) {
         console.log(`[process-quickbooks-file] No COA exists, deriving from GL structure...`);
-        
+
         const derivedAccounts = deriveCoaFromGlData(convertedData);
-        
+
         if (derivedAccounts.length > 0) {
-          // Save derived COA
-          const coaSaveResponse = await fetch(`${supabaseUrl}/functions/v1/db-proxy`, {
-            method: "POST",
-            headers: {
-              "x-api-key": dbProxyApiKey || "",
-              "x-service-name": "process-quickbooks-file",
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-              action: "query",
-              table: "processed_data",
-              operation: "insert",
-              data: {
-                project_id: doc.project_id,
-                user_id: doc.user_id,
-                source_type: "derived_from_gl",
-                data_type: "chart_of_accounts",
-                source_document_id: documentId,
-                data: { accounts: derivedAccounts },
-                record_count: derivedAccounts.length,
-                period_start: periodStart,
-                period_end: periodEnd,
-                validation_status: "pending"
-              }
-            })
-          });
-          
-          const coaSaveData = await coaSaveResponse.json();
-          
-          if (coaSaveData.success) {
+          const { error: coaSaveError } = await supabase
+            .from('processed_data')
+            .insert({
+              project_id: doc.project_id,
+              user_id: doc.user_id,
+              source_type: "derived_from_gl",
+              data_type: "chart_of_accounts",
+              source_document_id: documentId,
+              data: { accounts: derivedAccounts },
+              record_count: derivedAccounts.length,
+              period_start: periodStart,
+              period_end: periodEnd,
+              validation_status: "pending",
+            });
+
+          if (!coaSaveError) {
             console.log(`[process-quickbooks-file] ✅ Fallback COA derived and saved: ${derivedAccounts.length} accounts`);
             coaDerived = true;
             derivedCount = derivedAccounts.length;
           } else {
-            console.error(`[process-quickbooks-file] Failed to save fallback COA:`, coaSaveData.error);
+            console.error(`[process-quickbooks-file] Failed to save fallback COA:`, coaSaveError);
           }
         } else {
           console.log(`[process-quickbooks-file] Could not derive accounts from GL structure`);

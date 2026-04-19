@@ -2,7 +2,7 @@ import { LegalPageLayout } from "@/components/LegalPageLayout";
 import { useSEO } from "@/hooks/useSEO";
 
 export default function DPA() {
-  useSEO({
+  const __seoTags = useSEO({
     title: "Data Processing Addendum — shepi",
     description:
       "shepi's Data Processing Addendum (DPA) for enterprise customers, covering UK GDPR and Canadian PIPEDA requirements.",
@@ -11,6 +11,7 @@ export default function DPA() {
 
   return (
     <LegalPageLayout title="Data Processing Addendum (DPA)">
+      {__seoTags}
       <div className="space-y-8">
         <p className="text-muted-foreground">
           This Data Processing Addendum (&quot;DPA&quot;) forms part of the

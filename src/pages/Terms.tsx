@@ -3,7 +3,7 @@ import { LegalPageLayout } from "@/components/LegalPageLayout";
 import { useSEO } from "@/hooks/useSEO";
 
 export default function Terms() {
-  useSEO({
+  const __seoTags = useSEO({
     title: "Terms of Service — shepi",
     description: "Read shepi's Terms of Service to understand your rights and responsibilities when using our platform.",
     canonical: "https://shepi.ai/terms",
@@ -26,6 +26,7 @@ export default function Terms() {
 
   return (
     <LegalPageLayout title="Terms of Service">
+      {__seoTags}
       <div 
         id="WlVSSFVtMUdLMWxXVTNkd1RXYzlQUT09"
         className="policy_embed_div"

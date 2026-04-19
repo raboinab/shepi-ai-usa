@@ -49,7 +49,7 @@ const subprocessors = [
 ];
 
 export default function Subprocessors() {
-  useSEO({
+  const __seoTags = useSEO({
     title: "Subprocessors — shepi",
     description:
       "List of third-party subprocessors that shepi uses to deliver its services, including their purposes and data processing locations.",
@@ -58,6 +58,7 @@ export default function Subprocessors() {
 
   return (
     <LegalPageLayout title="Subprocessors">
+      {__seoTags}
       <p className="text-muted-foreground mb-6">
         shepi (operated by SMB EDGE) uses the following third-party
         subprocessors to deliver and support our services. This page is

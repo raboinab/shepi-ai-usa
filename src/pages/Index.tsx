@@ -15,7 +15,7 @@ import { trackEvent } from "@/lib/analytics";
 
 
 const Index = () => {
-  useSEO({
+  const __seoTags = useSEO({
     title: "AI Quality of Earnings Software | QoE Analysis Platform | shepi",
     description: "AI quality of earnings analysis for M&A due diligence. Upload financials, get EBITDA adjustments and lender-ready QoE reports in hours. Quality of earnings AI built for deal teams, PE firms, and searchers.",
     canonical: "https://shepi.ai/",
@@ -242,6 +242,7 @@ const Index = () => {
   if (isCheckingAuth) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-primary gap-4">
+        {__seoTags}
         <div className="text-center">
           <Loader2 className="w-8 h-8 animate-spin text-primary-foreground mx-auto mb-4" />
           <p className="text-primary-foreground/80">Loading...</p>
@@ -667,7 +668,7 @@ const Index = () => {
               <ul className="space-y-2 text-sm text-muted-foreground">
                 <li className="flex items-center gap-2">
                   <CheckCircle className="w-4 h-4 text-primary" />
-                  QuickBooks integration
+                  Accounting Software integration
                 </li>
                 <li className="flex items-center gap-2">
                   <CheckCircle className="w-4 h-4 text-primary" />
@@ -748,7 +749,7 @@ const Index = () => {
                 <Upload className="w-6 h-6 text-primary" />
               </div>
               <h3 className="text-lg font-bold text-foreground mb-2">Import Data</h3>
-              <p className="text-sm text-muted-foreground">Connect QuickBooks or upload trial balances and supporting documents.</p>
+              <p className="text-sm text-muted-foreground">Connect accounting software or upload trial balances and supporting documents.</p>
             </div>
             <div className="text-center">
               <div className="w-16 h-16 bg-primary rounded-full flex items-center justify-center mx-auto mb-6 text-primary-foreground font-bold text-2xl">2</div>
@@ -787,7 +788,7 @@ const Index = () => {
               <div>
                 <span className="inline-block text-xs font-semibold uppercase tracking-wider text-destructive mb-3">Required</span>
                 <ul className="space-y-2">
-                  {["Trial Balance (QuickBooks or Excel)", "Chart of Accounts", "Bank Statements", "General Ledger"].map((item) => (
+                  {["Trial Balance", "Chart of Accounts", "Bank Statements", "General Ledger"].map((item) => (
                     <li key={item} className="flex items-start gap-2 text-sm text-foreground">
                       <CheckCircle className="w-4 h-4 text-primary mt-0.5 shrink-0" />
                       <span>{item}</span>

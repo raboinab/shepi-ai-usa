@@ -23,7 +23,7 @@ const getStoredRedirect = (): string => {
 };
 
 const AuthCallback = () => {
-  useSEO({
+  const __seoTags = useSEO({
     title: "Completing Sign In — Shepi",
     noindex: true,
   });
@@ -115,6 +115,7 @@ const AuthCallback = () => {
   if (error) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4 p-4">
+        {__seoTags}
         <div className="text-center max-w-md">
           <h1 className="text-xl font-semibold text-foreground mb-2">Sign-in Error</h1>
           <p className="text-muted-foreground mb-4">{error}</p>

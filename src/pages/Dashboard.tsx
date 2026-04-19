@@ -43,7 +43,7 @@ const statusIcons = {
 };
 
 const Dashboard = () => {
-  useSEO({ title: "Dashboard — shepi", noindex: true });
+  const __seoTags = useSEO({ title: "Dashboard — shepi", noindex: true });
 
   const [user, setUser] = useState<User | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -330,6 +330,7 @@ const Dashboard = () => {
 
   return (
     <div className="min-h-screen bg-background">
+      {__seoTags}
       <TermsAcceptanceModal
         open={tosModalOpen}
         onOpenChange={setTosModalOpen}

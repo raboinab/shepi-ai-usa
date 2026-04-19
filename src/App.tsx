@@ -7,7 +7,6 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import AppErrorBoundary from "@/components/system/AppErrorBoundary";
-import { HeadProvider } from "@/components/system/HeadProvider";
 import Index from "./pages/Index";
 
 // Lazy-loaded routes
@@ -79,6 +78,7 @@ const AdminDiagnostics = lazy(() => import("./pages/admin/AdminDiagnostics"));
 const AdminDocuments = lazy(() => import("./pages/admin/AdminDocuments"));
 const AdminDataExport = lazy(() => import("./pages/admin/AdminDataExport"));
 const AdminDFYEngagements = lazy(() => import("./pages/admin/AdminDFYEngagements"));
+const AdminMigration = lazy(() => import("./pages/admin/AdminMigration"));
 const CpaLayout = lazy(() => import("./layouts/CpaLayout").then(m => ({ default: m.CpaLayout })));
 const CpaQueue = lazy(() => import("./pages/cpa/CpaQueue"));
 const CpaEngagements = lazy(() => import("./pages/cpa/CpaEngagements"));
@@ -106,22 +106,21 @@ const wrap = (node: ReactNode) => <Suspense fallback={<SuspenseFallback />}>{nod
 
 /**
  * Root layout — providers + Outlet. vite-react-ssg renders this at every route
- * with the matched child below it. Wraps in ErrorBoundary + HeadProvider so
- * useHead() works during both SSR (prerender) and CSR (hydration).
+ * with the matched child below it. Per-page <head> tags are emitted by each
+ * page through `useSEO({...})` (returns JSX) or `<SEO {...} />` directly,
+ * which renders vite-react-ssg's native <Head> (react-helmet-async).
  */
 const RootLayout = () => (
   <AppErrorBoundary>
-    <HeadProvider>
-      <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <Suspense fallback={<SuspenseFallback />}>
-            <Outlet />
-          </Suspense>
-        </TooltipProvider>
-      </QueryClientProvider>
-    </HeadProvider>
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <Suspense fallback={<SuspenseFallback />}>
+          <Outlet />
+        </Suspense>
+      </TooltipProvider>
+    </QueryClientProvider>
   </AppErrorBoundary>
 );
 
@@ -207,6 +206,7 @@ export const routes: RouteRecord[] = [
           { path: "documents", element: wrap(<AdminDocuments />) },
           { path: "data-export", element: wrap(<AdminDataExport />) },
           { path: "dfy-engagements", element: wrap(<AdminDFYEngagements />) },
+          { path: "migration", element: wrap(<AdminMigration />) },
         ],
       },
 

@@ -3,7 +3,7 @@ import { LegalPageLayout } from "@/components/LegalPageLayout";
 import { useSEO } from "@/hooks/useSEO";
 
 export default function Privacy() {
-  useSEO({
+  const __seoTags = useSEO({
     title: "Privacy Policy — shepi",
     description: "Read shepi's Privacy Policy to understand how we collect, use, and protect your data.",
     canonical: "https://shepi.ai/privacy",
@@ -26,6 +26,7 @@ export default function Privacy() {
 
   return (
     <LegalPageLayout title="Privacy Policy">
+      {__seoTags}
       <div 
         id="TVVoS1IwOTFhMVJXYTJZdlNFRTlQUT09"
         className="policy_embed_div"

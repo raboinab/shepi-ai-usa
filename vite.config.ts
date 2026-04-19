@@ -75,32 +75,8 @@ export default defineConfig(({ mode }) => ({
     // still re-execute on the client where the real APIs are available.
     mock: true,
     includedRoutes: () => PRERENDER_PATHS,
-    // After every page renders, serialize the per-request Unhead instance
-    // captured in HeadProvider and inject it into <head>. This is what gives
-    // social crawlers and Googlebot per-page <title>, meta, and canonical
-    // without executing any JS.
-    onPageRendered: async (route: string, renderedHTML: string) => {
-      const head = (globalThis as any).__SSR_HEAD__;
-      // eslint-disable-next-line no-console
-      console.log(`[ssg-head] route=${route} hasHead=${!!head}`);
-      if (!head) return renderedHTML;
-      const { renderSSRHead } = await import("unhead/server");
-      const payload = await renderSSRHead(head);
-      // eslint-disable-next-line no-console
-      console.log(`[ssg-head] route=${route} headTagsLen=${payload.headTags?.length || 0}`);
-      let html = renderedHTML;
-      if (payload.headTags) {
-        html = html.replace("</head>", `${payload.headTags}\n</head>`);
-      }
-      if (payload.bodyAttrs) {
-        html = html.replace("<body", `<body ${payload.bodyAttrs}`);
-      }
-      if (payload.htmlAttrs) {
-        html = html.replace("<html", `<html ${payload.htmlAttrs}`);
-      }
-      // Reset for next page
-      (globalThis as any).__SSR_HEAD__ = undefined;
-      return html;
-    },
+    // Per-page <head> tags are handled natively by vite-react-ssg's <Head>
+    // component (react-helmet-async). No custom onPageRendered hook needed —
+    // tags are collected during prerender and serialized into the static HTML.
   },
 }));

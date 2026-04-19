@@ -17,7 +17,7 @@ import { useTosAcceptance } from "@/hooks/useTosAcceptance";
 import { trackEvent } from "@/lib/analytics";
 
 const Pricing = () => {
-  useSEO({
+  const __seoTags = useSEO({
     title: "Pricing — shepi QoE Platform",
     description: "Flexible pricing for every deal volume. Per-project or monthly plans for independent searchers, deal teams, PE firms, and advisors.",
     canonical: "https://shepi.ai/pricing",
@@ -242,6 +242,7 @@ const Pricing = () => {
 
   return (
     <div className="min-h-screen bg-background">
+      {__seoTags}
       <TermsAcceptanceModal
         open={tosModalOpen}
         onOpenChange={setTosModalOpen}

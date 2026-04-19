@@ -71,9 +71,9 @@ const corsHeaders = {
    suggested_adjustment_amount: number;
    ai_analysis: object;
    source_data: object;
-  flag_category?: FlagCategory;
-  classification_context?: object;
-}
+   flag_category?: FlagCategory;
+   classification_context?: object;
+ }
 
   // The `flagged_transactions` table has a UNIQUE constraint on:
   // (project_id, transaction_date, description, amount)

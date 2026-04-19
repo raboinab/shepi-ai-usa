@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, FolderKanban, CreditCard, Mail, ArrowLeft, BookOpen, ShieldCheck, Activity, FileDown, DatabaseBackup, Briefcase } from 'lucide-react';
+import { LayoutDashboard, Users, FolderKanban, CreditCard, Mail, ArrowLeft, BookOpen, ShieldCheck, Activity, FileDown, DatabaseBackup, Briefcase, CloudUpload } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useLocation } from 'react-router-dom';
 import {
@@ -25,6 +25,7 @@ const menuItems = [
   { title: 'Documents', url: '/admin/documents', icon: FileDown },
   { title: 'Data Export', url: '/admin/data-export', icon: DatabaseBackup },
   { title: 'DFY Engagements', url: '/admin/dfy-engagements', icon: Briefcase },
+  { title: 'Migration', url: '/admin/migration', icon: CloudUpload },
 ];
 
 export function AdminSidebar() {

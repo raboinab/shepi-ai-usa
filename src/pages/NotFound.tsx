@@ -5,7 +5,7 @@ import { useSEO } from "@/hooks/useSEO";
 const NotFound = () => {
   const location = useLocation();
 
-  useSEO({
+  const __seoTags = useSEO({
     title: "Page Not Found — shepi",
     description: "This page doesn't exist. Return to shepi to access AI-assisted Quality of Earnings analysis.",
     noindex: true,
@@ -17,6 +17,7 @@ const NotFound = () => {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted">
+      {__seoTags}
       <div className="text-center">
         <h1 className="mb-4 text-4xl font-bold">404</h1>
         <p className="mb-4 text-xl text-muted-foreground">Oops! Page not found</p>

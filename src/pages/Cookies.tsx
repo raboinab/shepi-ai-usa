@@ -3,7 +3,7 @@ import { LegalPageLayout } from "@/components/LegalPageLayout";
 import { useSEO } from "@/hooks/useSEO";
 
 export default function Cookies() {
-  useSEO({
+  const __seoTags = useSEO({
     title: "Cookie Policy — shepi",
     description: "Read shepi's Cookie Policy to understand how we use cookies and tracking technologies.",
     canonical: "https://shepi.ai/cookies",
@@ -26,6 +26,7 @@ export default function Cookies() {
 
   return (
     <LegalPageLayout title="Cookie Policy">
+      {__seoTags}
       <div 
         id="TkVGVWMxVjVlSEZzTW1oWUwzYzlQUT09"
         className="policy_embed_div"

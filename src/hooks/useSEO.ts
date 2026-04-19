@@ -1,4 +1,4 @@
-import { useHead } from "@unhead/react";
+import { useEffect } from "react";
 
 interface SEOProps {
   title: string;
@@ -10,11 +10,8 @@ interface SEOProps {
 }
 
 /**
- * Per-page SEO via @unhead/react. Works in both SSG (prerendered into raw HTML
+ * Per-page SEO via direct DOM manipulation. Works in both SSG (prerendered into raw HTML
  * for crawlers and social previews) and CSR (updates client-side on navigation).
- *
- * API is unchanged from the previous DOM-mutation implementation, so all
- * call sites continue to work without edits.
  */
 export function useSEO({
   title,
@@ -24,46 +21,72 @@ export function useSEO({
   ogImage = "/og-image.png",
   ogType = "website",
 }: SEOProps) {
-  // Resolve absolute URLs. During SSG `window` is undefined, so we fall back to
-  // the canonical prop (or the site root) — call sites should pass `canonical`
-  // for routes where the path matters at prerender time.
-  const absoluteImage = ogImage.startsWith("http")
-    ? ogImage
-    : `https://shepi.ai${ogImage}`;
+  useEffect(() => {
+    // Resolve absolute URLs
+    const absoluteImage = ogImage.startsWith("http")
+      ? ogImage
+      : `https://shepi.ai${ogImage}`;
 
-  const isServer = (globalThis as any).__IS_SSG__ === true;
-  const resolvedCanonical =
-    canonical ||
-    (!isServer && typeof window !== "undefined"
-      ? `https://shepi.ai${window.location.pathname}`
-      : "https://shepi.ai/");
+    const isServer = typeof window === "undefined";
+    const resolvedCanonical =
+      canonical ||
+      (!isServer
+        ? `https://shepi.ai${window.location.pathname}`
+        : "https://shepi.ai/");
 
-  const robotsContent = noindex ? "noindex, nofollow" : "index, follow";
-  const googlebotContent = noindex
-    ? "noindex, nofollow"
-    : "index, follow, max-video-preview:-1, max-image-preview:large, max-snippet:-1";
+    const robotsContent = noindex ? "noindex, nofollow" : "index, follow";
+    const googlebotContent = noindex
+      ? "noindex, nofollow"
+      : "index, follow, max-video-preview:-1, max-image-preview:large, max-snippet:-1";
 
-  useHead({
-    title,
-    link: [{ rel: "canonical", href: resolvedCanonical }],
-    meta: [
-      ...(description
-        ? [
-            { name: "description", content: description },
-            { property: "og:description", content: description },
-            { name: "twitter:description", content: description },
-          ]
-        : []),
-      { name: "robots", content: robotsContent },
-      { name: "googlebot", content: googlebotContent },
-      { property: "og:title", content: title },
-      { name: "twitter:title", content: title },
-      { property: "og:type", content: ogType },
-      { property: "og:url", content: resolvedCanonical },
-      { name: "twitter:url", content: resolvedCanonical },
-      { property: "og:image", content: absoluteImage },
-      { name: "twitter:image", content: absoluteImage },
-      { name: "twitter:card", content: "summary_large_image" },
-    ],
-  });
+    // Update document title
+    document.title = title;
+
+    // Helper to update or create meta tag
+    const updateMeta = (selector: string, content: string) => {
+      let meta = document.querySelector(selector);
+      if (!meta) {
+        meta = document.createElement("meta");
+        const isProperty = selector.includes("property=");
+        if (isProperty) {
+          meta.setAttribute("property", selector.match(/property="([^"]+)"/)?.[1] || "");
+        } else {
+          meta.setAttribute("name", selector.match(/name="([^"]+)"/)?.[1] || "");
+        }
+        document.head.appendChild(meta);
+      }
+      meta.setAttribute("content", content);
+    };
+
+    // Helper to update or create link tag
+    const updateLink = (rel: string, href: string) => {
+      let link = document.querySelector(`link[rel="${rel}"]`);
+      if (!link) {
+        link = document.createElement("link");
+        link.setAttribute("rel", rel);
+        document.head.appendChild(link);
+      }
+      link.setAttribute("href", href);
+    };
+
+    // Update all meta tags
+    updateLink("canonical", resolvedCanonical);
+    
+    if (description) {
+      updateMeta('meta[name="description"]', description);
+      updateMeta('meta[property="og:description"]', description);
+      updateMeta('meta[name="twitter:description"]', description);
+    }
+
+    updateMeta('meta[name="robots"]', robotsContent);
+    updateMeta('meta[name="googlebot"]', googlebotContent);
+    updateMeta('meta[property="og:title"]', title);
+    updateMeta('meta[name="twitter:title"]', title);
+    updateMeta('meta[property="og:type"]', ogType);
+    updateMeta('meta[property="og:url"]', resolvedCanonical);
+    updateMeta('meta[name="twitter:url"]', resolvedCanonical);
+    updateMeta('meta[property="og:image"]', absoluteImage);
+    updateMeta('meta[name="twitter:image"]', absoluteImage);
+    updateMeta('meta[name="twitter:card"]', "summary_large_image");
+  }, [title, description, canonical, noindex, ogImage, ogType]);
 }
