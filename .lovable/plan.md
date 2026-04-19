@@ -1,56 +1,67 @@
 
 
-## Goal
-Get every byte out of this database to a place you control RIGHT NOW. Don't keep fighting `migrate-push-data` row-by-row — switch to a parallel "rip everything to disk" approach.
+## What I found
 
-## Strategy: 3 parallel rip jobs, all writing to `/mnt/documents/` here in the sandbox
+You're moving off Lovable Cloud, but the codebase still has a few Lovable-Cloud-specific pieces. Good news: **email is mostly already independent** — the contact form, admin notifications, and engagement nudges all use **Resend directly**, not Lovable's email infrastructure. There are only a couple of real Lovable-Cloud dependencies left.
 
-We have direct DB access via `psql` ($PGHOST is set), service-role keys for Auth and Storage, and the migration helper functions are already deployed. Use all three at once, no edge-function timeouts, no chunking gymnastics.
+---
 
-### Rip 1 — Public schema + ALL table data via `pg_dump`
-The fastest, most reliable path. Skips the `migrate-push-data` row-by-row pain entirely.
-```
-pg_dump "$SUPABASE_DB_URL" \
-  --schema=public --no-owner --no-privileges \
-  --format=custom -f /mnt/documents/source-public.dump
-```
-- Single file, compressed, restorable with `pg_restore` into the new project.
-- Handles oversized `processed_data` rows fine — pg_dump streams; no Deno OOM.
-- Also dump plain SQL as a backup: `pg_dump ... --format=plain --inserts` to `/mnt/documents/source-public.sql`.
+## Concerns ranked by severity
 
-### Rip 2 — Auth users
-Call the deployed `dump-auth-users` edge function with admin JWT, save JSON:
-```
-/mnt/documents/auth-users.json
-```
-(Includes identities so you can replay them on the target via `migrate-push-auth-hashes`.)
+### 🔴 1. `auth-email-hook` is fully dependent on Lovable Cloud
+File: `supabase/functions/auth-email-hook/index.ts`
+- Imports `npm:@lovable.dev/email-js` and `npm:@lovable.dev/webhooks-js`
+- Reads `LOVABLE_API_KEY` and verifies signed webhooks from Lovable's auth-email pipeline
+- Sends via `sendLovableEmail()` to a Lovable-provided callback URL
 
-### Rip 3 — Storage (`documents` bucket)
-Two sub-steps in parallel:
-1. Call `dump-storage-manifest` → `/mnt/documents/storage-manifest.json` (paths + 24h signed URLs).
-2. Stream every file from those signed URLs to `/mnt/documents/storage/<path>` using xargs parallel curl.
+When you leave Lovable Cloud, this function stops working. Auth emails (signup confirm, password reset, magic link, invite, email change, reauthentication) **will silently fail to send**.
 
-Bucket size could be large — we'll get a size estimate first and tell you the ETA before downloading.
+**Fix:** Rewrite this function to be a standard Supabase Auth email hook that renders the same React Email templates and sends via **Resend** (you already have `RESEND_API_KEY` set up). Templates in `supabase/functions/_shared/email-templates/` can be reused as-is.
 
-## After everything is on disk
-You have:
-- `source-public.dump` — restore with one `pg_restore` command into ANY postgres
-- `source-public.sql` — human-readable fallback
-- `auth-users.json` — replay into target via existing `migrate-push-auth-hashes`
-- `storage/` — re-upload via target's storage API
+### 🔴 2. `src/integrations/lovable/index.ts` — Lovable Cloud OAuth wrapper
+- Imports `@lovable.dev/cloud-auth-js`
+- Wraps Google/Apple OAuth through Lovable's auth bridge
 
-You can then either:
-- Resume the dreamlit migration with `pg_restore` instead of `migrate-push-data` (drops the timeout problem entirely), OR
-- Walk away from migrate-push-data and do schema+data restore directly into mdgmessqbfebrbvjtndz.
+`src/pages/Auth.tsx` already calls `supabase.auth.signInWithOAuth()` directly for Google (line 181), so the `lovable` wrapper may not even be in active use. We should:
+- Verify nothing imports `@/integrations/lovable`
+- If unused → delete the file and remove the npm package
+- If used → swap call sites to the direct `supabase.auth.signInWithOAuth()` pattern
 
-## What I need to switch to default mode for
-All three rips need `code--exec` (pg_dump, curl, file writes). Read-only mode can't run them.
+### 🟡 3. `parse-tax-return` references undefined `LOVABLE_API_KEY`
+File: `supabase/functions/parse-tax-return/index.ts` line 661 checks `LOVABLE_API_KEY` but that constant is never declared at the top of the file (the search found no `const LOVABLE_API_KEY = ...`). This is either dead code from an older AI-gateway path, or a real bug that fails at runtime. Either way: replace with the `OPENAI_API_KEY` it already declares on line 657, or remove the check.
 
-## Order of operations once approved
-1. Confirm `pg_dump` is available + DB URL works (1 quick check)
-2. Kick off `pg_dump --format=custom` to `/mnt/documents/` (background)
-3. In parallel: curl `dump-auth-users` → save JSON
-4. In parallel: curl `dump-storage-manifest` → save JSON, then estimate total bytes
-5. Report sizes + ETA, then download storage files
-6. Hand you the `/mnt/documents/` artifact list
+### 🟢 4. Resend-based emails — already portable, no action needed
+These three already use Resend directly with `RESEND_API_KEY`. They will keep working as long as that secret stays set on the new Supabase project:
+- `submit-contact` — contact form notifications
+- `notify-admin` — admin alerts + welcome emails
+- `send-engagement-email` — day-3/7/14 user nudges
+
+Just make sure to copy `RESEND_API_KEY` into the new project's edge function secrets.
+
+### 🟢 5. Other things you might worry about — but are fine
+- **Lovable AI gateway usage:** Searched the codebase, no functions use `ai.gateway.lovable.dev`. AI calls go through OpenAI directly (`OPENAI_API_KEY`).
+- **Edge function deployment:** All 70+ functions are plain Deno + Supabase. Deploy with `supabase functions deploy` — no Lovable-specific tooling needed.
+- **Migration scripts:** `migrate-push-*` and `dump-*` functions you already built are designed exactly for this kind of move.
+
+---
+
+## Recommended order of operations
+
+1. **Rewrite `auth-email-hook`** to use Resend + React Email rendering (keep the existing templates). Configure it as a Supabase Auth hook on the new project.
+2. **Audit `src/integrations/lovable/index.ts`** — find usages, replace or delete, drop the `@lovable.dev/cloud-auth-js` package.
+3. **Fix the `LOVABLE_API_KEY` reference in `parse-tax-return`**.
+4. **Copy secrets** to the new Supabase project: `RESEND_API_KEY`, `OPENAI_API_KEY`, Stripe keys, QuickBooks keys, etc.
+5. **Verify** by triggering: signup confirmation, password reset, contact form, admin notification.
+
+---
+
+## Files I'd touch
+
+- `supabase/functions/auth-email-hook/index.ts` — full rewrite (Resend + React Email)
+- `supabase/functions/parse-tax-return/index.ts` — fix the undefined env-var check
+- `src/integrations/lovable/index.ts` — likely delete
+- `package.json` — drop `@lovable.dev/cloud-auth-js` (and possibly `@lovable.dev/email-js`, `@lovable.dev/webhooks-js` if no longer needed; the rewritten hook won't need them)
+- Possibly `src/pages/Auth.tsx` if it actually imports the lovable wrapper anywhere
+
+No DB schema changes. No data migration concerns. The breakage surface is small and localized to auth emails + an unused-looking OAuth wrapper.
 
