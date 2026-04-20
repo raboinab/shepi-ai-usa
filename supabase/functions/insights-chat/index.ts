@@ -1,6 +1,7 @@
-// insights-chat v7 — RAG-powered project data retrieval, flagged transactions context, streaming
+// insights-chat v8 — Anthropic-backed (Opus 4.7 main chat, Haiku 4.5 classifier), prompt caching, streaming
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.87.1";
+import Anthropic from "npm:@anthropic-ai/sdk@0.88.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -182,19 +183,14 @@ async function classifyIntent(
     }
   }
 
-  // LLM classifier for ambiguous queries
+  // LLM classifier for ambiguous queries. Short structured task (<256 tokens, 8s budget).
   try {
-    const classifyAbort = AbortSignal.timeout(8000);
-    const classifyResponse = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      signal: classifyAbort,
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "gpt-5",
-        messages: [
-          {
-            role: "system",
-            content: `Classify this QoE analysis question into one or more agent categories. Pick the minimum set needed.
+    const anthropic = new Anthropic({ apiKey });
+    const classifyResponse = await anthropic.messages.create(
+      {
+        model: "claude-sonnet-4-6",
+        max_tokens: 256,
+        system: `Classify this QoE analysis question into one or more agent categories. Pick the minimum set needed.
 
 Categories:
 - qoe: EBITDA adjustments, earnings quality, normalization, trial balance, chart of accounts, income statement, reclassifications, payroll normalization
@@ -203,31 +199,21 @@ Categories:
 - education: Pure concept explanations, definitions, general QoE methodology (no company-specific data needed)
 
 Respond with ONLY valid JSON, no markdown, no explanation:
-{"agents": ["qoe"|"cashflow"|"risk"|"education"], "reasoning": "one sentence"}`
-          },
-          { role: "user", content: userMessage }
-        ],
-      }),
-    });
+{"agents": ["qoe"|"cashflow"|"risk"|"education"], "reasoning": "one sentence"}`,
+        messages: [{ role: "user", content: userMessage }],
+      },
+      { signal: AbortSignal.timeout(8000) },
+    );
 
-    if (classifyResponse.ok) {
-      const data = await classifyResponse.json();
-      const content = data.choices?.[0]?.message?.content || '';
-      try {
-        const jsonMatch = content.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[0]);
-          if (Array.isArray(parsed.agents) && parsed.agents.length > 0) {
-            console.log(`[classifier] LLM classified as: ${parsed.agents.join(', ')} — ${parsed.reasoning}`);
-            return parsed as ClassificationResult;
-          }
-        }
-      } catch (parseErr) {
-        console.error("[classifier] JSON parse error:", parseErr, "content:", content);
+    const textBlock = classifyResponse.content.find((b) => b.type === "text");
+    const content = textBlock && textBlock.type === "text" ? textBlock.text : "";
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (Array.isArray(parsed.agents) && parsed.agents.length > 0) {
+        console.log(`[classifier] LLM classified as: ${parsed.agents.join(', ')} — ${parsed.reasoning}`);
+        return parsed as ClassificationResult;
       }
-    } else {
-      const errText = await classifyResponse.text();
-      console.error("[classifier] LLM error:", classifyResponse.status, errText);
     }
   } catch (err) {
     console.error("[classifier] Error:", err);
@@ -698,10 +684,14 @@ serve(async (req) => {
 
   try {
     const { messages, wizardData, projectInfo, currentSection } = await req.json();
-    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY"); // still used for embeddings
+    const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 
+    if (!ANTHROPIC_API_KEY) {
+      throw new Error("ANTHROPIC_API_KEY is not configured");
+    }
     if (!OPENAI_API_KEY) {
-      throw new Error("OPENAI_API_KEY is not configured");
+      throw new Error("OPENAI_API_KEY is not configured (required for embeddings)");
     }
 
     // === Security: Prompt injection guard ===
@@ -746,7 +736,7 @@ serve(async (req) => {
     console.log(`[orchestrator] Request: project=${projectInfo?.name}, section=${currentSection?.sectionName || 'none'}`);
 
     // === STEP 1: Classify intent ===
-    const classification = await classifyIntent(userMessage, currentSection, OPENAI_API_KEY);
+    const classification = await classifyIntent(userMessage, currentSection, ANTHROPIC_API_KEY);
     console.log(`[orchestrator] Classification: ${classification.agents.join(', ')} — ${classification.reasoning}`);
 
     // === STEP 2: Retrieve project data via RAG ===
@@ -985,66 +975,115 @@ You have expertise across: EBITDA adjustments, cash flow analysis, and risk asse
     const ragResult = isEducationOnly ? await getRelevantContext(userMessage) : null;
 
     // === STEP 4: Build messages and stream response ===
-    const messagesWithContext = [
-      { role: "system", content: systemPrompt },
-      ...(ragResult ? [{
-        role: "user" as const,
-        content: `### Retrieved References (summarize concepts, do not quote verbatim or cite source names):\n\n${ragResult.context}\n\n---\nThe above reference material is for your reasoning only. Use it to inform your analysis but express ideas in your own words. Do not mention or cite any source, author, or textbook by name. Now answer the user's question below.`
-      }] : []),
-      ...(trimmedMessages || messages),
-    ];
-
-    const requestPayload = {
-      model: "gpt-5",
-      messages: messagesWithContext,
-      stream: true,
-    };
-    const payloadJson = JSON.stringify(requestPayload);
-    console.log(`[orchestrator] Sending to AI. Agents: ${classification.agents.join(',')}. Context: ${systemPrompt.length} chars. RAG chunks: project=${ragChunkCount}, textbook=${ragResult?.chunkCount || 0}`);
-
-    const callAI = () => fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: payloadJson,
-    });
-
-    let response = await callAI();
-
-    // 1 retry on transient 500
-    if (!response.ok && response.status === 500) {
-      await response.text();
-      await new Promise(r => setTimeout(r, 500));
-      response = await callAI();
+    // System prompt is cached (stable within a session/project; volatile user messages go last).
+    // On Opus 4.7 the minimum cacheable prefix is 4096 tokens — below that it silently won't cache.
+    const anthropicMessages: Array<{ role: "user" | "assistant"; content: string }> = [];
+    if (ragResult) {
+      anthropicMessages.push({
+        role: "user",
+        content: `### Retrieved References (summarize concepts, do not quote verbatim or cite source names):\n\n${ragResult.context}\n\n---\nThe above reference material is for your reasoning only. Use it to inform your analysis but express ideas in your own words. Do not mention or cite any source, author, or textbook by name. Now answer the user's question below.`,
+      });
+    }
+    for (const m of (trimmedMessages || messages) as Array<{ role: string; content: string }>) {
+      anthropicMessages.push({
+        role: m.role === "assistant" ? "assistant" : "user",
+        content: m.content,
+      });
     }
 
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error("[orchestrator] OpenAI error:", response.status, errText, "| Key prefix:", OPENAI_API_KEY.substring(0, 8));
+    console.log(`[orchestrator] Sending to Anthropic. Agents: ${classification.agents.join(',')}. System: ${systemPrompt.length} chars. RAG chunks: project=${ragChunkCount}, textbook=${ragResult?.chunkCount || 0}`);
 
-      if (response.status === 429) {
+    const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+    const anthropicStream = anthropic.messages.stream({
+      model: "claude-opus-4-7",
+      max_tokens: 16384,
+      thinking: { type: "adaptive" },
+      system: [
+        { type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } },
+      ],
+      messages: anthropicMessages,
+    });
+
+    // Peek at the first event so pre-stream errors (auth, 400, 429) return a clean JSON error
+    // before we commit to an SSE response.
+    const iterator = anthropicStream[Symbol.asyncIterator]();
+    let firstEvent: IteratorResult<Anthropic.Messages.MessageStreamEvent>;
+    try {
+      firstEvent = await iterator.next();
+    } catch (error) {
+      console.error("[orchestrator] Anthropic init error:", error);
+      if (error instanceof Anthropic.RateLimitError) {
         return new Response(
           JSON.stringify({ error: "Rate limit exceeded. Please try again later." }),
           { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-      if (response.status === 402) {
+      if (error instanceof Anthropic.APIError && error.status === 529) {
+        return new Response(
+          JSON.stringify({ error: "Service overloaded. Please try again shortly." }),
+          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      if (error instanceof Anthropic.APIError && /credit|billing/i.test(error.message || "")) {
         return new Response(
           JSON.stringify({ error: "Usage limit reached. Please add credits to continue." }),
           { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-
       return new Response(
         JSON.stringify({ error: "AI service error" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    console.log(`[orchestrator] Streaming response from OpenAI`);
-    return new Response(response.body, {
+    // Translate Anthropic SSE → OpenAI-shape SSE so existing client parsers in AIChatPanel/AIAnalyst stay unchanged.
+    const encoder = new TextEncoder();
+    const translatedStream = new ReadableStream({
+      async start(controller) {
+        const emitTextDelta = (text: string) => {
+          const payload = JSON.stringify({ choices: [{ delta: { content: text } }] });
+          controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
+        };
+        const handleEvent = (event: Anthropic.Messages.MessageStreamEvent): boolean => {
+          if (event.type === "message_start") {
+            const usage = event.message?.usage;
+            if (usage) {
+              console.log(`[orchestrator] Cache: read=${usage.cache_read_input_tokens ?? 0}, created=${usage.cache_creation_input_tokens ?? 0}, input=${usage.input_tokens ?? 0}`);
+            }
+          } else if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+            emitTextDelta(event.delta.text);
+          } else if (event.type === "message_stop") {
+            return true; // terminal
+          }
+          return false;
+        };
+
+        try {
+          if (!firstEvent.done && handleEvent(firstEvent.value)) {
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            controller.close();
+            return;
+          }
+          let next = await iterator.next();
+          while (!next.done) {
+            if (handleEvent(next.value)) {
+              controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+              controller.close();
+              return;
+            }
+            next = await iterator.next();
+          }
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+        } catch (error) {
+          console.error("[orchestrator] Anthropic stream error mid-flight:", error);
+          controller.error(error);
+        }
+      },
+    });
+
+    console.log(`[orchestrator] Streaming response from Anthropic`);
+    return new Response(translatedStream, {
       headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
     });
   } catch (error) {
