@@ -230,13 +230,12 @@ const TOKEN_BUDGET = 20000;
 
 async function retrieveProjectData(
   projectId: string,
-  userQuery: string,
   agents: AgentType[],
-  openaiKey: string
+  queryEmbedding: number[] | null
 ): Promise<{ dataContext: string; chunkCount: number; tokenCount: number }> {
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
   const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !projectId) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !projectId || !queryEmbedding) {
     return { dataContext: '', chunkCount: 0, tokenCount: 0 };
   }
 
@@ -252,27 +251,13 @@ async function retrieveProjectData(
   }
 
   try {
-    // Embed user query
-    const embeddingRes = await fetch("https://api.openai.com/v1/embeddings", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "text-embedding-3-small", input: userQuery }),
-    });
-    if (!embeddingRes.ok) {
-      console.error("[project-rag] Embedding error:", embeddingRes.status);
-      return { dataContext: '', chunkCount: 0, tokenCount: 0 };
-    }
-
-    const embeddingData = await embeddingRes.json();
-    const queryEmbedding = embeddingData.data[0].embedding;
-
     // Call match_project_chunks RPC
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-    console.log(`[project-rag] Embedding generated: ${queryEmbedding?.length} dimensions, querying ${dataTypeFilter.join(', ')}`);
+    console.log(`[project-rag] Querying ${dataTypeFilter.length} data types: ${dataTypeFilter.join(', ')}`);
     const { data: chunks, error } = await supabase.rpc('match_project_chunks', {
       _project_id: projectId,
       query_embedding: JSON.stringify(queryEmbedding),  // String serialization — PostgREST casts reliably to vector
-      match_threshold: 0.55, // slightly lower than default to get more recall
+      match_threshold: 0.35, // question→data content typically scores 0.35-0.50 with text-embedding-3-small
       match_count: 25,       // fetch more, then trim by token budget
       data_type_filter: dataTypeFilter,
     });
@@ -628,23 +613,15 @@ function determineChunkCount(query: string): number {
 
 async function getRelevantContext(
   query: string,
+  queryEmbedding: number[] | null,
   options: { sources?: string[]; minAuthority?: number; topics?: string[] } = {}
 ): Promise<{ context: string; sources: string[]; chunkCount: number } | null> {
+  if (!queryEmbedding) return null;
   try {
-    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    if (!OPENAI_API_KEY || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;
 
-    const embeddingRes = await fetch("https://api.openai.com/v1/embeddings", {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "text-embedding-3-small", input: query }),
-    });
-    if (!embeddingRes.ok) { console.error("Embedding error:", embeddingRes.status); return null; }
-
-    const embeddingData = await embeddingRes.json();
-    const queryEmbedding = embeddingData.data[0].embedding;
     const matchCount = determineChunkCount(query);
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -740,8 +717,26 @@ serve(async (req) => {
     console.log(`[orchestrator] Classification: ${classification.agents.join(', ')} — ${classification.reasoning}`);
 
     // === STEP 2: Retrieve project data via RAG ===
-    const isEducationOnly = classification.agents.length === 1 && classification.agents[0] === 'education';
     const dataAgents = classification.agents.filter(a => a !== 'education');
+
+    // Embed the user query once; shared across project-RAG + textbook-RAG.
+    let queryEmbedding: number[] | null = null;
+    try {
+      const embeddingRes = await fetch("https://api.openai.com/v1/embeddings", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "text-embedding-3-small", input: userMessage }),
+      });
+      if (embeddingRes.ok) {
+        const embData = await embeddingRes.json();
+        queryEmbedding = embData.data[0].embedding;
+        console.log(`[embedding] Generated: ${queryEmbedding?.length} dimensions`);
+      } else {
+        console.error("[embedding] Error:", embeddingRes.status);
+      }
+    } catch (err) {
+      console.error("[embedding] Error:", err);
+    }
 
     let ragDataContext = '';
     let ragChunkCount = 0;
@@ -750,9 +745,8 @@ serve(async (req) => {
     if (dataAgents.length > 0 && projectInfo?.id) {
       const ragResult = await retrieveProjectData(
         projectInfo.id,
-        userMessage,
         dataAgents,
-        OPENAI_API_KEY
+        queryEmbedding,
       );
       ragDataContext = ragResult.dataContext;
       ragChunkCount = ragResult.chunkCount;
@@ -971,8 +965,9 @@ ${RESPONSE_CONTRACT}
 You have expertise across: EBITDA adjustments, cash flow analysis, and risk assessment. Focus on the aspects most relevant to the user's question.`;
     }
 
-    // === STEP 3: Textbook RAG — only for education-only queries ===
-    const ragResult = isEducationOnly ? await getRelevantContext(userMessage) : null;
+    // === STEP 3: Textbook RAG — always run; methodology grounding helps analytical answers too.
+    // Prompt instruction below tells the model not to cite sources by name.
+    const ragResult = await getRelevantContext(userMessage, queryEmbedding);
 
     // === STEP 4: Build messages and stream response ===
     // System prompt is cached (stable within a session/project; volatile user messages go last).
