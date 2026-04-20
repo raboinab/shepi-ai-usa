@@ -8,7 +8,7 @@ import ShepiLogo from "@/components/ShepiLogo";
 import { useSubscription } from "@/hooks/useSubscription";
 
 const PaymentSuccess = () => {
-  useSEO({ title: "Payment Successful — shepi", noindex: true });
+  const __seoTags = useSEO({ title: "Payment Successful — shepi", noindex: true });
 
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
