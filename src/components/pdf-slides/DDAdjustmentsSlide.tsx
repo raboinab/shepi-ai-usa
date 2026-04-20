@@ -1,150 +1,188 @@
 /**
- * DD Adjustments slide — renders a table of all due-diligence adjustments.
- * Filters out zero/empty placeholder rows. Includes verification status.
+ * DD Adjustments slide — ranked-card list with amount badges.
+ * Replaces the dense 6-column table with scannable, deal-commentary cards.
  */
 import { PDF_COLORS, PDF_FONTS } from "@/lib/pdf/theme";
 import type { SlideProps } from "@/lib/pdf/reportTypes";
 import { SlideLayout } from "./SlideLayout";
-import { SlideTable } from "./shared/SlideTable";
+import { normalizeAdjustments, formatCompactCurrency, type RawAdjustmentInput } from "@/lib/pdf/exportNormalize";
 
-interface AdjustmentRow {
-  title: string;
-  description?: string;
-  block?: string;
-  adjustmentClass?: string;
-  amount?: number;
-  status?: string;
-  verificationStatus?: string;
-  verificationScore?: number | null;
-  matchCount?: number;
-  redFlagCount?: number;
-}
+const BLOCK_TONE: Record<string, string> = {
+  MA: PDF_COLORS.gold,
+  DD: PDF_COLORS.teal,
+  PF: PDF_COLORS.midBlue,
+};
+
+const VERIFICATION_TONE: Record<string, string> = {
+  validated: "#27ae60",
+  supported: "#27ae60",
+  partial: "#e67e22",
+  insufficient: "#c0392b",
+  contradictory: "#c0392b",
+  pending: PDF_COLORS.midGray,
+};
 
 export function DDAdjustmentsSlide({ metadata, pageNumber, totalPages, data }: SlideProps) {
-  const rawAdjustments = (data?.adjustments as AdjustmentRow[]) || [];
+  const raw = (data?.adjustments as RawAdjustmentInput[]) || [];
+  const all = normalizeAdjustments(raw);
+  const display = all.slice(0, 9);
+  const remaining = all.length - display.length;
 
-  // Filter out placeholder/empty adjustments
-  const adjustments = rawAdjustments.filter((a) => {
-    const hasAmount = a.amount !== undefined && a.amount !== null && a.amount !== 0;
-    const hasDescription = !!(a.description && a.description.trim());
-    const hasTitle = !!(a.title && a.title.trim() && !a.title.match(/^[0-9a-f]{8}-/i)); // not a UUID
-    return hasAmount || (hasDescription && hasTitle);
-  });
-
-  const columns = [
-    { key: "title", label: "Adjustment", align: "left" as const, width: "30%" },
-    { key: "block", label: "Block", align: "center" as const, width: "8%" },
-    { key: "adjustmentClass", label: "Category", align: "center" as const, width: "12%" },
-    { key: "description", label: "Description", align: "left" as const, width: "22%" },
-    { key: "verification", label: "Verified", align: "center" as const, width: "13%" },
-    { key: "amount", label: "Amount ($)", align: "right" as const, width: "15%" },
-  ];
-
-  const blockLabel = (b: string) => {
-    if (b === "MA") return "Mgmt";
-    if (b === "DD") return "DD";
-    if (b === "PF") return "Pro Forma";
-    return b;
-  };
-
-  const classLabel = (c: string) => {
-    if (!c) return "—";
-    return c.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
-  };
-
-  const formatAmount = (v: number | undefined) => {
-    if (v === undefined || v === null) return "—";
-    const abs = Math.abs(v);
-    const formatted = abs >= 1000
-      ? abs.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })
-      : abs.toLocaleString("en-US");
-    return v < 0 ? `(${formatted})` : formatted;
-  };
-
-  const STATUS_LABELS: Record<string, string> = {
-    validated: "Validated",
-    supported: "Supported",
-    partial: "Partial",
-    insufficient: "Insufficient",
-    contradictory: "Contradictory",
-  };
-
-  const formatVerification = (a: AdjustmentRow) => {
-    if (!a.verificationStatus || a.verificationStatus === "pending") return "—";
-    const label = STATUS_LABELS[a.verificationStatus] ?? a.verificationStatus;
-    if (a.verificationScore != null) return `${label} (${a.verificationScore})`;
-    return label;
-  };
-
-  const displayRows = adjustments.slice(0, 15);
-  const totalAmount = adjustments.reduce((sum, a) => sum + (a.amount || 0), 0);
-
-  // Compute aggregate verification stats for footnote
-  const verifiedCount = adjustments.filter(a => a.verificationStatus && a.verificationStatus !== "pending").length;
-  const totalMatches = adjustments.reduce((s, a) => s + (a.matchCount || 0), 0);
-  const totalFlags = adjustments.reduce((s, a) => s + (a.redFlagCount || 0), 0);
-
-  const tableRows = [
-    ...displayRows.map((a) => ({
-      cells: {
-        title: a.title.match(/^[0-9a-f]{8}-/i) ? "Untitled Adjustment" : a.title,
-        block: blockLabel(a.block || ""),
-        adjustmentClass: classLabel(a.adjustmentClass || ""),
-        description: (a.description || "").substring(0, 50) + ((a.description || "").length > 50 ? "…" : ""),
-        verification: formatVerification(a),
-        amount: formatAmount(a.amount),
-      },
-    })),
-    ...(adjustments.length > 15
-      ? [{ cells: { title: `… and ${adjustments.length - 15} more`, block: "", adjustmentClass: "", description: "", verification: "", amount: "" }, indent: 1 }]
-      : []),
-    ...(adjustments.length > 0
-      ? [
-          { separator: true, cells: {} },
-          {
-            cells: {
-              title: "Total Net Adjustment Impact",
-              block: "",
-              adjustmentClass: "",
-              description: "",
-              verification: "",
-              amount: formatAmount(totalAmount),
-            },
-            bold: true,
-            highlight: true,
-          },
-        ]
-      : []),
-  ];
+  const totalAmount = all.reduce((s, a) => s + (a.amount || 0), 0);
+  const verifiedCount = all.filter(a => a.verificationStatus && a.verificationStatus !== "pending").length;
 
   return (
     <SlideLayout metadata={metadata} pageNumber={pageNumber} totalPages={totalPages} sectionTitle="DD Adjustments">
       <div style={{ fontFamily: PDF_FONTS.body }}>
-        <div style={{ fontSize: 32, fontWeight: 700, color: PDF_COLORS.darkBlue, marginBottom: 8 }}>
+        {/* Heading */}
+        <div style={{ fontSize: 32, fontWeight: 700, color: PDF_COLORS.darkBlue, marginBottom: 6 }}>
           Due Diligence Adjustments
         </div>
-        <div style={{ width: 60, height: 4, backgroundColor: PDF_COLORS.midBlue, marginBottom: 24 }} />
+        <div style={{ width: 60, height: 4, backgroundColor: PDF_COLORS.teal, marginBottom: 14 }} />
 
-        {adjustments.length === 0 ? (
-          <div style={{ fontSize: 18, color: PDF_COLORS.midGray, marginTop: 40 }}>
+        {/* Summary band */}
+        <div
+          style={{
+            display: "flex",
+            gap: 16,
+            marginBottom: 22,
+            padding: "14px 20px",
+            backgroundColor: PDF_COLORS.darkBlue,
+            color: PDF_COLORS.white,
+            borderRadius: 6,
+          }}
+        >
+          <SummaryStat label="Adjustments" value={String(all.length)} />
+          <Divider />
+          <SummaryStat label="Net Impact" value={formatCompactCurrency(totalAmount)} />
+          <Divider />
+          <SummaryStat label="Verified" value={`${verifiedCount} / ${all.length}`} />
+        </div>
+
+        {all.length === 0 ? (
+          <div style={{ fontSize: 16, color: PDF_COLORS.midGray, marginTop: 30 }}>
             No adjustments have been recorded for this engagement.
           </div>
         ) : (
-          <>
-            <div style={{ fontSize: 14, color: PDF_COLORS.midGray, marginBottom: 16 }}>
-              {adjustments.length} adjustment{adjustments.length !== 1 ? "s" : ""} identified across Management, Due Diligence, and Pro Forma categories.
-            </div>
-            <SlideTable columns={columns} rows={tableRows} compact />
-            {verifiedCount > 0 && (
-              <div style={{ fontSize: 11, color: PDF_COLORS.midGray, marginTop: 12, fontStyle: "italic" }}>
-                {verifiedCount} of {adjustments.length} adjustment{adjustments.length !== 1 ? "s" : ""} verified
-                {totalMatches > 0 ? ` · ${totalMatches} supporting transaction${totalMatches !== 1 ? "s" : ""} matched` : ""}
-                {totalFlags > 0 ? ` · ${totalFlags} red flag${totalFlags !== 1 ? "s" : ""} identified` : ""}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {display.map((adj, idx) => {
+              const tone = BLOCK_TONE[adj.block] || PDF_COLORS.teal;
+              const isNeg = adj.amount < 0;
+              const vTone = adj.verificationStatus ? VERIFICATION_TONE[adj.verificationStatus] : null;
+              return (
+                <div
+                  key={idx}
+                  style={{
+                    display: "flex",
+                    backgroundColor: "#FAFAF7",
+                    border: `1px solid ${PDF_COLORS.lightGray}`,
+                    borderRadius: 6,
+                    overflow: "hidden",
+                  }}
+                >
+                  {/* Block tone stripe */}
+                  <div style={{ width: 6, backgroundColor: tone, flexShrink: 0 }} />
+
+                  {/* Body */}
+                  <div style={{ flex: 1, padding: "12px 18px", display: "flex", alignItems: "center", gap: 16 }}>
+                    {/* Left: title + reason */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: adj.reason ? 4 : 0 }}>
+                        <div
+                          style={{
+                            fontSize: 15,
+                            fontWeight: 700,
+                            color: PDF_COLORS.darkBlue,
+                            lineHeight: 1.25,
+                          }}
+                        >
+                          {adj.title}
+                        </div>
+                        <Tag color={tone}>{adj.blockLabel}</Tag>
+                        {adj.category && adj.category !== "—" && (
+                          <Tag color={PDF_COLORS.midGray} subtle>{adj.category}</Tag>
+                        )}
+                        {vTone && adj.verificationLabel && (
+                          <Tag color={vTone} subtle>{adj.verificationLabel}</Tag>
+                        )}
+                      </div>
+                      {adj.reason && (
+                        <div style={{ fontSize: 12, color: PDF_COLORS.midGray, lineHeight: 1.4 }}>
+                          {adj.reason}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Right: amount badge */}
+                    <div
+                      style={{
+                        fontSize: 18,
+                        fontWeight: 700,
+                        color: isNeg ? "#c0392b" : PDF_COLORS.darkBlue,
+                        whiteSpace: "nowrap",
+                        textAlign: "right",
+                        minWidth: 110,
+                      }}
+                    >
+                      {formatCompactCurrency(adj.amount)}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {remaining > 0 && (
+              <div
+                style={{
+                  fontSize: 12,
+                  color: PDF_COLORS.midGray,
+                  fontStyle: "italic",
+                  textAlign: "center",
+                  paddingTop: 4,
+                }}
+              >
+                … and {remaining} additional adjustment{remaining !== 1 ? "s" : ""} detailed in the workbook.
               </div>
             )}
-          </>
+          </div>
         )}
       </div>
     </SlideLayout>
+  );
+}
+
+function SummaryStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ flex: 1 }}>
+      <div style={{ fontSize: 11, color: PDF_COLORS.lightGray, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 22, fontWeight: 700, color: PDF_COLORS.white }}>{value}</div>
+    </div>
+  );
+}
+
+function Divider() {
+  return <div style={{ width: 1, backgroundColor: "rgba(255,255,255,0.2)" }} />;
+}
+
+function Tag({ children, color, subtle }: { children: React.ReactNode; color: string; subtle?: boolean }) {
+  return (
+    <span
+      style={{
+        fontSize: 9,
+        fontWeight: 700,
+        textTransform: "uppercase",
+        letterSpacing: "0.5px",
+        padding: "2px 7px",
+        borderRadius: 3,
+        color: subtle ? color : PDF_COLORS.white,
+        backgroundColor: subtle ? "transparent" : color,
+        border: subtle ? `1px solid ${color}` : "none",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {children}
+    </span>
   );
 }

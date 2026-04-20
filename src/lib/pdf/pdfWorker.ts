@@ -401,32 +401,59 @@ function addAttentionAreasPage(doc: PDFDocument, font: PDFFont, boldFont: PDFFon
 
   let y = CONTENT_Y_TOP - 4;
   page.drawText("Key Findings & Risk Assessment", { x: PAD, y, size: 14, font: boldFont, color: C.darkBlue });
-  y -= 28;
+  y -= 8;
+  page.drawRectangle({ x: PAD, y: y - 3, width: 36, height: 2.5, color: C.teal });
+  y -= 18;
+
+  const sevMeta: Record<string, { color: ReturnType<typeof rgb>; label: string }> = {
+    high:   { color: C.red,   label: "HIGH PRIORITY" },
+    medium: { color: C.amber, label: "MEDIUM PRIORITY" },
+    low:    { color: C.green, label: "LOW PRIORITY" },
+    info:   { color: C.teal,  label: "INFORMATIONAL" },
+  };
 
   for (const item of items.slice(0, 6)) {
-    if (y < CONTENT_Y_BOT + 60) break;
-    const cardH = 60;
+    if (y < CONTENT_Y_BOT + 78) break;
+    const cardH = 78;
     page.drawRectangle({ x: PAD, y: y - cardH, width: CONTENT_W, height: cardH, color: C.offWhite });
-    const sevColor = item.severity === "high" ? C.red : item.severity === "medium" ? C.amber : C.green;
-    page.drawRectangle({ x: PAD, y: y - cardH, width: 4, height: cardH, color: sevColor });
+    page.drawRectangle({ x: PAD, y: y - cardH, width: CONTENT_W, height: 0.5, color: C.lightGray });
+    const sev = sevMeta[item.severity || "medium"] || sevMeta.medium;
+    page.drawRectangle({ x: PAD, y: y - cardH, width: 5, height: cardH, color: sev.color });
 
-    page.drawText(truncate(stripMd(item.title), 90), {
-      x: PAD + 12, y: y - 14, size: 9, font: boldFont, color: C.darkBlue,
+    const titleX = PAD + 14;
+    const innerW = CONTENT_W - 14 - 8;
+
+    // Reserve right column for impact + severity tag
+    const hasImpact = !!(item.ebitdaImpact && item.ebitdaImpact !== 0);
+    const rightColW = 130;
+    const titleW = innerW - rightColW;
+
+    page.drawText(truncate(stripMd(item.title), 80), {
+      x: titleX, y: y - 16, size: 11, font: boldFont, color: C.darkBlue, maxWidth: titleW,
     });
+
+    if (hasImpact) {
+      const impactStr = `EBITDA ${item.ebitdaImpact! < 0 ? "v" : "^"} ${fmtCurrency(item.ebitdaImpact)}`;
+      const impactColor = item.ebitdaImpact! < 0 ? C.red : C.teal;
+      page.drawText(impactStr, {
+        x: PW - PAD - rightColW, y: y - 16, size: 9, font: boldFont, color: impactColor,
+      });
+    }
+
+    page.drawText(sev.label, {
+      x: PW - PAD - rightColW, y: y - 30, size: 7, font: boldFont, color: sev.color,
+    });
+
     const desc = item.rationale || item.description || "";
     if (desc) {
-      page.drawText(truncate(stripMd(desc), 120), {
-        x: PAD + 12, y: y - 28, size: 7.5, font, color: C.darkGray,
+      const lines = wrapTextLines(stripMd(desc), 100, 2);
+      lines.forEach((ln, i) => {
+        page.drawText(ln, { x: titleX, y: y - 32 - i * 11, size: 8, font, color: C.darkGray });
       });
     }
     if (item.followUp) {
-      page.drawText(`-> ${truncate(stripMd(item.followUp), 100)}`, {
-        x: PAD + 12, y: y - 42, size: 7, font, color: C.midGray,
-      });
-    }
-    if (item.ebitdaImpact && item.ebitdaImpact !== 0) {
-      page.drawText(`EBITDA Impact: ${fmtCurrency(item.ebitdaImpact)}`, {
-        x: PW - PAD - 120, y: y - 14, size: 8, font: boldFont, color: C.teal,
+      page.drawText(`Next: ${truncate(stripMd(item.followUp), 105)}`, {
+        x: titleX, y: y - 64, size: 7.5, font, color: C.midGray,
       });
     }
 
@@ -434,6 +461,27 @@ function addAttentionAreasPage(doc: PDFDocument, font: PDFFont, boldFont: PDFFon
   }
 
   return page;
+}
+
+/** Soft text-wrap helper for pdf-lib (char-budget based, deliberately conservative). */
+function wrapTextLines(s: string, maxChars: number, maxLines: number): string[] {
+  const words = s.split(/\s+/);
+  const lines: string[] = [];
+  let cur = "";
+  for (const w of words) {
+    if ((cur + " " + w).trim().length > maxChars) {
+      if (cur) lines.push(cur);
+      cur = w;
+      if (lines.length >= maxLines) break;
+    } else {
+      cur = (cur ? cur + " " : "") + w;
+    }
+  }
+  if (cur && lines.length < maxLines) lines.push(cur);
+  if (lines.length === maxLines && words.join(" ").length > lines.join(" ").length) {
+    lines[maxLines - 1] = lines[maxLines - 1].replace(/[\s,;:.\-]+$/, "") + "...";
+  }
+  return lines;
 }
 
 function addExecSummaryPage(doc: PDFDocument, font: PDFFont, boldFont: PDFFont, meta: ReportMeta,
@@ -485,32 +533,78 @@ function addDDAdjustmentsPage(doc: PDFDocument, font: PDFFont, boldFont: PDFFont
 
   let y = CONTENT_Y_TOP - 4;
   page.drawText("Due Diligence Adjustments", { x: PAD, y, size: 14, font: boldFont, color: C.darkBlue });
-  y -= 24;
-
-  const colWidths = [300, 80, 100, CONTENT_W - 480];
-  const headers = ["Adjustment", "Block", "Amount", "Description"];
-  page.drawRectangle({ x: PAD, y: y - 14, width: CONTENT_W, height: 14, color: C.darkBlue });
-  let hx = PAD + 4;
-  headers.forEach((h, i) => {
-    page.drawText(h, { x: hx, y: y - 11, size: 7, font: boldFont, color: C.white });
-    hx += colWidths[i];
-  });
+  y -= 8;
+  page.drawRectangle({ x: PAD, y: y - 3, width: 36, height: 2.5, color: C.teal });
   y -= 18;
 
-  for (const adj of adjustments.slice(0, 20)) {
-    if (y < CONTENT_Y_BOT + 16) break;
-    if (Math.floor(adjustments.indexOf(adj) / 1) % 2 === 1) {
-      page.drawRectangle({ x: PAD, y: y - 13, width: CONTENT_W, height: 13, color: C.offWhite });
+  // Sort by absolute amount, descending
+  const sorted = [...adjustments].sort((a, b) => Math.abs(b.amount || 0) - Math.abs(a.amount || 0));
+  const total = sorted.reduce((s, a) => s + (a.amount || 0), 0);
+  const verifiedCount = sorted.filter(a => a.verificationStatus && a.verificationStatus !== "pending").length;
+
+  // Summary band
+  const bandH = 36;
+  page.drawRectangle({ x: PAD, y: y - bandH, width: CONTENT_W, height: bandH, color: C.darkBlue });
+  const stats = [
+    { label: "ADJUSTMENTS", value: String(sorted.length) },
+    { label: "NET IMPACT", value: fmtCurrency(total) },
+    { label: "VERIFIED", value: `${verifiedCount} / ${sorted.length}` },
+  ];
+  const statW = CONTENT_W / stats.length;
+  stats.forEach((st, i) => {
+    const sx = PAD + i * statW + 12;
+    page.drawText(st.label, { x: sx, y: y - 13, size: 6.5, font, color: C.lightGray });
+    page.drawText(safeText(st.value), { x: sx, y: y - 28, size: 12, font: boldFont, color: C.white });
+  });
+  y -= bandH + 12;
+
+  const blockTone: Record<string, ReturnType<typeof rgb>> = {
+    MA: C.gold, DD: C.teal, PF: C.midBlue,
+  };
+
+  for (const adj of sorted.slice(0, 9)) {
+    if (y < CONTENT_Y_BOT + 38) break;
+    const cardH = 38;
+    page.drawRectangle({ x: PAD, y: y - cardH, width: CONTENT_W, height: cardH, color: C.offWhite });
+    const tone = blockTone[(adj.block || "DD").toUpperCase()] || C.teal;
+    page.drawRectangle({ x: PAD, y: y - cardH, width: 4, height: cardH, color: tone });
+
+    const titleX = PAD + 12;
+    const amountW = 90;
+    const titleW = CONTENT_W - 12 - amountW - 12;
+
+    page.drawText(truncate(stripMd(adj.title), 70), {
+      x: titleX, y: y - 14, size: 10, font: boldFont, color: C.darkBlue, maxWidth: titleW,
+    });
+
+    // Block + category meta line
+    const metaParts: string[] = [(adj.block || "DD").toUpperCase()];
+    if (adj.adjustmentClass) metaParts.push(adj.adjustmentClass.replace(/[_-]+/g, " "));
+    if (adj.verificationStatus && adj.verificationStatus !== "pending") metaParts.push(adj.verificationStatus.toUpperCase());
+    page.drawText(safeText(metaParts.join("  ·  ")), {
+      x: titleX, y: y - 28, size: 7, font, color: C.midGray,
+    });
+
+    // Reason (if any)
+    if (adj.description) {
+      page.drawText(truncate(stripMd(adj.description), 70), {
+        x: titleX + 220, y: y - 28, size: 7, font, color: C.darkGray, maxWidth: titleW - 220,
+      });
     }
-    let cx = PAD + 4;
-    page.drawText(truncate(stripMd(adj.title), 55), { x: cx, y: y - 10, size: 7, font, color: C.darkGray });
-    cx += colWidths[0];
-    page.drawText(safeText((adj.block || "DD").toUpperCase()), { x: cx, y: y - 10, size: 7, font, color: C.midGray });
-    cx += colWidths[1];
-    page.drawText(fmtCurrency(adj.amount), { x: cx, y: y - 10, size: 7, font: boldFont, color: C.darkBlue });
-    cx += colWidths[2];
-    page.drawText(truncate(stripMd(adj.description || ""), 50), { x: cx, y: y - 10, size: 6.5, font, color: C.midGray });
-    y -= 14;
+
+    // Amount badge
+    const isNeg = (adj.amount || 0) < 0;
+    page.drawText(fmtCurrency(adj.amount), {
+      x: PW - PAD - amountW, y: y - 22, size: 13, font: boldFont, color: isNeg ? C.red : C.darkBlue,
+    });
+
+    y -= cardH + 6;
+  }
+
+  if (sorted.length > 9 && y > CONTENT_Y_BOT + 14) {
+    page.drawText(`... and ${sorted.length - 9} additional adjustment(s) detailed in the workbook.`, {
+      x: PAD, y: y - 8, size: 8, font, color: C.midGray,
+    });
   }
 
   return page;

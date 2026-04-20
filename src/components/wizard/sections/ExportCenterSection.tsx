@@ -8,6 +8,7 @@ import { getExportReadiness } from "@/lib/dataCompleteness";
 import { exportWorkbookXlsx } from "@/lib/exportWorkbookXlsx";
 import { buildClientPDF } from "@/lib/pdf/buildClientPDF";
 import type { PDFReportData, ReportMeta, AttentionItem, ExecSummary, DDAdjustment, FinancialRatio, FlaggedItem, GLFinding, CIMInsights } from "@/lib/pdf/pdfWorker";
+import { normalizeAttentionItems, type RawAttentionInput } from "@/lib/pdf/exportNormalize";
 import type { WizardReportData } from "@/lib/wizardReportBuilder";
 import type { DealData } from "@/lib/workbook-types";
 import type { GridData } from "@/lib/workbook-types";
@@ -277,7 +278,7 @@ export const ExportCenterSection = ({ data, updateData, wizardData, projectId, p
       toast.info("Generating PDF report...", { description: "Building in the background — you can keep working." });
 
       // Fetch supplementary data from DB in parallel
-      let attentionItems: AttentionItem[] = [];
+      const rawAttention: RawAttentionInput[] = [];
       let flaggedItems: FlaggedItem[] = [];
       let glFindings: GLFinding[] = [];
       let jeFindings: GLFinding[] = [];
@@ -411,44 +412,36 @@ export const ExportCenterSection = ({ data, updateData, wizardData, projectId, p
 
         for (const h of hypotheses || []) {
           const cat = (h.category || "").toLowerCase();
-          attentionItems.push({
+          rawAttention.push({
             title: stripMd(h.hypothesis_claim || h.category || "Finding"),
-            severity: h.severity === "high" ? "high" : h.severity === "medium" ? "medium" : "low",
+            severity: h.severity,
             ebitdaImpact: h.estimated_ebitda_impact ?? undefined,
-            rationale: categoryRationale[cat] || "This finding may affect reported EBITDA and warrants further analysis.",
+            rationale: categoryRationale[cat] || "",
             followUp: "Validate with supporting documentation and confirm with management.",
           });
         }
 
-        // Inject persisted WIP analysis findings (sorted by severity then |impact|)
+        // Inject persisted WIP analysis findings
         const wipFindings = dealData?.wipAnalysis?.findings ?? [];
-        const sevRank: Record<string, number> = { high: 0, medium: 1, low: 2 };
-        const sortedWip = [...wipFindings].sort((a, b) => {
-          const s = (sevRank[a.severity] ?? 3) - (sevRank[b.severity] ?? 3);
-          return s !== 0 ? s : Math.abs(b.estimatedImpact || 0) - Math.abs(a.estimatedImpact || 0);
-        });
-        for (const w of sortedWip) {
-          if (attentionItems.length >= 6) break;
-          attentionItems.push({
+        for (const w of wipFindings) {
+          rawAttention.push({
             title: stripMd(w.title),
             severity: w.severity,
             ebitdaImpact: w.estimatedImpact || undefined,
-            rationale: stripMd(w.narrative).substring(0, 200),
+            rationale: stripMd(w.narrative),
             followUp: "Confirm with project controller and reconcile to mapped TB balances.",
           });
         }
 
         for (const p of proposals || []) {
-          if (attentionItems.length >= 6) break;
           const block = (p.block || "").toLowerCase();
           const cleanedDesc = cleanProposalDescription(p.description || "");
-          const narrativeDesc = cleanedDesc || `Adjustment identified for review: ${stripMd(p.title)}`;
-          attentionItems.push({
+          rawAttention.push({
             title: stripMd(p.title),
-            description: narrativeDesc.substring(0, 140),
-            rationale: narrativeDesc.substring(0, 140),
-            followUp: blockFollowUp[block] || "Review supporting detail and confirm adjustment basis.",
-            severity: p.review_priority === "high" ? "high" : p.review_priority === "low" ? "low" : "medium",
+            description: cleanedDesc,
+            rationale: cleanedDesc,
+            followUp: blockFollowUp[block] || "",
+            severity: p.review_priority,
           });
         }
 
@@ -506,6 +499,7 @@ export const ExportCenterSection = ({ data, updateData, wizardData, projectId, p
 
       // Build report data payload
       const enrichedAdjustments = buildDDAdjustments(dealData, proofMap, proposalMap, evidenceByProposal);
+      const attentionItems = normalizeAttentionItems(rawAttention, 6) as unknown as AttentionItem[];
       const reportData: PDFReportData = {
         metadata,
         attentionItems: attentionItems.length > 0 ? attentionItems : undefined,

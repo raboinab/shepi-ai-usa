@@ -2617,45 +2617,25 @@ export type Database = {
         }
         Returns: boolean
       }
-      match_project_chunks:
-        | {
-            Args: {
-              _project_id: string
-              data_type_filter?: string[]
-              match_count?: number
-              match_threshold?: number
-              query_embedding: string
-            }
-            Returns: {
-              content: string
-              data_type: string
-              fs_section: string
-              id: string
-              metadata: Json
-              period: string
-              similarity: number
-              token_count: number
-            }[]
-          }
-        | {
-            Args: {
-              _project_id: string
-              data_type_filter?: string[]
-              match_count?: number
-              match_threshold?: number
-              query_embedding: string
-            }
-            Returns: {
-              content: string
-              data_type: string
-              fs_section: string
-              id: string
-              metadata: Json
-              period: string
-              similarity: number
-              token_count: number
-            }[]
-          }
+      match_project_chunks: {
+        Args: {
+          _project_id: string
+          data_type_filter?: string[]
+          match_count?: number
+          match_threshold?: number
+          query_embedding: string
+        }
+        Returns: {
+          content: string
+          data_type: string
+          fs_section: string
+          id: string
+          metadata: Json
+          period: string
+          similarity: number
+          token_count: number
+        }[]
+      }
       match_rag_chunks: {
         Args: {
           match_count?: number
