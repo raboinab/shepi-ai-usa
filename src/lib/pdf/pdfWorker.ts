@@ -446,7 +446,7 @@ function addAttentionAreasPage(doc: PDFDocument, font: PDFFont, boldFont: PDFFon
 
     const desc = item.rationale || item.description || "";
     if (desc) {
-      const lines = wrapText(stripMd(desc), 100, 2);
+      const lines = wrapTextLines(stripMd(desc), 100, 2);
       lines.forEach((ln, i) => {
         page.drawText(ln, { x: titleX, y: y - 32 - i * 11, size: 8, font, color: C.darkGray });
       });
@@ -464,7 +464,7 @@ function addAttentionAreasPage(doc: PDFDocument, font: PDFFont, boldFont: PDFFon
 }
 
 /** Soft text-wrap helper for pdf-lib (char-budget based, deliberately conservative). */
-function wrapText(s: string, maxChars: number, maxLines: number): string[] {
+function wrapTextLines(s: string, maxChars: number, maxLines: number): string[] {
   const words = s.split(/\s+/);
   const lines: string[] = [];
   let cur = "";
