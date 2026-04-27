@@ -164,8 +164,16 @@ export function SpreadsheetGrid({ data, onCellChange, onRowClick, className }: S
           )}
           {virtualRows.map(virtualRow => {
             const row = data.rows[virtualRow.index];
+            const isClickable = !!onRowClick && row.type === "data" && row.id !== "empty";
             return (
-              <tr key={row.id} className={getRowClasses(row.type)}>
+              <tr
+                key={row.id}
+                className={cn(
+                  getRowClasses(row.type),
+                  isClickable && "cursor-pointer hover:bg-[hsl(var(--excel-header-bg,220_14%_96%))]/60"
+                )}
+                onClick={isClickable && !editingCell ? () => onRowClick!(row.id) : undefined}
+              >
                 {row.type === "spacer" ? (
                   <td colSpan={frozenCols.length + scrollCols.length} className="h-4" />
                 ) : (
