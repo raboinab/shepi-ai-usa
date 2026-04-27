@@ -1,5 +1,6 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { SpreadsheetGrid } from "../SpreadsheetGrid";
+import { AdjustmentTraceSheet } from "../AdjustmentTraceSheet";
 import type { DealData, GridData, GridRow } from "@/lib/workbook-types";
 import { adjustmentCells } from "../shared/tabHelpers";
 import { formatProofLabel, formatProofFindings } from "@/lib/proofFormatUtils";
