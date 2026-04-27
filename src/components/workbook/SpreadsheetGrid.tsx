@@ -11,12 +11,14 @@ import { cn } from "@/lib/utils";
 interface SpreadsheetGridProps {
   data: GridData;
   onCellChange?: (rowId: string, colKey: string, value: string) => void;
+  /** Optional: fired when a `data` row is single-clicked (not while editing). */
+  onRowClick?: (rowId: string) => void;
   className?: string;
 }
 
 const ROW_HEIGHT = 24;
 
-export function SpreadsheetGrid({ data, onCellChange, className }: SpreadsheetGridProps) {
+export function SpreadsheetGrid({ data, onCellChange, onRowClick, className }: SpreadsheetGridProps) {
   const [editingCell, setEditingCell] = useState<{ rowId: string; colKey: string } | null>(null);
   const [editValue, setEditValue] = useState("");
   const parentRef = useRef<HTMLDivElement>(null);
