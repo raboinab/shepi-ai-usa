@@ -36,12 +36,6 @@ const TIER_SHORT: Record<number, string> = {
 export function DDAdjustmentsTab({ dealData, tabIndex = 1, proofMap, proposalMap }: TabProps) {
   const [traceAdjId, setTraceAdjId] = useState<string | null>(null);
 
-  const filterTypes = tabIndex === 1 ? ["MA"] : ["DD", "PF"];
-  const filteredAdj = useMemo(
-    () => dealData.adjustments.filter(a => filterTypes.includes(a.type)),
-    [dealData.adjustments, tabIndex]
-  );
-
   const handleRowClick = (rowId: string) => {
     if (!rowId.startsWith("adj-")) return;
     setTraceAdjId(rowId.slice("adj-".length));
