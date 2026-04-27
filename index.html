@@ -69,14 +69,15 @@
 
     <!--
       Per-page SEO (title, description, canonical, OG, Twitter, robots)
-      is injected by useSEO() in src/hooks/useSEO.ts on every route.
-      Hardcoded values were removed because they caused Googlebot and social
-      crawlers to treat every URL as a duplicate of the homepage (canonical
-      pointed to '/').
-      Bootstrap defaults below give crawlers a sensible fallback if JS fails.
+      is injected by useSEO() in src/hooks/useSEO.tsx on every route.
+      It uses React 19's native document metadata so tags are present in the
+      prerendered HTML for every route. We deliberately do NOT set a static
+      <title> or <meta name="description"> here, because vite-react-ssg
+      writes index.html's <head> verbatim before injecting the per-route
+      app HTML, and any static <title> would duplicate (and on some crawlers
+      override) the per-page <title> emitted by useSEO. Robots stays here as
+      a safe site-wide default.
     -->
-    <title>shepi — AI-Assisted Quality of Earnings Analysis</title>
-    <meta name="description" content="AI-assisted quality of earnings analysis and EBITDA adjustments for M&amp;A due diligence." />
     <meta name="robots" content="index, follow" />
     <meta name="googlebot" content="index, follow, max-video-preview:-1, max-image-preview:large, max-snippet:-1" />
   </head>
