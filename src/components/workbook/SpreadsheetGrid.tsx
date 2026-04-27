@@ -11,12 +11,14 @@ import { cn } from "@/lib/utils";
 interface SpreadsheetGridProps {
   data: GridData;
   onCellChange?: (rowId: string, colKey: string, value: string) => void;
+  /** Optional: fired when a `data` row is single-clicked (not while editing). */
+  onRowClick?: (rowId: string) => void;
   className?: string;
 }
 
 const ROW_HEIGHT = 24;
 
-export function SpreadsheetGrid({ data, onCellChange, className }: SpreadsheetGridProps) {
+export function SpreadsheetGrid({ data, onCellChange, onRowClick, className }: SpreadsheetGridProps) {
   const [editingCell, setEditingCell] = useState<{ rowId: string; colKey: string } | null>(null);
   const [editValue, setEditValue] = useState("");
   const parentRef = useRef<HTMLDivElement>(null);
@@ -162,8 +164,16 @@ export function SpreadsheetGrid({ data, onCellChange, className }: SpreadsheetGr
           )}
           {virtualRows.map(virtualRow => {
             const row = data.rows[virtualRow.index];
+            const isClickable = !!onRowClick && row.type === "data" && row.id !== "empty";
             return (
-              <tr key={row.id} className={getRowClasses(row.type)}>
+              <tr
+                key={row.id}
+                className={cn(
+                  getRowClasses(row.type),
+                  isClickable && "cursor-pointer hover:bg-[hsl(var(--excel-header-bg,220_14%_96%))]/60"
+                )}
+                onClick={isClickable && !editingCell ? () => onRowClick!(row.id) : undefined}
+              >
                 {row.type === "spacer" ? (
                   <td colSpan={frozenCols.length + scrollCols.length} className="h-4" />
                 ) : (

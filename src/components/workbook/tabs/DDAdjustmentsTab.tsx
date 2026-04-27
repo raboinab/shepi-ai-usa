@@ -1,5 +1,6 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { SpreadsheetGrid } from "../SpreadsheetGrid";
+import { AdjustmentTraceSheet } from "../AdjustmentTraceSheet";
 import type { DealData, GridData, GridRow } from "@/lib/workbook-types";
 import { adjustmentCells } from "../shared/tabHelpers";
 import { formatProofLabel, formatProofFindings } from "@/lib/proofFormatUtils";
@@ -33,6 +34,18 @@ const TIER_SHORT: Record<number, string> = {
  * Tab 4 shows Management adjustments; Tab 5 shows DD + Pro Forma adjustments.
  */
 export function DDAdjustmentsTab({ dealData, tabIndex = 1, proofMap, proposalMap }: TabProps) {
+  const [traceAdjId, setTraceAdjId] = useState<string | null>(null);
+
+  const handleRowClick = (rowId: string) => {
+    if (!rowId.startsWith("adj-")) return;
+    setTraceAdjId(rowId.slice("adj-".length));
+  };
+
+  const traceAdjustment = useMemo(
+    () => (traceAdjId ? dealData.adjustments.find(a => a.id === traceAdjId) ?? null : null),
+    [traceAdjId, dealData.adjustments]
+  );
+
   const gridData = useMemo((): GridData => {
     const adj = dealData.adjustments;
     const { periods, aggregatePeriods } = dealData.deal;
@@ -117,5 +130,15 @@ export function DDAdjustmentsTab({ dealData, tabIndex = 1, proofMap, proposalMap
     return { columns, rows, frozenColumns: 6 };
   }, [dealData, tabIndex, proofMap, proposalMap]);
 
-  return <SpreadsheetGrid data={gridData} />;
+  return (
+    <>
+      <SpreadsheetGrid data={gridData} onRowClick={handleRowClick} />
+      <AdjustmentTraceSheet
+        open={!!traceAdjId}
+        onOpenChange={(o) => !o && setTraceAdjId(null)}
+        adjustment={traceAdjustment}
+        proofSet={traceAdjId ? proofMap?.get(traceAdjId) : undefined}
+      />
+    </>
+  );
 }

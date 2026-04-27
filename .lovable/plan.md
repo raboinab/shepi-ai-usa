@@ -1,58 +1,71 @@
-## Pushback on the user's diagnosis
+## Goal
 
-The user's prompt assumes `src/hooks/useSEO.ts` exists and uses `useEffect` + `document.querySelector`. **That file does not exist in this repo right now** — it was deleted in the previous turn. Only `src/hooks/useSEO.tsx` exists, and it already uses `<Head>` from `vite-react-ssg` (render-phase, no `useEffect`, no DOM manipulation). The user is reading a stale view (probably from `shepi-ai-usa` published HTML, not the current source).
+Make every verified add-back drillable in two clicks from the DD Adjustments workbook tab:
 
-The user's proposed fix — `import { useHead } from "@unhead/react"` — also **would not compile** as written, because `@unhead/react` is not in `package.json`. Only `vite-react-ssg` is installed.
+```text
+[Adjustment row]  →  [GL Lines panel]  →  [Bank Statement panel]
+   click 1              click 2
+```
 
-So before changing any code, I need to figure out which of three scenarios is actually true.
+No new data, no new tables. Everything required is already in `adjustment_proofs.traceability_data.matching_transactions`, `canonical_transactions` (with `source_document_id`), and `documents` (file_path, page metadata in `parsed_summary`).
 
-## Diagnostic plan (Phase 1 — must run first)
+## What the user will see
 
-I'll run, in order:
+**Click 1 — open an adjustment row in the DD Adjustments tab**
+A side sheet opens showing:
+- Adjustment header (description, amount, period, validation badge)
+- "GL Lines Supporting This Adjustment" table:
+  - Date · Account # / Name · Description / Vendor · Amount · Source Doc (icon)
+- Variance triangle (Seller vs. Matched) at the top
+- Empty state if no matches: "No GL transactions matched. This adjustment is asserted-only."
 
-1. `bun run build` and inspect `dist/quality-of-earnings-cost/index.html` directly. This is the only ground truth. If the title is correct in `dist/` HTML, the source code is fine and the user is looking at a stale deploy.
-2. `cat node_modules/vite-react-ssg/package.json` — confirm whether v0.9 ships `react-helmet-async` or has switched to `unhead` internally. This decides which head API actually gets serialized at prerender.
-3. `rg "HelmetProvider|UnheadProvider|createHead" src/` — confirm whether the required head provider is mounted in the app tree. `<Head>` from `vite-react-ssg` is a no-op without its provider.
-4. `rg "useSEO\(" src/ -l` then spot-check 3 call sites — confirm every caller actually renders the returned `__seoTags` JSX. If any caller does `useSEO({...})` without using the return value, that page emits zero head tags regardless of how `useSEO` is implemented.
-5. `rg "auth-middleware" src/ vite.config.ts` — find what keeps regenerating `src/integrations/supabase/auth-middleware.ts` (it imports `@tanstack/react-start`, which isn't installed, and breaks every build). This needs a permanent stop, not another delete.
+**Click 2 — click any GL line**
+A nested panel (or stacked sheet) slides in showing:
+- The bank/source transaction it reconciles to:
+  - Date · Payee · Amount · Account · Memo · Statement name · Page #
+- "Open source document" button → opens the underlying PDF/CSV in a new tab via existing signed-URL flow
+- If the GL line came from QuickBooks (no bank doc linked), show source = "QuickBooks GL" with the realm/period
 
-## Fix plan (Phase 2 — branches on diagnostic results)
+## Where it plugs in
 
-### Scenario A — `dist/` HTML is correct, only `shepi.ai` is stale
-No source code change. Tell the user to redeploy (or wait for the deploy that the previous turn already triggered to propagate) and re-curl. The user's "production curl" evidence is from a build that doesn't include the previous fix yet.
+1. **`DDAdjustmentsTab.tsx`** — add an `onRowClick` path. Currently `SpreadsheetGrid` has no row-click prop, so:
+   - Add optional `onRowClick?: (rowId: string) => void` to `SpreadsheetGridProps`.
+   - Wire it on the row `<div>` (cursor-pointer + hover state for `data` rows only).
+   - In `DDAdjustmentsTab`, when a row id matches `adj-{id}`, open a new `<AdjustmentTraceSheet>` keyed to that adjustment id.
 
-### Scenario B — `dist/` HTML is generic, and `vite-react-ssg` v0.9 uses `unhead` internally
-The user's instinct is right but their import is wrong. Replace `useSEO.tsx` to call `useHead()` from the unhead instance that `vite-react-ssg` re-exports, **not** from a separately-installed `@unhead/react`. Likely import path: `vite-react-ssg/utils` or `vite-react-ssg`'s own re-export — I'll grep `node_modules/vite-react-ssg/dist` to find the exact named export.
+2. **New component: `src/components/workbook/AdjustmentTraceSheet.tsx`**
+   - Uses Shadcn `Sheet` (right side, `w-[640px]`).
+   - Loads the proof for `adjustmentId` from `useAdjustmentProofs(projectId).proofMap`.
+   - Renders the GL lines list directly from `proof.traceability_data.matching_transactions` (already shaped — we reuse the `MatchingTransaction` type from `VerifyAdjustmentDialog`).
+   - Each GL line is a button → sets `selectedTxnId`, opens the bank panel.
 
-### Scenario C — `dist/` HTML is generic, and `<Head>` is correct but `HelmetProvider`/`UnheadProvider` is missing from the tree
-Add the provider in `src/main.tsx` (and also in the SSG entry if vite-react-ssg requires it on both sides). Source of `useSEO.tsx` stays as-is — it's already using the right primitive, it just has nothing collecting its output.
+3. **New component: `src/components/workbook/BankReconcilePanel.tsx`**
+   - Receives the selected `MatchingTransaction.id`.
+   - Single read query against `canonical_transactions` joined to `documents`:
+     ```ts
+     supabase.from("canonical_transactions")
+       .select("id, txn_date, payee, vendor, description, memo, amount, account_name, account_number, source_type, source_document_id, raw_payload, documents:source_document_id(name, file_path, period_start, period_end, parsed_summary)")
+       .eq("id", txnId).single()
+     ```
+   - Displays the bank-side fields. Page number is read from `raw_payload.page` or `parsed_summary.pages` if present (fallback: hide).
+   - "Open statement" button calls `supabase.storage.from('documents').createSignedUrl(file_path, 600)` and opens it.
 
-### Scenario D — `dist/` HTML is generic because call sites don't render `{__seoTags}`
-Audit all 17 call sites. For any that don't render the return value, either fix the call site or convert `useSEO` from a JSX-returning shim into a side-effect hook (which requires Scenario B's `useHead()` approach).
+4. **Hook reuse** — no schema changes. `useAdjustmentProofs` already exposes everything we need; we only widen the `ProofSummary` returned from the hook to also pass through `traceability_data.matching_transactions` (currently dropped). One-line addition.
 
-## Auth-middleware permanent fix (Phase 3, parallel)
+## Technical notes
 
-`src/integrations/supabase/auth-middleware.ts` keeps getting auto-regenerated with imports for `@tanstack/react-start` — a framework this project doesn't use. Every regeneration breaks the build. Options to stop it permanently:
+- **Two clicks, not three:** the trace sheet opens on a single grid-row click (not a button inside the row). The GL → bank step is the second click.
+- **Reuse, don't duplicate:** the GL-line markup is lifted from `VerifyAdjustmentDialog` lines 405–438; we extract it into `<MatchingTxnList onSelect={...} />` and use it in both places. `VerifyAdjustmentDialog` keeps working unchanged for the wizard flow.
+- **No grid behavior regression:** existing cells stay double-click-to-edit; the new row click is suppressed if the click originated inside an editable cell that's currently being edited.
+- **Empty / unverified rows:** for adjustments without a proof row (asserted-only), the sheet still opens but shows a clear "Not yet GL-traced — run verification" CTA that opens `VerifyAdjustmentDialog` in normal mode.
+- **Performance:** the trace sheet only fetches per-transaction detail when a GL line is clicked; the proof list is already cached project-wide by `useAdjustmentProofs`.
 
-1. Stub the file with valid TypeScript that exports nothing useful (so future regeneration overwrites a working stub but never breaks compile until then), or
-2. Add it to `tsconfig.json`'s `exclude` list so the broken imports don't fail typecheck, or
-3. Replace its content with a no-op that's compatible with the rest of the codebase (a plain function that throws "not implemented" — no framework imports).
+## Out of scope (intentionally)
 
-I'll pick option 3 — it's the most resilient. The file becomes a thin no-op the auto-scaffolder will keep overwriting, but at least *while* it has the no-op content the build passes.
+- No PDF page-jump (we open the document at page 1 unless `parsed_summary.pages[txnIdx]` exists). Real per-page anchors are a follow-up.
+- No new column on the grid. The whole row is the affordance; we add a subtle right-edge chevron on hover for discoverability.
+- No backend / migration work.
 
-## What I will NOT do
+## Effort
 
-- I will **not** add `@unhead/react` as a separate dependency. `vite-react-ssg` already owns the head pipeline; introducing a second one risks two providers and double-rendered tags.
-- I will **not** rewrite `useSEO` to use `useEffect` + `document.querySelector`. The user is right that this approach is broken for SSG.
-- I will **not** migrate to TanStack Start. Already declined twice.
-- I will **not** push without verifying the local `dist/` HTML shows the correct per-page title. The user's verification step is non-negotiable and I'll run it before declaring done.
-
-## Deliverable
-
-After Phase 1 diagnosis, I'll report back with:
-- Exact contents of `dist/quality-of-earnings-cost/index.html`'s `<title>` and `<link rel="canonical">`
-- Which scenario (A/B/C/D) is true
-- The minimal source change required (could be zero)
-- Confirmation that `auth-middleware.ts` is stubbed so it stops breaking builds
-
-Then I implement the minimal fix and re-run the build verification before finishing.
+~3–4 hours. One new prop on `SpreadsheetGrid`, two new components (~120 lines each), one extracted shared sub-component, one query.
