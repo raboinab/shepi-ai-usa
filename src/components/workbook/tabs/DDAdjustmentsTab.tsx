@@ -130,5 +130,15 @@ export function DDAdjustmentsTab({ dealData, tabIndex = 1, proofMap, proposalMap
     return { columns, rows, frozenColumns: 6 };
   }, [dealData, tabIndex, proofMap, proposalMap]);
 
-  return <SpreadsheetGrid data={gridData} />;
+  return (
+    <>
+      <SpreadsheetGrid data={gridData} onRowClick={handleRowClick} />
+      <AdjustmentTraceSheet
+        open={!!traceAdjId}
+        onOpenChange={(o) => !o && setTraceAdjId(null)}
+        adjustment={traceAdjustment}
+        proofSet={traceAdjId ? proofMap?.get(traceAdjId) : undefined}
+      />
+    </>
+  );
 }
