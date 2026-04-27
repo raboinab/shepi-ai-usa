@@ -21,6 +21,21 @@ export interface ProofSummary {
   contradictionCount: number;
   dataGapCount: number;
   varianceAmount: number;
+  /** Raw matching GL transactions surfaced from traceability_data (for drill-down UI) */
+  matchingTransactions: MatchingTxnLite[];
+  sellerAmount: number;
+  actualAmount: number;
+}
+
+/** Subset of a matching txn shape persisted in adjustment_proofs.traceability_data */
+export interface MatchingTxnLite {
+  id: string;
+  date: string;
+  description: string;
+  amount: number;
+  account_name: string;
+  account_number: string;
+  vendor: string;
 }
 
 /**
