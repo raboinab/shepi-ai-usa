@@ -105,6 +105,9 @@ export function useAdjustmentProofs(projectId?: string) {
           contradictionCount: (ai.contradiction_count as number) ?? contradictions.length,
           dataGapCount: (ai.data_gap_count as number) ?? dataGaps.length,
           varianceAmount: ((td.variance as Record<string, unknown>)?.difference as number) ?? 0,
+          matchingTransactions: (matchingTxns as MatchingTxnLite[]) ?? [],
+          sellerAmount: ((td.variance as Record<string, unknown>)?.seller_amount as number) ?? 0,
+          actualAmount: ((td.variance as Record<string, unknown>)?.actual_amount as number) ?? 0,
         };
       });
     },
