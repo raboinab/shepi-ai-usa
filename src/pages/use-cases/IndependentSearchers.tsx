@@ -5,6 +5,7 @@ import { StatRow } from "@/components/content/StatRow";
 import { StepList } from "@/components/content/StepList";
 import { BenefitGrid } from "@/components/content/BenefitGrid";
 import { AccordionFAQ } from "@/components/content/AccordionFAQ";
+import { ComparisonTable } from "@/components/content/ComparisonTable";
 import { RelatedResourceCards } from "@/components/content/RelatedResourceCards";
 import { PRICING } from "@/lib/pricing";
 
@@ -13,6 +14,10 @@ const toc = [
   { id: "why-qoe", label: "Why Searchers Need QoE" },
   { id: "cost-barrier", label: "The Cost Barrier" },
   { id: "shepi-workflow", label: "How Shepi Fits" },
+  { id: "searcher-checklist", label: "The Searcher's QoE Checklist" },
+  { id: "search-fund-vs-self", label: "Search Fund vs. Self-Funded" },
+  { id: "sba-requirements", label: "What SBA Lenders Want" },
+  { id: "comparison", label: "Full QoE Firm vs. Shepi" },
   { id: "use-cases", label: "Searcher Use Cases" },
   { id: "when-cpa", label: "When You Still Need a CPA" },
   { id: "faq", label: "FAQ" },
