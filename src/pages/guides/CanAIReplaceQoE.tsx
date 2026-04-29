@@ -48,6 +48,14 @@ export default function CanAIReplaceQoE() {
         If you're preparing for a transaction, here's how to think about AI in the QoE process — not as a replacement for expertise, but as a force multiplier for deal velocity.
       </HeroCallout>
 
+      <p className="not-prose mb-8 text-sm text-muted-foreground border border-border rounded-lg px-4 py-3 bg-muted/20">
+        Want the shorter, opinionated take? Read{" "}
+        <Link to="/guides/ai-wont-do-your-qoe" className="text-primary hover:underline font-medium">
+          AI Won't Do Your Quality of Earnings Analysis For You
+        </Link>{" "}
+        — our founder's manifesto on why "AI-assisted" beats "AI-generated" every time.
+      </p>
+
       <h2 id="the-question">The Question</h2>
       <p>
         As AI tools enter the M&A landscape, deal professionals are asking a straightforward question: can AI replace the traditional <Link to="/guides/quality-of-earnings">Quality of Earnings</Link> engagement performed by a CPA firm?

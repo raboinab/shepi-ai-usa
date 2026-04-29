@@ -1,71 +1,75 @@
-## Goal
 
-Make every verified add-back drillable in two clicks from the DD Adjustments workbook tab:
+# Two new resource pages + searcher page expansion
 
-```text
-[Adjustment row]  →  [GL Lines panel]  →  [Bank Statement panel]
-   click 1              click 2
-```
+Three deliverables in one loop, all using existing `ContentPageLayout` (so they inherit working SEO automatically — no infra work needed). Targets the actual long-tail queries surfacing in GSC plus the credibility-building manifesto angle.
 
-No new data, no new tables. Everything required is already in `adjustment_proofs.traceability_data.matching_transactions`, `canonical_transactions` (with `source_document_id`), and `documents` (file_path, page metadata in `parsed_summary`).
+## A. New guide: "AI Won't Do Your Quality of Earnings Analysis For You"
 
-## What the user will see
+A founder-voice manifesto piece that builds credibility by underpromising. Companion to the existing `CanAIReplaceQoE` (balanced overview).
 
-**Click 1 — open an adjustment row in the DD Adjustments tab**
-A side sheet opens showing:
-- Adjustment header (description, amount, period, validation badge)
-- "GL Lines Supporting This Adjustment" table:
-  - Date · Account # / Name · Description / Vendor · Amount · Source Doc (icon)
-- Variance triangle (Seller vs. Matched) at the top
-- Empty state if no matches: "No GL transactions matched. This adjustment is asserted-only."
+### Title & meta
+- **H1**: "AI Won't Do Your Quality of Earnings Analysis For You — But It Can Make You Much Better At It"
+- **seoTitle**: "AI Won't Do Your QoE Analysis (And Why That's the Point) | Shepi"
+- **seoDescription**: Honest take from an AI QoE company on what AI can and can't do in financial due diligence — and why "AI-assisted" beats "AI-generated" every time.
+- **canonical**: `https://shepi.ai/guides/ai-wont-do-your-qoe`
+- **publishedDate**: April 2026
 
-**Click 2 — click any GL line**
-A nested panel (or stacked sheet) slides in showing:
-- The bank/source transaction it reconciles to:
-  - Date · Payee · Amount · Account · Memo · Statement name · Page #
-- "Open source document" button → opens the underlying PDF/CSV in a new tab via existing signed-URL flow
-- If the GL line came from QuickBooks (no bank doc linked), show source = "QuickBooks GL" with the realm/period
+### Content sections
+1. **The promise and the misconception** — AI is changing FDD, but QoE is a judgment exercise, not a spreadsheet exercise.
+2. **What AI can do well** (`BenefitGrid`) — ingest messy exports, scan full GL population, surface anomalies, draft adjustment support, build structured schedules.
+3. **What AI cannot do for you** (`BenefitGrid`) — judge addback validity, assess credibility of explanations, conduct management interviews, take responsibility for the conclusion. Key line: "QoE is about supporting a deal decision — and there's nobody to sue when the AI is wrong."
+4. **AI-generated vs AI-assisted** (`ComparisonTable`) — Who owns the conclusion / Who reviews adjustments / Who handles management Q&A / Who signs / Defensibility.
+5. **The better model: analyst-in-the-loop** — Full population review instead of sampling. Concrete examples drawn from product (adjustment tracing, GL→bank reconcile, anomaly surfacing) framed as "what the analyst gets to start from."
+6. **Who this matters most for** — Searchers, independent sponsors, SBA buyers, lower-middle-market deal teams, lenders.
+7. **Conclusion + positioning** — "Shepi is not 'AI does QoE.' Shepi is 'AI gives every buyer a structured diligence workflow that used to require a full transaction advisory team.'"
+8. **FAQ** (`AccordionFAQ`) — Can I use Shepi without a CPA? / Will lenders accept an AI-assisted QoE? / What's the difference between AI-generated and AI-assisted? / Does this replace my QoE provider? / What if the AI is wrong about an adjustment?
+9. **Related resources** (`RelatedResourceCards`) — link to `CanAIReplaceQoE`, `EBITDAAdjustments`, `GeneralLedgerReview`, `DueDiligenceChecklist`, `/use-cases/independent-searchers`, `/use-cases/lenders`.
 
-## Where it plugs in
+### Files
+- **New**: `src/pages/guides/AIWontDoYourQoE.tsx` (modeled on `CanAIReplaceQoE.tsx` structure)
+- **Edit**: `src/App.tsx` — register `/guides/ai-wont-do-your-qoe` route alongside other guide routes
+- **Edit**: `src/pages/Resources.tsx` — add to Educational Guides section at the top of the list
+- **Edit**: `src/pages/guides/CanAIReplaceQoE.tsx` — add a single callout near the top: "Want the shorter, opinionated take? Read AI Won't Do Your QoE Analysis For You."
+- **Edit**: `public/sitemap.xml` if guides are listed individually (will check pattern first)
 
-1. **`DDAdjustmentsTab.tsx`** — add an `onRowClick` path. Currently `SpreadsheetGrid` has no row-click prop, so:
-   - Add optional `onRowClick?: (rowId: string) => void` to `SpreadsheetGridProps`.
-   - Wire it on the row `<div>` (cursor-pointer + hover state for `data` rows only).
-   - In `DDAdjustmentsTab`, when a row id matches `adj-{id}`, open a new `<AdjustmentTraceSheet>` keyed to that adjustment id.
+## B. Expand `/use-cases/independent-searchers`
 
-2. **New component: `src/components/workbook/AdjustmentTraceSheet.tsx`**
-   - Uses Shadcn `Sheet` (right side, `w-[640px]`).
-   - Loads the proof for `adjustmentId` from `useAdjustmentProofs(projectId).proofMap`.
-   - Renders the GL lines list directly from `proof.traceability_data.matching_transactions` (already shaped — we reuse the `MatchingTransaction` type from `VerifyAdjustmentDialog`).
-   - Each GL line is a button → sets `selectedTxnId`, opens the bank panel.
+Currently ranks position 8-9 on long-tail searcher queries with 24 impressions. Page is structurally fine but thin. Goal: push to page 1 by adding depth on the exact queries already showing impressions.
 
-3. **New component: `src/components/workbook/BankReconcilePanel.tsx`**
-   - Receives the selected `MatchingTransaction.id`.
-   - Single read query against `canonical_transactions` joined to `documents`:
-     ```ts
-     supabase.from("canonical_transactions")
-       .select("id, txn_date, payee, vendor, description, memo, amount, account_name, account_number, source_type, source_document_id, raw_payload, documents:source_document_id(name, file_path, period_start, period_end, parsed_summary)")
-       .eq("id", txnId).single()
-     ```
-   - Displays the bank-side fields. Page number is read from `raw_payload.page` or `parsed_summary.pages` if present (fallback: hide).
-   - "Open statement" button calls `supabase.storage.from('documents').createSignedUrl(file_path, 600)` and opens it.
+### Sections to add
+- **"The Searcher's QoE Checklist"** (`StepList`) — SBA-specific addback rules, seller-financing diligence requirements, working capital peg conventions for sub-$5M deals, customer concentration thresholds that kill SBA loans, owner-comp normalization for searchers (replacement-CFO benchmark by industry/size).
+- **"Search Fund vs Independent Searcher: QoE Differences"** — Self-funded searchers vs traditional search fund LP-backed searchers have different diligence needs. Brief framing block.
+- **"What SBA Lenders Actually Want to See"** — Pulls from real SBA 7(a) underwriting requirements: 3-year cash flow coverage, debt service coverage ratio (DSCR ≥ 1.25x), historical owner-comp normalization, customer concentration disclosure.
+- **Expanded FAQ** targeting these long-tails: "Do search funds need a QoE?" / "What does an SBA QoE cost?" / "Can I do my own QoE as a searcher?" / "Is a sell-side QoE enough or do I need my own buy-side?" / "How long does QoE take for a search fund deal?"
+- **Comparison block** (`ComparisonTable`) — Full QoE firm ($25-60K, 4-8 weeks) vs AI-assisted with Shepi (existing PRICING value, days) — across rows: Cost, Timeline, Population review, Lender acceptance, Best for.
+- **Cross-link to the new "AI Won't Do Your QoE" guide** in the existing "When You Still Need a CPA" section.
 
-4. **Hook reuse** — no schema changes. `useAdjustmentProofs` already exposes everything we need; we only widen the `ProofSummary` returned from the hook to also pass through `traceability_data.matching_transactions` (currently dropped). One-line addition.
+### TOC additions
+After existing items, add: "SBA Requirements", "Searcher Checklist", and ensure new FAQ items appear in the existing FAQ section.
 
-## Technical notes
+### Files
+- **Edit**: `src/pages/use-cases/IndependentSearchers.tsx` — append new sections, expand FAQ, add cross-link
+- No new components, no new routes.
 
-- **Two clicks, not three:** the trace sheet opens on a single grid-row click (not a button inside the row). The GL → bank step is the second click.
-- **Reuse, don't duplicate:** the GL-line markup is lifted from `VerifyAdjustmentDialog` lines 405–438; we extract it into `<MatchingTxnList onSelect={...} />` and use it in both places. `VerifyAdjustmentDialog` keeps working unchanged for the wizard flow.
-- **No grid behavior regression:** existing cells stay double-click-to-edit; the new row click is suppressed if the click originated inside an editable cell that's currently being edited.
-- **Empty / unverified rows:** for adjustments without a proof row (asserted-only), the sheet still opens but shows a clear "Not yet GL-traced — run verification" CTA that opens `VerifyAdjustmentDialog` in normal mode.
-- **Performance:** the trace sheet only fetches per-transaction detail when a GL line is clicked; the proof list is already cached project-wide by `useAdjustmentProofs`.
+## C. (Optional, light) Companion update to `CanAIReplaceQoE`
 
-## Out of scope (intentionally)
+One-line cross-link callout near the top pointing to the new manifesto piece. That's it — keep the balanced piece intact for users searching neutral terms.
 
-- No PDF page-jump (we open the document at page 1 unless `parsed_summary.pages[txnIdx]` exists). Real per-page anchors are a follow-up.
-- No new column on the grid. The whole row is the affordance; we add a subtle right-edge chevron on hover for discoverability.
-- No backend / migration work.
+## Out of scope (explicit)
 
-## Effort
+- No SEO infra changes — `ContentPageLayout` already handles `useSEO` for all three deliverables.
+- No new shared components.
+- No changes to navigation/header.
+- No changes to the 19 "BROKEN" auth-only pages (admin, account, demos) — they shouldn't be indexed anyway and a future cleanup pass can add `noindex` if desired.
+- Vercel deployment trigger — user's manual action, outside Lovable sandbox.
+- GSC indexing requests — user's manual action.
+- GA4 Singapore filter — user's manual action.
 
-~3–4 hours. One new prop on `SpreadsheetGrid`, two new components (~120 lines each), one extracted shared sub-component, one query.
+## Acceptance check
+
+- New `/guides/ai-wont-do-your-qoe` route loads, has unique title/description/canonical (verify via curl after Vercel deploys).
+- `/resources` lists the new guide at the top of Educational Guides.
+- `CanAIReplaceQoE` has the cross-link callout.
+- `/use-cases/independent-searchers` has 4 new content sections, expanded FAQ, and SBA-specific content matching the long-tail queries currently surfacing in GSC.
+- All three pages inherit working per-page SEO via `ContentPageLayout` (no manual `useSEO` wiring needed).
+- Build passes, no TS errors.
