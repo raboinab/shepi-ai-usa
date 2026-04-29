@@ -103,6 +103,60 @@ export default function IndependentSearchers() {
         { title: "Negotiation Support", description: "Use documented analysis to negotiate the purchase price, working capital targets, and deal terms with credibility." },
       ]} />
 
+      <h2 id="searcher-checklist">The Searcher's QoE Checklist</h2>
+      <p>
+        The diligence priorities for a sub-$10M search-fund or self-funded acquisition look different from an institutional PE deal. Here's what actually moves the needle on these transactions:
+      </p>
+      <StepList steps={[
+        { title: "Owner-comp normalization to a real replacement-CFO benchmark", description: "Don't just take the seller's add-back at face value. Benchmark against what a non-owner GM or CFO actually costs in your industry and market — typically $120K–$250K total comp for sub-$5M businesses, higher for skilled-trade or licensed-professional roles. The delta between owner draw and replacement cost is the legitimate add-back; everything else is at risk under buyer scrutiny." },
+        { title: "Personal-expense add-backs with documented support", description: "Vehicle, phone, travel, meals, family payroll, country-club dues — these are common but each one needs a GL trace and a credible explanation. AI-assisted full-population review surfaces them; you decide which ones to defend." },
+        { title: "Customer concentration disclosure (the SBA threshold)", description: "Any customer over 20% of revenue is a yellow flag for SBA lenders. Over 30% is a red flag that can kill the loan. Document concentration trends across the trailing 36 months — not just the latest year — and have a contingency narrative ready." },
+        { title: "Working capital peg for sub-$5M deals", description: "Most LOIs at this size leave the WC peg vague. That's a $50K–$200K negotiation post-LOI. Calculate the trailing-12-month average net working capital, document the seasonality, and lock the peg in writing before signing." },
+        { title: "Seller-financing and earnout diligence", description: "If part of consideration is a seller note or earnout tied to forward EBITDA, the QoE conclusions about sustainability of earnings directly drive the structure. Know what you're agreeing to before you sign the note." },
+        { title: "3-year normalized cash-flow coverage for the lender", description: "SBA 7(a) underwriters want to see 1.25x debt service coverage on normalized historical cash flow. That's not a single number — it's a defensible bridge from reported net income through every adjustment to free cash flow. Build it once, defend it in underwriting." },
+      ]} />
+
+      <h2 id="search-fund-vs-self">Search Fund vs. Self-Funded: Different QoE Needs</h2>
+      <p>
+        "Searcher" covers a wide range of buyer profiles, and the QoE requirements scale with the capital structure:
+      </p>
+      <BenefitGrid benefits={[
+        { title: "Self-funded searcher", description: "You're personally on the hook for diligence costs and the loan personal guarantee. Cost-efficiency matters most. AI-assisted analysis with your own review is usually the right structure unless your lender requires CPA attestation." },
+        { title: "Traditional search fund (LP-backed)", description: "Your investors expect institutional-quality diligence. AI-assisted analysis still makes sense as the foundation, but most search funds engage a CPA firm for the final attested report — using AI-prepared workpapers to compress the engagement from $40K to $15–20K." },
+        { title: "Independent sponsor / fundless sponsor", description: "You're raising deal-by-deal capital and the QoE is part of the LP marketing package. CPA attestation is usually expected. Use AI-assisted tooling to lengthen your runway between fundraising and close." },
+        { title: "First-time direct buyer (no fund)", description: "If you're buying with personal capital and an SBA loan, your lender's requirements drive the format. Get the lender's QoE requirements in writing before you spend money on the engagement." },
+      ]} />
+
+      <h2 id="sba-requirements">What SBA Lenders Actually Want to See</h2>
+      <p>
+        SBA 7(a) acquisition lending is the largest source of capital for sub-$5M business buyers. The underwriting requirements have tightened materially over the past two years. Here's what underwriters consistently ask for in a QoE — and where AI-assisted analysis can shorten the cycle:
+      </p>
+      <BenefitGrid benefits={[
+        { title: "DSCR ≥ 1.25x on normalized cash flow", description: "Debt service coverage ratio calculated on the trailing-12-month or trailing-3-year normalized EBITDA, less capex, less working capital changes. Show the math, line by line, drillable to source." },
+        { title: "3-year historical normalization", description: "Underwriters want to see how add-backs trended over time, not just a single-period snapshot. Inconsistent year-over-year add-backs are a red flag." },
+        { title: "Customer concentration narrative", description: "If any customer is over 20% of revenue, you need a documented mitigation: contract length, switching costs, relationship depth, contingency plan if lost." },
+        { title: "Quality of revenue (recurring vs. one-time)", description: "Underwriters increasingly ask for revenue broken down by recurring/contracted vs. project-based vs. one-time. Recurring revenue carries more credit weight." },
+        { title: "Working capital peg with seasonality", description: "Show the monthly working capital trend across 24+ months. Lenders want to fund both the purchase price AND the working capital cycle, not just the purchase price." },
+        { title: "Add-back support documentation", description: "Every material add-back needs a source citation — invoice, contract, GL line, or management representation. 'Owner discretionary' is not a documented add-back." },
+      ]} />
+
+      <h2 id="comparison">Full QoE Firm vs. AI-Assisted with Shepi</h2>
+      <ComparisonTable
+        headers={["Dimension", "Traditional CPA QoE", "AI-Assisted with Shepi"]}
+        rows={[
+          ["Cost per deal", "$20K–$60K", `${PRICING.perProject.display} per project`],
+          ["Time to first findings", "3–6 weeks", "Hours to days"],
+          ["Population coverage", "Sample-based (5–15% of GL)", "100% of GL transactions"],
+          ["Best for LOI screening", "Too slow and expensive", "Yes — designed for it"],
+          ["Best for SBA-attested QoE", "Yes (when lender requires CPA sign-off)", "Workpaper foundation; pair with CPA review"],
+          ["Audit trail", "Workpapers, varies by firm", "Every adjustment traced to GL + source doc"],
+          ["Reusability across deals", "Each deal is a new engagement", "One subscription covers unlimited deals"],
+        ]}
+      />
+      <p>
+        The honest answer for most searchers: use AI-assisted analysis on every LOI you screen, then engage a CPA only on the deals you're actually closing — and only if your lender requires attestation. That's how you keep diligence cost proportional to deal value.
+      </p>
+
       <h2 id="use-cases">Specific Searcher Use Cases</h2>
       <BenefitGrid benefits={[
         { title: "Self-funded searchers", description: "Minimize diligence costs while maintaining professional standards" },
@@ -119,20 +173,31 @@ export default function IndependentSearchers() {
         { title: "Investor requirements", description: "Some investors mandate third-party QoE as a condition of funding" },
       ]} />
       <p>
-        Even in these cases, Shepi serves as the analytical foundation — your CPA firm can use Shepi's workpapers as a starting point, significantly reducing their engagement time and your cost.
+        Even in these cases, Shepi serves as the analytical foundation — your CPA firm can use Shepi's workpapers as a starting point, significantly reducing their engagement time and your cost. For a longer take on where AI fits and where human judgment remains essential, read{" "}
+        <Link to="/guides/ai-wont-do-your-qoe" className="text-primary hover:underline">
+          AI Won't Do Your Quality of Earnings Analysis For You
+        </Link>.
       </p>
 
       <h2 id="faq">FAQ</h2>
       <AccordionFAQ items={[
-        { question: "Can I share Shepi analysis with my lender?", answer: "Yes — Shepi exports to professional-format PDF reports and Excel workbooks suitable for lender review. If your lender requires CPA-attested QoE specifically, Shepi's output accelerates that engagement." },
-        { question: "How many deals can I analyze per month?", answer: "With a monthly subscription, you can analyze unlimited deals — perfect for active searchers evaluating multiple opportunities." },
+        { question: "Do search funds need a QoE?", answer: "Yes — virtually every search fund LP base expects a QoE on any acquisition target. The question is usually format: traditional search funds typically engage a CPA firm for an attested report, while self-funded and fundless searchers often use AI-assisted analysis with their own sign-off, escalating to a CPA only when the lender requires it." },
+        { question: "What does a QoE cost for a search fund or SBA deal?", answer: "Traditional CPA QoE for a sub-$10M deal typically runs $20K–$40K and takes 4–8 weeks. AI-assisted analysis with Shepi runs at our standard per-project pricing and takes hours to days. Many searchers use AI-assisted analysis at the LOI stage on every deal, then engage a CPA only on deals they're actually closing — keeping diligence cost proportional to deal value." },
+        { question: "Can I do my own QoE as a searcher?", answer: "On smaller deals (under $3M, no institutional capital, lender doesn't require attestation): yes, many searchers run the analysis themselves with AI-assisted tooling and produce a defensible workbook. On larger deals or anything requiring SBA-lender CPA attestation, you'll want a CPA reviewing or signing — but you can still do most of the data work yourself, which compresses the CPA engagement significantly." },
+        { question: "Is a sell-side QoE enough, or do I need my own buy-side?", answer: "Always do your own buy-side analysis. Sell-side QoE is prepared by the seller's advisors to put the business in the best light — it's a starting point, not a substitute. At minimum, run your own AI-assisted analysis to validate the sell-side numbers and identify anything they didn't surface." },
+        { question: "How long does QoE take for a search fund deal?", answer: "AI-assisted analysis: hours to a few days from data receipt. Traditional CPA QoE for a search-fund-sized deal: typically 4–8 weeks. Most searchers run AI-assisted analysis during the exclusivity window and engage a CPA in parallel only if the deal is moving toward close." },
+        { question: "Will SBA lenders accept AI-assisted QoE?", answer: "It depends on the lender and deal size. Many SBA preferred lenders accept AI-assisted analysis when reviewed and signed by the buyer or a CPA. Larger SBA acquisitions or institutional lenders typically still require CPA-attested QoE. Always get the QoE format requirement from your lender in writing before spending money on the engagement." },
+        { question: "Can I share Shepi analysis with my lender?", answer: "Yes — Shepi exports to professional-format PDF reports and Excel workbooks suitable for lender review. If your lender requires CPA-attested QoE specifically, Shepi's output accelerates that engagement and significantly reduces the CPA's time and your cost." },
+        { question: "How many deals can I analyze per month?", answer: "With a monthly subscription, you can analyze unlimited deals — designed for active searchers screening multiple opportunities at the LOI stage." },
       ]} />
 
       <h2>Related Resources</h2>
       <RelatedResourceCards links={[
+        { to: "/guides/ai-wont-do-your-qoe", label: "AI Won't Do Your QoE Analysis For You" },
         { to: "/guides/quality-of-earnings", label: "What Is a Quality of Earnings Report?" },
         { to: "/guides/due-diligence-checklist", label: "Financial Due Diligence Checklist" },
-        { to: "/compare/shepi-vs-excel", label: "Shepi vs. Excel for QoE" },
+        { to: "/guides/owner-compensation-normalization", label: "Owner Compensation Normalization" },
+        { to: "/guides/customer-concentration-risk", label: "Customer Concentration Risk Analysis" },
         { to: "/compare/ai-qoe-vs-traditional", label: "AI QoE vs. Traditional CPA" },
       ]} />
     </ContentPageLayout>
