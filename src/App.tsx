@@ -7,6 +7,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import AppErrorBoundary from "@/components/system/AppErrorBoundary";
+import { ScrollToTop } from "@/components/ScrollToTop";
 import Index from "./pages/Index";
 
 // Lazy-loaded routes
