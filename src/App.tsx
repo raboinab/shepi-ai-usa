@@ -119,6 +119,7 @@ const RootLayout = () => (
       <TooltipProvider>
         <Toaster />
         <Sonner />
+        <ScrollToTop />
         <Suspense fallback={<SuspenseFallback />}>
           <Outlet />
         </Suspense>
