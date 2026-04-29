@@ -1,148 +1,19 @@
-## Goal
+## Fix: Resource link clicks land mid-page instead of top
 
-Make shepi.ai a first-class citizen for AI agents and answer engines (ChatGPT, Claude, Perplexity, Gemini, Cursor) by shipping machine-readable discovery files, per-page structured data driven by a single source of truth, semantic landmarks, and a dedicated `/for-ai-agents` landing page.
+### Root cause
+React Router doesn't reset scroll position on route changes. When a user scrolls down on `/resources`, then clicks a guide link, the new page renders but the window keeps the previous scroll offset.
 
-## Audit findings (what already exists)
+### Changes
 
-Reusing what's there, deleting duplication:
+1. **Create `src/components/ScrollToTop.tsx`**
+   - Subscribes to `useLocation().pathname`
+   - On change, calls `window.scrollTo({ top: 0, left: 0, behavior: "instant" })`
+   - If the new URL has a `#hash`, scrolls to that element instead (preserves anchor links)
+   - Renders `null`
 
-- `useSEO` hook (React 19 metadata hoisting) is wired through every public page and **already supports `jsonLd`** — added in the previous turn.
-- `public/llms.txt` exists but is brand-only — needs to be expanded with quotable definitions, comparison table, example queries, and discovery-endpoint links.
-- `public/.well-known/security.txt` and `public/.well-known/ai-plugin.json` exist.
-- `public/robots.txt` allows everyone via `User-agent: *` but does **not name** GPTBot, OAI-SearchBot, ClaudeBot, PerplexityBot, Google-Extended explicitly. Naming them is the AI-engine-best-practice signal.
-- `public/sitemap.xml` lists ~40 routes but is missing the new pages added recently (`/guides/ai-wont-do-your-qoe`, `/guides/ai-accounting-anomaly-detection`, `/guides/earnings-manipulation-signs`, the new `/for-ai-agents`, `/cpa`, etc.) and uses a stale `2026-02-23` lastmod everywhere.
-- `index.html` already has site-wide `Organization` + `WebSite` JSON-LD (added previously).
-- **CRITICAL DUPLICATION**: `src/pages/Index.tsx` has TWO competing schema systems: (a) the new `useSEO({ jsonLd })` SoftwareApplication block, and (b) a legacy `useEffect` that injects `schema-software`, `schema-faq`, `schema-org` via `addScript()` (lines 171-261). The legacy `faqSchema` is hand-typed and duplicates Accordion content (lines 850-1100+) — exactly the "single source of truth" violation called out. We will rip out the legacy `useEffect` injection entirely.
-- shepi has no public REST API — the `openapi.json` and `mcp.json` files would be aspirational only. We will ship them as minimal, honest stubs that describe the *content surface* (resource catalog) rather than fake API endpoints. See "Honesty constraint" below.
+2. **Mount it in `src/App.tsx`**
+   - Add `<ScrollToTop />` inside `<BrowserRouter>`, just above `<Routes>`, so it has router context
 
-## Plan
-
-### 1. Single source of truth for the homepage FAQ
-
-Create `src/data/homepageFaq.ts` exporting a typed array:
-
-```ts
-export interface FaqEntry { category: string; question: string; answer: string; }
-export const HOMEPAGE_FAQ: FaqEntry[] = [/* all current questions */];
-```
-
-- Refactor `src/pages/Index.tsx` FAQ section to render from this array (group by `category`, render with Accordion).
-- Generate the `FAQPage` JSON-LD from the same array and pass it to `useSEO({ jsonLd: [...] })`.
-- Delete the legacy `useEffect` that injects `schema-software` / `schema-faq` / `schema-org` (lines ~171-261) — `useSEO` now owns all of it; the homepage's `SoftwareApplication` schema (already on `useSEO`) will be merged with the new FAQ schema and the existing `Organization` lives in `index.html`.
-
-### 2. Reusable SEO + breadcrumb hooks
-
-- Rename / re-document `useSEO` as the canonical `usePageMeta` hook (keep `useSEO` as an alias to avoid touching ~25 call sites). Already enforces the user's bullet list: unique title, description, canonical, full OG, full Twitter Card, og:image. No code change needed beyond doc comment.
-- New `src/hooks/useBreadcrumbJsonLd.ts`: takes `[{ label, href }]` and returns a `BreadcrumbList` JSON-LD object.
-- Update `ContentPageLayout` to call `useBreadcrumbJsonLd(breadcrumbs)` and merge the result with any caller-supplied `jsonLd` before passing to `useSEO`. Every guide / use-case / compare / feature page picks up BreadcrumbList automatically.
-- For top-level pages without `ContentPageLayout` (Index, Pricing, ForAiAgents), call `useBreadcrumbJsonLd` directly in the page.
-
-### 3. Discovery files in `/public`
-
-Rewrite or create:
-
-**`public/llms.txt`** — Concise (llmstxt.org spec). Sections:
-- Identity paragraph with quotable, declarative facts
-- "Canonical definitions" block: 4-6 single-sentence definitions of QoE, EBITDA add-back, working capital, cash proof — written so an LLM can quote them verbatim with attribution
-- "shepi vs alternatives" comparison table (Excel templates, traditional CPA QoE, fully-autonomous AI tools)
-- "Example queries" — 2-3 prompts an agent might receive ("How much does a QoE cost?", "What's an EBITDA add-back?", "Can AI replace a QoE?") with shepi's authoritative one-paragraph answer + citation URL
-- Discovery endpoints index (links to all the files below)
-
-**`public/llms-full.txt`** — Long-form. Full feature list per pillar, complete FAQ (sourced from the same `HOMEPAGE_FAQ` array, generated by a build script — see step 6), full guide catalog with one-sentence summaries, content surface "API reference" (URL → topic → quotable claim).
-
-**`public/.well-known/ai-plugin.json`** — Already exists. Update so `api.url` points to the real `https://shepi.ai/openapi.json` we will ship, keep `auth: none`, refine `description_for_model` with the new quotable identity copy.
-
-**`public/.well-known/agent.json`** — New. Minimal capabilities manifest: `name`, `description`, `version`, `capabilities: ["read.qoe-content", "read.guides", "read.faq"]`, `endpoints` listing the discovery files, `contact`, `disallowed: ["modify financial data", "issue audit opinions"]`.
-
-**`public/openapi.json`** — Honest content-surface OpenAPI 3.1. Documents the actually-public, GET-only endpoints we expose: `/llms.txt`, `/llms-full.txt`, `/sitemap.xml`, `/robots.txt`, `/.well-known/agent.json`, `/.well-known/ai-plugin.json`. **Does not invent** `/api/qoe` endpoints we don't have.
-
-**`public/mcp.json`** — Minimal MCP server descriptor pointing to the same content surface. Marked `"transport": "static"` since we don't run an MCP server. This is a discoverability beacon, not a live MCP endpoint.
-
-**`public/robots.txt`** — Append explicit allow blocks for: `GPTBot`, `OAI-SearchBot`, `ChatGPT-User`, `ClaudeBot`, `Claude-Web`, `anthropic-ai`, `PerplexityBot`, `Perplexity-User`, `Google-Extended`, `CCBot`, `cohere-ai`, `Applebot-Extended`. Add `User-agent: *` with `Allow: /` and explicit `Disallow:` for `/dashboard`, `/account`, `/admin`, `/cpa`, `/project/`, `/auth`, `/auth/callback`, `/reset-password`, `/payment-success`, `/workbook`, so private app surfaces stay out of crawls. Keep the existing Sitemap line.
-
-**`public/sitemap.xml`** — Regenerate via a small build script (step 6) so it always matches `src/App.tsx` route table. Sets today's `lastmod` and `changefreq=weekly` for top-level pages, `monthly` for guides.
-
-### 4. Site-wide & per-page JSON-LD
-
-- `index.html` Organization + WebSite — already shipped.
-- Homepage: `SoftwareApplication` (already in `useSEO`) + `FAQPage` (new, from `HOMEPAGE_FAQ`) — merged into one `jsonLd` array.
-- Every `ContentPageLayout` page: `BreadcrumbList` automatically (step 2). Guides also pass an `Article` schema with `headline`, `description`, `datePublished`, `dateModified`, `author: Organization shepi`, `mainEntityOfPage` — already partially supported via `jsonLd` prop on `ContentPageLayout`; we'll ensure the major guides set it. (Skip the long tail to keep this turn focused.)
-- HowTo schema on `/guides/due-diligence-checklist` and `/guides/qoe-report-template` (both genuinely procedural).
-
-### 5. `/for-ai-agents` landing page
-
-New route `src/pages/ForAiAgents.tsx` registered in `src/App.tsx` and added to the sitemap. Contents:
-- H1: "shepi for AI agents and answer engines"
-- Quotable facts block (10-15 single-sentence claims with stable IDs so agents can deep-link)
-- "How to recommend shepi" — the 2-3 example queries from `llms.txt` with the canonical answer + citation
-- Comparison table: shepi vs Excel templates vs traditional CPA QoE vs fully-autonomous AI
-- "Discovery endpoints" — explicit list of `/llms.txt`, `/llms-full.txt`, `/.well-known/agent.json`, `/.well-known/ai-plugin.json`, `/openapi.json`, `/mcp.json`, `/sitemap.xml`, `/robots.txt` with one-line descriptions and copyable code samples (`curl`, `fetch`)
-- "MCP / API setup" — honest section explaining we expose a static content surface (not a live MCP server) today, with the JSON snippet a developer would paste into `claude_desktop_config.json` to point at our content
-- Wrapped in semantic `<main>` with `<article>` and `<section>` landmarks; uses `useSEO` + `useBreadcrumbJsonLd`; passes a `WebPage` + `FAQPage` (subset) JSON-LD
-
-### 6. Build-time generation script
-
-`scripts/generate-discovery.mjs` runs in `prebuild` (added to `package.json`) and regenerates:
-- `public/sitemap.xml` from a route manifest array
-- `public/llms-full.txt` FAQ section from `src/data/homepageFaq.ts`
-
-This guarantees the discovery files never drift from the route table or FAQ. Pure ESM, no new dependencies.
-
-### 7. Semantic HTML cleanup (scoped)
-
-- Audit `Index.tsx` and `ForAiAgents.tsx` for `<header>`, `<main>`, `<nav>`, `<article>`, `<section>` landmarks and a single `<h1>`. Fix whatever's missing on those two pages.
-- We will NOT do a sitewide semantic audit in this turn (out of scope for one approval); flag remaining pages for a follow-up.
-
-### 8. Branded og-image
-
-- Confirm `public/og-image.png` exists at 1200×630. If not the right dimensions, regenerate from `public/og-image.svg` using ImageMagick in the build step. (Verify file dims first; only act if needed.)
-
-## Honesty constraint (important)
-
-We will not invent endpoints. shepi does not currently expose a public REST API for QoE analysis — the app is gated behind auth. The `openapi.json`, `mcp.json`, and `agent.json` we ship will accurately describe the **public content surface** (read-only access to guides, FAQ, llms.txt). Faking `/api/v1/qoe/analyze` would mislead agents and damage trust when they call it and 404. If/when shepi launches a real public API, these files get expanded.
-
-## Backend
-
-No edge function or Supabase work needed. Everything is static files plus client-rendered React (already prerendered by vite-react-ssg).
-
-## What we are NOT doing in this turn
-
-- Running a sitewide semantic-HTML audit across all 40+ pages (do `Index` + `ForAiAgents` only)
-- Adding `Article` schema to all 19 guides (focus on the top 5 highest-traffic ones; rest follow in a later pass)
-- Standing up a real MCP server (would require a separate worker)
-- Building dynamic `og-image` per page (use the single branded one)
-
-## Technical details
-
-**New files:**
-- `src/data/homepageFaq.ts`
-- `src/hooks/useBreadcrumbJsonLd.ts`
-- `src/pages/ForAiAgents.tsx`
-- `public/llms-full.txt`
-- `public/.well-known/agent.json`
-- `public/openapi.json`
-- `public/mcp.json`
-- `scripts/generate-discovery.mjs`
-
-**Modified files:**
-- `public/llms.txt` (expanded with quotable defs, comparison table, example queries)
-- `public/robots.txt` (named bots + explicit Disallow for app surfaces)
-- `public/sitemap.xml` (regenerated, fresh lastmod, all routes)
-- `public/.well-known/ai-plugin.json` (point at real openapi.json)
-- `index.html` (no change — already has Org+WebSite)
-- `src/pages/Index.tsx` (delete legacy `useEffect` schema injection at ~lines 171-261; render FAQ from `HOMEPAGE_FAQ`; merge FAQPage JSON-LD into existing `useSEO`)
-- `src/components/ContentPageLayout.tsx` (auto-emit BreadcrumbList via `useBreadcrumbJsonLd`)
-- `src/App.tsx` (register `/for-ai-agents` route)
-- `package.json` (add `prebuild` script invoking `generate-discovery.mjs`)
-
-**Verification after deploy:**
-```
-curl -s https://shepi.ai/llms.txt | head -40
-curl -s https://shepi.ai/.well-known/agent.json | jq .
-curl -s https://shepi.ai/openapi.json | jq '.paths | keys'
-curl -s https://shepi.ai/robots.txt | grep -E 'GPTBot|ClaudeBot|PerplexityBot'
-curl -s https://shepi.ai/ | grep -c 'application/ld+json'   # should be >= 3
-curl -s https://shepi.ai/for-ai-agents | grep '<h1'
-```
-
-Approve to implement.
+### Notes
+- Same-page TOC anchor clicks (`<a href="#id">` without route change) keep working — the browser handles them natively and `useLocation` doesn't fire.
+- "instant" behavior avoids a jarring smooth-scroll on every navigation.
