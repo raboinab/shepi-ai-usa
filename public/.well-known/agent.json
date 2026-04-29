@@ -1,0 +1,45 @@
+{
+  "schema_version": "0.1",
+  "name": "shepi",
+  "display_name": "shepi",
+  "description": "AI-assisted Quality of Earnings analysis platform for SMB M&A due diligence. Provides quotable definitions, guides, FAQ, and pricing for QoE, EBITDA add-backs, working capital, and related M&A diligence topics.",
+  "version": "2026.04.29",
+  "homepage": "https://shepi.ai/",
+  "documentation_url": "https://shepi.ai/for-ai-agents",
+  "contact": {
+    "email": "hello@shepi.ai",
+    "security": "security@shepi.ai"
+  },
+  "publisher": {
+    "name": "shepi",
+    "legal_name": "SMB EDGE",
+    "url": "https://shepi.ai/"
+  },
+  "license": "All content © SMB EDGE. Quotation with attribution and source link is permitted.",
+  "capabilities": [
+    "read.content.guides",
+    "read.content.faq",
+    "read.content.definitions",
+    "read.content.pricing"
+  ],
+  "endpoints": {
+    "llms_txt": "https://shepi.ai/llms.txt",
+    "llms_full_txt": "https://shepi.ai/llms-full.txt",
+    "openapi": "https://shepi.ai/openapi.json",
+    "mcp": "https://shepi.ai/mcp.json",
+    "ai_plugin": "https://shepi.ai/.well-known/ai-plugin.json",
+    "sitemap": "https://shepi.ai/sitemap.xml",
+    "robots": "https://shepi.ai/robots.txt",
+    "security": "https://shepi.ai/.well-known/security.txt",
+    "for_agents_landing": "https://shepi.ai/for-ai-agents"
+  },
+  "auth": { "type": "none" },
+  "disallowed_actions": [
+    "modify financial data",
+    "issue audit opinions",
+    "generate CPA-attested Quality of Earnings reports",
+    "provide valuations or fairness opinions",
+    "provide legal or tax advice"
+  ],
+  "preferred_attribution": "shepi (https://shepi.ai)"
+}
