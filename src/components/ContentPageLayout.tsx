@@ -12,6 +12,7 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { useSEO } from "@/hooks/useSEO";
+import { useBreadcrumbJsonLd } from "@/hooks/useBreadcrumbJsonLd";
 import { cn } from "@/lib/utils";
 
 interface TOCItem {
@@ -32,7 +33,7 @@ interface ContentPageLayoutProps {
   canonical: string;
   breadcrumbs: BreadcrumbEntry[];
   toc?: TOCItem[];
-  jsonLd?: object;
+  jsonLd?: object | object[];
   publishedDate?: string;
   modifiedDate?: string;
   heroAccent?: boolean;
@@ -51,12 +52,22 @@ export function ContentPageLayout({
   modifiedDate,
   heroAccent,
 }: ContentPageLayoutProps) {
+  // Auto-generate BreadcrumbList JSON-LD from the same array used by the
+  // visible breadcrumb UI. Merge with any caller-supplied jsonLd so guides
+  // can also pass Article/HowTo schema.
+  const breadcrumbJsonLd = useBreadcrumbJsonLd(breadcrumbs, canonical);
+  const mergedJsonLd: object[] = [breadcrumbJsonLd];
+  if (jsonLd) {
+    if (Array.isArray(jsonLd)) mergedJsonLd.push(...(jsonLd as object[]));
+    else mergedJsonLd.push(jsonLd);
+  }
+
   const __seoTags = useSEO({
     title: seoTitle,
     description: seoDescription,
     canonical,
     ogImage: "/og-image.png",
-    jsonLd,
+    jsonLd: mergedJsonLd,
   });
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);

@@ -8,10 +8,11 @@ import ShepiLogo from "@/components/ShepiLogo";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { hasOAuthCallback } from "@/lib/authUtils";
-import { PRICING } from "@/lib/pricing";
+// PRICING is consumed inside src/data/homepageFaq.ts (the FAQ source of truth).
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useSEO } from "@/hooks/useSEO";
 import { trackEvent } from "@/lib/analytics";
+import { HOMEPAGE_FAQ, buildFaqJsonLd, groupFaqByCategory } from "@/data/homepageFaq";
 
 
 const Index = () => {
@@ -20,29 +21,45 @@ const Index = () => {
     description: "AI quality of earnings analysis for M&A due diligence. Upload financials, get EBITDA adjustments and lender-ready QoE reports in hours. Quality of earnings AI built for deal teams, PE firms, and searchers.",
     canonical: "https://shepi.ai/",
     ogImage: "/og-image.png",
-    jsonLd: {
-      "@context": "https://schema.org",
-      "@type": "SoftwareApplication",
-      name: "shepi",
-      applicationCategory: "BusinessApplication",
-      operatingSystem: "Web",
-      description:
-        "AI-assisted Quality of Earnings analysis for M&A due diligence. Upload financials, get EBITDA adjustments, working capital analysis, and lender-ready QoE reports in hours.",
-      url: "https://shepi.ai/",
-      publisher: {
-        "@type": "Organization",
+    jsonLd: [
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
         name: "shepi",
+        applicationCategory: "BusinessApplication",
+        operatingSystem: "Web",
+        description:
+          "AI-assisted Quality of Earnings analysis for M&A due diligence. Upload financials, get EBITDA adjustments, working capital analysis, and lender-ready QoE reports in hours.",
         url: "https://shepi.ai/",
+        publisher: {
+          "@type": "Organization",
+          name: "shepi",
+          url: "https://shepi.ai/",
+        },
+        offers: [
+          {
+            "@type": "Offer",
+            name: "Per Project",
+            priceCurrency: "USD",
+            price: "2000",
+            description: "Single project access to full QoE analysis workflow",
+          },
+          {
+            "@type": "Offer",
+            name: "Monthly",
+            priceCurrency: "USD",
+            price: "4000",
+            description: "Monthly subscription with 3 included projects per month",
+          },
+        ],
       },
-      offers: {
-        "@type": "Offer",
-        priceCurrency: "USD",
-        price: "0",
-        availability: "https://schema.org/InStock",
-        url: "https://shepi.ai/pricing",
-      },
-    },
+      // FAQPage schema is generated from the SAME HOMEPAGE_FAQ array used to
+      // render the visible Accordion below — single source of truth.
+      buildFaqJsonLd(HOMEPAGE_FAQ),
+    ],
   });
+
+  const __faqGroups = groupFaqByCategory(HOMEPAGE_FAQ);
 
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -140,125 +157,11 @@ const Index = () => {
     }
   };
 
-  // JSON-LD structured data for Google rich results (injected server-agnostically)
-  useEffect(() => {
-    const softwareSchema = {
-      "@context": "https://schema.org",
-      "@type": "SoftwareApplication",
-      "name": "shepi — AI Quality of Earnings Software",
-      "url": "https://shepi.ai",
-      "applicationCategory": "BusinessApplication",
-      "operatingSystem": "Web",
-      "description": "AI quality of earnings software for M&A due diligence. Automate EBITDA adjustments, GL analysis, and QoE report generation. Quality of earnings AI built for deal teams, PE firms, and searchers.",
-      "offers": [
-        {
-          "@type": "Offer",
-          "name": "Per Project",
-          "price": "2000",
-          "priceCurrency": "USD",
-          "description": "Single project access to full QoE analysis workflow"
-        },
-        {
-          "@type": "Offer",
-          "name": "Monthly",
-          "price": "4000",
-          "priceCurrency": "USD",
-          "description": "Monthly subscription with 3 included projects per month"
-        }
-      ]
-    };
-
-    const faqSchema = {
-      "@context": "https://schema.org",
-      "@type": "FAQPage",
-      "mainEntity": [
-        {
-          "@type": "Question",
-          "name": "What exactly does shepi do?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "shepi is an AI-assisted platform that structures and accelerates Quality of Earnings (QoE) analysis for M&A transactions. It guides you through the complete QoE workflow — from uploading financial statements to producing a professional EBITDA bridge with documented adjustments."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "How quickly can I complete a QoE analysis?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "Most users complete initial analysis in 2-4 hours vs. 40+ hours manually in Excel."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "Does shepi replace a formal Quality of Earnings report from a CPA firm?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "shepi produces comprehensive QoE analysis from the same source data a CPA firm would use. For transactions requiring CPA attestation, shepi accelerates that engagement by producing CPA-ready workpapers. The difference is the attestation letter and professional liability coverage."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "Is shepi right for independent searchers?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "Yes — searchers are one of our primary users. shepi helps you screen deals faster, build confidence in your own analysis, document your work professionally, and identify red flags before you're too deep in a deal."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "How is my deal data protected?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "All data is encrypted in transit (TLS 1.3) and at rest (AES-256). Your deal information is isolated to your account with strict access controls. Your deal data is never used to train AI models."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "What does shepi cost?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "shepi offers per-project pricing at $2,000 per project, or a monthly subscription at $4,000/month for up to 3 concurrent projects. Both plans include full access to the QoE workflow, AI assistance, and export to PDF reports and Excel workbooks."
-          }
-        }
-      ]
-    };
-
-    const orgSchema = {
-      "@context": "https://schema.org",
-      "@type": "Organization",
-      "name": "shepi",
-      "legalName": "SMB EDGE",
-      "url": "https://shepi.ai",
-      "logo": "https://shepi.ai/og-image.png",
-      "contactPoint": {
-        "@type": "ContactPoint",
-        "email": "hello@shepi.ai",
-        "contactType": "sales"
-      }
-    };
-
-    const addScript = (id: string, data: object) => {
-      let el = document.getElementById(id) as HTMLScriptElement | null;
-      if (!el) {
-        el = document.createElement("script");
-        el.id = id;
-        el.type = "application/ld+json";
-        document.head.appendChild(el);
-      }
-      el.textContent = JSON.stringify(data);
-    };
-
-    addScript("schema-software", softwareSchema);
-    addScript("schema-faq", faqSchema);
-    addScript("schema-org", orgSchema);
-
-    return () => {
-      ["schema-software", "schema-faq", "schema-org"].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.remove();
-      });
-    };
-  }, []);
+  // NOTE: All JSON-LD (SoftwareApplication, FAQPage) is now emitted via
+  // useSEO({ jsonLd: ... }) at the top of this component using React 19
+  // metadata hoisting, so it appears in the prerendered HTML for crawlers
+  // without requiring JS execution. The Organization + WebSite schema is
+  // declared statically in index.html.
 
   // Show loading spinner while checking session
   if (isCheckingAuth) {
@@ -856,298 +759,40 @@ const Index = () => {
               Frequently Asked Questions
             </h2>
           </div>
-          
-          {/* Data & Security */}
-          <div className="mb-8">
-            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">Data & Security</h3>
-            <Accordion type="multiple" className="space-y-2">
-              <AccordionItem value="security-1" className="border border-border rounded-lg px-4 bg-card">
-                <AccordionTrigger className="text-left font-medium hover:no-underline text-foreground">
-                  How is my deal data protected?
-                </AccordionTrigger>
-                <AccordionContent className="text-muted-foreground leading-relaxed">
-                  All data is encrypted in transit (TLS 1.3) and at rest (AES-256). Your deal information is isolated to your account with strict access controls. We use enterprise-grade infrastructure with SOC 2 Type II compliant hosting. Only you can access your projects — not even our support team can view your analysis without explicit permission.
-                </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="security-2" className="border border-border rounded-lg px-4 bg-card">
-                <AccordionTrigger className="text-left font-medium hover:no-underline text-foreground">
-                  Is my deal data used to train AI models?
-                </AccordionTrigger>
-                <AccordionContent className="text-muted-foreground leading-relaxed">
-                  No. Your deal data is never used to train AI models. Period. Your financial information, adjustments, and analysis remain completely private. The AI assistance you receive is powered by models trained on public financial knowledge — not your confidential deal information.
-                </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="security-3" className="border border-border rounded-lg px-4 bg-card">
-                <AccordionTrigger className="text-left font-medium hover:no-underline text-foreground">
-                  Can other users see my analysis or data?
-                </AccordionTrigger>
-                <AccordionContent className="text-muted-foreground leading-relaxed">
-                  No. Each project is completely isolated to your account. There's no shared database, no cross-user visibility, and no way for other users to access your work. When you export your analysis, you control who has access to those files.
-                </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="security-4" className="border border-border rounded-lg px-4 bg-card">
-                <AccordionTrigger className="text-left font-medium hover:no-underline text-foreground">
-                  Can I delete my data after completing a project?
-                </AccordionTrigger>
-                <AccordionContent className="text-muted-foreground leading-relaxed">
-                  Yes. You can delete any project at any time, which permanently removes all associated data including uploaded documents, analysis, and adjustments. Once deleted, the data cannot be recovered. We also automatically purge deleted data from our backups within 30 days.
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
-          </div>
 
-          {/* What Shepi Is */}
-          <div className="mb-8">
-            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">What shepi Is</h3>
-            <Accordion type="multiple" className="space-y-2">
-              <AccordionItem value="what-is-1" className="border border-border rounded-lg px-4 bg-card">
-                <AccordionTrigger className="text-left font-medium hover:no-underline text-foreground">
-                  What exactly does shepi do?
-                </AccordionTrigger>
-                <AccordionContent className="text-muted-foreground leading-relaxed">
-                  shepi is a QoE analysis platform built on three pillars: a structured analysis framework designed by M&A professionals, automated data processing that transforms raw financials in minutes, and AI-powered document extraction for complex forms. Connect to QuickBooks for automatic data import, or upload PDFs — our AI extracts structured data from tax returns, payroll reports, and contracts without manual data entry. The result: data room files become analysis-ready in minutes, not days.
-                </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="what-is-2" className="border border-border rounded-lg px-4 bg-card">
-                <AccordionTrigger className="text-left font-medium hover:no-underline text-foreground">
-                  How is shepi different from using Excel templates?
-                </AccordionTrigger>
-                <AccordionContent className="text-muted-foreground leading-relaxed">
-                  Excel templates give you a blank structure and hours of manual work. shepi gives you automated processing plus a guided workflow. Key differences: Connect to QuickBooks and import mapped data instantly — work that takes 8-12 hours manually. AI extracts structured data from tax returns, payroll, debt schedules, and contracts — no manual data entry. Multi-period normalization and IS/BS reconciliation happen automatically. A proven 6-phase workflow mirrors how experienced analysts work. You focus on analysis and judgment, not data wrangling.
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
-          </div>
-
-          {/* What shepi Is NOT */}
-          <div className="mb-8">
-            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">What shepi Is NOT</h3>
-            <Accordion type="multiple" className="space-y-2">
-              <AccordionItem value="not-1" className="border border-border rounded-lg px-4 bg-card">
-                <AccordionTrigger className="text-left font-medium hover:no-underline text-foreground">
-                  Does shepi replace a formal Quality of Earnings report from a CPA firm?
-                </AccordionTrigger>
-                <AccordionContent className="text-muted-foreground leading-relaxed">
-                  shepi produces comprehensive QoE analysis from the same source data a CPA firm would use — trial balances, financial statements, and supporting documents. For transactions requiring CPA attestation (lender requirements, regulatory compliance), shepi accelerates that engagement by producing CPA-ready workpapers. The difference between shepi and a CPA firm isn't the analysis methodology — it's the attestation letter and professional liability coverage.
-                </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="not-2" className="border border-border rounded-lg px-4 bg-card">
-                <AccordionTrigger className="text-left font-medium hover:no-underline text-foreground">
-                  Does shepi calculate final EBITDA or provide a valuation?
-                </AccordionTrigger>
-                <AccordionContent className="text-muted-foreground leading-relaxed">
-                  shepi helps you build an EBITDA bridge by tracking and categorizing your adjustments, but the final numbers reflect YOUR judgment, not ours. We don't calculate valuation multiples or opine on what a business is worth. Our role is to help you organize and document the analysis — the conclusions are yours.
-                </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="not-3" className="border border-border rounded-lg px-4 bg-card">
-                <AccordionTrigger className="text-left font-medium hover:no-underline text-foreground">
-                  Can I show shepi output directly to lenders or investors?
-                </AccordionTrigger>
-                <AccordionContent className="text-muted-foreground leading-relaxed">
-                  Yes — shepi output is complete, professional-quality QoE analysis that exports to PDF and Excel for sharing. For investor presentations and internal decision-making, shepi delivers institutional-grade workpapers. If your lender specifically requires CPA-attested reports for financing, shepi provides the analytical foundation that accelerates that formal engagement.
-                </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="not-4" className="border border-border rounded-lg px-4 bg-card">
-                <AccordionTrigger className="text-left font-medium hover:no-underline text-foreground">
-                  Does shepi certify or guarantee the accuracy of the analysis?
-                </AccordionTrigger>
-                <AccordionContent className="text-muted-foreground leading-relaxed">
-                  No. shepi structures your analysis and provides AI-powered suggestions, but every adjustment is entered and approved by you. We don't audit source documents, verify management representations, or certify results. The accuracy of your analysis depends on the quality of data you provide and the judgment calls you make.
-                </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="not-5" className="border border-border rounded-lg px-4 bg-card">
-                <AccordionTrigger className="text-left font-medium hover:no-underline text-foreground">
-                  How reliable is shepi's analysis compared to what a CPA firm would produce?
-                </AccordionTrigger>
-                <AccordionContent className="text-muted-foreground leading-relaxed">
-                  shepi's methodology and spreadsheet structure were developed by an M&A professional with years of hands-on QoE experience. The workflow, adjustment categories, and output format mirror what you'd see from a quality accounting firm. For clean deals with good data and careful analysis, shepi produces results that are functionally equivalent to what a CPA firm would deliver. The difference isn't in methodology — it's in who signs off on it. That said, garbage in, garbage out. shepi is a tool that structures and accelerates your analysis — it doesn't fix bad data or substitute for sound judgment.
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
-          </div>
-
-          {/* How It Works */}
-          <div className="mb-8">
-            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">How It Works</h3>
-            <Accordion type="multiple" className="space-y-2">
-              <AccordionItem value="how-1" className="border border-border rounded-lg px-4 bg-card">
-                <AccordionTrigger className="text-left font-medium hover:no-underline text-foreground">
-                  What documents do I need to get started?
-                </AccordionTrigger>
-                <AccordionContent className="text-muted-foreground leading-relaxed">
-                  <p className="mb-3">Once you have access to the seller's data room (typically after LOI), you'll gather documents in three tiers:</p>
-                  <p className="mb-2"><strong className="text-foreground">Required</strong> — You need these to begin:</p>
-                  <ul className="list-disc list-inside mb-3 ml-2 space-y-1">
-                    <li>Detailed Trial Balance (QuickBooks export or Excel)</li>
-                    <li>Chart of Accounts</li>
-                    <li>Bank Statements (covering full review period)</li>
-                    <li>General Ledger</li>
-                  </ul>
-                  <p className="mb-2"><strong className="text-foreground">Recommended</strong> — For a professional-grade analysis:</p>
-                  <ul className="list-disc list-inside mb-3 ml-2 space-y-1">
-                    <li>AR & AP Aging Reports</li>
-                    <li>Payroll Reports/Registers</li>
-                    <li>Fixed Asset / Depreciation Schedule</li>
-                    <li>Tax Returns (3 years)</li>
-                    <li>Journal Entries</li>
-                    <li>Credit Card Statements</li>
-                    <li>Customer & Vendor Lists</li>
-                    <li>Inventory Records</li>
-                    <li>Debt Schedule</li>
-                    <li>Material Contracts & Lease Agreements</li>
-                    <li>Supporting Documents</li>
-                  </ul>
-                  <p className="mb-2"><strong className="text-foreground">Optional</strong> — For verification & reference:</p>
-                  <ul className="list-disc list-inside mb-3 ml-2 space-y-1">
-                    <li>Income Statements</li>
-                    <li>Balance Sheets</li>
-                    <li>Cash Flow Statements</li>
-                    <li>CIM / Offering Memo</li>
-                  </ul>
-                  <p>Start with the Required documents — you can add Recommended and Optional items as you receive them.</p>
-                </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="how-2" className="border border-border rounded-lg px-4 bg-card">
-                <AccordionTrigger className="text-left font-medium hover:no-underline text-foreground">
-                  How many years of financial data are required?
-                </AccordionTrigger>
-                <AccordionContent className="text-muted-foreground leading-relaxed">
-                  shepi requires 3 full fiscal years of historical data plus the current year-to-date period. This enables proper trending analysis, LTM (Last Twelve Months) calculations, and year-over-year comparisons that lenders and buyers expect.
-                </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="how-3" className="border border-border rounded-lg px-4 bg-card">
-                <AccordionTrigger className="text-left font-medium hover:no-underline text-foreground">
-                  What file formats can I upload?
-                </AccordionTrigger>
-                <AccordionContent className="text-muted-foreground leading-relaxed">
-                  shepi is optimized for QuickBooks — the accounting system used by 80%+ of small businesses in the US. Connect directly to QuickBooks Online for automatic data import, or upload QuickBooks Desktop exports. We also accept PDF financial statements for AI extraction (tax returns, payroll reports, contracts, debt schedules) and standard Excel/CSV files for trial balance data.
-                </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="how-4" className="border border-border rounded-lg px-4 bg-card">
-                <AccordionTrigger className="text-left font-medium hover:no-underline text-foreground">
-                  Can I connect directly to QuickBooks?
-                </AccordionTrigger>
-                <AccordionContent className="text-muted-foreground leading-relaxed">
-                  Yes — QuickBooks is our primary integration since it powers the vast majority of small business accounting in the US. Connect your client's QuickBooks Online account, select the periods you need, and shepi imports trial balance, chart of accounts, and general ledger data automatically. No manual exports, no format issues.
-                </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="how-5" className="border border-border rounded-lg px-4 bg-card">
-                <AccordionTrigger className="text-left font-medium hover:no-underline text-foreground">
-                  How quickly can I complete an analysis?
-                </AccordionTrigger>
-                <AccordionContent className="text-muted-foreground leading-relaxed">
-                  Most users complete initial analysis in 2-4 hours vs. 40+ hours manually. The biggest time savings come from automatic account mapping (saves 8-12 hours), built-in calculations and reconciliations, and structured workflow that eliminates setup time. Your actual time depends on deal complexity and data quality, but expect 80-90% time reduction compared to building from scratch in Excel.
-                </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="how-6" className="border border-border rounded-lg px-4 bg-card">
-                <AccordionTrigger className="text-left font-medium hover:no-underline text-foreground">
-                  What do I get at the end?
-                </AccordionTrigger>
-                <AccordionContent className="text-muted-foreground leading-relaxed">
-                  A complete analysis package including: EBITDA bridge with categorized adjustments, multi-period income statement and balance sheet analysis, working capital analysis with DSO/DPO/DIO metrics, customer and vendor concentration analysis, documented adjustment rationales with proof attachments. Everything exports to a professional PDF report and Excel workbook for sharing with stakeholders, lenders, or advisors.
-                </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="how-7" className="border border-border rounded-lg px-4 bg-card">
-                <AccordionTrigger className="text-left font-medium hover:no-underline text-foreground">
-                   What role does AI actually play in shepi?
-                </AccordionTrigger>
-                <AccordionContent className="text-muted-foreground leading-relaxed">
-                  <p className="mb-3">AI in shepi serves four functions:</p>
-                  <p className="mb-2"><strong className="text-foreground">Document Extraction</strong> — When you upload complex documents like tax returns (1040, 1120, 1120S, 1065), payroll reports, debt schedules, or material contracts, AI reads and extracts structured data automatically. No manual data entry required.</p>
-                  <p className="mb-2"><strong className="text-foreground">Identification</strong> — AI scans your general ledger and bank transactions to surface potential adjustments (personal expenses, non-recurring items, related party transactions) for your review.</p>
-                  <p className="mb-2"><strong className="text-foreground">Education</strong> — Explains QoE concepts, adjustment types, and industry norms in plain language so you understand the "why" behind every step.</p>
-                  <p className="mb-3"><strong className="text-foreground">Assistance</strong> — The QoE Assistant answers questions about your specific analysis in real-time, helping you understand what experienced analysts would look for.</p>
-                  <p><strong className="text-foreground">Important:</strong> AI never auto-generates adjustments or final numbers. Every adjustment is human-entered and human-approved. AI surfaces possibilities — you make the decisions.</p>
-                </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="how-8" className="border border-border rounded-lg px-4 bg-card">
-                <AccordionTrigger className="text-left font-medium hover:no-underline text-foreground">
-                  What happens if my financial data is messy or incomplete?
-                </AccordionTrigger>
-                <AccordionContent className="text-muted-foreground leading-relaxed">
-                  Real deals are messy — we get it. shepi will warn you about potential issues (missing periods, unbalanced accounts, incomplete trial balances) but won't block your progress. You can proceed with imperfect data and document your assumptions. The warnings help you know what to address, but you decide what's acceptable for your analysis.
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
-          </div>
-
-          {/* Pricing & Value */}
-          <div className="mb-8">
-            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">Pricing & Value</h3>
-            <Accordion type="multiple" className="space-y-2">
-              <AccordionItem value="pricing-1" className="border border-border rounded-lg px-4 bg-card">
-                <AccordionTrigger className="text-left font-medium hover:no-underline text-foreground">
-                  Why does shepi cost {PRICING.perProject.display} per project?
-                </AccordionTrigger>
-                <AccordionContent className="text-muted-foreground leading-relaxed">
-                  Consider the alternatives: DIY in Excel with a junior analyst at $50-100/hour spending 40+ hours = $2,000-4,000 in labor; Outsourcing to a CPA firm for sell-side QoE runs $15,000-50,000+; With shepi, complete analysis in hours, not weeks, for {PRICING.perProject.display}. At {PRICING.perProject.display}, you're paying roughly $100-200/hour for the time you actually spend — but you're getting the structure, consistency, and AI assistance that would otherwise require an experienced analyst.
-                </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="pricing-2" className="border border-border rounded-lg px-4 bg-card">
-                <AccordionTrigger className="text-left font-medium hover:no-underline text-foreground">
-                  When should I choose per-project vs. monthly?
-                </AccordionTrigger>
-                <AccordionContent className="text-muted-foreground leading-relaxed">
-                  Per-project ({PRICING.perProject.display}): Best if you're analyzing 1-4 deals and want to pay only for what you use. Monthly ({PRICING.monthly.display}): Best if you're actively searching and expect 5+ deals, or if you want the flexibility to revisit analyses without worrying about project limits.
-                </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="pricing-3" className="border border-border rounded-lg px-4 bg-card">
-                <AccordionTrigger className="text-left font-medium hover:no-underline text-foreground">
-                  Is there a free trial?
-                </AccordionTrigger>
-                <AccordionContent className="text-muted-foreground leading-relaxed">
-                  We don't currently offer a free trial, but we're confident in the value. If you complete an analysis and don't find it valuable, reach out to our team — we stand behind the product.
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
-          </div>
-
-          {/* Who It's For */}
-          <div>
-            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">Who It's For</h3>
-            <Accordion type="multiple" className="space-y-2">
-              <AccordionItem value="who-1" className="border border-border rounded-lg px-4 bg-card">
-                <AccordionTrigger className="text-left font-medium hover:no-underline text-foreground">
-                  Is shepi right for independent searchers doing their own diligence?
-                </AccordionTrigger>
-                <AccordionContent className="text-muted-foreground leading-relaxed">
-                  Yes — searchers are one of our primary users. shepi is designed for post-LOI due diligence, once the seller opens the data room and you have access to financials. With just the core documents (trial balance, chart of accounts, bank statements, and general ledger), you can start your analysis immediately and add supporting documents as they arrive. Use shepi to complete your analysis in hours instead of weeks, build professional EBITDA bridges with documented adjustments, identify red flags while you still have negotiating leverage, and create work product you can share with lenders or partners. For self-funded deals, this may be all the QoE you need. If your deal requires SBA or other lender financing, you'll likely still need formal QoE from a CPA firm — but having done the work in shepi puts you ahead and helps you catch issues early.
-                </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="who-2" className="border border-border rounded-lg px-4 bg-card">
-                <AccordionTrigger className="text-left font-medium hover:no-underline text-foreground">
-                  Can I compare analysis across multiple deals?
-                </AccordionTrigger>
-                <AccordionContent className="text-muted-foreground leading-relaxed">
-                  Yes. Your dashboard shows all your projects with key metrics for quick comparison. While each analysis is independent, you can easily reference previous deals to calibrate your approach. Many searchers find this valuable for developing pattern recognition across similar businesses or industries.
-                </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="who-3" className="border border-border rounded-lg px-4 bg-card">
-                <AccordionTrigger className="text-left font-medium hover:no-underline text-foreground">
-                  Does shepi handle industry-specific adjustments?
-                </AccordionTrigger>
-                <AccordionContent className="text-muted-foreground leading-relaxed">
-                  shepi's adjustment framework covers common categories across industries — owner compensation, one-time expenses, related party transactions, etc. The AI assistant understands industry-specific considerations (SaaS metrics, manufacturing working capital, healthcare reimbursement) and can guide you on what to look for. The structure is flexible enough to capture any adjustment type, and industry context helps the AI provide more relevant suggestions.
-                </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="who-4" className="border border-border rounded-lg px-4 bg-card">
-                <AccordionTrigger className="text-left font-medium hover:no-underline text-foreground">
-                  Can accounting firms and advisors use shepi?
-                </AccordionTrigger>
-                <AccordionContent className="text-muted-foreground leading-relaxed">
-                  Absolutely. Firms use shepi to extend capacity without adding headcount, standardize QoE output across team members, accelerate sell-side QoE preparation, and train junior staff on QoE methodology. The Enterprise plan includes features specifically for teams: collaboration tools, custom templates, and volume pricing.
-                </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="who-5" className="border border-border rounded-lg px-4 bg-card">
-                <AccordionTrigger className="text-left font-medium hover:no-underline text-foreground">
-                  Who should NOT use shepi?
-                </AccordionTrigger>
-                <AccordionContent className="text-muted-foreground leading-relaxed">
-                  shepi may not be right for you if: You need a CPA-certified QoE report (we don't provide certification); Your lender has specific QoE vendor requirements; You're looking for a valuation tool (we focus on earnings quality, not valuation); You want the AI to "do it for you" (we assist, you decide).
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
-          </div>
+          {/*
+            FAQ rendered from HOMEPAGE_FAQ — single source of truth that also
+            powers the FAQPage JSON-LD emitted via useSEO above. Edit
+            src/data/homepageFaq.ts to change either the visible content OR
+            the structured data; they will stay in sync automatically.
+          */}
+          {__faqGroups.map((group) => (
+            <div key={group.category} className="mb-8">
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">
+                {group.category}
+              </h3>
+              <Accordion type="multiple" className="space-y-2">
+                {group.items.map((item) => (
+                  <AccordionItem
+                    key={item.id}
+                    value={item.id}
+                    className="border border-border rounded-lg px-4 bg-card"
+                  >
+                    <AccordionTrigger className="text-left font-medium hover:no-underline text-foreground">
+                      {item.question}
+                    </AccordionTrigger>
+                    <AccordionContent className="text-muted-foreground leading-relaxed">
+                      {/* answers may contain inline HTML (<p>, <strong>, <ul>) */}
+                      <div
+                        // eslint-disable-next-line react/no-danger
+                        dangerouslySetInnerHTML={{ __html: item.answer }}
+                      />
+                    </AccordionContent>
+                  </AccordionItem>
+                ))}
+              </Accordion>
+            </div>
+          ))}
         </div>
       </section>
 
