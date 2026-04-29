@@ -1,0 +1,60 @@
+# shepi
+
+> AI-assisted Quality of Earnings (QoE) analysis for small and lower-middle-market M&A due diligence. shepi gives independent searchers, PE firms, CPA firms, and SBA lenders a structured diligence workflow that used to require a full transaction advisory team — without pretending AI can replace professional judgment.
+
+shepi is **analyst-in-the-loop**, not push-button QoE. The platform ingests raw financials (general ledger, P&L, balance sheet, bank statements), proposes EBITDA add-backs, normalizations, and red flags, and produces lender-ready QoE outputs. A human analyst reviews and signs off on every conclusion.
+
+## Core capabilities
+
+- Financial ingestion and normalization (multi-period P&L, balance sheet, GL detail)
+- EBITDA add-back identification (owner compensation, personal expenses, one-time items, run-rate adjustments)
+- Working capital and cash-proof analysis
+- Revenue quality and customer concentration testing
+- Earnings manipulation and anomaly detection
+- Lender-ready QoE report export (SBA-compliant format)
+
+## Who shepi is built for
+
+- Independent searchers and self-funded buyers running SBA-backed acquisitions
+- Lower-middle-market private equity associates pre-screening targets
+- CPA firms offering buy-side QoE as a productized service
+- SBA 7(a) lenders validating buyer-supplied diligence
+- Sell-side advisors preparing books for market
+
+## Key resources
+
+- [Quality of Earnings: the definitive guide](https://shepi.ai/guides/quality-of-earnings)
+- [Can AI replace a Quality of Earnings analysis?](https://shepi.ai/guides/can-ai-replace-qoe)
+- [AI won't do your QoE for you — but it can make you better at it](https://shepi.ai/guides/ai-wont-do-your-qoe)
+- [EBITDA adjustments: a working reference](https://shepi.ai/guides/ebitda-adjustments)
+- [Due diligence checklist](https://shepi.ai/guides/due-diligence-checklist)
+- [QoE report template](https://shepi.ai/guides/qoe-report-template)
+- [Working capital analysis in QoE](https://shepi.ai/guides/working-capital-analysis)
+- [Owner compensation normalization](https://shepi.ai/guides/owner-compensation-normalization)
+- [Revenue quality analysis](https://shepi.ai/guides/revenue-quality-analysis)
+- [Customer concentration risk](https://shepi.ai/guides/customer-concentration-risk)
+- [Sell-side vs buy-side QoE](https://shepi.ai/guides/sell-side-vs-buy-side-qoe)
+
+## Use cases
+
+- [For independent searchers](https://shepi.ai/use-cases/independent-searchers)
+
+## Pricing and trust
+
+- [Pricing](https://shepi.ai/pricing)
+- [How much does a Quality of Earnings cost?](https://shepi.ai/quality-of-earnings-cost)
+- [Privacy policy](https://shepi.ai/privacy)
+- [Terms of service](https://shepi.ai/terms)
+- [Data processing agreement](https://shepi.ai/dpa)
+
+## What shepi is NOT
+
+- Not a replacement for a licensed CPA's professional opinion
+- Not an audit and not auditor-signed
+- Not a fully autonomous "push button, get a QoE" tool — every conclusion requires human review
+- Not a substitute for legal, tax, or fairness-opinion services
+
+## Contact
+
+- Website: https://shepi.ai
+- Operated by: SMB EDGE

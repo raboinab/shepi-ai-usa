@@ -1,0 +1,5 @@
+Contact: mailto:security@shepi.ai
+Expires: 2027-04-29T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://shepi.ai/.well-known/security.txt
+Policy: https://shepi.ai/privacy
