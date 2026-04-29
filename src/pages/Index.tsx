@@ -8,7 +8,7 @@ import ShepiLogo from "@/components/ShepiLogo";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { hasOAuthCallback } from "@/lib/authUtils";
-import { PRICING } from "@/lib/pricing";
+// PRICING is consumed inside src/data/homepageFaq.ts (the FAQ source of truth).
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useSEO } from "@/hooks/useSEO";
 import { trackEvent } from "@/lib/analytics";
