@@ -36,6 +36,12 @@ export interface SEOProps {
   noindex?: boolean;
   ogImage?: string;
   ogType?: string;
+  /**
+   * Optional JSON-LD structured data. Pass a single Schema.org object or an
+   * array of them. Rendered as <script type="application/ld+json"> which
+   * React 19 hoists into <head> during prerender and on the client.
+   */
+  jsonLd?: object | object[];
 }
 
 export function SEO({
@@ -45,6 +51,7 @@ export function SEO({
   noindex = false,
   ogImage = "/og-image.png",
   ogType = "website",
+  jsonLd,
 }: SEOProps) {
   const absoluteImage = ogImage.startsWith("http")
     ? ogImage
@@ -81,6 +88,15 @@ export function SEO({
       <meta property="og:image" content={absoluteImage} />
       <meta name="twitter:image" content={absoluteImage} />
       <meta name="twitter:card" content="summary_large_image" />
+      {jsonLd &&
+        (Array.isArray(jsonLd) ? jsonLd : [jsonLd]).map((obj, i) => (
+          <script
+            key={`jsonld-${i}`}
+            type="application/ld+json"
+            // eslint-disable-next-line react/no-danger
+            dangerouslySetInnerHTML={{ __html: JSON.stringify(obj) }}
+          />
+        ))}
     </>
   );
 }

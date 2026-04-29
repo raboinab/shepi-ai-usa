@@ -80,6 +80,32 @@
     -->
     <meta name="robots" content="index, follow" />
     <meta name="googlebot" content="index, follow, max-video-preview:-1, max-image-preview:large, max-snippet:-1" />
+
+    <!-- Site-wide Organization + WebSite JSON-LD (static, identical for every route) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "Organization",
+          "@id": "https://shepi.ai/#organization",
+          "name": "shepi",
+          "url": "https://shepi.ai/",
+          "logo": "https://shepi.ai/favicon.png",
+          "description": "AI-assisted Quality of Earnings analysis for SMB M&A due diligence. Built for independent searchers, lower-middle-market PE, CPA firms, and SBA lenders.",
+          "sameAs": []
+        },
+        {
+          "@type": "WebSite",
+          "@id": "https://shepi.ai/#website",
+          "url": "https://shepi.ai/",
+          "name": "shepi",
+          "publisher": { "@id": "https://shepi.ai/#organization" },
+          "inLanguage": "en-US"
+        }
+      ]
+    }
+    </script>
   </head>
 
   <body>

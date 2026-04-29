@@ -1,75 +1,74 @@
+## Context — what the audit is actually telling us
 
-# Two new resource pages + searcher page expansion
+The Robauto AI Signal scan ran against the **currently deployed** version of `https://shepi.ai/`, which is stale. Two independent signals confirm this:
 
-Three deliverables in one loop, all using existing `ContentPageLayout` (so they inherit working SEO automatically — no infra work needed). Targets the actual long-tail queries surfacing in GSC plus the credibility-building manifesto angle.
+1. The audit reports a 63-char title and 205-char description — the older copy. Our codebase (`src/pages/Index.tsx`) already uses the shorter, optimized version.
+2. `curl https://shepi.ai/` returns a static `<title>` and `<meta name="description">` from a previous `index.html`. The current `index.html` no longer has either — they were intentionally removed so per-page `useSEO` can own them. The live HTML also has **no canonical, no og:title, no og:description, no twitter:* tags** — yet our `useSEO` hook emits all of those, and every page (including `Index.tsx`) renders the returned tags via `{__seoTags}`. So the code is right; the deployment is old.
 
-## A. New guide: "AI Won't Do Your Quality of Earnings Analysis For You"
+A fresh Vercel/Lovable rebuild will fix: title length, description length, missing canonical, missing OG, missing Twitter Card. That alone moves P1 substantially.
 
-A founder-voice manifesto piece that builds credibility by underpromising. Companion to the existing `CanAIReplaceQoE` (balanced overview).
+The remaining P1 gaps the audit flagged are real and need new work:
+- **JSON-LD / Schema.org** structured data (Organization + SoftwareApplication on `/`, Article on guides)
+- **`/llms.txt`** (and optionally `llms-full.txt`)
+- **`/.well-known/security.txt`**
+- **`/.well-known/ai-plugin.json`** (low value, but cheap)
 
-### Title & meta
-- **H1**: "AI Won't Do Your Quality of Earnings Analysis For You — But It Can Make You Much Better At It"
-- **seoTitle**: "AI Won't Do Your QoE Analysis (And Why That's the Point) | Shepi"
-- **seoDescription**: Honest take from an AI QoE company on what AI can and can't do in financial due diligence — and why "AI-assisted" beats "AI-generated" every time.
-- **canonical**: `https://shepi.ai/guides/ai-wont-do-your-qoe`
-- **publishedDate**: April 2026
+The `llms.txt` and structured data are the highest-leverage items for AI engine recognition (ChatGPT/Gemini "No" recognition).
 
-### Content sections
-1. **The promise and the misconception** — AI is changing FDD, but QoE is a judgment exercise, not a spreadsheet exercise.
-2. **What AI can do well** (`BenefitGrid`) — ingest messy exports, scan full GL population, surface anomalies, draft adjustment support, build structured schedules.
-3. **What AI cannot do for you** (`BenefitGrid`) — judge addback validity, assess credibility of explanations, conduct management interviews, take responsibility for the conclusion. Key line: "QoE is about supporting a deal decision — and there's nobody to sue when the AI is wrong."
-4. **AI-generated vs AI-assisted** (`ComparisonTable`) — Who owns the conclusion / Who reviews adjustments / Who handles management Q&A / Who signs / Defensibility.
-5. **The better model: analyst-in-the-loop** — Full population review instead of sampling. Concrete examples drawn from product (adjustment tracing, GL→bank reconcile, anomaly surfacing) framed as "what the analyst gets to start from."
-6. **Who this matters most for** — Searchers, independent sponsors, SBA buyers, lower-middle-market deal teams, lenders.
-7. **Conclusion + positioning** — "Shepi is not 'AI does QoE.' Shepi is 'AI gives every buyer a structured diligence workflow that used to require a full transaction advisory team.'"
-8. **FAQ** (`AccordionFAQ`) — Can I use Shepi without a CPA? / Will lenders accept an AI-assisted QoE? / What's the difference between AI-generated and AI-assisted? / Does this replace my QoE provider? / What if the AI is wrong about an adjustment?
-9. **Related resources** (`RelatedResourceCards`) — link to `CanAIReplaceQoE`, `EBITDAAdjustments`, `GeneralLedgerReview`, `DueDiligenceChecklist`, `/use-cases/independent-searchers`, `/use-cases/lenders`.
+## Plan
 
-### Files
-- **New**: `src/pages/guides/AIWontDoYourQoE.tsx` (modeled on `CanAIReplaceQoE.tsx` structure)
-- **Edit**: `src/App.tsx` — register `/guides/ai-wont-do-your-qoe` route alongside other guide routes
-- **Edit**: `src/pages/Resources.tsx` — add to Educational Guides section at the top of the list
-- **Edit**: `src/pages/guides/CanAIReplaceQoE.tsx` — add a single callout near the top: "Want the shorter, opinionated take? Read AI Won't Do Your QoE Analysis For You."
-- **Edit**: `public/sitemap.xml` if guides are listed individually (will check pattern first)
+### Step 1 — Force a fresh deploy (unblocks 5 of 7 audit fixes)
+Empty commit `chore: trigger rebuild for SEO meta` to force Vercel/Lovable to redeploy the latest prerendered HTML. After this, re-running the audit should show: correct shorter title, correct shorter description, canonical present, OG tags present, Twitter Card present.
 
-## B. Expand `/use-cases/independent-searchers`
+### Step 2 — Add `public/llms.txt`
+Create a Markdown-style `llms.txt` following the [llmstxt.org](https://llmstxt.org) spec. Sections:
+- **shepi** (one-paragraph identity: AI-assisted QoE for SMB M&A; analyst-in-the-loop, not push-button)
+- **Core capabilities** (financial normalization, EBITDA add-backs, lender-ready QoE export)
+- **Who we serve** (independent searchers, lower-middle-market PE, CPA firms, lenders)
+- **Key resources** (links to top guides: `/guides/can-ai-replace-qoe`, `/guides/ai-wont-do-your-qoe`, `/guides/ebitda-adjustments`, `/use-cases/independent-searchers`, `/quality-of-earnings-cost`)
+- **What we are not** (not a replacement for a CPA's professional opinion; not auditor-signed)
 
-Currently ranks position 8-9 on long-tail searcher queries with 24 impressions. Page is structurally fine but thin. Goal: push to page 1 by adding depth on the exact queries already showing impressions.
+### Step 3 — Add `public/.well-known/security.txt`
+Standard RFC 9116 format: `Contact: mailto:security@shepi.ai`, `Expires: 2027-01-01T00:00:00Z`, `Preferred-Languages: en`, `Canonical: https://shepi.ai/.well-known/security.txt`. Use the project's actual security inbox if one exists; otherwise `support@` or `hello@` — confirm during build.
 
-### Sections to add
-- **"The Searcher's QoE Checklist"** (`StepList`) — SBA-specific addback rules, seller-financing diligence requirements, working capital peg conventions for sub-$5M deals, customer concentration thresholds that kill SBA loans, owner-comp normalization for searchers (replacement-CFO benchmark by industry/size).
-- **"Search Fund vs Independent Searcher: QoE Differences"** — Self-funded searchers vs traditional search fund LP-backed searchers have different diligence needs. Brief framing block.
-- **"What SBA Lenders Actually Want to See"** — Pulls from real SBA 7(a) underwriting requirements: 3-year cash flow coverage, debt service coverage ratio (DSCR ≥ 1.25x), historical owner-comp normalization, customer concentration disclosure.
-- **Expanded FAQ** targeting these long-tails: "Do search funds need a QoE?" / "What does an SBA QoE cost?" / "Can I do my own QoE as a searcher?" / "Is a sell-side QoE enough or do I need my own buy-side?" / "How long does QoE take for a search fund deal?"
-- **Comparison block** (`ComparisonTable`) — Full QoE firm ($25-60K, 4-8 weeks) vs AI-assisted with Shepi (existing PRICING value, days) — across rows: Cost, Timeline, Population review, Lender acceptance, Best for.
-- **Cross-link to the new "AI Won't Do Your QoE" guide** in the existing "When You Still Need a CPA" section.
+### Step 4 — Add JSON-LD structured data
+Inject site-wide `Organization` + `WebSite` JSON-LD into `index.html` (static, identical for every page). Inject per-page schema via `useSEO` extension:
+- Homepage: add `SoftwareApplication` schema (name, description, applicationCategory: "BusinessApplication", offers, aggregateRating only if we actually have reviews — skip if not).
+- Guide pages (via `ContentPageLayout`): add `Article` / `TechArticle` schema with `headline`, `datePublished`, `author: { "@type": "Organization", "name": "shepi" }`.
 
-### TOC additions
-After existing items, add: "SBA Requirements", "Searcher Checklist", and ensure new FAQ items appear in the existing FAQ section.
+Implementation: extend `SEOProps` with optional `jsonLd?: object | object[]`, and render `<script type="application/ld+json">{JSON.stringify(...)}</script>` inside the `SEO` component (React 19 hoists scripts in `<head>` too when typed as `application/ld+json`). Verify hoisting works in our prerender; if not, fall back to injecting JSON-LD at prerender time via a small wrapper. Wire it into `Index.tsx`, `ContentPageLayout.tsx`, and `Pricing.tsx`.
 
-### Files
-- **Edit**: `src/pages/use-cases/IndependentSearchers.tsx` — append new sections, expand FAQ, add cross-link
-- No new components, no new routes.
+### Step 5 — Add `public/.well-known/ai-plugin.json` (low priority, fast)
+Minimal manifest pointing to a future `/openapi.yaml` or just a description-only entry. Include `name_for_human: "shepi"`, `name_for_model: "shepi_qoe"`, `description_for_model`, `contact_email`, `legal_info_url: "/terms"`, `logo_url`. We won't actually expose tools yet — this is a discoverability beacon.
 
-## C. (Optional, light) Companion update to `CanAIReplaceQoE`
+### Step 6 — Re-run the audit
+After the rebuild + new files ship, re-scan `shepi.ai`. Expected P1 score: 49 → ~85+. The remaining gap will be "AI Recognition" (ChatGPT/Gemini training cutoffs), which only time + citations can fix.
 
-One-line cross-link callout near the top pointing to the new manifesto piece. That's it — keep the balanced piece intact for users searching neutral terms.
+## What we are NOT doing
 
-## Out of scope (explicit)
+- **Robauto pixel**: That's their tracking install — only worth adding if you actually want to use their P2-P5 dashboard. Skipping unless you confirm.
+- **Aggregate review schema**: We don't have public reviews. Faking schema is a manual-action risk with Google.
+- **Adding back static `<title>` to `index.html`**: That would re-create the duplicate-title bug we already fixed.
 
-- No SEO infra changes — `ContentPageLayout` already handles `useSEO` for all three deliverables.
-- No new shared components.
-- No changes to navigation/header.
-- No changes to the 19 "BROKEN" auth-only pages (admin, account, demos) — they shouldn't be indexed anyway and a future cleanup pass can add `noindex` if desired.
-- Vercel deployment trigger — user's manual action, outside Lovable sandbox.
-- GSC indexing requests — user's manual action.
-- GA4 Singapore filter — user's manual action.
+## Technical details
 
-## Acceptance check
+**Files created:**
+- `public/llms.txt`
+- `public/.well-known/security.txt`
+- `public/.well-known/ai-plugin.json`
 
-- New `/guides/ai-wont-do-your-qoe` route loads, has unique title/description/canonical (verify via curl after Vercel deploys).
-- `/resources` lists the new guide at the top of Educational Guides.
-- `CanAIReplaceQoE` has the cross-link callout.
-- `/use-cases/independent-searchers` has 4 new content sections, expanded FAQ, and SBA-specific content matching the long-tail queries currently surfacing in GSC.
-- All three pages inherit working per-page SEO via `ContentPageLayout` (no manual `useSEO` wiring needed).
-- Build passes, no TS errors.
+**Files modified:**
+- `src/hooks/useSEO.tsx` — add optional `jsonLd` prop, emit `<script type="application/ld+json">`
+- `src/pages/Index.tsx` — pass `SoftwareApplication` JSON-LD
+- `src/components/ContentPageLayout.tsx` — pass `Article` JSON-LD derived from page props
+- `index.html` — add static `Organization` + `WebSite` JSON-LD `<script>` block in `<head>`
+
+**Verification after deploy:**
+```
+curl -s https://shepi.ai/ | grep -E 'canonical|og:title|application/ld'
+curl -s https://shepi.ai/llms.txt | head
+curl -s https://shepi.ai/.well-known/security.txt
+```
+All three should return populated content.
+
+Approve to implement.

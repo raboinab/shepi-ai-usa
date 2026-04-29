@@ -51,27 +51,16 @@ export function ContentPageLayout({
   modifiedDate,
   heroAccent,
 }: ContentPageLayoutProps) {
-  const __seoTags = useSEO({ title: seoTitle, description: seoDescription, canonical, ogImage: "/og-image.png" });
+  const __seoTags = useSEO({
+    title: seoTitle,
+    description: seoDescription,
+    canonical,
+    ogImage: "/og-image.png",
+    jsonLd,
+  });
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeSection, setActiveSection] = useState("");
-
-  // Inject JSON-LD
-  useEffect(() => {
-    if (!jsonLd) return;
-    let el = document.getElementById("content-jsonld") as HTMLScriptElement | null;
-    if (!el) {
-      el = document.createElement("script");
-      el.id = "content-jsonld";
-      el.type = "application/ld+json";
-      document.head.appendChild(el);
-    }
-    el.textContent = JSON.stringify(jsonLd);
-    return () => {
-      const s = document.getElementById("content-jsonld");
-      if (s) s.remove();
-    };
-  }, [jsonLd]);
 
   // Intersection observer for TOC highlight
   useEffect(() => {
