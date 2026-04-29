@@ -12,6 +12,7 @@ import { PRICING } from "@/lib/pricing";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useSEO } from "@/hooks/useSEO";
 import { trackEvent } from "@/lib/analytics";
+import { HOMEPAGE_FAQ, buildFaqJsonLd, groupFaqByCategory } from "@/data/homepageFaq";
 
 
 const Index = () => {
@@ -20,29 +21,45 @@ const Index = () => {
     description: "AI quality of earnings analysis for M&A due diligence. Upload financials, get EBITDA adjustments and lender-ready QoE reports in hours. Quality of earnings AI built for deal teams, PE firms, and searchers.",
     canonical: "https://shepi.ai/",
     ogImage: "/og-image.png",
-    jsonLd: {
-      "@context": "https://schema.org",
-      "@type": "SoftwareApplication",
-      name: "shepi",
-      applicationCategory: "BusinessApplication",
-      operatingSystem: "Web",
-      description:
-        "AI-assisted Quality of Earnings analysis for M&A due diligence. Upload financials, get EBITDA adjustments, working capital analysis, and lender-ready QoE reports in hours.",
-      url: "https://shepi.ai/",
-      publisher: {
-        "@type": "Organization",
+    jsonLd: [
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
         name: "shepi",
+        applicationCategory: "BusinessApplication",
+        operatingSystem: "Web",
+        description:
+          "AI-assisted Quality of Earnings analysis for M&A due diligence. Upload financials, get EBITDA adjustments, working capital analysis, and lender-ready QoE reports in hours.",
         url: "https://shepi.ai/",
+        publisher: {
+          "@type": "Organization",
+          name: "shepi",
+          url: "https://shepi.ai/",
+        },
+        offers: [
+          {
+            "@type": "Offer",
+            name: "Per Project",
+            priceCurrency: "USD",
+            price: "2000",
+            description: "Single project access to full QoE analysis workflow",
+          },
+          {
+            "@type": "Offer",
+            name: "Monthly",
+            priceCurrency: "USD",
+            price: "4000",
+            description: "Monthly subscription with 3 included projects per month",
+          },
+        ],
       },
-      offers: {
-        "@type": "Offer",
-        priceCurrency: "USD",
-        price: "0",
-        availability: "https://schema.org/InStock",
-        url: "https://shepi.ai/pricing",
-      },
-    },
+      // FAQPage schema is generated from the SAME HOMEPAGE_FAQ array used to
+      // render the visible Accordion below — single source of truth.
+      buildFaqJsonLd(HOMEPAGE_FAQ),
+    ],
   });
+
+  const __faqGroups = groupFaqByCategory(HOMEPAGE_FAQ);
 
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
