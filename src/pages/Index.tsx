@@ -20,6 +20,28 @@ const Index = () => {
     description: "AI quality of earnings analysis for M&A due diligence. Upload financials, get EBITDA adjustments and lender-ready QoE reports in hours. Quality of earnings AI built for deal teams, PE firms, and searchers.",
     canonical: "https://shepi.ai/",
     ogImage: "/og-image.png",
+    jsonLd: {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      name: "shepi",
+      applicationCategory: "BusinessApplication",
+      operatingSystem: "Web",
+      description:
+        "AI-assisted Quality of Earnings analysis for M&A due diligence. Upload financials, get EBITDA adjustments, working capital analysis, and lender-ready QoE reports in hours.",
+      url: "https://shepi.ai/",
+      publisher: {
+        "@type": "Organization",
+        name: "shepi",
+        url: "https://shepi.ai/",
+      },
+      offers: {
+        "@type": "Offer",
+        priceCurrency: "USD",
+        price: "0",
+        availability: "https://schema.org/InStock",
+        url: "https://shepi.ai/pricing",
+      },
+    },
   });
 
   const navigate = useNavigate();
