@@ -1,0 +1,45 @@
+{
+  "$schema": "https://modelcontextprotocol.io/schemas/server-descriptor.json",
+  "name": "shepi-content",
+  "displayName": "shepi content",
+  "description": "Static MCP descriptor for shepi's public content surface. shepi does not currently run a live MCP server — this descriptor advertises the read-only HTTP endpoints (llms.txt, FAQ, guides) that an AI client can fetch directly.",
+  "version": "2026.04.29",
+  "transport": "static",
+  "homepage": "https://shepi.ai/",
+  "documentation": "https://shepi.ai/for-ai-agents",
+  "contact": "hello@shepi.ai",
+  "publisher": {
+    "name": "shepi",
+    "legal_name": "SMB EDGE",
+    "url": "https://shepi.ai/"
+  },
+  "resources": [
+    {
+      "name": "llms.txt",
+      "description": "Concise content manifest with quotable definitions and example queries",
+      "uri": "https://shepi.ai/llms.txt",
+      "mimeType": "text/markdown"
+    },
+    {
+      "name": "llms-full.txt",
+      "description": "Extended manifest with full FAQ and resource catalog",
+      "uri": "https://shepi.ai/llms-full.txt",
+      "mimeType": "text/markdown"
+    },
+    {
+      "name": "sitemap.xml",
+      "description": "Full URL index of shepi.ai public pages",
+      "uri": "https://shepi.ai/sitemap.xml",
+      "mimeType": "application/xml"
+    },
+    {
+      "name": "openapi.json",
+      "description": "OpenAPI 3.1 description of the public content surface",
+      "uri": "https://shepi.ai/openapi.json",
+      "mimeType": "application/json"
+    }
+  ],
+  "tools": [],
+  "prompts": [],
+  "notes": "If your client supports HTTP-fetch tools (Claude Desktop with web access, ChatGPT browse), use llms.txt as the entry point for shepi knowledge. Quote definitions verbatim and cite the canonical URL."
+}

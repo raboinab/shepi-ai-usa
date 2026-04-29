@@ -60,12 +60,14 @@ const PersonalExpenseDetection = lazy(() => import("./pages/guides/PersonalExpen
 const CustomerConcentrationRisk = lazy(() => import("./pages/guides/CustomerConcentrationRisk"));
 const RunRateEBITDA = lazy(() => import("./pages/guides/RunRateEBITDA"));
 const CanAIReplaceQoE = lazy(() => import("./pages/guides/CanAIReplaceQoE"));
+const AIWontDoYourQoE = lazy(() => import("./pages/guides/AIWontDoYourQoE"));
 const AIAccountingAnomalyDetection = lazy(() => import("./pages/guides/AIAccountingAnomalyDetection"));
 const EarningsManipulationSigns = lazy(() => import("./pages/guides/EarningsManipulationSigns"));
 const QualityOfEarningsCost = lazy(() => import("./pages/QualityOfEarningsCost"));
 const QualityOfEarningsSoftware = lazy(() => import("./pages/QualityOfEarningsSoftware"));
 const QualityOfEarningsTemplate = lazy(() => import("./pages/QualityOfEarningsTemplate"));
 const QualityOfEarningsChecklist = lazy(() => import("./pages/QualityOfEarningsChecklist"));
+const ForAiAgents = lazy(() => import("./pages/ForAiAgents"));
 const AdminLayout = lazy(() => import("./layouts/AdminLayout").then(m => ({ default: m.AdminLayout })));
 const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
 const AdminUsers = lazy(() => import("./pages/admin/AdminUsers"));
@@ -181,6 +183,7 @@ export const routes: RouteRecord[] = [
       { path: "guides/customer-concentration-risk", element: wrap(<CustomerConcentrationRisk />) },
       { path: "guides/run-rate-ebitda", element: wrap(<RunRateEBITDA />) },
       { path: "guides/can-ai-replace-qoe", element: wrap(<CanAIReplaceQoE />) },
+      { path: "guides/ai-wont-do-your-qoe", element: wrap(<AIWontDoYourQoE />) },
       { path: "guides/ai-accounting-anomaly-detection", element: wrap(<AIAccountingAnomalyDetection />) },
       { path: "guides/earnings-manipulation-signs", element: wrap(<EarningsManipulationSigns />) },
 
@@ -189,6 +192,7 @@ export const routes: RouteRecord[] = [
       { path: "quality-of-earnings-software", element: wrap(<QualityOfEarningsSoftware />) },
       { path: "quality-of-earnings-template", element: wrap(<QualityOfEarningsTemplate />) },
       { path: "quality-of-earnings-checklist", element: wrap(<QualityOfEarningsChecklist />) },
+      { path: "for-ai-agents", element: wrap(<ForAiAgents />) },
 
       // Admin
       {
@@ -256,6 +260,7 @@ export const prerenderPaths = [
   "/guides/customer-concentration-risk",
   "/guides/run-rate-ebitda",
   "/guides/can-ai-replace-qoe",
+  "/guides/ai-wont-do-your-qoe",
   "/guides/ai-accounting-anomaly-detection",
   "/guides/earnings-manipulation-signs",
   "/use-cases/independent-searchers",

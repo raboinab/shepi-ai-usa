@@ -22,6 +22,7 @@ const sections = [
     title: "Educational Guides",
     description: "Master the fundamentals of Quality of Earnings analysis, EBITDA adjustments, and financial due diligence.",
     links: [
+      { to: "/guides/ai-wont-do-your-qoe", label: "AI Won't Do Your QoE Analysis For You", description: "Honest take from an AI QoE company on what AI can and can't do in financial due diligence — and why 'AI-assisted' beats 'AI-generated.'" },
       { to: "/guides/quality-of-earnings", label: "What Is a Quality of Earnings Report?", description: "Complete guide to QoE reports — what they are, why they matter, key components, and how AI is changing the process." },
       { to: "/guides/ebitda-adjustments", label: "EBITDA Adjustments: Types, Examples & Best Practices", description: "Categories, common examples, documentation standards, and red flags to watch for in EBITDA adjustments." },
       { to: "/guides/due-diligence-checklist", label: "Financial Due Diligence Checklist for M&A", description: "Document requests, analysis steps, red flags, timeline planning, and common mistakes to avoid." },

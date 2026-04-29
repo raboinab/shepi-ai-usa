@@ -1,58 +1,148 @@
-## Pushback on the user's diagnosis
+## Goal
 
-The user's prompt assumes `src/hooks/useSEO.ts` exists and uses `useEffect` + `document.querySelector`. **That file does not exist in this repo right now** — it was deleted in the previous turn. Only `src/hooks/useSEO.tsx` exists, and it already uses `<Head>` from `vite-react-ssg` (render-phase, no `useEffect`, no DOM manipulation). The user is reading a stale view (probably from `shepi-ai-usa` published HTML, not the current source).
+Make shepi.ai a first-class citizen for AI agents and answer engines (ChatGPT, Claude, Perplexity, Gemini, Cursor) by shipping machine-readable discovery files, per-page structured data driven by a single source of truth, semantic landmarks, and a dedicated `/for-ai-agents` landing page.
 
-The user's proposed fix — `import { useHead } from "@unhead/react"` — also **would not compile** as written, because `@unhead/react` is not in `package.json`. Only `vite-react-ssg` is installed.
+## Audit findings (what already exists)
 
-So before changing any code, I need to figure out which of three scenarios is actually true.
+Reusing what's there, deleting duplication:
 
-## Diagnostic plan (Phase 1 — must run first)
+- `useSEO` hook (React 19 metadata hoisting) is wired through every public page and **already supports `jsonLd`** — added in the previous turn.
+- `public/llms.txt` exists but is brand-only — needs to be expanded with quotable definitions, comparison table, example queries, and discovery-endpoint links.
+- `public/.well-known/security.txt` and `public/.well-known/ai-plugin.json` exist.
+- `public/robots.txt` allows everyone via `User-agent: *` but does **not name** GPTBot, OAI-SearchBot, ClaudeBot, PerplexityBot, Google-Extended explicitly. Naming them is the AI-engine-best-practice signal.
+- `public/sitemap.xml` lists ~40 routes but is missing the new pages added recently (`/guides/ai-wont-do-your-qoe`, `/guides/ai-accounting-anomaly-detection`, `/guides/earnings-manipulation-signs`, the new `/for-ai-agents`, `/cpa`, etc.) and uses a stale `2026-02-23` lastmod everywhere.
+- `index.html` already has site-wide `Organization` + `WebSite` JSON-LD (added previously).
+- **CRITICAL DUPLICATION**: `src/pages/Index.tsx` has TWO competing schema systems: (a) the new `useSEO({ jsonLd })` SoftwareApplication block, and (b) a legacy `useEffect` that injects `schema-software`, `schema-faq`, `schema-org` via `addScript()` (lines 171-261). The legacy `faqSchema` is hand-typed and duplicates Accordion content (lines 850-1100+) — exactly the "single source of truth" violation called out. We will rip out the legacy `useEffect` injection entirely.
+- shepi has no public REST API — the `openapi.json` and `mcp.json` files would be aspirational only. We will ship them as minimal, honest stubs that describe the *content surface* (resource catalog) rather than fake API endpoints. See "Honesty constraint" below.
 
-I'll run, in order:
+## Plan
 
-1. `bun run build` and inspect `dist/quality-of-earnings-cost/index.html` directly. This is the only ground truth. If the title is correct in `dist/` HTML, the source code is fine and the user is looking at a stale deploy.
-2. `cat node_modules/vite-react-ssg/package.json` — confirm whether v0.9 ships `react-helmet-async` or has switched to `unhead` internally. This decides which head API actually gets serialized at prerender.
-3. `rg "HelmetProvider|UnheadProvider|createHead" src/` — confirm whether the required head provider is mounted in the app tree. `<Head>` from `vite-react-ssg` is a no-op without its provider.
-4. `rg "useSEO\(" src/ -l` then spot-check 3 call sites — confirm every caller actually renders the returned `__seoTags` JSX. If any caller does `useSEO({...})` without using the return value, that page emits zero head tags regardless of how `useSEO` is implemented.
-5. `rg "auth-middleware" src/ vite.config.ts` — find what keeps regenerating `src/integrations/supabase/auth-middleware.ts` (it imports `@tanstack/react-start`, which isn't installed, and breaks every build). This needs a permanent stop, not another delete.
+### 1. Single source of truth for the homepage FAQ
 
-## Fix plan (Phase 2 — branches on diagnostic results)
+Create `src/data/homepageFaq.ts` exporting a typed array:
 
-### Scenario A — `dist/` HTML is correct, only `shepi.ai` is stale
-No source code change. Tell the user to redeploy (or wait for the deploy that the previous turn already triggered to propagate) and re-curl. The user's "production curl" evidence is from a build that doesn't include the previous fix yet.
+```ts
+export interface FaqEntry { category: string; question: string; answer: string; }
+export const HOMEPAGE_FAQ: FaqEntry[] = [/* all current questions */];
+```
 
-### Scenario B — `dist/` HTML is generic, and `vite-react-ssg` v0.9 uses `unhead` internally
-The user's instinct is right but their import is wrong. Replace `useSEO.tsx` to call `useHead()` from the unhead instance that `vite-react-ssg` re-exports, **not** from a separately-installed `@unhead/react`. Likely import path: `vite-react-ssg/utils` or `vite-react-ssg`'s own re-export — I'll grep `node_modules/vite-react-ssg/dist` to find the exact named export.
+- Refactor `src/pages/Index.tsx` FAQ section to render from this array (group by `category`, render with Accordion).
+- Generate the `FAQPage` JSON-LD from the same array and pass it to `useSEO({ jsonLd: [...] })`.
+- Delete the legacy `useEffect` that injects `schema-software` / `schema-faq` / `schema-org` (lines ~171-261) — `useSEO` now owns all of it; the homepage's `SoftwareApplication` schema (already on `useSEO`) will be merged with the new FAQ schema and the existing `Organization` lives in `index.html`.
 
-### Scenario C — `dist/` HTML is generic, and `<Head>` is correct but `HelmetProvider`/`UnheadProvider` is missing from the tree
-Add the provider in `src/main.tsx` (and also in the SSG entry if vite-react-ssg requires it on both sides). Source of `useSEO.tsx` stays as-is — it's already using the right primitive, it just has nothing collecting its output.
+### 2. Reusable SEO + breadcrumb hooks
 
-### Scenario D — `dist/` HTML is generic because call sites don't render `{__seoTags}`
-Audit all 17 call sites. For any that don't render the return value, either fix the call site or convert `useSEO` from a JSX-returning shim into a side-effect hook (which requires Scenario B's `useHead()` approach).
+- Rename / re-document `useSEO` as the canonical `usePageMeta` hook (keep `useSEO` as an alias to avoid touching ~25 call sites). Already enforces the user's bullet list: unique title, description, canonical, full OG, full Twitter Card, og:image. No code change needed beyond doc comment.
+- New `src/hooks/useBreadcrumbJsonLd.ts`: takes `[{ label, href }]` and returns a `BreadcrumbList` JSON-LD object.
+- Update `ContentPageLayout` to call `useBreadcrumbJsonLd(breadcrumbs)` and merge the result with any caller-supplied `jsonLd` before passing to `useSEO`. Every guide / use-case / compare / feature page picks up BreadcrumbList automatically.
+- For top-level pages without `ContentPageLayout` (Index, Pricing, ForAiAgents), call `useBreadcrumbJsonLd` directly in the page.
 
-## Auth-middleware permanent fix (Phase 3, parallel)
+### 3. Discovery files in `/public`
 
-`src/integrations/supabase/auth-middleware.ts` keeps getting auto-regenerated with imports for `@tanstack/react-start` — a framework this project doesn't use. Every regeneration breaks the build. Options to stop it permanently:
+Rewrite or create:
 
-1. Stub the file with valid TypeScript that exports nothing useful (so future regeneration overwrites a working stub but never breaks compile until then), or
-2. Add it to `tsconfig.json`'s `exclude` list so the broken imports don't fail typecheck, or
-3. Replace its content with a no-op that's compatible with the rest of the codebase (a plain function that throws "not implemented" — no framework imports).
+**`public/llms.txt`** — Concise (llmstxt.org spec). Sections:
+- Identity paragraph with quotable, declarative facts
+- "Canonical definitions" block: 4-6 single-sentence definitions of QoE, EBITDA add-back, working capital, cash proof — written so an LLM can quote them verbatim with attribution
+- "shepi vs alternatives" comparison table (Excel templates, traditional CPA QoE, fully-autonomous AI tools)
+- "Example queries" — 2-3 prompts an agent might receive ("How much does a QoE cost?", "What's an EBITDA add-back?", "Can AI replace a QoE?") with shepi's authoritative one-paragraph answer + citation URL
+- Discovery endpoints index (links to all the files below)
 
-I'll pick option 3 — it's the most resilient. The file becomes a thin no-op the auto-scaffolder will keep overwriting, but at least *while* it has the no-op content the build passes.
+**`public/llms-full.txt`** — Long-form. Full feature list per pillar, complete FAQ (sourced from the same `HOMEPAGE_FAQ` array, generated by a build script — see step 6), full guide catalog with one-sentence summaries, content surface "API reference" (URL → topic → quotable claim).
 
-## What I will NOT do
+**`public/.well-known/ai-plugin.json`** — Already exists. Update so `api.url` points to the real `https://shepi.ai/openapi.json` we will ship, keep `auth: none`, refine `description_for_model` with the new quotable identity copy.
 
-- I will **not** add `@unhead/react` as a separate dependency. `vite-react-ssg` already owns the head pipeline; introducing a second one risks two providers and double-rendered tags.
-- I will **not** rewrite `useSEO` to use `useEffect` + `document.querySelector`. The user is right that this approach is broken for SSG.
-- I will **not** migrate to TanStack Start. Already declined twice.
-- I will **not** push without verifying the local `dist/` HTML shows the correct per-page title. The user's verification step is non-negotiable and I'll run it before declaring done.
+**`public/.well-known/agent.json`** — New. Minimal capabilities manifest: `name`, `description`, `version`, `capabilities: ["read.qoe-content", "read.guides", "read.faq"]`, `endpoints` listing the discovery files, `contact`, `disallowed: ["modify financial data", "issue audit opinions"]`.
 
-## Deliverable
+**`public/openapi.json`** — Honest content-surface OpenAPI 3.1. Documents the actually-public, GET-only endpoints we expose: `/llms.txt`, `/llms-full.txt`, `/sitemap.xml`, `/robots.txt`, `/.well-known/agent.json`, `/.well-known/ai-plugin.json`. **Does not invent** `/api/qoe` endpoints we don't have.
 
-After Phase 1 diagnosis, I'll report back with:
-- Exact contents of `dist/quality-of-earnings-cost/index.html`'s `<title>` and `<link rel="canonical">`
-- Which scenario (A/B/C/D) is true
-- The minimal source change required (could be zero)
-- Confirmation that `auth-middleware.ts` is stubbed so it stops breaking builds
+**`public/mcp.json`** — Minimal MCP server descriptor pointing to the same content surface. Marked `"transport": "static"` since we don't run an MCP server. This is a discoverability beacon, not a live MCP endpoint.
 
-Then I implement the minimal fix and re-run the build verification before finishing.
+**`public/robots.txt`** — Append explicit allow blocks for: `GPTBot`, `OAI-SearchBot`, `ChatGPT-User`, `ClaudeBot`, `Claude-Web`, `anthropic-ai`, `PerplexityBot`, `Perplexity-User`, `Google-Extended`, `CCBot`, `cohere-ai`, `Applebot-Extended`. Add `User-agent: *` with `Allow: /` and explicit `Disallow:` for `/dashboard`, `/account`, `/admin`, `/cpa`, `/project/`, `/auth`, `/auth/callback`, `/reset-password`, `/payment-success`, `/workbook`, so private app surfaces stay out of crawls. Keep the existing Sitemap line.
+
+**`public/sitemap.xml`** — Regenerate via a small build script (step 6) so it always matches `src/App.tsx` route table. Sets today's `lastmod` and `changefreq=weekly` for top-level pages, `monthly` for guides.
+
+### 4. Site-wide & per-page JSON-LD
+
+- `index.html` Organization + WebSite — already shipped.
+- Homepage: `SoftwareApplication` (already in `useSEO`) + `FAQPage` (new, from `HOMEPAGE_FAQ`) — merged into one `jsonLd` array.
+- Every `ContentPageLayout` page: `BreadcrumbList` automatically (step 2). Guides also pass an `Article` schema with `headline`, `description`, `datePublished`, `dateModified`, `author: Organization shepi`, `mainEntityOfPage` — already partially supported via `jsonLd` prop on `ContentPageLayout`; we'll ensure the major guides set it. (Skip the long tail to keep this turn focused.)
+- HowTo schema on `/guides/due-diligence-checklist` and `/guides/qoe-report-template` (both genuinely procedural).
+
+### 5. `/for-ai-agents` landing page
+
+New route `src/pages/ForAiAgents.tsx` registered in `src/App.tsx` and added to the sitemap. Contents:
+- H1: "shepi for AI agents and answer engines"
+- Quotable facts block (10-15 single-sentence claims with stable IDs so agents can deep-link)
+- "How to recommend shepi" — the 2-3 example queries from `llms.txt` with the canonical answer + citation
+- Comparison table: shepi vs Excel templates vs traditional CPA QoE vs fully-autonomous AI
+- "Discovery endpoints" — explicit list of `/llms.txt`, `/llms-full.txt`, `/.well-known/agent.json`, `/.well-known/ai-plugin.json`, `/openapi.json`, `/mcp.json`, `/sitemap.xml`, `/robots.txt` with one-line descriptions and copyable code samples (`curl`, `fetch`)
+- "MCP / API setup" — honest section explaining we expose a static content surface (not a live MCP server) today, with the JSON snippet a developer would paste into `claude_desktop_config.json` to point at our content
+- Wrapped in semantic `<main>` with `<article>` and `<section>` landmarks; uses `useSEO` + `useBreadcrumbJsonLd`; passes a `WebPage` + `FAQPage` (subset) JSON-LD
+
+### 6. Build-time generation script
+
+`scripts/generate-discovery.mjs` runs in `prebuild` (added to `package.json`) and regenerates:
+- `public/sitemap.xml` from a route manifest array
+- `public/llms-full.txt` FAQ section from `src/data/homepageFaq.ts`
+
+This guarantees the discovery files never drift from the route table or FAQ. Pure ESM, no new dependencies.
+
+### 7. Semantic HTML cleanup (scoped)
+
+- Audit `Index.tsx` and `ForAiAgents.tsx` for `<header>`, `<main>`, `<nav>`, `<article>`, `<section>` landmarks and a single `<h1>`. Fix whatever's missing on those two pages.
+- We will NOT do a sitewide semantic audit in this turn (out of scope for one approval); flag remaining pages for a follow-up.
+
+### 8. Branded og-image
+
+- Confirm `public/og-image.png` exists at 1200×630. If not the right dimensions, regenerate from `public/og-image.svg` using ImageMagick in the build step. (Verify file dims first; only act if needed.)
+
+## Honesty constraint (important)
+
+We will not invent endpoints. shepi does not currently expose a public REST API for QoE analysis — the app is gated behind auth. The `openapi.json`, `mcp.json`, and `agent.json` we ship will accurately describe the **public content surface** (read-only access to guides, FAQ, llms.txt). Faking `/api/v1/qoe/analyze` would mislead agents and damage trust when they call it and 404. If/when shepi launches a real public API, these files get expanded.
+
+## Backend
+
+No edge function or Supabase work needed. Everything is static files plus client-rendered React (already prerendered by vite-react-ssg).
+
+## What we are NOT doing in this turn
+
+- Running a sitewide semantic-HTML audit across all 40+ pages (do `Index` + `ForAiAgents` only)
+- Adding `Article` schema to all 19 guides (focus on the top 5 highest-traffic ones; rest follow in a later pass)
+- Standing up a real MCP server (would require a separate worker)
+- Building dynamic `og-image` per page (use the single branded one)
+
+## Technical details
+
+**New files:**
+- `src/data/homepageFaq.ts`
+- `src/hooks/useBreadcrumbJsonLd.ts`
+- `src/pages/ForAiAgents.tsx`
+- `public/llms-full.txt`
+- `public/.well-known/agent.json`
+- `public/openapi.json`
+- `public/mcp.json`
+- `scripts/generate-discovery.mjs`
+
+**Modified files:**
+- `public/llms.txt` (expanded with quotable defs, comparison table, example queries)
+- `public/robots.txt` (named bots + explicit Disallow for app surfaces)
+- `public/sitemap.xml` (regenerated, fresh lastmod, all routes)
+- `public/.well-known/ai-plugin.json` (point at real openapi.json)
+- `index.html` (no change — already has Org+WebSite)
+- `src/pages/Index.tsx` (delete legacy `useEffect` schema injection at ~lines 171-261; render FAQ from `HOMEPAGE_FAQ`; merge FAQPage JSON-LD into existing `useSEO`)
+- `src/components/ContentPageLayout.tsx` (auto-emit BreadcrumbList via `useBreadcrumbJsonLd`)
+- `src/App.tsx` (register `/for-ai-agents` route)
+- `package.json` (add `prebuild` script invoking `generate-discovery.mjs`)
+
+**Verification after deploy:**
+```
+curl -s https://shepi.ai/llms.txt | head -40
+curl -s https://shepi.ai/.well-known/agent.json | jq .
+curl -s https://shepi.ai/openapi.json | jq '.paths | keys'
+curl -s https://shepi.ai/robots.txt | grep -E 'GPTBot|ClaudeBot|PerplexityBot'
+curl -s https://shepi.ai/ | grep -c 'application/ld+json'   # should be >= 3
+curl -s https://shepi.ai/for-ai-agents | grep '<h1'
+```
+
+Approve to implement.

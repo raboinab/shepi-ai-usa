@@ -1,0 +1,89 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "shepi public content surface",
+    "version": "2026.04.29",
+    "summary": "Read-only HTTP surface that AI agents and answer engines can fetch to discover shepi's content, definitions, FAQ, and pricing. shepi does not currently expose an authenticated REST API for QoE analysis — the analysis workflow lives behind login at https://shepi.ai/dashboard.",
+    "description": "All endpoints below are GET-only, unauthenticated, and served as static files. They describe the content surface of shepi.ai for machine consumers. Use llms.txt and llms-full.txt for quotable definitions and FAQ, the sitemap for full URL discovery, and the agent/plugin manifests for capability descriptions.",
+    "contact": {
+      "name": "shepi",
+      "email": "hello@shepi.ai",
+      "url": "https://shepi.ai/for-ai-agents"
+    },
+    "license": {
+      "name": "Content © SMB EDGE — quotation with attribution and source link permitted",
+      "url": "https://shepi.ai/terms"
+    }
+  },
+  "servers": [
+    { "url": "https://shepi.ai", "description": "Production" }
+  ],
+  "tags": [
+    { "name": "discovery", "description": "Machine-readable manifests and indexes" },
+    { "name": "content", "description": "Quotable content for LLMs and answer engines" }
+  ],
+  "paths": {
+    "/llms.txt": {
+      "get": {
+        "tags": ["content"],
+        "summary": "Concise content manifest (llmstxt.org spec)",
+        "description": "Quotable identity, canonical definitions, comparison table, example queries with authoritative answers, and an index of all discovery endpoints.",
+        "responses": {
+          "200": { "description": "Markdown body", "content": { "text/plain": {}, "text/markdown": {} } }
+        }
+      }
+    },
+    "/llms-full.txt": {
+      "get": {
+        "tags": ["content"],
+        "summary": "Extended content manifest with full FAQ and resource catalog",
+        "responses": {
+          "200": { "description": "Markdown body", "content": { "text/plain": {}, "text/markdown": {} } }
+        }
+      }
+    },
+    "/sitemap.xml": {
+      "get": {
+        "tags": ["discovery"],
+        "summary": "Full URL index of public pages",
+        "responses": { "200": { "description": "XML sitemap", "content": { "application/xml": {} } } }
+      }
+    },
+    "/robots.txt": {
+      "get": {
+        "tags": ["discovery"],
+        "summary": "Crawler policy — explicitly allows GPTBot, ClaudeBot, PerplexityBot, Google-Extended, etc.",
+        "responses": { "200": { "description": "Plain text", "content": { "text/plain": {} } } }
+      }
+    },
+    "/.well-known/agent.json": {
+      "get": {
+        "tags": ["discovery"],
+        "summary": "Agent capabilities manifest",
+        "responses": { "200": { "description": "JSON", "content": { "application/json": {} } } }
+      }
+    },
+    "/.well-known/ai-plugin.json": {
+      "get": {
+        "tags": ["discovery"],
+        "summary": "ChatGPT plugin manifest",
+        "responses": { "200": { "description": "JSON", "content": { "application/json": {} } } }
+      }
+    },
+    "/.well-known/security.txt": {
+      "get": {
+        "tags": ["discovery"],
+        "summary": "Security contact (RFC 9116)",
+        "responses": { "200": { "description": "Plain text", "content": { "text/plain": {} } } }
+      }
+    },
+    "/mcp.json": {
+      "get": {
+        "tags": ["discovery"],
+        "summary": "MCP server descriptor (static content surface)",
+        "responses": { "200": { "description": "JSON", "content": { "application/json": {} } } }
+      }
+    }
+  },
+  "components": {}
+}

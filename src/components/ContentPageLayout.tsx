@@ -12,6 +12,7 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { useSEO } from "@/hooks/useSEO";
+import { useBreadcrumbJsonLd } from "@/hooks/useBreadcrumbJsonLd";
 import { cn } from "@/lib/utils";
 
 interface TOCItem {
@@ -32,7 +33,7 @@ interface ContentPageLayoutProps {
   canonical: string;
   breadcrumbs: BreadcrumbEntry[];
   toc?: TOCItem[];
-  jsonLd?: object;
+  jsonLd?: object | object[];
   publishedDate?: string;
   modifiedDate?: string;
   heroAccent?: boolean;
@@ -51,27 +52,26 @@ export function ContentPageLayout({
   modifiedDate,
   heroAccent,
 }: ContentPageLayoutProps) {
-  const __seoTags = useSEO({ title: seoTitle, description: seoDescription, canonical, ogImage: "/og-image.png" });
+  // Auto-generate BreadcrumbList JSON-LD from the same array used by the
+  // visible breadcrumb UI. Merge with any caller-supplied jsonLd so guides
+  // can also pass Article/HowTo schema.
+  const breadcrumbJsonLd = useBreadcrumbJsonLd(breadcrumbs, canonical);
+  const mergedJsonLd: object[] = [breadcrumbJsonLd];
+  if (jsonLd) {
+    if (Array.isArray(jsonLd)) mergedJsonLd.push(...(jsonLd as object[]));
+    else mergedJsonLd.push(jsonLd);
+  }
+
+  const __seoTags = useSEO({
+    title: seoTitle,
+    description: seoDescription,
+    canonical,
+    ogImage: "/og-image.png",
+    jsonLd: mergedJsonLd,
+  });
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeSection, setActiveSection] = useState("");
-
-  // Inject JSON-LD
-  useEffect(() => {
-    if (!jsonLd) return;
-    let el = document.getElementById("content-jsonld") as HTMLScriptElement | null;
-    if (!el) {
-      el = document.createElement("script");
-      el.id = "content-jsonld";
-      el.type = "application/ld+json";
-      document.head.appendChild(el);
-    }
-    el.textContent = JSON.stringify(jsonLd);
-    return () => {
-      const s = document.getElementById("content-jsonld");
-      if (s) s.remove();
-    };
-  }, [jsonLd]);
 
   // Intersection observer for TOC highlight
   useEffect(() => {
