@@ -60,6 +60,7 @@ const PersonalExpenseDetection = lazy(() => import("./pages/guides/PersonalExpen
 const CustomerConcentrationRisk = lazy(() => import("./pages/guides/CustomerConcentrationRisk"));
 const RunRateEBITDA = lazy(() => import("./pages/guides/RunRateEBITDA"));
 const CanAIReplaceQoE = lazy(() => import("./pages/guides/CanAIReplaceQoE"));
+const AIWontDoYourQoE = lazy(() => import("./pages/guides/AIWontDoYourQoE"));
 const AIAccountingAnomalyDetection = lazy(() => import("./pages/guides/AIAccountingAnomalyDetection"));
 const EarningsManipulationSigns = lazy(() => import("./pages/guides/EarningsManipulationSigns"));
 const QualityOfEarningsCost = lazy(() => import("./pages/QualityOfEarningsCost"));
@@ -181,6 +182,7 @@ export const routes: RouteRecord[] = [
       { path: "guides/customer-concentration-risk", element: wrap(<CustomerConcentrationRisk />) },
       { path: "guides/run-rate-ebitda", element: wrap(<RunRateEBITDA />) },
       { path: "guides/can-ai-replace-qoe", element: wrap(<CanAIReplaceQoE />) },
+      { path: "guides/ai-wont-do-your-qoe", element: wrap(<AIWontDoYourQoE />) },
       { path: "guides/ai-accounting-anomaly-detection", element: wrap(<AIAccountingAnomalyDetection />) },
       { path: "guides/earnings-manipulation-signs", element: wrap(<EarningsManipulationSigns />) },
 
@@ -256,6 +258,7 @@ export const prerenderPaths = [
   "/guides/customer-concentration-risk",
   "/guides/run-rate-ebitda",
   "/guides/can-ai-replace-qoe",
+  "/guides/ai-wont-do-your-qoe",
   "/guides/ai-accounting-anomaly-detection",
   "/guides/earnings-manipulation-signs",
   "/use-cases/independent-searchers",
