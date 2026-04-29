@@ -88,6 +88,15 @@ export function SEO({
       <meta property="og:image" content={absoluteImage} />
       <meta name="twitter:image" content={absoluteImage} />
       <meta name="twitter:card" content="summary_large_image" />
+      {jsonLd &&
+        (Array.isArray(jsonLd) ? jsonLd : [jsonLd]).map((obj, i) => (
+          <script
+            key={`jsonld-${i}`}
+            type="application/ld+json"
+            // eslint-disable-next-line react/no-danger
+            dangerouslySetInnerHTML={{ __html: JSON.stringify(obj) }}
+          />
+        ))}
     </>
   );
 }
