@@ -33,7 +33,7 @@ interface ContentPageLayoutProps {
   canonical: string;
   breadcrumbs: BreadcrumbEntry[];
   toc?: TOCItem[];
-  jsonLd?: object;
+  jsonLd?: object | object[];
   publishedDate?: string;
   modifiedDate?: string;
   heroAccent?: boolean;
