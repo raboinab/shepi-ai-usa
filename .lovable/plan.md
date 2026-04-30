@@ -1,19 +1,38 @@
-## Fix: Resource link clicks land mid-page instead of top
+## Goal
 
-### Root cause
-React Router doesn't reset scroll position on route changes. When a user scrolls down on `/resources`, then clicks a guide link, the new page renders but the window keeps the previous scroll offset.
+Export the two in-app legal agreements as clean, print-ready PDFs your lawyer can mark up.
 
-### Changes
+## What gets generated
 
-1. **Create `src/components/ScrollToTop.tsx`**
-   - Subscribes to `useLocation().pathname`
-   - On change, calls `window.scrollTo({ top: 0, left: 0, behavior: "instant" })`
-   - If the new URL has a `#hash`, scrolls to that element instead (preserves anchor links)
-   - Renders `null`
+Both PDFs delivered to `/mnt/documents/`:
 
-2. **Mount it in `src/App.tsx`**
-   - Add `<ScrollToTop />` inside `<BrowserRouter>`, just above `<Routes>`, so it has router context
+1. **`shepi-terms-of-service-2026-04-13.pdf`**
+   - Source: `src/components/terms/TermsContent.tsx`
+   - Version stamp: `2026-04-13` (matches `CURRENT_TOS_VERSION` in `src/hooks/useTosAcceptance.ts`)
+   - Effective Date: April 13, 2026
+   - 18 sections, including AI-assisted workflow disclosures, DFY service terms, Virginia governing law
 
-### Notes
-- Same-page TOC anchor clicks (`<a href="#id">` without route change) keep working — the browser handles them natively and `useLocation` doesn't fire.
-- "instant" behavior avoids a jarring smooth-scroll on every navigation.
+2. **`shepi-dfy-provider-agreement-2026-04-13.pdf`**
+   - Source: `src/components/cpa/ProviderAgreementContent.tsx`
+   - Version stamp: `2026-04-13` (matches `CURRENT_PROVIDER_AGREEMENT_VERSION` in `src/hooks/useProviderAgreement.ts`)
+   - 20 sections, including independent contractor status, no direct client relationship, work-for-hire IP, non-circumvention
+
+## Format
+
+Each PDF will have:
+- Cover header: document title, version, effective date, source file path (so the lawyer can map redlines back to code)
+- Footer: "shepi / SMB EDGE — Confidential — for legal review" + page number
+- US Letter, 1" margins, serif body, numbered section headings, proper smart quotes
+- Plain text rendering of the React JSX (lists, headings, bold preserved — no React/Tailwind artifacts)
+
+## Approach
+
+Run a Python script with ReportLab in `/tmp/`:
+1. Parse the JSX literally for headings (`<h2>`/`<h3>`), paragraphs (`<p>`), and lists (`<ul><li>`)
+2. Convert HTML entities (`&ldquo;`, `&rsquo;`, `&amp;`) to proper Unicode
+3. Strip className attributes
+4. Emit two PDFs via ReportLab Platypus
+5. Visual QA: render each page to JPEG and inspect for clipping, overlap, font issues; fix and re-render until clean
+6. Move final PDFs to `/mnt/documents/` and emit `presentation-artifact` tags
+
+No code changes to the app. Output only.
