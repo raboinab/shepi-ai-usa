@@ -42,10 +42,14 @@ export function AdjustmentTraceSheet({
   const proof = proofSet?.verification;
   const matches: MatchingTxnLite[] = useMemo(() => proof?.matchingTransactions ?? [], [proof]);
 
+  // amounts are pre-signed by projectToDealAdapter — sum directly.
   const totalAmount = useMemo(
     () => (adjustment ? Object.values(adjustment.amounts).reduce((s, v) => s + (v || 0), 0) : 0),
     [adjustment]
   );
+
+  const isNonQoE =
+    adjustment?.effectType === "NonQoE" || adjustment?.effectType === "PresentationOnly";
 
   // Reset child panel when sheet closes or adjustment changes
   const handleOpenChange = (next: boolean) => {
@@ -71,9 +75,15 @@ export function AdjustmentTraceSheet({
               <span className="font-mono">{adjustment.tbAccountNumber}</span>
             )}
             <span>·</span>
-            <span className="font-mono font-medium text-foreground">
-              {formatCurrency(totalAmount)}
-            </span>
+            {isNonQoE ? (
+              <Badge variant="secondary" className="text-[10px]">
+                Presentation only — not in Adjusted EBITDA
+              </Badge>
+            ) : (
+              <span className="font-mono font-medium text-foreground">
+                {formatCurrency(totalAmount)}
+              </span>
+            )}
           </SheetDescription>
         </SheetHeader>
 

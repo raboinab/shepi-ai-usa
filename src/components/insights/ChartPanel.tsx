@@ -79,8 +79,10 @@ export const ChartPanel = ({ dealData, wizardData, wizardReports }: ChartPanelPr
 
   // Build EBITDA bridge from DD adjustments
   const ddAdj = wizardData.ddAdjustments as Record<string, unknown> | undefined;
-  const adjustments = (ddAdj?.adjustments || []) as Array<{ description?: string; label?: string; name?: string; amount?: number; periodValues?: Record<string, number> }>;
-  
+  const allAdjustments = (ddAdj?.adjustments || []) as Array<{ description?: string; label?: string; name?: string; amount?: number; periodValues?: Record<string, number>; intent?: string; effectType?: string }>;
+  // EBITDA bridge only shows adjustments that actually change Adjusted EBITDA.
+  const adjustments = allAdjustments.filter(a => a.effectType !== "NonQoE" && a.effectType !== "PresentationOnly");
+
   // Scope EBITDA bridge to latest fiscal year to match MetricsOverview
   const latestFY = deal.fiscalYears[deal.fiscalYears.length - 1];
   const bridgePeriodIds = latestFY?.periods.map(p => p.id) || periods.map(p => p.id);
@@ -91,7 +93,7 @@ export const ChartPanel = ({ dealData, wizardData, wizardReports }: ChartPanelPr
   const bridgeData = [
     { name: "Reported EBITDA", value: totalEbitda, fill: "hsl(var(--primary))" },
     ...adjustments.slice(0, 5).map(adj => {
-      const adjTotal = signedAdjustmentTotal(adj);
+      const adjTotal = signedAdjustmentTotal(adj, { excludeNonQoE: true });
       return {
         name: (adj.description || adj.label || adj.name || "Adjustment").substring(0, 15),
         value: adjTotal,
@@ -100,7 +102,7 @@ export const ChartPanel = ({ dealData, wizardData, wizardReports }: ChartPanelPr
     }),
     ...(adjustments.length > 0 ? [{
       name: "Adjusted EBITDA",
-      value: totalEbitda + adjustments.reduce((sum, adj) => sum + signedAdjustmentTotal(adj), 0),
+      value: totalEbitda + adjustments.reduce((sum, adj) => sum + signedAdjustmentTotal(adj, { excludeNonQoE: true }), 0),
       fill: "hsl(var(--primary))",
     }] : []),
   ];

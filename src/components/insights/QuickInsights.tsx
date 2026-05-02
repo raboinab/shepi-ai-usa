@@ -158,14 +158,16 @@ export const QuickInsights = ({ dealData, wizardData, industry }: QuickInsightsP
 
   // DD Adjustments insight
   const ddAdj = wizardData.ddAdjustments as Record<string, unknown> | undefined;
-  const adjustments = (ddAdj?.adjustments || []) as Array<{ amount?: number; periodValues?: Record<string, number> }>;
-  if (adjustments.length > 0 && insights.length < 8) {
-    const totalAdj = adjustments.reduce((sum, adj) => sum + signedAdjustmentTotal(adj), 0);
+  const adjustments = (ddAdj?.adjustments || []) as Array<{ amount?: number; periodValues?: Record<string, number>; intent?: string; effectType?: string }>;
+  // Only EBITDA-impacting adjustments count toward the bridge — NonQoE / PresentationOnly are below the line.
+  const ebitdaAdjustments = adjustments.filter(a => a.effectType !== "NonQoE" && a.effectType !== "PresentationOnly");
+  if (ebitdaAdjustments.length > 0 && insights.length < 8) {
+    const totalAdj = ebitdaAdjustments.reduce((sum, adj) => sum + signedAdjustmentTotal(adj, { excludeNonQoE: true }), 0);
     const adjustmentPercent = absRevenue ? ((totalAdj / absRevenue) * 100).toFixed(1) : "N/A";
     insights.push({
       type: totalAdj >= 0 ? "success" : "warning",
       title: "Net Adjustments Impact",
-      description: `${adjustments.length} adjustments totaling $${(totalAdj / 1000).toFixed(0)}K (${adjustmentPercent}% of revenue).`,
+      description: `${ebitdaAdjustments.length} adjustments totaling $${(totalAdj / 1000).toFixed(0)}K (${adjustmentPercent}% of revenue).`,
     });
   }
 

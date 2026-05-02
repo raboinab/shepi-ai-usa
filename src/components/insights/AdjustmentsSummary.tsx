@@ -21,12 +21,14 @@ export const AdjustmentsSummary = ({ wizardData }: AdjustmentsSummaryProps) => {
     intent?: string;
     category?: string;
     approved?: boolean;
+    effectType?: string;
   }>;
 
   // Compute total amount for each adjustment (sum periodValues if available)
   const withTotals = adjustments.map(adj => ({
     ...adj,
-    totalAmount: signedAdjustmentTotal(adj),
+    totalAmount: signedAdjustmentTotal(adj, { excludeNonQoE: true }),
+    isNonQoE: adj.effectType === "NonQoE" || adj.effectType === "PresentationOnly",
   }));
 
   const sortedAdjustments = [...withTotals]

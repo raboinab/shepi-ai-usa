@@ -54,11 +54,27 @@ function deserializeDealData(raw: Record<string, unknown>): DealData {
   const trialBalance = (raw.trialBalance as DealData["trialBalance"]) || [];
   const tbIndex = buildTbIndex(trialBalance);
 
+  // Guard: callers MUST send adapter output (Adjustment[] with `amounts`),
+  // not raw stored shape (with `periodValues` + `intent`). Raw shape would
+  // bypass intent-sign normalization and silently produce wrong EBITDA totals.
+  const adjustments = (raw.adjustments as DealData["adjustments"]) || [];
+  const hasRawShape = Array.isArray(adjustments) &&
+    adjustments.some((a: unknown) => {
+      const x = a as Record<string, unknown>;
+      return x && typeof x === "object" && "periodValues" in x && !("amounts" in x);
+    });
+  if (hasRawShape) {
+    throw new Error(
+      "compute-workbook: received raw adjustment shape (periodValues). " +
+      "Caller must run projectToDealAdapter first so amounts are intent-signed."
+    );
+  }
+
   return {
     deal,
     accounts: (raw.accounts as DealData["accounts"]) || [],
     trialBalance,
-    adjustments: (raw.adjustments as DealData["adjustments"]) || [],
+    adjustments,
     reclassifications:
       (raw.reclassifications as DealData["reclassifications"]) || [],
     tbIndex,
