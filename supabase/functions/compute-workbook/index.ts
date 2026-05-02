@@ -69,6 +69,12 @@ function deserializeDealData(raw: Record<string, unknown>): DealData {
       "Caller must run projectToDealAdapter first so amounts are intent-signed."
     );
   }
+
+  return {
+    deal,
+    accounts: (raw.accounts as DealData["accounts"]) || [],
+    trialBalance,
+    adjustments,
     reclassifications:
       (raw.reclassifications as DealData["reclassifications"]) || [],
     tbIndex,
