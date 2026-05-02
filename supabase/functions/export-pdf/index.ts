@@ -108,7 +108,7 @@ function computeExecSummary(dealData: DealData): ExecSummary {
   let adjustmentCount = adjEntries.filter((a: unknown) => {
     if (!a) return false;
     const entry = a as Record<string, unknown>;
-    const pv = (entry.periodValues || entry.proposed_period_values || entry.amounts || {}) as Record<string, number>;
+    const pv = (entry.amounts || {}) as Record<string, number>;
     const total = Object.values(pv).reduce((s: number, v) => s + (typeof v === "number" ? v : 0), 0);
     return total !== 0;
   }).length;
@@ -127,7 +127,7 @@ function buildDDAdjustments(dealData: DealData): DDAdjustment[] {
   for (const adj of entries) {
     if (!adj) continue;
     const a = adj as Record<string, unknown>;
-    const pv = (a.periodValues || a.proposed_period_values || a.amounts || {}) as Record<string, number>;
+    const pv = (a.amounts || {}) as Record<string, number>;
     const total = Object.values(pv).reduce((s: number, v) => s + (typeof v === "number" ? v : 0), 0);
     const hasAmount = total !== 0;
     const hasDescription = !!((a.description as string)?.trim());
