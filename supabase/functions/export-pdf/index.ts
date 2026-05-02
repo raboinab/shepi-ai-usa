@@ -54,11 +54,27 @@ function hydrateDealData(raw: Record<string, unknown>): DealData {
   const tb = (raw.trialBalance || []) as TrialBalanceEntry[];
   const tbIndex = calc.buildTbIndex(tb);
 
+  // Guard: callers MUST send adapter output (Adjustment[] with `amounts`).
+  // Raw stored shape (periodValues + intent) would skip intent-sign
+  // normalization and silently produce wrong totals in the PDF.
+  const adjustments = (raw.adjustments || []) as DealData["adjustments"];
+  const hasRawShape = Array.isArray(adjustments) &&
+    adjustments.some((a: unknown) => {
+      const x = a as Record<string, unknown>;
+      return x && typeof x === "object" && "periodValues" in x && !("amounts" in x);
+    });
+  if (hasRawShape) {
+    throw new Error(
+      "export-pdf: received raw adjustment shape (periodValues). " +
+      "Caller must run projectToDealAdapter first so amounts are intent-signed."
+    );
+  }
+
   return {
     deal,
     accounts: (raw.accounts || []) as DealData["accounts"],
     trialBalance: tb,
-    adjustments: (raw.adjustments || []) as DealData["adjustments"],
+    adjustments,
     reclassifications: (raw.reclassifications || []) as DealData["reclassifications"],
     tbIndex,
     monthDates: ((raw.monthDates || []) as string[]).map(d => new Date(d)),
