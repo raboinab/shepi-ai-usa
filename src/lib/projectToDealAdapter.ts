@@ -376,6 +376,12 @@ function adaptAdjustments(adjData: unknown): Adjustment[] {
       }
     }
     
+    const rawEffect = adj.effectType as string | undefined;
+    const effectType =
+      rawEffect === "NonQoE" || rawEffect === "PresentationOnly" || rawEffect === "EBITDA"
+        ? rawEffect
+        : "EBITDA";
+
     return {
       id: String(adj.id || ""),
       type: (adj.block || adj.type || adj.adjustmentType || "DD") as "MA" | "DD" | "PF",
@@ -384,6 +390,7 @@ function adaptAdjustments(adjData: unknown): Adjustment[] {
       intent: String(adj.intent || "other"),
       notes: String(adj.evidenceNotes || adj.notes || ""),
       amounts,
+      effectType: effectType as "EBITDA" | "NonQoE" | "PresentationOnly",
     };
   });
 }
