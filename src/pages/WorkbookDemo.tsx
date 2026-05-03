@@ -2,7 +2,7 @@
  * WorkbookDemo — dev/demo page at /workbook/demo
  * Auth + ToS required. Tracks demo views for marketing.
  */
-import { useMemo, useState, useCallback, useEffect } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { LayoutGrid, Table, BarChart3 } from "lucide-react";
@@ -11,7 +11,6 @@ import { InsightsView } from "@/components/insights/InsightsView";
 import { createMockDealData, createMockBankStatements, createMockTransferClassifications } from "@/lib/mockDeal";
 import { DemoAuthGate } from "@/components/DemoAuthGate";
 import { createMockProjectData } from "@/lib/mockWizardData";
-import { exportWorkbookXlsx } from "@/lib/exportWorkbookXlsx";
 import { trackEvent } from "@/lib/analytics";
 
 type ViewMode = "workbook" | "insights";
@@ -29,11 +28,6 @@ export default function WorkbookDemo() {
   useEffect(() => {
     trackEvent("workbook_tab_viewed", { demo: "workbook", tab: viewMode });
   }, [viewMode]);
-
-  const handleExport = useCallback(() => {
-    trackEvent("demo_workbook_exported", { format: "xlsx", demo: "workbook" });
-    exportWorkbookXlsx({ dealData });
-  }, [dealData]);
 
   return (
     <DemoAuthGate page="workbook">
@@ -95,7 +89,6 @@ export default function WorkbookDemo() {
             dealData={dealData}
             mockBankStatements={mockBankStatements}
             mockTransferClassifications={mockTransferClassifications}
-            onExport={handleExport}
           />
         )}
         {viewMode === "insights" && <InsightsView project={mockProject} />}
