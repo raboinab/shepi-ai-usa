@@ -176,8 +176,6 @@ const Auth = () => {
       clearOAuthProcessedFlag();
       localStorage.setItem("shepi_auth_redirect", getRedirectPath());
 
-      trackEvent("sign_up", { method: "google" });
-
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: { redirectTo: `${window.location.origin}/auth` },
@@ -224,7 +222,6 @@ const Auth = () => {
             throw error;
           }
         } else {
-          trackEvent("sign_up", { method: "password" });
           toast({ title: "Check your email", description: `We sent a verification link to ${validated.email}. Please verify your email to sign in.` });
           setView("login");
         }

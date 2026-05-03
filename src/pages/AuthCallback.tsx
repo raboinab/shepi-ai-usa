@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useSEO } from "@/hooks/useSEO";
+import { trackEvent } from "@/lib/analytics";
 import { 
   trySetSessionFromUrlHash, 
   hasOAuthCallback,
@@ -21,6 +22,22 @@ const getStoredRedirect = (): string => {
   localStorage.removeItem("shepi_auth_redirect");
   return path && path.startsWith("/") ? path : "/dashboard";
 };
+
+/**
+ * Classify a freshly-authenticated user as new vs returning and fire the matching GA4 event.
+ * New user: created_at and last_sign_in_at within 10s of each other.
+ */
+function fireAuthEvent(
+  user: { created_at?: string; last_sign_in_at?: string; app_metadata?: { provider?: string } },
+  fallbackMethod = "unknown",
+) {
+  if (!user.created_at || !user.last_sign_in_at) return;
+  const created = new Date(user.created_at).getTime();
+  const lastSignIn = new Date(user.last_sign_in_at).getTime();
+  const isNewUser = Math.abs(lastSignIn - created) < 10_000;
+  const method = user.app_metadata?.provider ?? fallbackMethod;
+  trackEvent(isNewUser ? "sign_up" : "login", { method });
+}
 
 const AuthCallback = () => {
   const __seoTags = useSEO({
@@ -52,40 +69,44 @@ const AuthCallback = () => {
         console.log('[AuthCallback] No OAuth tokens in hash, checking session');
         
         // Maybe user navigated here directly - check for existing session
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          console.log('[AuthCallback] Existing session found, redirecting');
-          navigate(getStoredRedirect(), { replace: true });
-        } else {
-          console.log('[AuthCallback] No session, redirecting to auth');
-          navigate("/auth", { replace: true });
-        }
-        return;
-      }
-
-      console.log('[AuthCallback] Processing OAuth tokens...');
-      
-      const result = await trySetSessionFromUrlHash();
-      
-      if (!isMounted) return;
-
-      if (result.success) {
-        console.log('[AuthCallback] Session established successfully');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        console.log('[AuthCallback] Existing session found, redirecting');
+        fireAuthEvent(session.user);
         navigate(getStoredRedirect(), { replace: true });
-        return;
+      } else {
+        console.log('[AuthCallback] No session, redirecting to auth');
+        navigate("/auth", { replace: true });
       }
+      return;
+    }
 
-      if (result.error === 'already_processing') {
-        console.log('[AuthCallback] Tokens being processed elsewhere, waiting...');
-        // Set up listener for auth state change
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-          console.log('[AuthCallback] Auth state change:', event);
-          if (event === 'SIGNED_IN' && session?.user && isMounted) {
-            cleanupOAuthHash();
-            subscription.unsubscribe();
-            navigate(getStoredRedirect(), { replace: true });
-          }
-        });
+    console.log('[AuthCallback] Processing OAuth tokens...');
+    
+    const result = await trySetSessionFromUrlHash();
+    
+    if (!isMounted) return;
+
+    if (result.success) {
+      console.log('[AuthCallback] Session established successfully');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) fireAuthEvent(session.user);
+      navigate(getStoredRedirect(), { replace: true });
+      return;
+    }
+
+    if (result.error === 'already_processing') {
+      console.log('[AuthCallback] Tokens being processed elsewhere, waiting...');
+      // Set up listener for auth state change
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+        console.log('[AuthCallback] Auth state change:', event);
+        if (event === 'SIGNED_IN' && session?.user && isMounted) {
+          fireAuthEvent(session.user);
+          cleanupOAuthHash();
+          subscription.unsubscribe();
+          navigate(getStoredRedirect(), { replace: true });
+        }
+      });
         
         // Timeout after 10 seconds
         timeoutId = setTimeout(() => {
