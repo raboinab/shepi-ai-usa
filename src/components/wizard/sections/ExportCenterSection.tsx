@@ -19,7 +19,6 @@ import { computeQoEMetrics } from "@/lib/qoeMetrics";
 import * as gridBuilders from "@/lib/workbook-grid-builders";
 import { trackEvent } from "@/lib/analytics";
 import { NarrativePanel } from "@/components/pdf-narratives/NarrativePanel";
-import { useMemo } from "react";
 
 
 interface ExportCenterData {
@@ -696,6 +695,22 @@ export const ExportCenterSection = ({ data, updateData, wizardData, projectId, p
           />
         </CardContent>
       </Card>
+
+      {/* AI Analyst Commentary */}
+      {projectId && dealData && (
+        <NarrativePanel
+          projectId={projectId}
+          grids={{
+            qoeAnalysis: gridBuilders.buildQoEAnalysisGrid(dealData),
+            salesDetail: gridBuilders.buildSalesGrid(dealData),
+            cogsDetail: gridBuilders.buildCOGSGrid(dealData),
+            opexDetail: gridBuilders.buildOpExGrid(dealData),
+            workingCapital: gridBuilders.buildWorkingCapitalGrid(dealData),
+            nwcAnalysis: gridBuilders.buildNWCAnalysisGrid(dealData),
+            freeCashFlow: gridBuilders.buildFreeCashFlowGrid(dealData),
+          }}
+        />
+      )}
 
       {/* Export Options */}
       <Card>
