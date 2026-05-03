@@ -761,5 +761,6 @@ export const ExportCenterSection = ({ data, updateData, wizardData, projectId, p
         </CardContent>
       </Card>
     </div>
+    </>
   );
 };
