@@ -500,6 +500,19 @@ export const ExportCenterSection = ({ data, updateData, wizardData, projectId, p
       // Build report data payload
       const enrichedAdjustments = buildDDAdjustments(dealData, proofMap, proposalMap, evidenceByProposal);
       const attentionItems = normalizeAttentionItems(rawAttention, 6) as unknown as AttentionItem[];
+
+      // Hydrate AI narratives (if any have been generated for this project)
+      let narratives: Record<string, unknown> = {};
+      if (projectId) {
+        try {
+          const { getProjectNarratives } = await import("@/lib/pdf/narratives");
+          const records = await getProjectNarratives(projectId);
+          for (const r of records) narratives[r.slide_key] = r.content;
+        } catch (e) {
+          console.warn("Failed to load narratives:", e);
+        }
+      }
+
       const reportData: PDFReportData = {
         metadata,
         attentionItems: attentionItems.length > 0 ? attentionItems : undefined,
@@ -512,6 +525,7 @@ export const ExportCenterSection = ({ data, updateData, wizardData, projectId, p
         cimInsights,
         grids,
         traceabilityAdjustments: enrichedAdjustments,
+        narratives: narratives as Record<string, never>,
       };
 
       // Build PDF in Web Worker (background thread)
