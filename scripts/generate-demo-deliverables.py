@@ -268,7 +268,7 @@ def build_xlsx():
     demo.column_dimensions["A"].width = 80
 
     # Income Statement
-    is_ws = wb.create_sheet("[DEMO] Income Statement")
+    is_ws = wb.create_sheet("DEMO · Income Statement")
     is_data = [
         ["", "FY2022", "FY2023", "FY2024 (TTM)"],
         ["Revenue", 21_840_120, 23_215_400, 24_615_420],
@@ -307,7 +307,7 @@ def build_xlsx():
         is_ws.column_dimensions[col].width = 18
 
     # EBITDA Bridge
-    br = wb.create_sheet("[DEMO] EBITDA Bridge")
+    br = wb.create_sheet("DEMO · EBITDA Bridge")
     br_data = [
         ["EBITDA Bridge — TTM Dec 2024", "", ""],
         ["", "Amount", "Cumulative"],
@@ -339,7 +339,7 @@ def build_xlsx():
     br.column_dimensions["C"].width = 18
 
     # Adjustments Detail
-    adj = wb.create_sheet("[DEMO] Adjustments")
+    adj = wb.create_sheet("DEMO · Adjustments")
     adj_data = [
         ["#", "Adjustment", "Class", "Amount", "Support Tier", "Rationale"],
         [1, "Owner compensation normalization", "Pro-forma", 420_000, "Tier 1",
