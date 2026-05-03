@@ -245,16 +245,15 @@ export const ExportCenterSection = ({ data, updateData, wizardData, projectId, p
   const exportData = { completedSections: [], notes: "", ...data };
   const [isGenerating, setIsGenerating] = useState(false);
   const [pdfProgress, setPdfProgress] = useState({ page: 0, total: 0 });
+  const [previewMode, setPreviewMode] = useState<PreviewMode>(null);
 
   const { coreStatus, readyCount, totalCore, isReady } = getExportReadiness(wizardData, computedReports);
   const coreDataStatus = coreStatus as Record<string, boolean>;
 
   const handleExportPDF = async () => {
     if (isDemo) {
-      trackEvent("demo_export_blocked", { format: "pdf" });
-      toast.info("This is a preview — sign up to export your own QoE report", {
-        description: "Create an account to generate PDF and Excel deliverables.",
-      });
+      trackEvent("demo_preview_opened", { format: "pdf" });
+      setPreviewMode("pdf");
       return;
     }
     if (isGenerating || !dealData) return;
