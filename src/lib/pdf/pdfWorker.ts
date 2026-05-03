@@ -1228,11 +1228,23 @@ async function buildPDFReport(data: PDFReportData): Promise<Uint8Array> {
   // Key Terms
   pageFns.push({ fn: (pn, tp) => addKeyTermsPage(doc, font, boldFont, meta, pn, tp) });
 
+  // Helpers to push a narrative page if AI content exists for a slide_key
+  const N = (data.narratives || {}) as Record<string, NarrativeContent>;
+  const hasNarrative = (k: string) => {
+    const n = N[k];
+    return !!n && ((n.bullets && n.bullets.length > 0) || (n.callouts && n.callouts.length > 0) || (n.paragraphs && n.paragraphs.length > 0));
+  };
+  const pushNarrative = (k: string, title: string, section?: string) => {
+    if (!hasNarrative(k)) return;
+    pageFns.push({ fn: (pn, tp) => addNarrativeSlide(doc, font, boldFont, meta, title, N[k], pn, tp, section) });
+  };
+
   // Attention Areas
   const attentionPageIndex = pageFns.length;
   if (data.attentionItems && data.attentionItems.length > 0) {
     pageFns.push({ fn: (pn, tp) => addDividerPage(doc, font, boldFont, meta, "Attention Areas", "Key Findings & Risk Assessment", "I", pn, tp), section: "Attention Areas" });
     pageFns.push({ fn: (pn, tp) => addAttentionAreasPage(doc, font, boldFont, meta, data.attentionItems!, pn, tp) });
+    pushNarrative("attention_areas", "Attention Areas", "Attention Areas");
   }
 
   // QoE Section
@@ -1245,6 +1257,7 @@ async function buildPDFReport(data: PDFReportData): Promise<Uint8Array> {
 
   if (data.grids.qoeAnalysis) {
     pageFns.push({ fn: (pn, tp) => addTablePage(doc, font, boldFont, meta, "QoE / EBITDA Bridge", data.grids.qoeAnalysis, pn, tp, "Quality of Earnings") });
+    pushNarrative("qoe", "QoE / EBITDA Bridge", "Quality of Earnings");
   }
 
   if (data.ddAdjustments && data.ddAdjustments.length > 0) {
