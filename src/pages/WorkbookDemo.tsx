@@ -89,7 +89,6 @@ export default function WorkbookDemo() {
             dealData={dealData}
             mockBankStatements={mockBankStatements}
             mockTransferClassifications={mockTransferClassifications}
-            onExport={handleExport}
           />
         )}
         {viewMode === "insights" && <InsightsView project={mockProject} />}
