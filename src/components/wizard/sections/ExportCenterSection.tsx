@@ -19,6 +19,7 @@ import { computeQoEMetrics } from "@/lib/qoeMetrics";
 import * as gridBuilders from "@/lib/workbook-grid-builders";
 import { trackEvent } from "@/lib/analytics";
 import { NarrativePanel } from "@/components/pdf-narratives/NarrativePanel";
+import { DeliverablePreviewDialog, type PreviewMode } from "@/components/demo/DeliverablePreviewDialog";
 
 
 interface ExportCenterData {
@@ -244,16 +245,15 @@ export const ExportCenterSection = ({ data, updateData, wizardData, projectId, p
   const exportData = { completedSections: [], notes: "", ...data };
   const [isGenerating, setIsGenerating] = useState(false);
   const [pdfProgress, setPdfProgress] = useState({ page: 0, total: 0 });
+  const [previewMode, setPreviewMode] = useState<PreviewMode>(null);
 
   const { coreStatus, readyCount, totalCore, isReady } = getExportReadiness(wizardData, computedReports);
   const coreDataStatus = coreStatus as Record<string, boolean>;
 
   const handleExportPDF = async () => {
     if (isDemo) {
-      trackEvent("demo_export_blocked", { format: "pdf" });
-      toast.info("This is a preview — sign up to export your own QoE report", {
-        description: "Create an account to generate PDF and Excel deliverables.",
-      });
+      trackEvent("demo_preview_opened", { format: "pdf" });
+      setPreviewMode("pdf");
       return;
     }
     if (isGenerating || !dealData) return;
@@ -561,10 +561,8 @@ export const ExportCenterSection = ({ data, updateData, wizardData, projectId, p
 
   const handleExportExcel = async () => {
     if (isDemo) {
-      trackEvent("demo_export_blocked", { format: "xlsx" });
-      toast.info("This is a preview — sign up to export your own QoE report", {
-        description: "Create an account to generate PDF and Excel deliverables.",
-      });
+      trackEvent("demo_preview_opened", { format: "xlsx" });
+      setPreviewMode("xlsx");
       return;
     }
     if (!dealData) {
@@ -609,6 +607,8 @@ export const ExportCenterSection = ({ data, updateData, wizardData, projectId, p
     : "PDF Report";
 
   return (
+    <>
+    <DeliverablePreviewDialog mode={previewMode} onClose={() => setPreviewMode(null)} />
     <div className="space-y-6">
       {/* Header */}
       <div>
@@ -761,5 +761,6 @@ export const ExportCenterSection = ({ data, updateData, wizardData, projectId, p
         </CardContent>
       </Card>
     </div>
+    </>
   );
 };
