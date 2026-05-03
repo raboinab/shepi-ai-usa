@@ -69,40 +69,44 @@ const AuthCallback = () => {
         console.log('[AuthCallback] No OAuth tokens in hash, checking session');
         
         // Maybe user navigated here directly - check for existing session
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          console.log('[AuthCallback] Existing session found, redirecting');
-          navigate(getStoredRedirect(), { replace: true });
-        } else {
-          console.log('[AuthCallback] No session, redirecting to auth');
-          navigate("/auth", { replace: true });
-        }
-        return;
-      }
-
-      console.log('[AuthCallback] Processing OAuth tokens...');
-      
-      const result = await trySetSessionFromUrlHash();
-      
-      if (!isMounted) return;
-
-      if (result.success) {
-        console.log('[AuthCallback] Session established successfully');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        console.log('[AuthCallback] Existing session found, redirecting');
+        fireAuthEvent(session.user);
         navigate(getStoredRedirect(), { replace: true });
-        return;
+      } else {
+        console.log('[AuthCallback] No session, redirecting to auth');
+        navigate("/auth", { replace: true });
       }
+      return;
+    }
 
-      if (result.error === 'already_processing') {
-        console.log('[AuthCallback] Tokens being processed elsewhere, waiting...');
-        // Set up listener for auth state change
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-          console.log('[AuthCallback] Auth state change:', event);
-          if (event === 'SIGNED_IN' && session?.user && isMounted) {
-            cleanupOAuthHash();
-            subscription.unsubscribe();
-            navigate(getStoredRedirect(), { replace: true });
-          }
-        });
+    console.log('[AuthCallback] Processing OAuth tokens...');
+    
+    const result = await trySetSessionFromUrlHash();
+    
+    if (!isMounted) return;
+
+    if (result.success) {
+      console.log('[AuthCallback] Session established successfully');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) fireAuthEvent(session.user);
+      navigate(getStoredRedirect(), { replace: true });
+      return;
+    }
+
+    if (result.error === 'already_processing') {
+      console.log('[AuthCallback] Tokens being processed elsewhere, waiting...');
+      // Set up listener for auth state change
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+        console.log('[AuthCallback] Auth state change:', event);
+        if (event === 'SIGNED_IN' && session?.user && isMounted) {
+          fireAuthEvent(session.user);
+          cleanupOAuthHash();
+          subscription.unsubscribe();
+          navigate(getStoredRedirect(), { replace: true });
+        }
+      });
         
         // Timeout after 10 seconds
         timeoutId = setTimeout(() => {
