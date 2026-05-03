@@ -100,6 +100,14 @@ export interface DocSourceItem {
   uploadDate?: string;
 }
 
+export interface NarrativeCallout { label: string; text: string }
+export interface NarrativeParagraph { topic: string; observation: string; recommendation?: string }
+export interface NarrativeContent {
+  bullets?: string[];
+  callouts?: NarrativeCallout[];
+  paragraphs?: NarrativeParagraph[];
+}
+
 export interface PDFReportData {
   metadata: ReportMeta;
   attentionItems?: AttentionItem[];
@@ -114,6 +122,8 @@ export interface PDFReportData {
   grids: Record<string, GridData>;
   /** Enriched adjustments for traceability appendix */
   traceabilityAdjustments?: DDAdjustment[];
+  /** AI-generated narrative content keyed by slide_key (qoe, revenue_detail, ...) */
+  narratives?: Record<string, NarrativeContent>;
 }
 
 // ── Brand Colors ────────────────────────────────────────────────────────
@@ -1105,6 +1115,84 @@ function wrapText(text: string, maxChars: number): string[] {
 
 // ── Main Builder ────────────────────────────────────────────────────────
 
+/** Render an AI narrative slide (Kyle-style bullets + bold-label callouts, or AKB-style paragraphs). */
+function addNarrativeSlide(doc: PDFDocument, font: PDFFont, boldFont: PDFFont, meta: ReportMeta,
+  title: string, narrative: NarrativeContent, pageNum: number, totalPages: number, sectionTitle?: string): PDFPage {
+  const page = doc.addPage([PW, PH]);
+  drawHeader(page, font, boldFont, sectionTitle || title, meta);
+  drawFooter(page, font, meta, pageNum, totalPages);
+
+  let y = CONTENT_Y_TOP - 4;
+  page.drawText(`${safeText(title)} - Analyst Commentary`, { x: PAD, y, size: 14, font: boldFont, color: C.darkBlue });
+  y -= 8;
+  page.drawRectangle({ x: PAD, y: y - 3, width: 36, height: 2.5, color: C.teal });
+  y -= 22;
+
+  const maxChars = Math.floor((CONTENT_W - 24) / 4.5);
+
+  // Bullets
+  if (narrative.bullets && narrative.bullets.length > 0) {
+    for (const b of narrative.bullets) {
+      if (y < CONTENT_Y_BOT + 30) break;
+      page.drawCircle({ x: PAD + 4, y: y - 4, size: 1.6, color: C.teal });
+      const lines = wrapTextLines(stripMd(b), maxChars, 4);
+      lines.forEach((ln, i) => {
+        page.drawText(ln, { x: PAD + 14, y: y - i * 12, size: 9, font, color: C.darkGray });
+      });
+      y -= lines.length * 12 + 6;
+    }
+    y -= 8;
+  }
+
+  // Callouts (bold label + body, teal label color like AKB/Kyle)
+  if (narrative.callouts && narrative.callouts.length > 0) {
+    for (const c of narrative.callouts) {
+      if (y < CONTENT_Y_BOT + 36) break;
+      const cardH = 36;
+      page.drawRectangle({ x: PAD, y: y - cardH, width: CONTENT_W, height: cardH, color: C.offWhite });
+      page.drawRectangle({ x: PAD, y: y - cardH, width: 3, height: cardH, color: C.teal });
+      page.drawText(safeText(c.label).toUpperCase(), {
+        x: PAD + 10, y: y - 14, size: 8.5, font: boldFont, color: C.teal,
+      });
+      const lines = wrapTextLines(stripMd(c.text), maxChars - 4, 2);
+      lines.forEach((ln, i) => {
+        page.drawText(ln, { x: PAD + 10, y: y - 24 - i * 11, size: 8.5, font, color: C.darkGray });
+      });
+      y -= cardH + 6;
+    }
+    y -= 6;
+  }
+
+  // Paragraphs (AKB style: topic / observation / recommendation)
+  if (narrative.paragraphs && narrative.paragraphs.length > 0) {
+    for (const p of narrative.paragraphs) {
+      if (y < CONTENT_Y_BOT + 50) break;
+      page.drawText(safeText(p.topic), { x: PAD, y, size: 10.5, font: boldFont, color: C.darkBlue });
+      y -= 14;
+      const obsLines = wrapTextLines(stripMd(p.observation), maxChars, 8);
+      obsLines.forEach((ln, i) => {
+        if (y - i * 11 < CONTENT_Y_BOT + 10) return;
+        page.drawText(ln, { x: PAD, y: y - i * 11, size: 8.5, font, color: C.darkGray });
+      });
+      y -= obsLines.length * 11 + 4;
+      if (p.recommendation) {
+        page.drawText("Recommendation:", { x: PAD, y, size: 8.5, font: boldFont, color: C.teal });
+        y -= 12;
+        const recLines = wrapTextLines(stripMd(p.recommendation), maxChars, 5);
+        recLines.forEach((ln, i) => {
+          if (y - i * 11 < CONTENT_Y_BOT + 10) return;
+          page.drawText(ln, { x: PAD, y: y - i * 11, size: 8.5, font, color: C.darkGray });
+        });
+        y -= recLines.length * 11 + 10;
+      } else {
+        y -= 6;
+      }
+    }
+  }
+
+  return page;
+}
+
 async function buildPDFReport(data: PDFReportData): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
@@ -1140,11 +1228,23 @@ async function buildPDFReport(data: PDFReportData): Promise<Uint8Array> {
   // Key Terms
   pageFns.push({ fn: (pn, tp) => addKeyTermsPage(doc, font, boldFont, meta, pn, tp) });
 
+  // Helpers to push a narrative page if AI content exists for a slide_key
+  const N = (data.narratives || {}) as Record<string, NarrativeContent>;
+  const hasNarrative = (k: string) => {
+    const n = N[k];
+    return !!n && ((n.bullets && n.bullets.length > 0) || (n.callouts && n.callouts.length > 0) || (n.paragraphs && n.paragraphs.length > 0));
+  };
+  const pushNarrative = (k: string, title: string, section?: string) => {
+    if (!hasNarrative(k)) return;
+    pageFns.push({ fn: (pn, tp) => addNarrativeSlide(doc, font, boldFont, meta, title, N[k], pn, tp, section) });
+  };
+
   // Attention Areas
   const attentionPageIndex = pageFns.length;
   if (data.attentionItems && data.attentionItems.length > 0) {
     pageFns.push({ fn: (pn, tp) => addDividerPage(doc, font, boldFont, meta, "Attention Areas", "Key Findings & Risk Assessment", "I", pn, tp), section: "Attention Areas" });
     pageFns.push({ fn: (pn, tp) => addAttentionAreasPage(doc, font, boldFont, meta, data.attentionItems!, pn, tp) });
+    pushNarrative("attention_areas", "Attention Areas", "Attention Areas");
   }
 
   // QoE Section
@@ -1157,6 +1257,7 @@ async function buildPDFReport(data: PDFReportData): Promise<Uint8Array> {
 
   if (data.grids.qoeAnalysis) {
     pageFns.push({ fn: (pn, tp) => addTablePage(doc, font, boldFont, meta, "QoE / EBITDA Bridge", data.grids.qoeAnalysis, pn, tp, "Quality of Earnings") });
+    pushNarrative("qoe", "QoE / EBITDA Bridge", "Quality of Earnings");
   }
 
   if (data.ddAdjustments && data.ddAdjustments.length > 0) {
@@ -1191,18 +1292,19 @@ async function buildPDFReport(data: PDFReportData): Promise<Uint8Array> {
   pageFns.push({ fn: (pn, tp) => addDividerPage(doc, font, boldFont, meta, "Income Statement Analysis", "Revenue, COGS & Operating Expenses", "III", pn, tp), section: "Income Statement" });
 
   const isGrids = [
-    { key: "incomeStatement", title: "Income Statement" },
-    { key: "isDetailed", title: "Income Statement - Detailed" },
-    { key: "salesDetail", title: "Revenue Detail" },
-    { key: "cogsDetail", title: "COGS Detail" },
-    { key: "opexDetail", title: "Operating Expenses" },
-    { key: "otherExpense", title: "Other Expense / Income" },
-    { key: "payroll", title: "Payroll Analysis" },
+    { key: "incomeStatement", title: "Income Statement", narrativeKey: "" },
+    { key: "isDetailed", title: "Income Statement - Detailed", narrativeKey: "" },
+    { key: "salesDetail", title: "Revenue Detail", narrativeKey: "revenue_detail" },
+    { key: "cogsDetail", title: "COGS Detail", narrativeKey: "cogs_detail" },
+    { key: "opexDetail", title: "Operating Expenses", narrativeKey: "opex_detail" },
+    { key: "otherExpense", title: "Other Expense / Income", narrativeKey: "" },
+    { key: "payroll", title: "Payroll Analysis", narrativeKey: "" },
   ];
 
   for (const g of isGrids) {
     if (data.grids[g.key] && data.grids[g.key].rows.length > 0) {
       pageFns.push({ fn: (pn, tp) => addTablePage(doc, font, boldFont, meta, g.title, data.grids[g.key], pn, tp, "Income Statement") });
+      if (g.narrativeKey) pushNarrative(g.narrativeKey, g.title, "Income Statement");
     }
   }
 
@@ -1211,19 +1313,20 @@ async function buildPDFReport(data: PDFReportData): Promise<Uint8Array> {
   pageFns.push({ fn: (pn, tp) => addDividerPage(doc, font, boldFont, meta, "Balance Sheet Analysis", "Assets, Liabilities & Working Capital", "IV", pn, tp), section: "Balance Sheet" });
 
   const bsGrids = [
-    { key: "balanceSheet", title: "Balance Sheet" },
-    { key: "bsDetailed", title: "Balance Sheet - Detailed" },
-    { key: "arAging", title: "AR Aging" },
-    { key: "apAging", title: "AP Aging" },
-    { key: "fixedAssets", title: "Fixed Assets" },
-    { key: "workingCapital", title: "Working Capital" },
-    { key: "nwcAnalysis", title: "Net Working Capital Analysis" },
-    { key: "freeCashFlow", title: "Free Cash Flow" },
+    { key: "balanceSheet", title: "Balance Sheet", narrativeKey: "" },
+    { key: "bsDetailed", title: "Balance Sheet - Detailed", narrativeKey: "" },
+    { key: "arAging", title: "AR Aging", narrativeKey: "" },
+    { key: "apAging", title: "AP Aging", narrativeKey: "" },
+    { key: "fixedAssets", title: "Fixed Assets", narrativeKey: "" },
+    { key: "workingCapital", title: "Working Capital", narrativeKey: "working_capital" },
+    { key: "nwcAnalysis", title: "Net Working Capital Analysis", narrativeKey: "" },
+    { key: "freeCashFlow", title: "Free Cash Flow", narrativeKey: "free_cash_flow" },
   ];
 
   for (const g of bsGrids) {
     if (data.grids[g.key] && data.grids[g.key].rows.length > 0) {
       pageFns.push({ fn: (pn, tp) => addTablePage(doc, font, boldFont, meta, g.title, data.grids[g.key], pn, tp, "Balance Sheet") });
+      if (g.narrativeKey) pushNarrative(g.narrativeKey, g.title, "Balance Sheet");
     }
   }
 

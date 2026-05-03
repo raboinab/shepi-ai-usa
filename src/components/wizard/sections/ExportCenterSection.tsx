@@ -18,6 +18,7 @@ import * as rh from "@/lib/reclassHelpers";
 import { computeQoEMetrics } from "@/lib/qoeMetrics";
 import * as gridBuilders from "@/lib/workbook-grid-builders";
 import { trackEvent } from "@/lib/analytics";
+import { NarrativePanel } from "@/components/pdf-narratives/NarrativePanel";
 
 
 interface ExportCenterData {
@@ -500,6 +501,19 @@ export const ExportCenterSection = ({ data, updateData, wizardData, projectId, p
       // Build report data payload
       const enrichedAdjustments = buildDDAdjustments(dealData, proofMap, proposalMap, evidenceByProposal);
       const attentionItems = normalizeAttentionItems(rawAttention, 6) as unknown as AttentionItem[];
+
+      // Hydrate AI narratives (if any have been generated for this project)
+      let narratives: Record<string, unknown> = {};
+      if (projectId) {
+        try {
+          const { getProjectNarratives } = await import("@/lib/pdf/narratives");
+          const records = await getProjectNarratives(projectId);
+          for (const r of records) narratives[r.slide_key] = r.content;
+        } catch (e) {
+          console.warn("Failed to load narratives:", e);
+        }
+      }
+
       const reportData: PDFReportData = {
         metadata,
         attentionItems: attentionItems.length > 0 ? attentionItems : undefined,
@@ -512,6 +526,7 @@ export const ExportCenterSection = ({ data, updateData, wizardData, projectId, p
         cimInsights,
         grids,
         traceabilityAdjustments: enrichedAdjustments,
+        narratives: narratives as Record<string, never>,
       };
 
       // Build PDF in Web Worker (background thread)
@@ -680,6 +695,22 @@ export const ExportCenterSection = ({ data, updateData, wizardData, projectId, p
           />
         </CardContent>
       </Card>
+
+      {/* AI Analyst Commentary */}
+      {projectId && dealData && (
+        <NarrativePanel
+          projectId={projectId}
+          grids={{
+            qoeAnalysis: gridBuilders.buildQoEAnalysisGrid(dealData),
+            salesDetail: gridBuilders.buildSalesGrid(dealData),
+            cogsDetail: gridBuilders.buildCOGSGrid(dealData),
+            opexDetail: gridBuilders.buildOpExGrid(dealData),
+            workingCapital: gridBuilders.buildWorkingCapitalGrid(dealData),
+            nwcAnalysis: gridBuilders.buildNWCAnalysisGrid(dealData),
+            freeCashFlow: gridBuilders.buildFreeCashFlowGrid(dealData),
+          }}
+        />
+      )}
 
       {/* Export Options */}
       <Card>
