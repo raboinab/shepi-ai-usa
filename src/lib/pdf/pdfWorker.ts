@@ -100,6 +100,14 @@ export interface DocSourceItem {
   uploadDate?: string;
 }
 
+export interface NarrativeCallout { label: string; text: string }
+export interface NarrativeParagraph { topic: string; observation: string; recommendation?: string }
+export interface NarrativeContent {
+  bullets?: string[];
+  callouts?: NarrativeCallout[];
+  paragraphs?: NarrativeParagraph[];
+}
+
 export interface PDFReportData {
   metadata: ReportMeta;
   attentionItems?: AttentionItem[];
@@ -114,6 +122,8 @@ export interface PDFReportData {
   grids: Record<string, GridData>;
   /** Enriched adjustments for traceability appendix */
   traceabilityAdjustments?: DDAdjustment[];
+  /** AI-generated narrative content keyed by slide_key (qoe, revenue_detail, ...) */
+  narratives?: Record<string, NarrativeContent>;
 }
 
 // ── Brand Colors ────────────────────────────────────────────────────────
