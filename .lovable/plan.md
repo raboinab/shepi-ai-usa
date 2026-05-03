@@ -1,67 +1,74 @@
-## AI Narrative Layer for PDF Export (v1)
+## Goal
 
-Mirror the QoE provider's voice (Kyle Plumbing 2023 + Artistic Kitchen & Bath 2025): tight, scannable bullets with bold-label callouts on analysis slides; multi-paragraph Observation / Recommendation prose on Attention Areas. Powered by Anthropic Claude with hard guards against number hallucination. **No management notes in v1** (added later when input UX exists). **No human review gate** — guards + analyst-editable UI are the trust mechanism.
+Close the biggest revenue leaks on the marketing site:
+1. **Done-For-You is invisible** (only a contact-form dropdown today).
+2. **Buyers can't tell what they're actually buying** — deliverables and boundaries are scattered across subpages.
 
-### 1. Database
+Fix both with a homepage Scope-of-Work section + a dedicated `/scope` page formatted like a real QoE Statement of Work.
 
-New table `project_narratives`:
-- `id`, `project_id` (FK)
-- `slide_key` text (`qoe`, `revenue_detail`, `working_capital`, `attention_areas`, `executive_summary`, etc.)
-- `content` jsonb — `{ bullets: string[], callouts: [{label, text}], paragraphs?: [{topic, observation, recommendation?}] }`
-- `source_hash` text — hash of input rawData/attentionItems (staleness flag, non-blocking)
-- `model`, `generated_at`, `edited_at`, `edited_by`
-- Unique on `(project_id, slide_key)`
-- RLS via `has_project_access(project_id)`
+## What we'll build
 
-### 2. Server functions
+### 1. New page: `src/pages/ScopeOfWork.tsx`
 
-`src/server/narratives.server.ts` — Anthropic SDK call + verification guard.
-`src/server/narratives.functions.ts` — `generateNarrative`, `saveNarrative`, `getNarratives`.
+Wrapped in `ContentPageLayout` (same pattern as `QualityOfEarningsCost.tsx`). Nine sections in formal SOW order:
 
-`generateNarrative` uses Claude (claude-sonnet) with structured tool-calling per slide type:
-- **Analysis slides**: returns `{ bullets[3-5], callouts[{label,text}] }` (Kyle style)
-- **Attention Areas**: returns `{ paragraphs: [{topic, observation, recommendation?}] }` (AKB style — no `driver` field since no mgmt notes)
+1. **Engagement Overview** — 1–2 paragraphs framing Shepi as data-intensive QoE work, not attestation.
+2. **Inputs Required** — three columns (Required / Recommended / Optional), mirroring the "What You'll Need" markup already on the homepage.
+3. **Procedures Performed** — `StepList`: 100% GL coverage, anomaly/red-flag detection, owner-comp normalization, personal-expense detection, customer/vendor concentration, working-capital build, proof of cash from bank statements, AI-suggested EBITDA adjustments (every adjustment human-reviewed).
+4. **Deliverables** — `BenefitGrid` mapping the 27-tab workbook: Executive Summary, EBITDA Bridge, Revenue Quality, Working Capital, Proof of Cash, GL Findings, Customer/Vendor Concentration, Audit Trail, plus PDF + Excel export.
+5. **Out of Scope** — `BenefitGrid` with negative-framed items: no CPA attestation/opinion, no valuation, no legal/tax advice, no replacement of fairness opinion or formal audit. Wording mirrors the existing Pricing FAQ.
+6. **DIY vs Done-For-You** — `ComparisonTable` with rows: Who runs the analysis, Turnaround, CPA review, Onboarding, Ideal for, Pricing reference. Tier facts pulled from `Pricing.tsx`.
+7. **Timeline & Cost** — `StatRow`: "2–4 hours vs 4–8 weeks", "$2K vs $20K–$100K".
+8. **Pricing** — short paragraph + button to `/pricing`.
+9. **Related resources** — `RelatedResourceCards` linking `/quality-of-earnings-cost`, `/compare/shepi-vs-excel`, `/quality-of-earnings-checklist`, `/quality-of-earnings-software`.
 
-System prompt: only reference numbers visible in `rawData`; never invent drivers or attribute claims to management; describe what the numbers show.
+SEO via existing `useSEO` hook: title "Statement of Work | Shepi QoE", description summarizing engagement scope.
 
-**Number-verification guard** (the trust mechanism):
-Regex-extract every `$X`, `XK`, `XM`, `X%` from the AI output and verify each appears (with rounding tolerance) in the source `rawData` string. Strip any bullet/paragraph containing an unmatched number. If >50% stripped, retry once with a stricter prompt; if still bad, fall back to a deterministic data summary.
+### 2. Wire the route in `src/App.tsx`
 
-### 3. UI: per-slide narrative editor
+- Lazy import grouped with the other P0 pages (~line 66–70).
+- Route `{ path: "scope", element: wrap(<ScopeOfWork />) }` (~line 191).
+- Add `/scope` to `prerenderPaths` (~line 283) so vite-react-ssg statically prerenders it.
 
-`src/components/pdf-narratives/NarrativePanel.tsx`, mounted in the PDF preview/export area:
-- "Generate" / "Regenerate" button per slide
-- Editable bullet, callout (label + text), and paragraph fields
-- Stale-source warning (non-blocking)
-- Save persists to `project_narratives`
+### 3. Homepage section in `src/pages/Index.tsx`
 
-### 4. Slide rendering updates
+Insert between the closing `</section>` of Features (~line 656) and the opening of "How It Works" (~line 659). Use the existing inline section pattern (bg alternation, `max-w-6xl`, serif heading, eyebrow label) — **not** the typographic `content/` components, which would clash visually.
 
-- Extend `SlideNarrativeBox.tsx` to render bullets, bolded label callouts (label in teal, body in dark gray), and multi-paragraph prose.
-- Update slides to read `data.narrative` and render via the shared box:
-  - `QoESlide`, `RevenueDetailSlide`, `WorkingCapitalSlide`, `QoEExecutiveSummarySlide`, `AttentionAreasSlide` (paragraph format), plus COGS/OpEx/Cash Flow slides if present.
-- `buildClientPDF` / `pdfWorker`: hydrate `data.narrative` per slide from `project_narratives` before export.
+Anatomy:
+- Eyebrow: **Engagement** · H2: **Scope of Work**
+- Subhead: "What we're engaged to deliver, in the format you'd see from a traditional QoE firm."
+- Three-column grid:
+  - **Deliverables** (left, primary weight) — bulleted list of 9 deliverables. Caption: "Delivered as a 27-tab workbook."
+  - **Procedures Performed** (middle) — 5–6 condensed bullets.
+  - **Out of Scope** (right) — 4 negative-framed bullets, muted color / distinct icon.
+- **DIY vs DFY strip** below the grid — two parallel cards (Self-Service / Done-For-You), 3–4 bullets each, CTA button each. **This single change closes the biggest revenue gap.**
+- Footer CTAs: "View full Statement of Work →" → `/scope`, secondary "See pricing →" → `/pricing`.
 
-### 5. Files
+Reuse icons already imported in `Index.tsx` (`CheckCircle`, `FileText`, `Layers`, etc.) — no new dependencies.
 
-**New**
-- `supabase/migrations/<ts>_project_narratives.sql`
-- `src/server/narratives.server.ts`
-- `src/server/narratives.functions.ts`
-- `src/components/pdf-narratives/NarrativePanel.tsx`
+### 4. Homepage FAQ addition
 
-**Modified**
-- `src/components/pdf-slides/shared/SlideNarrativeBox.tsx`
-- 5–8 slide components above
-- `src/lib/pdf/buildClientPDF.ts` (hydrate narratives)
-- PDF preview page (mount `NarrativePanel`)
+Add one item to the existing accordion (~Index.tsx:774–795): **"What's the difference between Self-Service and Done-For-You?"** — short answer + link to `/scope#diy-vs-dfy`.
 
-### Decisions locked in
-- **Provider**: Anthropic Claude (`ANTHROPIC_API_KEY` already set).
-- **Management notes**: deferred — schema's `content` jsonb is extensible to add a `drivers` field later without migration churn.
-- **Review gate**: none. Guards = number-verification regex + tool-calling schema + analyst-editable UI.
+## Files
 
-### Out of scope (v1)
-- Management notes input + driver attribution
-- Industry benchmarks
-- Auto-regen on data change (manual button only)
+| Action | Path |
+|---|---|
+| Create | `src/pages/ScopeOfWork.tsx` |
+| Modify | `src/App.tsx` (lazy import, route, prerender path) |
+| Modify | `src/pages/Index.tsx` (new section + FAQ item) |
+
+Reused (no changes): `ContentPageLayout`, `StepList`, `BenefitGrid`, `ComparisonTable`, `StatRow`, `RelatedResourceCards`, `useSEO`.
+
+## Verification
+
+- Dev: `/` shows the new section between Features and How It Works; "View full Statement of Work →" navigates to `/scope`; all 9 sections render; new FAQ expands.
+- Build: succeeds; `dist/scope/index.html` exists and contains SOW headings; `dist/index.html` contains the new homepage section text.
+- SEO: view-source on `/scope` shows the new `<title>` and `<meta name="description">`.
+- Responsive: `/` and `/scope` look correct at desktop, tablet, mobile.
+
+## Out of scope for this change
+
+- No pricing changes.
+- No new icon libraries or design tokens.
+- No copy changes to existing Features or How-It-Works sections (separate pass if needed).
