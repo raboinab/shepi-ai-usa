@@ -18,6 +18,8 @@ import * as rh from "@/lib/reclassHelpers";
 import { computeQoEMetrics } from "@/lib/qoeMetrics";
 import * as gridBuilders from "@/lib/workbook-grid-builders";
 import { trackEvent } from "@/lib/analytics";
+import { NarrativePanel } from "@/components/pdf-narratives/NarrativePanel";
+import { useMemo } from "react";
 
 
 interface ExportCenterData {
