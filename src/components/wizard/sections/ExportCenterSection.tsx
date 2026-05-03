@@ -607,6 +607,8 @@ export const ExportCenterSection = ({ data, updateData, wizardData, projectId, p
     : "PDF Report";
 
   return (
+    <>
+    <DeliverablePreviewDialog mode={previewMode} onClose={() => setPreviewMode(null)} />
     <div className="space-y-6">
       {/* Header */}
       <div>
