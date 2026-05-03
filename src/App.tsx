@@ -68,6 +68,7 @@ const QualityOfEarningsCost = lazy(() => import("./pages/QualityOfEarningsCost")
 const QualityOfEarningsSoftware = lazy(() => import("./pages/QualityOfEarningsSoftware"));
 const QualityOfEarningsTemplate = lazy(() => import("./pages/QualityOfEarningsTemplate"));
 const QualityOfEarningsChecklist = lazy(() => import("./pages/QualityOfEarningsChecklist"));
+const ScopeOfWork = lazy(() => import("./pages/ScopeOfWork"));
 const ForAiAgents = lazy(() => import("./pages/ForAiAgents"));
 const AdminLayout = lazy(() => import("./layouts/AdminLayout").then(m => ({ default: m.AdminLayout })));
 const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
@@ -194,6 +195,7 @@ export const routes: RouteRecord[] = [
       { path: "quality-of-earnings-software", element: wrap(<QualityOfEarningsSoftware />) },
       { path: "quality-of-earnings-template", element: wrap(<QualityOfEarningsTemplate />) },
       { path: "quality-of-earnings-checklist", element: wrap(<QualityOfEarningsChecklist />) },
+      { path: "scope", element: wrap(<ScopeOfWork />) },
       { path: "for-ai-agents", element: wrap(<ForAiAgents />) },
 
       // Admin
@@ -282,4 +284,5 @@ export const prerenderPaths = [
   "/quality-of-earnings-software",
   "/quality-of-earnings-template",
   "/quality-of-earnings-checklist",
+  "/scope",
 ];
