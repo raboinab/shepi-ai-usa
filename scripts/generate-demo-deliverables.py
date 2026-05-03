@@ -29,19 +29,24 @@ PERIOD = "Jan 2022 – Dec 2024 (TTM through Dec 2024)"
 
 def watermark_canvas(canv, doc):
     canv.saveState()
-    canv.setFont("Helvetica-Bold", 60)
-    canv.setFillColorRGB(0.85, 0.85, 0.85, alpha=0.35)
-    canv.translate(letter[0] / 2, letter[1] / 2)
-    canv.rotate(35)
-    canv.drawCentredString(0, 0, "DEMO — NOT FOR DISTRIBUTION")
-    canv.rotate(-35)
+    # Diagonal repeating watermark, small and faint, sits BEHIND content
+    canv.setFont("Helvetica-Bold", 28)
+    canv.setFillColorRGB(0.78, 0.78, 0.82, alpha=0.18)
+    page_w, page_h = letter
+    canv.translate(page_w / 2, page_h / 2)
+    canv.rotate(30)
+    text = "DEMO  ·  NOT FOR DISTRIBUTION"
+    # Tile across a region larger than the page
+    for y in range(-700, 701, 110):
+        for x_offset in (-450, 0, 450):
+            canv.drawCentredString(x_offset, y, text)
+    canv.rotate(-30)
+    canv.translate(-page_w / 2, -page_h / 2)
     # Footer
     canv.setFont("Helvetica", 8)
     canv.setFillColorRGB(0.4, 0.4, 0.4, alpha=1)
-    canv.drawString(-letter[0]/2 + 36, -letter[1]/2 + 24,
-                    f"Shepi · Sample QoE Report · {COMPANY} · Demo preview")
-    canv.drawRightString(letter[0]/2 - 36, -letter[1]/2 + 24,
-                         f"Page {doc.page}")
+    canv.drawString(36, 24, f"Shepi · Sample QoE Report · {COMPANY} · Demo preview")
+    canv.drawRightString(page_w - 36, 24, f"Page {doc.page}")
     canv.restoreState()
 
 def build_pdf():
