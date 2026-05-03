@@ -1292,18 +1292,19 @@ async function buildPDFReport(data: PDFReportData): Promise<Uint8Array> {
   pageFns.push({ fn: (pn, tp) => addDividerPage(doc, font, boldFont, meta, "Income Statement Analysis", "Revenue, COGS & Operating Expenses", "III", pn, tp), section: "Income Statement" });
 
   const isGrids = [
-    { key: "incomeStatement", title: "Income Statement" },
-    { key: "isDetailed", title: "Income Statement - Detailed" },
-    { key: "salesDetail", title: "Revenue Detail" },
-    { key: "cogsDetail", title: "COGS Detail" },
-    { key: "opexDetail", title: "Operating Expenses" },
-    { key: "otherExpense", title: "Other Expense / Income" },
-    { key: "payroll", title: "Payroll Analysis" },
+    { key: "incomeStatement", title: "Income Statement", narrativeKey: "" },
+    { key: "isDetailed", title: "Income Statement - Detailed", narrativeKey: "" },
+    { key: "salesDetail", title: "Revenue Detail", narrativeKey: "revenue_detail" },
+    { key: "cogsDetail", title: "COGS Detail", narrativeKey: "cogs_detail" },
+    { key: "opexDetail", title: "Operating Expenses", narrativeKey: "opex_detail" },
+    { key: "otherExpense", title: "Other Expense / Income", narrativeKey: "" },
+    { key: "payroll", title: "Payroll Analysis", narrativeKey: "" },
   ];
 
   for (const g of isGrids) {
     if (data.grids[g.key] && data.grids[g.key].rows.length > 0) {
       pageFns.push({ fn: (pn, tp) => addTablePage(doc, font, boldFont, meta, g.title, data.grids[g.key], pn, tp, "Income Statement") });
+      if (g.narrativeKey) pushNarrative(g.narrativeKey, g.title, "Income Statement");
     }
   }
 
@@ -1312,19 +1313,20 @@ async function buildPDFReport(data: PDFReportData): Promise<Uint8Array> {
   pageFns.push({ fn: (pn, tp) => addDividerPage(doc, font, boldFont, meta, "Balance Sheet Analysis", "Assets, Liabilities & Working Capital", "IV", pn, tp), section: "Balance Sheet" });
 
   const bsGrids = [
-    { key: "balanceSheet", title: "Balance Sheet" },
-    { key: "bsDetailed", title: "Balance Sheet - Detailed" },
-    { key: "arAging", title: "AR Aging" },
-    { key: "apAging", title: "AP Aging" },
-    { key: "fixedAssets", title: "Fixed Assets" },
-    { key: "workingCapital", title: "Working Capital" },
-    { key: "nwcAnalysis", title: "Net Working Capital Analysis" },
-    { key: "freeCashFlow", title: "Free Cash Flow" },
+    { key: "balanceSheet", title: "Balance Sheet", narrativeKey: "" },
+    { key: "bsDetailed", title: "Balance Sheet - Detailed", narrativeKey: "" },
+    { key: "arAging", title: "AR Aging", narrativeKey: "" },
+    { key: "apAging", title: "AP Aging", narrativeKey: "" },
+    { key: "fixedAssets", title: "Fixed Assets", narrativeKey: "" },
+    { key: "workingCapital", title: "Working Capital", narrativeKey: "working_capital" },
+    { key: "nwcAnalysis", title: "Net Working Capital Analysis", narrativeKey: "" },
+    { key: "freeCashFlow", title: "Free Cash Flow", narrativeKey: "free_cash_flow" },
   ];
 
   for (const g of bsGrids) {
     if (data.grids[g.key] && data.grids[g.key].rows.length > 0) {
       pageFns.push({ fn: (pn, tp) => addTablePage(doc, font, boldFont, meta, g.title, data.grids[g.key], pn, tp, "Balance Sheet") });
+      if (g.narrativeKey) pushNarrative(g.narrativeKey, g.title, "Balance Sheet");
     }
   }
 
