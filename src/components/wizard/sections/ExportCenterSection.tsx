@@ -561,10 +561,8 @@ export const ExportCenterSection = ({ data, updateData, wizardData, projectId, p
 
   const handleExportExcel = async () => {
     if (isDemo) {
-      trackEvent("demo_export_blocked", { format: "xlsx" });
-      toast.info("This is a preview — sign up to export your own QoE report", {
-        description: "Create an account to generate PDF and Excel deliverables.",
-      });
+      trackEvent("demo_preview_opened", { format: "xlsx" });
+      setPreviewMode("xlsx");
       return;
     }
     if (!dealData) {
