@@ -52,6 +52,8 @@ additional_redirect_urls = [
     verify_jwt = false
   [functions.extract-document-text]
     verify_jwt = false
+  [functions.generate-narrative]
+    verify_jwt = false
   [functions.get-qb-credentials]
     verify_jwt = false
   [functions.insights-chat]
