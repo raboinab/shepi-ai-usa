@@ -1695,6 +1695,59 @@ export type Database = {
           },
         ]
       }
+      project_narratives: {
+        Row: {
+          content: Json
+          created_at: string
+          edited_at: string | null
+          edited_by: string | null
+          generated_at: string
+          generated_by: string | null
+          id: string
+          model: string | null
+          project_id: string
+          slide_key: string
+          source_hash: string | null
+          updated_at: string
+        }
+        Insert: {
+          content?: Json
+          created_at?: string
+          edited_at?: string | null
+          edited_by?: string | null
+          generated_at?: string
+          generated_by?: string | null
+          id?: string
+          model?: string | null
+          project_id: string
+          slide_key: string
+          source_hash?: string | null
+          updated_at?: string
+        }
+        Update: {
+          content?: Json
+          created_at?: string
+          edited_at?: string | null
+          edited_by?: string | null
+          generated_at?: string
+          generated_by?: string | null
+          id?: string
+          model?: string | null
+          project_id?: string
+          slide_key?: string
+          source_hash?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_narratives_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       project_payments: {
         Row: {
           amount: number
