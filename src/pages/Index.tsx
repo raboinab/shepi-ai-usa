@@ -693,7 +693,7 @@ const Index = () => {
                   </li>
                 ))}
               </ul>
-              <p className="text-xs text-muted-foreground italic">Delivered as a 27-tab workbook.</p>
+              
             </div>
 
             {/* Procedures Performed */}
@@ -777,6 +777,7 @@ const Index = () => {
               </div>
               <ul className="space-y-2 mb-6 flex-1">
                 {[
+                  "CPA-led review of every adjustment",
                   "Shepi team produces the deliverable, you review",
                   "Days, not weeks — no ongoing analyst time required",
                   "Guided kickoff and data-room walkthrough",

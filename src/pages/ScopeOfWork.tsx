@@ -113,17 +113,12 @@ export default function ScopeOfWork() {
       ]} />
 
       <h2 id="deliverables">Deliverables</h2>
-      <p>The engagement produces a structured 27-tab workbook plus a formatted PDF report. Headline tabs:</p>
+      <p>The engagement produces four named artifacts, in the format a real engagement letter would use:</p>
       <BenefitGrid benefits={[
-        { title: "Executive Summary", description: "Adjusted EBITDA, key findings, and risk callouts on one page." },
-        { title: "EBITDA Bridge", description: "Reported → adjusted EBITDA, with every adjustment categorized and traceable." },
-        { title: "Revenue Quality", description: "Revenue by customer, channel, and period with concentration metrics." },
-        { title: "Working Capital", description: "DSO / DPO / DIO trend and net working capital target." },
-        { title: "Proof of Cash", description: "Reconciliation of P&L revenue and EBITDA to bank deposits." },
-        { title: "GL Findings & Red Flags", description: "Anomalies, unusual entries, and items warranting buyer follow-up." },
-        { title: "Customer / Vendor Concentration", description: "Top-N tables with exposure thresholds." },
-        { title: "Full Audit Trail", description: "Every adjustment links back to source transactions and rationale." },
-        { title: "PDF + Excel Export", description: "Formatted PDF report and full Excel workbook for sharing with lenders, partners, or investment committees." },
+        { title: "QoE Workbook", description: "Excel · 27 tabs covering Executive Summary, EBITDA Bridge, Revenue Quality, Working Capital, Proof of Cash, GL Findings, and Customer / Vendor Concentration." },
+        { title: "Executive Summary", description: "PDF · adjusted EBITDA, key findings, and risk callouts — lender- and LP-ready." },
+        { title: "Source-Cited Audit Trail", description: "Every adjustment traceable to the underlying transaction and rationale." },
+        { title: "Bank Reconciliation Pack", description: "Proof of cash reconciling reported revenue and EBITDA to processed bank statements." },
       ]} />
 
       <h2 id="out-of-scope">Out of Scope</h2>
@@ -151,8 +146,8 @@ export default function ScopeOfWork() {
         headers={["", "Self-Service", "Done-For-You"]}
         rows={[
           ["Who runs the analysis", "You, in the Shepi platform", "Shepi team, with you in review"],
+          ["CPA review", "Optional add-on", "CPA-led review"],
           ["Turnaround", "2–4 hours hands-on", "Days, not weeks"],
-          ["CPA review", "Optional add-on", "Included where applicable"],
           ["Onboarding", "Self-serve", "Guided kickoff & data-room walkthrough"],
           ["Ideal for", "Searchers and operators with finance fluency", "Buyers who want the deliverable produced for them"],
           ["Pricing", `${PRICING.perProject.display} per project`, `${PRICING.doneForYou.display} per project`],
