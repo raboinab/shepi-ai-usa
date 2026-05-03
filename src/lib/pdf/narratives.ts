@@ -123,12 +123,12 @@ export async function saveNarrativeEdit(args: {
   const { data: { user } } = await supabase.auth.getUser();
   const { error } = await supabase
     .from("project_narratives")
-    .upsert({
+    .upsert([{
       project_id: args.projectId,
       slide_key: args.slideKey,
-      content: args.content,
+      content: args.content as never,
       edited_by: user?.id,
       edited_at: new Date().toISOString(),
-    }, { onConflict: "project_id,slide_key" });
+    }], { onConflict: "project_id,slide_key" });
   if (error) throw error;
 }
