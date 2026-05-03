@@ -222,7 +222,6 @@ const Auth = () => {
             throw error;
           }
         } else {
-          trackEvent("sign_up", { method: "password" });
           toast({ title: "Check your email", description: `We sent a verification link to ${validated.email}. Please verify your email to sign in.` });
           setView("login");
         }
