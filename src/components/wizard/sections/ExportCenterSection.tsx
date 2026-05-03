@@ -19,6 +19,7 @@ import { computeQoEMetrics } from "@/lib/qoeMetrics";
 import * as gridBuilders from "@/lib/workbook-grid-builders";
 import { trackEvent } from "@/lib/analytics";
 import { NarrativePanel } from "@/components/pdf-narratives/NarrativePanel";
+import { DeliverablePreviewDialog, type PreviewMode } from "@/components/demo/DeliverablePreviewDialog";
 
 
 interface ExportCenterData {
