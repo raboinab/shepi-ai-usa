@@ -1,94 +1,67 @@
-## Problem
+## AI Narrative Layer for PDF Export (v1)
 
-Three different surfaces compute "total adjustments" three different ways. Today they happen to agree because every stored adjustment in real data uses `intent: "remove_expense"` (sign = +1). The moment a user picks `remove_revenue`, `add_expense`, or any non-default intent in the wizard, the EBITDA bridge and Insights tiles will silently flip sign and disagree with the workbook grid, the QoE tab, and the file the user downloads. That's the kind of bug that destroys credibility on a single deal.
+Mirror the QoE provider's voice (Kyle Plumbing 2023 + Artistic Kitchen & Bath 2025): tight, scannable bullets with bold-label callouts on analysis slides; multi-paragraph Observation / Recommendation prose on Attention Areas. Powered by Anthropic Claude with hard guards against number hallucination. **No management notes in v1** (added later when input UX exists). **No human review gate** — guards + analyst-editable UI are the trust mechanism.
 
-## Ground truth (verified against real data: BC, BC Copy, Landscaping Biz)
+### 1. Database
 
-- Adjustments are stored with shape `{ intent, periodValues, effectType, description, linkedAccountNumber, status, ... }`.
-- `src/lib/projectToDealAdapter.ts` translates them into the workbook `Adjustment` shape `{ amounts, intent, type, label, tbAccountNumber, effectType }` and **pre-applies the intent sign** (line 374: `amounts[k] = numVal * sign`). So by the time anything in the workbook code sees `adj.amounts`, the sign is already baked in.
-- Single source of truth: **after the adapter runs, `Σ amounts[period]` is the correct EBITDA-impact total. Don't apply sign again.**
+New table `project_narratives`:
+- `id`, `project_id` (FK)
+- `slide_key` text (`qoe`, `revenue_detail`, `working_capital`, `attention_areas`, `executive_summary`, etc.)
+- `content` jsonb — `{ bullets: string[], callouts: [{label, text}], paragraphs?: [{topic, observation, recommendation?}] }`
+- `source_hash` text — hash of input rawData/attentionItems (staleness flag, non-blocking)
+- `model`, `generated_at`, `edited_at`, `edited_by`
+- Unique on `(project_id, slide_key)`
+- RLS via `has_project_access(project_id)`
 
-## Surfaces audited
+### 2. Server functions
 
-| Surface | Behavior today | Verdict |
-|---|---|---|
-| Workbook DD Adjustments grid | Sums `amounts` directly | Correct |
-| IS / QoE / FCF / NWC / ProofOfCash tabs | `calcAdjustmentTotal` sums `amounts` | Correct |
-| In-browser XLSX/PDF export (current production path) | Uses `workbook-grid-builders.ts` which sums `amounts` | Correct |
-| `QuickInsights` "Total Adjustments" tile | Calls `signedAdjustmentTotal(adj)` on adapter output → multiplies by sign **again** | Wrong, currently masked |
-| `ChartPanel` EBITDA bridge | Same double-sign | Wrong, currently masked |
-| `AdjustmentsSummary` table | Same double-sign | Wrong, currently masked |
-| `AdjustmentTraceSheet` header total | `Σ Object.values(amounts)` with no NonQoE filter | Wrong header number; doesn't tie to bridge |
-| Edge function `export-pdf` | Reads stored `periodValues` and sums unsigned | Latent bug — function is currently unused (only referenced in `useEdgeFunctionHealth`) |
-| Edge functions `compute-workbook`, `export-workbook-xlsx` | Receive `raw.adjustments` with no adapter | Latent bug — also currently unused |
+`src/server/narratives.server.ts` — Anthropic SDK call + verification guard.
+`src/server/narratives.functions.ts` — `generateNarrative`, `saveNarrative`, `getNarratives`.
 
-## Fix (single source of truth: pre-signed `amounts`)
+`generateNarrative` uses Claude (claude-sonnet) with structured tool-calling per slide type:
+- **Analysis slides**: returns `{ bullets[3-5], callouts[{label,text}] }` (Kyle style)
+- **Attention Areas**: returns `{ paragraphs: [{topic, observation, recommendation?}] }` (AKB style — no `driver` field since no mgmt notes)
 
-### 1. Delete the misused helper
+System prompt: only reference numbers visible in `rawData`; never invent drivers or attribute claims to management; describe what the numbers show.
 
-- Delete `src/lib/adjustmentSignUtils.ts`
-- Delete `supabase/functions/_shared/workbook/adjustmentSignUtils.ts`
+**Number-verification guard** (the trust mechanism):
+Regex-extract every `$X`, `XK`, `XM`, `X%` from the AI output and verify each appears (with rounding tolerance) in the source `rawData` string. Strip any bullet/paragraph containing an unmatched number. If >50% stripped, retry once with a stricter prompt; if still bad, fall back to a deterministic data summary.
 
-The helper was written for the *raw stored* shape (`periodValues` + `intent`). Nothing in the rendering pipeline ever sees that shape — the adapter always runs first. Keeping it around is the trap.
+### 3. UI: per-slide narrative editor
 
-### 2. Fix the three Insights call sites to sum `amounts` directly
+`src/components/pdf-narratives/NarrativePanel.tsx`, mounted in the PDF preview/export area:
+- "Generate" / "Regenerate" button per slide
+- Editable bullet, callout (label + text), and paragraph fields
+- Stale-source warning (non-blocking)
+- Save persists to `project_narratives`
 
-All three changes are one-liners. Pattern: replace `signedAdjustmentTotal(adj)` with `Object.values(adj.amounts).reduce((s, v) => s + (v || 0), 0)` (or a small local `sumAmounts(adj)` helper colocated in `src/lib/calculations.ts`).
+### 4. Slide rendering updates
 
-- `src/components/insights/QuickInsights.tsx` (line 163, plus the import)
-- `src/components/insights/ChartPanel.tsx` (lines 94, 103, plus the import)
-- `src/components/insights/AdjustmentsSummary.tsx` (line 29, plus the import)
+- Extend `SlideNarrativeBox.tsx` to render bullets, bolded label callouts (label in teal, body in dark gray), and multi-paragraph prose.
+- Update slides to read `data.narrative` and render via the shared box:
+  - `QoESlide`, `RevenueDetailSlide`, `WorkingCapitalSlide`, `QoEExecutiveSummarySlide`, `AttentionAreasSlide` (paragraph format), plus COGS/OpEx/Cash Flow slides if present.
+- `buildClientPDF` / `pdfWorker`: hydrate `data.narrative` per slide from `project_narratives` before export.
 
-While here: optionally exclude `effectType === "NonQoE"` rows from the EBITDA bridge and the "Total Adjustments" tile (they're already excluded from `calcAdjustedEBITDA` in the workbook), so the chart and the workbook tile show the same number.
+### 5. Files
 
-### 3. Fix `AdjustmentTraceSheet` header (the user-visible bit you asked about)
+**New**
+- `supabase/migrations/<ts>_project_narratives.sql`
+- `src/server/narratives.server.ts`
+- `src/server/narratives.functions.ts`
+- `src/components/pdf-narratives/NarrativePanel.tsx`
 
-In `src/components/workbook/AdjustmentTraceSheet.tsx` around line 45–48:
+**Modified**
+- `src/components/pdf-slides/shared/SlideNarrativeBox.tsx`
+- 5–8 slide components above
+- `src/lib/pdf/buildClientPDF.ts` (hydrate narratives)
+- PDF preview page (mount `NarrativePanel`)
 
-- Replace the absolute sum with the signed sum: `Σ adjustment.amounts[p]` (already pre-signed by adapter).
-- When `adjustment.effectType === "NonQoE"`, don't show a dollar number in the header — show a small badge: "Presentation only — not in Adjusted EBITDA". This prevents the trace from claiming a $X impact that the bridge doesn't reflect.
-- Keep the per-period breakdown rendering as-is (those are the same signed values).
+### Decisions locked in
+- **Provider**: Anthropic Claude (`ANTHROPIC_API_KEY` already set).
+- **Management notes**: deferred — schema's `content` jsonb is extensible to add a `drivers` field later without migration churn.
+- **Review gate**: none. Guards = number-verification regex + tool-calling schema + analyst-editable UI.
 
-### 4. Centralize so this can't drift again
-
-Add a tiny exported helper in `src/lib/calculations.ts` (and re-export from the server `_shared/workbook/calculations.ts`):
-
-```ts
-export function sumAdjustmentAmounts(adj: Adjustment, opts?: { excludeNonQoE?: boolean }): number {
-  if (opts?.excludeNonQoE && adj.effectType === "NonQoE") return 0;
-  let total = 0;
-  for (const v of Object.values(adj.amounts)) total += v || 0;
-  return total;
-}
-```
-
-Use this from Insights, the trace sheet, and anywhere else summing one adjustment. (Existing `calcAdjustmentTotal(adjustments[], type, periodId, excludeNonQoE)` stays as-is — it's the multi-adjustment, per-period helper that the workbook tabs already use correctly.)
-
-### 5. Sweep the latent bombs in the edge functions
-
-Even though `export-pdf` / `export-workbook-xlsx` / `compute-workbook` aren't called from the UI today, they will be used eventually and they currently compute the wrong number. Two options:
-
-- **(a) Stub them out** with a clear `throw new Error("Server export disabled — use in-browser export. See plan: route through projectToDealAdapter before computing.")` so a future hookup fails loudly instead of silently returning unsigned totals.
-- **(b) Port `projectToDealAdapter` to `_shared/workbook/` and call it at the entry of each edge function** so `dealData.adjustments` is pre-signed before any sum runs.
-
-Recommend **(a)** for this change (smallest surface, prevents regression), and open a follow-up task for **(b)** when server-side export is actually wired up.
-
-### 6. QA checklist before shipping
-
-Manual smoke test on a real project (BC works since it has 50+ adjustments):
-
-1. Open the deal, look at Insights "Total Adjustments" tile and the EBITDA bridge waterfall — confirm both numbers exactly match the "Total Adjustments" row at the bottom of the DD Adjustments tab.
-2. Click into one DD adjustment to open the trace sheet — header total matches the row you clicked from in the bridge.
-3. Edit one adjustment in the wizard, change `intent` from `remove_expense` to `remove_revenue`, save, reload. Confirm the bridge now shows that adjustment as a negative bar and the Insights tile decreases by the right amount. (This is the regression test that today's code would fail.)
-4. Mark one adjustment `effectType: "NonQoE"`, confirm: it disappears from the bridge total, disappears from the tile, and shows the "Presentation only" badge in the trace sheet header.
-5. Download XLSX/PDF (in-browser path) — totals match the screen.
-
-## What this does not change
-
-- Database schema, stored data, or wizard input UX (no migration, no user re-entry).
-- The workbook calculation engine (`calculations.ts`, grid builders) — those are already correct.
-- The wizard / discovery / proposals flow — those operate on the raw stored shape and don't go through the adapter.
-
-## Estimated scope
-
-5 files edited, 2 files deleted, ~40 lines net change. No DB migration. ~30 min of work + 15 min of QA on a real deal.
+### Out of scope (v1)
+- Management notes input + driver attribution
+- Industry benchmarks
+- Auto-regen on data change (manual button only)
