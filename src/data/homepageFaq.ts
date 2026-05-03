@@ -82,7 +82,7 @@ export const HOMEPAGE_FAQ: FaqEntry[] = [
     id: "what-is-3",
     category: "What shepi Is",
     question: "What's the difference between Self-Service and Done-For-You?",
-    answer: `Self-Service (${PERPROJECT}/project): you run the analysis inside the Shepi platform — typically 2–4 hours of hands-on time. Done-For-You (${PRICING.doneForYou.display}/project): the Shepi team produces the deliverable for you and you review the output — turnaround in days. Both produce the same 27-tab workbook and PDF report. <a href="/scope#diy-vs-dfy">See the full Scope of Work →</a>`,
+    answer: `Self-Service (${PERPROJECT}/project): you run the analysis inside the Shepi platform — typically 2–4 hours of hands-on time. Done-For-You (${PRICING.doneForYou.display}/project, includes CPA-led review): the Shepi team produces the deliverable for you and you review the output — turnaround in days. Both produce the same 27-tab workbook and PDF report. <a href="/scope#diy-vs-dfy">See the full Scope of Work →</a>`,
   },
 
   // What shepi Is NOT
