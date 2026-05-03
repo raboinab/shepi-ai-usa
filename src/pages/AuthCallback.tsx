@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useSEO } from "@/hooks/useSEO";
+import { trackEvent } from "@/lib/analytics";
 import { 
   trySetSessionFromUrlHash, 
   hasOAuthCallback,
@@ -21,6 +22,22 @@ const getStoredRedirect = (): string => {
   localStorage.removeItem("shepi_auth_redirect");
   return path && path.startsWith("/") ? path : "/dashboard";
 };
+
+/**
+ * Classify a freshly-authenticated user as new vs returning and fire the matching GA4 event.
+ * New user: created_at and last_sign_in_at within 10s of each other.
+ */
+function fireAuthEvent(
+  user: { created_at?: string; last_sign_in_at?: string; app_metadata?: { provider?: string } },
+  fallbackMethod = "unknown",
+) {
+  if (!user.created_at || !user.last_sign_in_at) return;
+  const created = new Date(user.created_at).getTime();
+  const lastSignIn = new Date(user.last_sign_in_at).getTime();
+  const isNewUser = Math.abs(lastSignIn - created) < 10_000;
+  const method = user.app_metadata?.provider ?? fallbackMethod;
+  trackEvent(isNewUser ? "sign_up" : "login", { method });
+}
 
 const AuthCallback = () => {
   const __seoTags = useSEO({
