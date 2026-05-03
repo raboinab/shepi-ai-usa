@@ -29,11 +29,6 @@ export default function WorkbookDemo() {
     trackEvent("workbook_tab_viewed", { demo: "workbook", tab: viewMode });
   }, [viewMode]);
 
-  const handleExport = useCallback(() => {
-    trackEvent("demo_workbook_exported", { format: "xlsx", demo: "workbook" });
-    exportWorkbookXlsx({ dealData });
-  }, [dealData]);
-
   return (
     <DemoAuthGate page="workbook">
     <div className="flex flex-col h-screen">
