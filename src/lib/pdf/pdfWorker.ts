@@ -1115,6 +1115,84 @@ function wrapText(text: string, maxChars: number): string[] {
 
 // ── Main Builder ────────────────────────────────────────────────────────
 
+/** Render an AI narrative slide (Kyle-style bullets + bold-label callouts, or AKB-style paragraphs). */
+function addNarrativeSlide(doc: PDFDocument, font: PDFFont, boldFont: PDFFont, meta: ReportMeta,
+  title: string, narrative: NarrativeContent, pageNum: number, totalPages: number, sectionTitle?: string): PDFPage {
+  const page = doc.addPage([PW, PH]);
+  drawHeader(page, font, boldFont, sectionTitle || title, meta);
+  drawFooter(page, font, meta, pageNum, totalPages);
+
+  let y = CONTENT_Y_TOP - 4;
+  page.drawText(`${safeText(title)} - Analyst Commentary`, { x: PAD, y, size: 14, font: boldFont, color: C.darkBlue });
+  y -= 8;
+  page.drawRectangle({ x: PAD, y: y - 3, width: 36, height: 2.5, color: C.teal });
+  y -= 22;
+
+  const maxChars = Math.floor((CONTENT_W - 24) / 4.5);
+
+  // Bullets
+  if (narrative.bullets && narrative.bullets.length > 0) {
+    for (const b of narrative.bullets) {
+      if (y < CONTENT_Y_BOT + 30) break;
+      page.drawCircle({ x: PAD + 4, y: y - 4, size: 1.6, color: C.teal });
+      const lines = wrapTextLines(stripMd(b), maxChars, 4);
+      lines.forEach((ln, i) => {
+        page.drawText(ln, { x: PAD + 14, y: y - i * 12, size: 9, font, color: C.darkGray });
+      });
+      y -= lines.length * 12 + 6;
+    }
+    y -= 8;
+  }
+
+  // Callouts (bold label + body, teal label color like AKB/Kyle)
+  if (narrative.callouts && narrative.callouts.length > 0) {
+    for (const c of narrative.callouts) {
+      if (y < CONTENT_Y_BOT + 36) break;
+      const cardH = 36;
+      page.drawRectangle({ x: PAD, y: y - cardH, width: CONTENT_W, height: cardH, color: C.offWhite });
+      page.drawRectangle({ x: PAD, y: y - cardH, width: 3, height: cardH, color: C.teal });
+      page.drawText(safeText(c.label).toUpperCase(), {
+        x: PAD + 10, y: y - 14, size: 8.5, font: boldFont, color: C.teal,
+      });
+      const lines = wrapTextLines(stripMd(c.text), maxChars - 4, 2);
+      lines.forEach((ln, i) => {
+        page.drawText(ln, { x: PAD + 10, y: y - 24 - i * 11, size: 8.5, font, color: C.darkGray });
+      });
+      y -= cardH + 6;
+    }
+    y -= 6;
+  }
+
+  // Paragraphs (AKB style: topic / observation / recommendation)
+  if (narrative.paragraphs && narrative.paragraphs.length > 0) {
+    for (const p of narrative.paragraphs) {
+      if (y < CONTENT_Y_BOT + 50) break;
+      page.drawText(safeText(p.topic), { x: PAD, y, size: 10.5, font: boldFont, color: C.darkBlue });
+      y -= 14;
+      const obsLines = wrapTextLines(stripMd(p.observation), maxChars, 8);
+      obsLines.forEach((ln, i) => {
+        if (y - i * 11 < CONTENT_Y_BOT + 10) return;
+        page.drawText(ln, { x: PAD, y: y - i * 11, size: 8.5, font, color: C.darkGray });
+      });
+      y -= obsLines.length * 11 + 4;
+      if (p.recommendation) {
+        page.drawText("Recommendation:", { x: PAD, y, size: 8.5, font: boldFont, color: C.teal });
+        y -= 12;
+        const recLines = wrapTextLines(stripMd(p.recommendation), maxChars, 5);
+        recLines.forEach((ln, i) => {
+          if (y - i * 11 < CONTENT_Y_BOT + 10) return;
+          page.drawText(ln, { x: PAD, y: y - i * 11, size: 8.5, font, color: C.darkGray });
+        });
+        y -= recLines.length * 11 + 10;
+      } else {
+        y -= 6;
+      }
+    }
+  }
+
+  return page;
+}
+
 async function buildPDFReport(data: PDFReportData): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
