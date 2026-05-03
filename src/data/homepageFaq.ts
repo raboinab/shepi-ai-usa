@@ -78,6 +78,12 @@ export const HOMEPAGE_FAQ: FaqEntry[] = [
     answer:
       "Excel templates give you a blank structure and hours of manual work. shepi gives you automated processing plus a guided workflow. Key differences: Connect to QuickBooks and import mapped data instantly — work that takes 8-12 hours manually. AI extracts structured data from tax returns, payroll, debt schedules, and contracts — no manual data entry. Multi-period normalization and IS/BS reconciliation happen automatically. A proven 6-phase workflow mirrors how experienced analysts work. You focus on analysis and judgment, not data wrangling.",
   },
+  {
+    id: "what-is-3",
+    category: "What shepi Is",
+    question: "What's the difference between Self-Service and Done-For-You?",
+    answer: `Self-Service (${PERPROJECT}/project): you run the analysis inside the Shepi platform — typically 2–4 hours of hands-on time. Done-For-You (${PRICING.doneForYou.display}/project): the Shepi team produces the deliverable for you and you review the output — turnaround in days. Both produce the same 27-tab workbook and PDF report. <a href="/scope#diy-vs-dfy">See the full Scope of Work →</a>`,
+  },
 
   // What shepi Is NOT
   {
