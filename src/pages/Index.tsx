@@ -655,6 +655,158 @@ const Index = () => {
         </div>
       </section>
 
+      {/* Scope of Work Section */}
+      <section id="scope-of-work" className="bg-secondary py-20 md:py-28 px-6 md:px-12">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-14">
+            <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4 block">Engagement</span>
+            <h2 className="text-3xl md:text-4xl lg:text-5xl font-serif font-bold text-foreground mb-6">
+              Scope of Work
+            </h2>
+            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+              What we're engaged to deliver, in the format you'd see from a traditional QoE firm.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-6 mb-12">
+            {/* Deliverables */}
+            <div className="bg-card border border-border rounded-xl p-6 md:p-7 ring-1 ring-primary/20">
+              <div className="flex items-center gap-2 mb-4">
+                <FileText className="w-5 h-5 text-primary" />
+                <h3 className="text-lg font-bold text-foreground">Deliverables</h3>
+              </div>
+              <ul className="space-y-2 mb-4">
+                {[
+                  "Executive Summary",
+                  "EBITDA Bridge",
+                  "Revenue Quality",
+                  "Working Capital Analysis",
+                  "Proof of Cash",
+                  "GL Findings & Red Flags",
+                  "Customer / Vendor Concentration",
+                  "Full Audit Trail",
+                  "PDF + Excel export",
+                ].map((d) => (
+                  <li key={d} className="flex items-start gap-2 text-sm text-foreground">
+                    <CheckCircle className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+                    <span>{d}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-xs text-muted-foreground italic">Delivered as a 27-tab workbook.</p>
+            </div>
+
+            {/* Procedures Performed */}
+            <div className="bg-card border border-border rounded-xl p-6 md:p-7">
+              <div className="flex items-center gap-2 mb-4">
+                <Layers className="w-5 h-5 text-primary" />
+                <h3 className="text-lg font-bold text-foreground">Procedures Performed</h3>
+              </div>
+              <ul className="space-y-2">
+                {[
+                  "100% GL coverage and account mapping",
+                  "Anomaly and red-flag detection",
+                  "Owner-compensation normalization",
+                  "Personal-expense detection",
+                  "Customer / vendor concentration",
+                  "Working capital & proof of cash",
+                  "AI-suggested EBITDA adjustments — every one human-reviewed",
+                ].map((p) => (
+                  <li key={p} className="flex items-start gap-2 text-sm text-foreground">
+                    <CheckCircle className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+                    <span>{p}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Out of Scope */}
+            <div className="bg-card border border-border rounded-xl p-6 md:p-7">
+              <div className="flex items-center gap-2 mb-4">
+                <X className="w-5 h-5 text-muted-foreground" />
+                <h3 className="text-lg font-bold text-foreground">Out of Scope</h3>
+              </div>
+              <ul className="space-y-2">
+                {[
+                  "No CPA attestation or opinion",
+                  "No valuation",
+                  "No legal or tax advice",
+                  "No replacement for a fairness opinion or formal audit",
+                ].map((o) => (
+                  <li key={o} className="flex items-start gap-2 text-sm text-muted-foreground">
+                    <X className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
+                    <span>{o}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+
+          {/* DIY vs DFY strip */}
+          <div id="diy-vs-dfy" className="grid md:grid-cols-2 gap-6 mb-10">
+            {/* Self-Service */}
+            <div className="bg-card border border-border rounded-xl p-6 md:p-8 flex flex-col">
+              <div className="mb-4">
+                <span className="inline-block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Self-Service</span>
+                <h3 className="text-2xl font-serif font-bold text-foreground">You run the analysis</h3>
+              </div>
+              <ul className="space-y-2 mb-6 flex-1">
+                {[
+                  "You drive the workflow inside the Shepi platform",
+                  "2–4 hours of hands-on analyst time",
+                  "Same 27-tab workbook & PDF deliverables",
+                  "Best for searchers and operators with finance fluency",
+                ].map((b) => (
+                  <li key={b} className="flex items-start gap-2 text-sm text-foreground">
+                    <CheckCircle className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+                    <span>{b}</span>
+                  </li>
+                ))}
+              </ul>
+              <Link to="/auth?mode=signup" className="block">
+                <Button variant="outline" className="w-full">Start Self-Service →</Button>
+              </Link>
+            </div>
+
+            {/* Done-For-You */}
+            <div className="bg-card border-2 border-primary rounded-xl p-6 md:p-8 flex flex-col relative">
+              <Badge className="absolute -top-3 left-6 bg-primary text-primary-foreground">Done-For-You</Badge>
+              <div className="mb-4 mt-2">
+                <span className="inline-block text-xs font-semibold uppercase tracking-wider text-primary mb-2">DFY Engagement</span>
+                <h3 className="text-2xl font-serif font-bold text-foreground">Our team runs it for you</h3>
+              </div>
+              <ul className="space-y-2 mb-6 flex-1">
+                {[
+                  "Shepi team produces the deliverable, you review",
+                  "Days, not weeks — no ongoing analyst time required",
+                  "Guided kickoff and data-room walkthrough",
+                  "Best for buyers who want the artifact produced for them",
+                ].map((b) => (
+                  <li key={b} className="flex items-start gap-2 text-sm text-foreground">
+                    <CheckCircle className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+                    <span>{b}</span>
+                  </li>
+                ))}
+              </ul>
+              <Link to="/pricing#done-for-you" className="block">
+                <Button className="w-full">See Done-For-You pricing →</Button>
+              </Link>
+            </div>
+          </div>
+
+          {/* Footer CTAs */}
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 text-sm">
+            <Link to="/scope" className="text-primary font-medium hover:underline inline-flex items-center gap-1">
+              View full Statement of Work <ArrowRight className="w-4 h-4" />
+            </Link>
+            <span className="text-muted-foreground hidden sm:inline">·</span>
+            <Link to="/pricing" className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
+              See pricing <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
+        </div>
+      </section>
+
       {/* How It Works Section */}
       <section id="how-it-works" className="bg-background py-20 md:py-28 px-6 md:px-12">
         <div className="max-w-6xl mx-auto">
