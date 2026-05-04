@@ -9,14 +9,7 @@
  *
  * Output: public/demo/acme-sample-workbook.xlsx
  */
-// Some transitively-imported modules touch the supabase browser client even
-// though we never call it. Shim browser globals so the imports succeed in Node.
-// @ts-expect-error - shim for browser-only globals
-globalThis.localStorage = globalThis.localStorage || {
-  getItem: () => null, setItem: () => {}, removeItem: () => {},
-  clear: () => {}, key: () => null, length: 0,
-};
-
+import "./_preload-browser-shims";
 import * as XLSX from "xlsx";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
