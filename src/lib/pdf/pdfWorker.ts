@@ -1396,7 +1396,8 @@ if (typeof self !== "undefined" && typeof (self as unknown as { postMessage?: un
     try {
       const reportData = e.data.payload as PDFReportData;
       const pdfBytes = await buildPDFReport(reportData);
-      self.postMessage({ type: "done", pdf: pdfBytes }, [pdfBytes.buffer] as unknown as Transferable[]);
+      (self as unknown as { postMessage: (msg: unknown, transfer: ArrayBuffer[]) => void })
+        .postMessage({ type: "done", pdf: pdfBytes }, [pdfBytes.buffer]);
     } catch (err) {
       self.postMessage({ type: "error", message: (err as Error).message || "PDF build failed" });
     }
