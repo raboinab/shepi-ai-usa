@@ -1193,7 +1193,7 @@ function addNarrativeSlide(doc: PDFDocument, font: PDFFont, boldFont: PDFFont, m
   return page;
 }
 
-async function buildPDFReport(data: PDFReportData): Promise<Uint8Array> {
+export async function buildPDFReport(data: PDFReportData): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const boldFont = await doc.embedFont(StandardFonts.HelveticaBold);
@@ -1389,14 +1389,17 @@ async function buildPDFReport(data: PDFReportData): Promise<Uint8Array> {
 
 // ── Worker Message Handler ──────────────────────────────────────────────
 
-self.onmessage = async (e: MessageEvent) => {
-  if (e.data?.type !== "build") return;
+if (typeof self !== "undefined" && typeof (self as unknown as { postMessage?: unknown }).postMessage === "function") {
+  self.onmessage = async (e: MessageEvent) => {
+    if (e.data?.type !== "build") return;
 
-  try {
-    const reportData = e.data.payload as PDFReportData;
-    const pdfBytes = await buildPDFReport(reportData);
-    self.postMessage({ type: "done", pdf: pdfBytes }, [pdfBytes.buffer] as any);
-  } catch (err) {
-    self.postMessage({ type: "error", message: (err as Error).message || "PDF build failed" });
-  }
-};
+    try {
+      const reportData = e.data.payload as PDFReportData;
+      const pdfBytes = await buildPDFReport(reportData);
+      (self as unknown as { postMessage: (msg: unknown, transfer: ArrayBufferLike[]) => void })
+        .postMessage({ type: "done", pdf: pdfBytes }, [pdfBytes.buffer]);
+    } catch (err) {
+      self.postMessage({ type: "error", message: (err as Error).message || "PDF build failed" });
+    }
+  };
+}
