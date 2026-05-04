@@ -80,10 +80,51 @@ export function DeliverablePreviewDialog({ mode, onClose }: Props) {
 }
 
 function PdfPreview() {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let createdUrl: string | null = null;
+    fetch(PDF_URL)
+      .then((r) => {
+        if (!r.ok) throw new Error(`Failed to load PDF (${r.status})`);
+        return r.blob();
+      })
+      .then((blob) => {
+        if (cancelled) return;
+        createdUrl = URL.createObjectURL(blob);
+        setBlobUrl(createdUrl);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load PDF");
+      });
+    return () => {
+      cancelled = true;
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+    };
+  }, []);
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-full text-sm text-destructive">
+        {error}
+      </div>
+    );
+  }
+
+  if (!blobUrl) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Spinner className="size-6" />
+      </div>
+    );
+  }
+
   return (
     <iframe
       title="Sample QoE Report"
-      src={`${PDF_URL}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`}
+      src={`${blobUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`}
       className="w-full h-full border-0 relative z-0"
     />
   );
