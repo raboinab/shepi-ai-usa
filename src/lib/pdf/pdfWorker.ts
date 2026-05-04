@@ -1193,7 +1193,7 @@ function addNarrativeSlide(doc: PDFDocument, font: PDFFont, boldFont: PDFFont, m
   return page;
 }
 
-async function buildPDFReport(data: PDFReportData): Promise<Uint8Array> {
+export async function buildPDFReport(data: PDFReportData): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const boldFont = await doc.embedFont(StandardFonts.HelveticaBold);
