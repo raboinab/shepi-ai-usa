@@ -1,42 +1,58 @@
-## Goal
+## Assessment
 
-In the demo, replace the "sign up to export" toast on the **PDF** and **Excel** buttons with **in-app preview modals** that show a watermarked sample of each deliverable. No file ever lands in the user's Downloads folder via our UI.
+I checked both demo deliverables against the real export pipeline:
 
-## What gets built
+| File | Real pipeline | Demo file | Match? |
+|---|---|---|---|
+| `acme-sample-workbook.xlsx` | `TAB_GRID_BUILDERS` + `gridDataToRawData` + SheetJS (`exportWorkbookXlsx.ts`) | `scripts/generate-demo-workbook.ts` uses the **same** builders + `createMockDealData` | **Yes** — structurally identical (29 tabs, same layout, same number formats). Only diff is the prepended "DEMO" cover sheet. |
+| `acme-sample-qoe.pdf` | `src/lib/pdf/pdfWorker.ts` (pdf-lib, ~1400 lines, Web Worker) — Cover → TOC → Attention Areas → QoE Analysis → IS Analysis → BS Analysis → Supplementary → AI Analysis, with traceability per adjustment, ratios, flagged txns, GL/JE findings | `scripts/generate-demo-deliverables.py` is a **hand-written ReportLab document** with completely different sections, fonts, table styling, and content | **No** — it's a marketing mockup, not the real deliverable. |
 
-### 1. Pre-baked sample assets (committed to `/public/demo/`)
-- `public/demo/acme-sample-qoe.pdf` — generated **once** offline by running the existing `buildClientPDF` pipeline against the mock Acme dataset, with a diagonal `DEMO — NOT FOR DISTRIBUTION` watermark stamped on every page.
-- `public/demo/acme-sample-workbook.xlsx` — generated **once** offline via `exportWorkbookXlsx` against the same mock data, with a `DEMO` sheet inserted as the first tab and a `[DEMO PREVIEW]` prefix on every sheet name.
+So: workbook is fine. **PDF needs to be regenerated from the real pipeline.**
 
-A one-shot script `scripts/generate-demo-deliverables.ts` will produce both. Re-runnable when mock data changes; not part of the build.
+## Plan
 
-### 2. New component: `src/components/demo/DeliverablePreviewDialog.tsx`
-- Shadcn `<Dialog>` at ~90vw × 90vh.
-- **PDF mode**: renders `<iframe src="/demo/acme-sample-qoe.pdf#toolbar=0&navpanes=0&scrollbar=0" />`. The `#toolbar=0` hint hides the built-in download/print buttons in Chrome/Edge.
-- **XLSX mode**: we cannot render XLSX in an iframe. Instead, on open we fetch the file, parse it with the existing `xlsx` package (already a dep via `exportWorkbookXlsx`), and render the first 3 sheets as read-only HTML tables in a tabbed view. Reuses the look of `SpreadsheetGrid` styling tokens for consistency.
-- Both modes overlay a faint repeating `DEMO PREVIEW` watermark via CSS on top of the content as a second layer of deterrence.
-- Footer: "This is a sample. Sign up to generate your own." → CTA button to `/auth?mode=signup`.
-- No download button anywhere in the dialog. Right-click is not blocked (pointless — see caveat).
+Replace the Python-based demo PDF with one produced by the real worker code, fed mock deal data — analogous to what we already did for the workbook.
 
-### 3. Wire into `ExportCenterSection.tsx`
-- Replace the `if (isDemo) { toast.info(...); return; }` blocks in `handleExportPDF` (line 252) and `handleExportExcel` (line 563) with `if (isDemo) { setPreviewMode("pdf" | "xlsx"); return; }`.
-- Add local state `const [previewMode, setPreviewMode] = useState<"pdf" | "xlsx" | null>(null)` and render `<DeliverablePreviewDialog mode={previewMode} onClose={() => setPreviewMode(null)} />`.
-- Keep the existing `trackEvent("demo_export_blocked", ...)` calls but rename to `demo_preview_opened` for accurate analytics.
+### 1. New script: `scripts/generate-demo-pdf.ts`
 
-### 4. Memory note
-Add to `mem://index.md` Core: "Demo Export Center shows watermarked sample PDF + XLSX previews (view only, no download). Real export only after signup."
+- Use `createMockDealData()` for the deal.
+- Build all the same inputs `ExportCenterSection.handleExportPDF` assembles:
+  - `metadata: ReportMeta` (Acme Industrial Supply Co., demo dates, `serviceTier: 'diy'`)
+  - `execSummary` via `computeExecSummary(dealData)`
+  - `ddAdjustments` via `buildDDAdjustments(dealData)` (no DB proof/proposal maps — fine, those are optional)
+  - `ratios` via `computeRatios(dealData)`
+  - `grids` for every tab via `TAB_GRID_BUILDERS`
+  - Synthetic `attentionItems`, `flaggedItems`, `glFindings`, `jeFindings` from mock data (small representative samples — keeps the report honest as a demo)
+- Refactor `pdfWorker.ts`: extract the pure `buildPDFReport(reportData): Promise<Uint8Array>` function into a separate module (`pdf-builder.ts`) that the worker re-exports. The script imports `buildPDFReport` directly — no Worker, no `self`, runs in Bun.
+- Reuse `_preload-browser-shims.ts` for any transitive client imports.
+- After generating, overlay a watermark + "DEMO — NOT FOR DISTRIBUTION" footer on every page using `pdf-lib` (drawn after the report builds).
+- Output: `public/demo/acme-sample-qoe.pdf`.
 
-## Out of scope
+### 2. Refactor `pdfWorker.ts`
 
-- Watermarking the live workbook UI on `/workbook/demo` — already covered by the previously removed Export button.
-- Bulletproof DRM. Browsers leak: Ctrl+P → Save as PDF, DevTools → Network tab can grab `/demo/acme-sample-qoe.pdf` directly. This stops casual downloads via our UI, not determined exfiltration.
-- Per-user dynamic sample generation. The sample is static and identical for every demo user.
+- Move `buildPDFReport` and all helper functions (`addCoverPage`, `addTOCPage`, table builders, etc.) into `src/lib/pdf/pdfBuilder.ts`.
+- Keep `pdfWorker.ts` as a thin shim: import `buildPDFReport`, wire `self.onmessage` → `postMessage`. No behavior change for the live app.
+
+### 3. Cleanup
+
+- Delete `scripts/generate-demo-deliverables.py` (the workbook half is already replaced; PDF half is now replaced).
+- Update `mem://index.md` line about demo regeneration to point to `bun run scripts/generate-demo-pdf.ts`.
+
+### 4. QA
+
+After generation, convert the new PDF to per-page PNGs and visually inspect — verify cover, TOC page numbers, every section renders, no clipped tables, watermark visible but not blocking content. Re-run until clean. (QA images deleted, not shipped.)
 
 ## Files
 
-- **new** `scripts/generate-demo-deliverables.ts`
-- **new** `public/demo/acme-sample-qoe.pdf` (generated artifact)
-- **new** `public/demo/acme-sample-workbook.xlsx` (generated artifact)
-- **new** `src/components/demo/DeliverablePreviewDialog.tsx`
-- **edit** `src/components/wizard/sections/ExportCenterSection.tsx` — replace 2 toast blocks, add dialog state + render
-- **edit** `mem://index.md` — add demo deliverables rule
+- **New**: `scripts/generate-demo-pdf.ts`
+- **New**: `src/lib/pdf/pdfBuilder.ts` (extracted from worker)
+- **Modified**: `src/lib/pdf/pdfWorker.ts` (becomes a thin re-export shim)
+- **Regenerated**: `public/demo/acme-sample-qoe.pdf`
+- **Deleted**: `scripts/generate-demo-deliverables.py`
+- **Updated**: `mem://index.md`
+
+## Risk
+
+The pdf-lib code is browser-targeted but pdf-lib itself runs fine in Node/Bun. The risk is transitive imports from `@/lib/calculations`, `@/lib/qoeMetrics`, `@/lib/reclassHelpers`, etc., pulling in client-only modules. The `_preload-browser-shims.ts` from the workbook script already handles `localStorage` / Supabase fallout — same approach applies here.
+
+Approve and I'll implement.
