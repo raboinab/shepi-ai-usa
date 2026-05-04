@@ -1389,14 +1389,16 @@ export async function buildPDFReport(data: PDFReportData): Promise<Uint8Array> {
 
 // ── Worker Message Handler ──────────────────────────────────────────────
 
-self.onmessage = async (e: MessageEvent) => {
-  if (e.data?.type !== "build") return;
+if (typeof self !== "undefined" && typeof (self as unknown as { postMessage?: unknown }).postMessage === "function") {
+  self.onmessage = async (e: MessageEvent) => {
+    if (e.data?.type !== "build") return;
 
-  try {
-    const reportData = e.data.payload as PDFReportData;
-    const pdfBytes = await buildPDFReport(reportData);
-    self.postMessage({ type: "done", pdf: pdfBytes }, [pdfBytes.buffer] as any);
-  } catch (err) {
-    self.postMessage({ type: "error", message: (err as Error).message || "PDF build failed" });
-  }
-};
+    try {
+      const reportData = e.data.payload as PDFReportData;
+      const pdfBytes = await buildPDFReport(reportData);
+      self.postMessage({ type: "done", pdf: pdfBytes }, [pdfBytes.buffer] as unknown as Transferable[]);
+    } catch (err) {
+      self.postMessage({ type: "error", message: (err as Error).message || "PDF build failed" });
+    }
+  };
+}
