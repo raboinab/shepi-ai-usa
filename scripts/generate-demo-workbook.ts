@@ -10,8 +10,20 @@
  * Output: public/demo/acme-sample-workbook.xlsx
  */
 import * as XLSX from "xlsx";
-import { writeFileSync, mkdirSync } from "node:fs";
+import { writeFileSync, mkdirSync, readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
+
+// Some transitively-imported modules touch import.meta.env.VITE_SUPABASE_URL.
+// Load .env into process.env and shim import.meta.env so the import succeeds
+// even though we never call any supabase code in this script.
+if (existsSync(".env")) {
+  for (const line of readFileSync(".env", "utf8").split("\n")) {
+    const m = line.match(/^([A-Z0-9_]+)\s*=\s*"?([^"\n]*)"?$/);
+    if (m) process.env[m[1]] = m[2];
+  }
+}
+// @ts-expect-error - shim for SSR-style env access
+import.meta.env = import.meta.env || process.env;
 
 import { createMockDealData } from "../src/lib/mockDeal";
 import { WORKBOOK_TABS } from "../src/lib/workbook-tabs";
