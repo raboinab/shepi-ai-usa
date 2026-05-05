@@ -23,6 +23,7 @@ interface RequestBody {
   rawData: string; // human-readable serialization of grids/metrics for this slide
   style: Style;
   managementNotes?: string; // reserved for future; v1 is empty
+  skipPersist?: boolean; // demo/script mode: don't write to project_narratives
 }
 
 interface Bullet { text: string }
