@@ -198,23 +198,22 @@ Deno.serve(async (req) => {
     }
 
     // Auth: validate caller has access to the project.
-    // Demo/script bypass: callers with the service role key + skipPersist=true
-    // can generate narratives without a user session (used by demo asset pipeline).
+    // Demo/script bypass: when skipPersist=true, no DB writes happen, so we
+    // accept any valid request (no user session required). This is used by the
+    // demo asset pipeline to generate narratives for the public sample PDF.
     const authHeader = req.headers.get("Authorization") || "";
     const token = authHeader.replace("Bearer ", "");
-    if (!token) {
-      return new Response(JSON.stringify({ error: "Missing auth token" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
     const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
-
-    const isServiceRole = token === SERVICE_ROLE_KEY;
     let userId: string | null = null;
 
-    if (isServiceRole && body.skipPersist) {
-      // Demo mode — skip user/project access checks entirely.
+    if (body.skipPersist) {
+      // Demo mode — read-only, no persistence, no auth required.
     } else {
+      if (!token) {
+        return new Response(JSON.stringify({ error: "Missing auth token" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       const { data: { user }, error: userErr } = await supabase.auth.getUser(token);
       if (userErr || !user) {
         return new Response(JSON.stringify({ error: "Invalid auth token" }), {
