@@ -181,9 +181,9 @@ async function fetchNarratives(
   attentionItems: AttentionItem[],
 ): Promise<Record<string, NarrativeContent>> {
   const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!SUPABASE_URL || !SERVICE_KEY) {
-    console.warn("  ! SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY missing — skipping narratives");
+  const ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY;
+  if (!SUPABASE_URL || !ANON_KEY) {
+    console.warn("  ! SUPABASE_URL or anon key missing — skipping narratives");
     return {};
   }
 
