@@ -268,23 +268,24 @@ Deno.serve(async (req) => {
 
     const sourceHash = await sha256(body.rawData);
 
-    // Upsert
-    const { error: upsertErr } = await supabase
-      .from("project_narratives")
-      .upsert({
-        project_id: body.projectId,
-        slide_key: body.slideKey,
-        content,
-        source_hash: sourceHash,
-        model: MODEL,
-        generated_by: user.id,
-        generated_at: new Date().toISOString(),
-      }, { onConflict: "project_id,slide_key" });
+    if (!body.skipPersist) {
+      const { error: upsertErr } = await supabase
+        .from("project_narratives")
+        .upsert({
+          project_id: body.projectId,
+          slide_key: body.slideKey,
+          content,
+          source_hash: sourceHash,
+          model: MODEL,
+          generated_by: userId,
+          generated_at: new Date().toISOString(),
+        }, { onConflict: "project_id,slide_key" });
 
-    if (upsertErr) {
-      return new Response(JSON.stringify({ error: upsertErr.message }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      if (upsertErr) {
+        return new Response(JSON.stringify({ error: upsertErr.message }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     return new Response(JSON.stringify({ content, sourceHash, model: MODEL }), {
