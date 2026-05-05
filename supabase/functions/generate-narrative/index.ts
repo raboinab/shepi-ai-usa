@@ -197,7 +197,9 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Auth: validate caller has access to the project
+    // Auth: validate caller has access to the project.
+    // Demo/script bypass: callers with the service role key + skipPersist=true
+    // can generate narratives without a user session (used by demo asset pipeline).
     const authHeader = req.headers.get("Authorization") || "";
     const token = authHeader.replace("Bearer ", "");
     if (!token) {
@@ -206,21 +208,28 @@ Deno.serve(async (req) => {
       });
     }
     const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
-    const { data: { user }, error: userErr } = await supabase.auth.getUser(token);
-    if (userErr || !user) {
-      return new Response(JSON.stringify({ error: "Invalid auth token" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
 
-    // Verify project access via the existing security-definer function
-    const { data: hasAccess, error: accessErr } = await supabase.rpc("has_project_access", {
-      _user_id: user.id, _project_id: body.projectId,
-    });
-    if (accessErr || !hasAccess) {
-      return new Response(JSON.stringify({ error: "Forbidden" }), {
-        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    const isServiceRole = token === SERVICE_ROLE_KEY;
+    let userId: string | null = null;
+
+    if (isServiceRole && body.skipPersist) {
+      // Demo mode — skip user/project access checks entirely.
+    } else {
+      const { data: { user }, error: userErr } = await supabase.auth.getUser(token);
+      if (userErr || !user) {
+        return new Response(JSON.stringify({ error: "Invalid auth token" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      userId = user.id;
+      const { data: hasAccess, error: accessErr } = await supabase.rpc("has_project_access", {
+        _user_id: user.id, _project_id: body.projectId,
       });
+      if (accessErr || !hasAccess) {
+        return new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     const tool = body.style === "paragraphs" ? paragraphsTool : bulletsTool;
