@@ -20,6 +20,7 @@ import { computeQoEMetrics } from "../src/lib/qoeMetrics";
 import * as calc from "../src/lib/calculations";
 import * as rh from "../src/lib/reclassHelpers";
 import { buildPDFReport, type PDFReportData, type ReportMeta, type ExecSummary, type DDAdjustment, type FinancialRatio, type AttentionItem, type FlaggedItem, type GLFinding } from "../src/lib/pdf/pdfWorker";
+import { NARRATIVE_SLIDES, serializeGrid, serializeAttentionItems, type NarrativeContent } from "../src/lib/pdf/narratives";
 import type { GridData, DealData } from "../src/lib/workbook-types";
 
 const OUT = resolve("public/demo/acme-sample-qoe.pdf");
@@ -175,6 +176,62 @@ async function applyWatermark(pdfBytes: Uint8Array): Promise<Uint8Array> {
   return await doc.save();
 }
 
+async function fetchNarratives(
+  grids: Record<string, GridData>,
+  attentionItems: AttentionItem[],
+): Promise<Record<string, NarrativeContent>> {
+  const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!SUPABASE_URL || !SERVICE_KEY) {
+    console.warn("  ! SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY missing — skipping narratives");
+    return {};
+  }
+
+  const out: Record<string, NarrativeContent> = {};
+  for (const slide of NARRATIVE_SLIDES) {
+    let rawData = "";
+    if (slide.key === "attention_areas") {
+      rawData = serializeAttentionItems(attentionItems);
+    } else if (slide.gridKeys) {
+      rawData = slide.gridKeys
+        .map((k) => serializeGrid(k, grids[k]))
+        .filter(Boolean)
+        .join("\n\n");
+    }
+    if (!rawData) {
+      console.log(`  · ${slide.key}: no source data, skipping`);
+      continue;
+    }
+    try {
+      console.log(`  · narrating ${slide.key}...`);
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/generate-narrative`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${SERVICE_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          projectId: "00000000-0000-0000-0000-000000000000",
+          slideKey: slide.key,
+          slideTitle: slide.title,
+          rawData,
+          style: slide.style,
+          skipPersist: true,
+        }),
+      });
+      if (!res.ok) {
+        console.warn(`    ! ${slide.key} ${res.status}: ${(await res.text()).slice(0, 200)}`);
+        continue;
+      }
+      const json = await res.json() as { content: NarrativeContent };
+      out[slide.key] = json.content;
+    } catch (err) {
+      console.warn(`    ! ${slide.key} threw:`, (err as Error).message);
+    }
+  }
+  return out;
+}
+
 async function main() {
   mkdirSync(resolve("public/demo"), { recursive: true });
   const dealData = createMockDealData();
@@ -201,9 +258,12 @@ async function main() {
     serviceTier: "diy",
   };
 
+  const attentionItems = buildAttentionItems(dealData);
+  const narratives = await fetchNarratives(grids, attentionItems);
+
   const reportData: PDFReportData = {
     metadata,
-    attentionItems: buildAttentionItems(dealData),
+    attentionItems,
     execSummary: buildExecSummary(dealData),
     ddAdjustments: buildDDAdjustments(dealData),
     financialRatios: buildRatios(dealData),
@@ -211,6 +271,7 @@ async function main() {
     glFindings: buildGLFindings(),
     jeFindings: [],
     grids,
+    narratives,
   };
 
   console.log("Building report from real pdf-lib pipeline...");
