@@ -20,6 +20,7 @@ import { computeQoEMetrics } from "../src/lib/qoeMetrics";
 import * as calc from "../src/lib/calculations";
 import * as rh from "../src/lib/reclassHelpers";
 import { buildPDFReport, type PDFReportData, type ReportMeta, type ExecSummary, type DDAdjustment, type FinancialRatio, type AttentionItem, type FlaggedItem, type GLFinding } from "../src/lib/pdf/pdfWorker";
+import { NARRATIVE_SLIDES, serializeGrid, serializeAttentionItems, type NarrativeContent } from "../src/lib/pdf/narratives";
 import type { GridData, DealData } from "../src/lib/workbook-types";
 
 const OUT = resolve("public/demo/acme-sample-qoe.pdf");
