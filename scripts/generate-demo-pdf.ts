@@ -202,9 +202,12 @@ async function main() {
     serviceTier: "diy",
   };
 
+  const attentionItems = buildAttentionItems(dealData);
+  const narratives = await fetchNarratives(grids, attentionItems);
+
   const reportData: PDFReportData = {
     metadata,
-    attentionItems: buildAttentionItems(dealData),
+    attentionItems,
     execSummary: buildExecSummary(dealData),
     ddAdjustments: buildDDAdjustments(dealData),
     financialRatios: buildRatios(dealData),
@@ -212,6 +215,7 @@ async function main() {
     glFindings: buildGLFindings(),
     jeFindings: [],
     grids,
+    narratives,
   };
 
   console.log("Building report from real pdf-lib pipeline...");
