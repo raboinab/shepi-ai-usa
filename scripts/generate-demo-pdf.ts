@@ -207,7 +207,8 @@ async function fetchNarratives(
       const res = await fetch(`${SUPABASE_URL}/functions/v1/generate-narrative`, {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${SERVICE_KEY}`,
+          "Authorization": `Bearer ${ANON_KEY}`,
+          "apikey": ANON_KEY,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
