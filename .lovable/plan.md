@@ -1,58 +1,93 @@
-## Assessment
 
-I checked both demo deliverables against the real export pipeline:
+# Shepi PDF — Six high-leverage additions
 
-| File | Real pipeline | Demo file | Match? |
-|---|---|---|---|
-| `acme-sample-workbook.xlsx` | `TAB_GRID_BUILDERS` + `gridDataToRawData` + SheetJS (`exportWorkbookXlsx.ts`) | `scripts/generate-demo-workbook.ts` uses the **same** builders + `createMockDealData` | **Yes** — structurally identical (29 tabs, same layout, same number formats). Only diff is the prepended "DEMO" cover sheet. |
-| `acme-sample-qoe.pdf` | `src/lib/pdf/pdfWorker.ts` (pdf-lib, ~1400 lines, Web Worker) — Cover → TOC → Attention Areas → QoE Analysis → IS Analysis → BS Analysis → Supplementary → AI Analysis, with traceability per adjustment, ratios, flagged txns, GL/JE findings | `scripts/generate-demo-deliverables.py` is a **hand-written ReportLab document** with completely different sections, fonts, table styling, and content | **No** — it's a marketing mockup, not the real deliverable. |
+All six items render data we already collect. Scope is `src/lib/pdf/pdfWorker.ts` (the production builder used for both real exports and the demo PDF) plus a small data-pull update in `src/lib/pdf/exportNormalize.ts`. After changes I'll regenerate `public/demo/acme-sample-qoe.pdf` via `bun run scripts/generate-demo-pdf.ts` and visually QA every page.
 
-So: workbook is fine. **PDF needs to be regenerated from the real pipeline.**
+## 1. P&L Reconciliation page (Broker → Shepi)
 
-## Plan
+New page inserted in Section II right after the EBITDA Bridge.
 
-Replace the Python-based demo PDF with one produced by the real worker code, fed mock deal data — analogous to what we already did for the workbook.
+Source: `data.grids.qoeAnalysis` already has Reported EBITDA + per-adjustment lines. The "broker" column comes from the intake form's owner-stated EBITDA (already captured in `wizard_data.broker_ebitda` / SIM figure, otherwise fall back to "Reported (per books)").
 
-### 1. New script: `scripts/generate-demo-pdf.ts`
+Layout (one landscape page):
+```
+Broker / Owner-Stated EBITDA          $X,XXX,XXX
+  (-) Items not supported by GL       (xxx)
+  (-) Reclasses                       (xxx)
+  (+) Normalizing add-backs           xxx
+  ───────────────────────────────────────────
+Shepi Reported EBITDA                 $X,XXX,XXX
+  (+) Owner comp normalization        xxx
+  (+) Non-recurring                   xxx
+  (+) Personal expenses               xxx
+  ...
+Shepi Adjusted EBITDA                 $X,XXX,XXX
+```
+Two-column: amount + % of revenue. Bold totals, teal rule above each subtotal. Skipped silently if no broker figure exists (don't fabricate).
 
-- Use `createMockDealData()` for the deal.
-- Build all the same inputs `ExportCenterSection.handleExportPDF` assembles:
-  - `metadata: ReportMeta` (Acme Industrial Supply Co., demo dates, `serviceTier: 'diy'`)
-  - `execSummary` via `computeExecSummary(dealData)`
-  - `ddAdjustments` via `buildDDAdjustments(dealData)` (no DB proof/proposal maps — fine, those are optional)
-  - `ratios` via `computeRatios(dealData)`
-  - `grids` for every tab via `TAB_GRID_BUILDERS`
-  - Synthetic `attentionItems`, `flaggedItems`, `glFindings`, `jeFindings` from mock data (small representative samples — keeps the report honest as a demo)
-- Refactor `pdfWorker.ts`: extract the pure `buildPDFReport(reportData): Promise<Uint8Array>` function into a separate module (`pdf-builder.ts`) that the worker re-exports. The script imports `buildPDFReport` directly — no Worker, no `self`, runs in Bun.
-- Reuse `_preload-browser-shims.ts` for any transitive client imports.
-- After generating, overlay a watermark + "DEMO — NOT FOR DISTRIBUTION" footer on every page using `pdf-lib` (drawn after the report builds).
-- Output: `public/demo/acme-sample-qoe.pdf`.
+## 2. Per-adjustment narrative paragraph
 
-### 2. Refactor `pdfWorker.ts`
+The traceability appendix already prints AI rationale + key signals + evidence per adjustment, but in a dense tabular block. Replace the rationale block on each traceability card with a true prose paragraph in this format:
 
-- Move `buildPDFReport` and all helper functions (`addCoverPage`, `addTOCPage`, table builders, etc.) into `src/lib/pdf/pdfBuilder.ts`.
-- Keep `pdfWorker.ts` as a thin shim: import `buildPDFReport`, wire `self.onmessage` → `postMessage`. No behavior change for the live app.
+> **Source.** AI Discovery (owner_compensation_detector) flagged this from 14 transactions in 2023. **Evidence.** Three salary entries totaling $480k vs. industry comp of $180k for same role; supporting payroll register and W-2. **Confidence.** Tier 1 — Multiple Source Support (verification score 87/100).
 
-### 3. Cleanup
+Pull from existing fields on `DDAdjustment`: `source`, `detectorType`, `aiRationale`, `evidenceTransactions.length`, `supportTier`, `supportTierLabel`, `verificationScore`. No new data needed — wizard already collects this.
 
-- Delete `scripts/generate-demo-deliverables.py` (the workbook half is already replaced; PDF half is now replaced).
-- Update `mem://index.md` line about demo regeneration to point to `bun run scripts/generate-demo-pdf.ts`.
+## 3. Seasonality + MoM growth (charts)
 
-### 4. QA
+Two stacked charts on one page in the Income Statement section, after Revenue Detail.
 
-After generation, convert the new PDF to per-page PNGs and visually inspect — verify cover, TOC page numbers, every section renders, no clipped tables, watermark visible but not blocking content. Re-run until clean. (QA images deleted, not shipped.)
+Data: monthly revenue series exists in `processed_data` (and is rendered in the workbook's Revenue tab). `exportNormalize` will pull it into `data.monthlyRevenue: { month: string; revenue: number }[]`.
 
-## Files
+pdf-lib has no chart primitives, so I'll draw them with `page.drawRectangle` / `drawLine`:
+- **Seasonality**: 12 vertical bars (Jan–Dec), height = avg revenue for that month across years; teal bars, gold reference line for annual avg.
+- **MoM growth**: bar chart of month-over-month % change; positive = teal, negative = red. Zero baseline drawn.
 
-- **New**: `scripts/generate-demo-pdf.ts`
-- **New**: `src/lib/pdf/pdfBuilder.ts` (extracted from worker)
-- **Modified**: `src/lib/pdf/pdfWorker.ts` (becomes a thin re-export shim)
-- **Regenerated**: `public/demo/acme-sample-qoe.pdf`
-- **Deleted**: `scripts/generate-demo-deliverables.py`
-- **Updated**: `mem://index.md`
+Both charts use the existing `C` palette + `boldFont` for axis labels. Skip the page if fewer than 6 months of data.
 
-## Risk
+## 4. One-page Business Overview from intake
 
-The pdf-lib code is browser-targeted but pdf-lib itself runs fine in Node/Bun. The risk is transitive imports from `@/lib/calculations`, `@/lib/qoeMetrics`, `@/lib/reclassHelpers`, etc., pulling in client-only modules. The `_preload-browser-shims.ts` from the workbook script already handles `localStorage` / Supabase fallout — same approach applies here.
+Already partially exists as `addCIMOverviewPage` (only renders if `cimInsights` is set, which is rare). Replace with a richer page that pulls directly from the wizard intake (`projects` row + `wizard_data` JSON), not from CIM AI:
+
+- Company name, industry, founded year, HQ, employee count, ownership type
+- One-paragraph business description (intake "what does the business do" field)
+- Products/services bullets
+- Customer profile (B2B/B2C, segments)
+- Key risks + growth drivers (use `cimInsights` if present, otherwise wizard intake fields)
+
+`exportNormalize` will assemble a `businessOverview` object from `projects` and `wizard_data` so the page always renders when intake is filled in.
+
+## 5. Expanded Flagged Transactions detail
+
+Current page caps at 12 rows in a flat table. Restructure to lean into the moat:
+
+- **Header KPI strip**: Total flagged / High priority / By detector type counts.
+- **Group rows by `flag_category`** with subtotal lines (Personal Expense, Round-Number, Duplicate, Off-Cycle, etc.).
+- **Per-row evidence column**: short reason snippet (truncated `description` is not enough; pull from `flag_reason` if available on the row).
+- Spill to a 2nd / 3rd page when >25 rows; cap at 50 total then summarize remainder.
+
+Same data already in `data.flaggedItems`.
+
+## 6. Kill empty section dividers
+
+Current builder unconditionally pushes a divider page for each of Sections I–VI even when the section has zero content (the contact-sheet teardown showed 6 near-empty pages). Fix:
+
+For each section, only push the divider when at least one downstream page in that section will render. Concretely: collect the section's pages first, then conditionally prepend the divider. This drops the dead pages and shrinks the deck from 20→~14–16 dense pages.
+
+## Technical details
+
+**Files to edit**
+- `src/lib/pdf/pdfWorker.ts` — add `addPLReconciliationPage`, `addSeasonalityPage`, `addBusinessOverviewPage`; rewrite `addFlaggedTransactionsPage`; rewrite traceability rationale block; gate dividers behind section-has-content check.
+- `src/lib/pdf/exportNormalize.ts` — add `monthlyRevenue`, `brokerEBITDA`, `businessOverview` to the normalized payload.
+- `src/lib/pdf/pdfWorker.ts` `PDFReportData` type — add the new optional fields.
+- `scripts/generate-demo-pdf.ts` — re-run after changes; ensure `mockDeal.ts` has plausible broker EBITDA + monthly revenue so the demo PDF showcases the new pages.
+
+**Out of scope**
+- No new edge functions, no new DB tables, no new wizard fields.
+- The XLSX workbook is unchanged.
+- Marketing site copy unchanged.
+
+**QA**
+After regenerating the demo PDF I'll `pdftoppm -r 120` it, inspect every page, list any layout/overflow issues, and iterate until clean.
 
 Approve and I'll implement.
