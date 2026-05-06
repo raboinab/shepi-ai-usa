@@ -1738,21 +1738,14 @@ export async function buildPDFReport(data: PDFReportData): Promise<Uint8Array> {
   // ── Section VI: AI Analysis (multi-page flagged transactions) ──
   const aiPages: Array<{ fn: PageFn; section?: string }> = [];
   if (data.flaggedItems && data.flaggedItems.length > 0) {
-    // Pre-compute how many pages flagged transactions will use (~22 rows + group headers per page)
-    // Use a placeholder fn that builds all flagged pages in one shot when invoked.
-    // Trick: build them as one fn per "slot" — but we don't know count without rendering.
-    // Estimate: up to 50 rows / 22 rows-per-page => 1-3 pages.
-    const flaggedCount = Math.min(data.flaggedItems.length, 50);
-    const groupCount = new Set(data.flaggedItems.map(i => (i.flag_category || "Other"))).size;
-    const estPages = Math.max(1, Math.ceil((flaggedCount + groupCount) / 22));
-    for (let pi = 0; pi < estPages; pi++) {
-      const slotIdx = pi;
+    const cap = Math.min(data.flaggedItems.length, 50);
+    const PER = 20;
+    for (let i = 0; i < cap; i += PER) {
+      const chunk = data.flaggedItems.slice(i, Math.min(i + PER, cap));
+      const isFirst = i === 0;
+      const remaining = isFirst && cap < data.flaggedItems.length ? data.flaggedItems.length - cap : 0;
       aiPages.push({
-        fn: (pn, tp) => {
-          // Only the first slot actually renders; subsequent slots are no-ops if already drawn.
-          // But we need a real page object. Workaround: use a closure with a shared rendered flag.
-          throw new Error("__flagged_slot_" + slotIdx);
-        },
+        fn: (pn, tp) => addFlaggedChunkPage(doc, font, boldFont, meta, chunk, isFirst, data.flaggedItems!.length, remaining, pn, tp),
       });
     }
   }
