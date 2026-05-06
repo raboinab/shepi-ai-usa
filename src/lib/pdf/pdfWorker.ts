@@ -775,132 +775,6 @@ function addFlaggedChunkPage(doc: PDFDocument, font: PDFFont, boldFont: PDFFont,
 }
 
 // Legacy multi-page function kept for back-compat — unused now.
-function _unusedAddFlaggedPagesLegacy(doc: PDFDocument, font: PDFFont, boldFont: PDFFont, meta: ReportMeta,
-  items: FlaggedItem[], startPageNum: number, totalPages: number): PDFPage[] {
-  const pages: PDFPage[] = [];
-  if (!items || items.length === 0) return pages;
-
-  const groups = new Map<string, FlaggedItem[]>();
-  for (const it of items) {
-    const cat = cleanFlagLabel(it.flag_category || "Other");
-    if (!groups.has(cat)) groups.set(cat, []);
-    groups.get(cat)!.push(it);
-  }
-  const sortedGroups = Array.from(groups.entries()).sort((a, b) => b[1].length - a[1].length);
-
-  const highCount = items.filter(i => (i.flag_category || "").toLowerCase().includes("risk") || (i.confidence_score || 0) >= 0.9).length;
-  const totalAmount = items.reduce((s, i) => s + Math.abs(i.amount || 0), 0);
-
-  const kpis = [
-    { label: "TOTAL FLAGGED", value: String(items.length) },
-    { label: "HIGH PRIORITY", value: String(highCount) },
-    { label: "AGGREGATE $", value: fmtCurrency(totalAmount) },
-    { label: "CATEGORIES", value: String(sortedGroups.length) },
-  ];
-
-  const cap = Math.min(items.length, 50);
-  const ROWS_PER_PAGE = 22;
-  let drawnIdx = 0;
-  let pageIdx = 0;
-  let groupCursor = 0;
-  let inGroupCursor = 0;
-  let groupHeaderDrawn = false;
-
-  while (drawnIdx < cap) {
-    const page = doc.addPage([PW, PH]);
-    pages.push(page);
-    drawHeader(page, font, boldFont, "AI Analysis", meta);
-    drawFooter(page, font, meta, startPageNum + pageIdx, totalPages);
-    let y = CONTENT_Y_TOP - 4;
-
-    if (pageIdx === 0) {
-      page.drawText("AI-Flagged Transactions", { x: PAD, y, size: 14, font: boldFont, color: C.darkBlue });
-      page.drawRectangle({ x: PAD, y: y - 8, width: 50, height: 3, color: C.teal });
-      y -= 22;
-      const stripH = 36;
-      const cardW = (CONTENT_W - 18) / kpis.length;
-      kpis.forEach((k, i) => {
-        const cx = PAD + i * (cardW + 6);
-        page.drawRectangle({ x: cx, y: y - stripH, width: cardW, height: stripH, color: C.darkBlue });
-        page.drawRectangle({ x: cx, y: y - 3, width: cardW, height: 3, color: C.teal });
-        page.drawText(k.label, { x: cx + 8, y: y - 16, size: 6.5, font, color: C.lightGray });
-        page.drawText(k.value, { x: cx + 8, y: y - 30, size: 13, font: boldFont, color: C.white });
-      });
-      y -= stripH + 14;
-    } else {
-      page.drawText(`AI-Flagged Transactions (continued)`, { x: PAD, y, size: 12, font: boldFont, color: C.darkBlue });
-      y -= 22;
-    }
-
-    const colW = { desc: 280, acct: 140, amt: 70, type: 90, date: 60, conf: 50 };
-    page.drawRectangle({ x: PAD, y: y - 14, width: CONTENT_W, height: 14, color: C.darkBlue });
-    let hx = PAD + 4;
-    const hdrs: Array<[string, number]> = [
-      ["Description / Reason", colW.desc],
-      ["Account", colW.acct],
-      ["Amount", colW.amt],
-      ["Issue Type", colW.type],
-      ["Date", colW.date],
-      ["Conf.", colW.conf],
-    ];
-    hdrs.forEach(([h, w]) => {
-      page.drawText(h, { x: hx, y: y - 11, size: 6.5, font: boldFont, color: C.white });
-      hx += w;
-    });
-    y -= 16;
-
-    let r = 0;
-    while (r < ROWS_PER_PAGE && drawnIdx < cap && groupCursor < sortedGroups.length) {
-      const [catName, list] = sortedGroups[groupCursor];
-      if (!groupHeaderDrawn) {
-        if (y < CONTENT_Y_BOT + 26) break;
-        const subtotal = list.reduce((s, i) => s + Math.abs(i.amount || 0), 0);
-        page.drawRectangle({ x: PAD, y: y - 12, width: CONTENT_W, height: 12, color: rgb(0.93, 0.91, 0.87) });
-        page.drawText(`${catName}  (${list.length})`, { x: PAD + 6, y: y - 9, size: 7.5, font: boldFont, color: C.darkBlue });
-        page.drawText(fmtCurrency(subtotal), { x: PAD + colW.desc + colW.acct, y: y - 9, size: 7.5, font: boldFont, color: C.darkBlue });
-        y -= 14;
-        r++;
-        groupHeaderDrawn = true;
-      }
-      while (inGroupCursor < list.length && r < ROWS_PER_PAGE && drawnIdx < cap) {
-        if (y < CONTENT_Y_BOT + 14) break;
-        const it = list[inGroupCursor];
-        if (r % 2 === 1) page.drawRectangle({ x: PAD, y: y - 12, width: CONTENT_W, height: 12, color: C.offWhite });
-        let cx = PAD + 6;
-        page.drawText(truncate(safeText(it.description), 60), { x: cx, y: y - 9, size: 6.5, font, color: C.darkGray }); cx += colW.desc;
-        page.drawText(truncate(safeText(it.account_name), 26), { x: cx, y: y - 9, size: 6.5, font, color: C.darkGray }); cx += colW.acct;
-        page.drawText(fmtCurrency(it.amount), { x: cx, y: y - 9, size: 6.5, font: boldFont, color: C.darkBlue }); cx += colW.amt;
-        page.drawText(truncate(cleanFlagLabel(it.flag_type), 16), { x: cx, y: y - 9, size: 6.5, font, color: C.midGray }); cx += colW.type;
-        page.drawText(safeText(it.transaction_date || ""), { x: cx, y: y - 9, size: 6.5, font, color: C.midGray }); cx += colW.date;
-        const conf = it.confidence_score ? `${Math.round(it.confidence_score * 100)}%` : "-";
-        const confColor = (it.confidence_score || 0) >= 0.9 ? C.red : (it.confidence_score || 0) >= 0.75 ? C.amber : C.midGray;
-        page.drawText(conf, { x: cx, y: y - 9, size: 6.5, font: boldFont, color: confColor });
-        y -= 12;
-        inGroupCursor++;
-        drawnIdx++;
-        r++;
-      }
-      if (inGroupCursor >= list.length) {
-        groupCursor++;
-        inGroupCursor = 0;
-        groupHeaderDrawn = false;
-        y -= 4;
-      } else {
-        break;
-      }
-    }
-
-    if (drawnIdx >= cap && items.length > cap) {
-      page.drawText(`+ ${items.length - cap} additional flagged transactions available in the workbook.`, {
-        x: PAD, y: Math.max(y - 6, CONTENT_Y_BOT + 4), size: 7, font, color: C.midGray,
-      });
-    }
-    pageIdx++;
-  }
-
-  return pages;
-}
-
 function addPLReconciliationPage(doc: PDFDocument, font: PDFFont, boldFont: PDFFont, meta: ReportMeta,
   recon: PLReconciliation, pageNum: number, totalPages: number): PDFPage {
   const page = doc.addPage([PW, PH]);
@@ -1477,78 +1351,99 @@ function addTraceabilityPage(doc: PDFDocument, font: PDFFont, boldFont: PDFFont,
     page.drawText(amtStr, { x: PW - PAD - 80, y: y - 11, size: 8, font: boldFont, color: C.white });
     y -= 20;
 
-    // Source & Support Tier
-    const sourceLabel = adj.source === "ai_discovery" ? `AI Discovery (${safeText(adj.detectorType || "")})` : "Manual Entry";
-    page.drawText(`Source: ${sourceLabel}`, { x: PAD + 4, y, size: 7, font: boldFont, color: C.midBlue });
-    if (adj.supportTier != null) {
-      const tierLabel = TIER_LABELS[adj.supportTier] || `Tier ${adj.supportTier}`;
-      page.drawText(`Support: ${tierLabel} (T${adj.supportTier})`, { x: PAD + 260, y, size: 7, font, color: C.midGray });
-    }
-    const blockLabel = (adj.block || "DD").toUpperCase();
-    page.drawText(`Block: ${blockLabel}`, { x: PAD + 520, y, size: 7, font, color: C.midGray });
-    y -= 14;
+    // Build prose paragraph: Source. ... Evidence. ... Confidence. ...
+    const segments: Array<{ label: string; body: string }> = [];
 
-    // AI Rationale
-    if (adj.aiRationale) {
-      page.drawText("Rationale:", { x: PAD + 4, y, size: 7, font: boldFont, color: C.darkGray });
-      y -= 11;
-      const ratLines = wrapText(stripMd(adj.aiRationale), 120);
-      for (const line of ratLines.slice(0, 3)) {
-        page.drawText(line, { x: PAD + 12, y, size: 6.5, font, color: C.darkGray });
-        y -= 10;
-      }
-    }
+    // Source segment
+    const srcKind = adj.source === "ai_discovery"
+      ? `AI Discovery${adj.detectorType ? ` (${safeText(adj.detectorType)})` : ""}`
+      : "Manual Entry";
+    const evCount = adj.evidenceTransactions?.length || 0;
+    const sourceBody = evCount > 0
+      ? `${srcKind} flagged this from ${evCount} supporting transaction${evCount === 1 ? "" : "s"}.`
+      : `${srcKind}.`;
+    segments.push({ label: "Source.", body: sourceBody });
 
-    // Key Signals
+    // Evidence segment
+    const evidenceBits: string[] = [];
+    if (adj.aiRationale) evidenceBits.push(stripMd(adj.aiRationale));
     if (adj.keySignals && adj.keySignals.length > 0) {
-      page.drawText("Key Signals:", { x: PAD + 4, y, size: 7, font: boldFont, color: C.darkGray });
-      y -= 11;
-      for (const sig of adj.keySignals.slice(0, 4)) {
-        page.drawText(`  * ${truncate(stripMd(sig), 100)}`, { x: PAD + 12, y, size: 6.5, font, color: C.midGray });
-        y -= 10;
-      }
+      evidenceBits.push(adj.keySignals.slice(0, 3).map(s => stripMd(s)).join("; "));
+    } else if (adj.keyFindings && adj.keyFindings.length > 0) {
+      evidenceBits.push(adj.keyFindings.slice(0, 2).map(f => stripMd(f)).join("; "));
+    }
+    if (evidenceBits.length > 0) {
+      let evBody = evidenceBits.join(" ");
+      if (evBody.length > 280) evBody = evBody.slice(0, 277) + "...";
+      if (!/[.!?]$/.test(evBody)) evBody += ".";
+      segments.push({ label: "Evidence.", body: evBody });
     }
 
-    // Evidence Transactions
-    if (adj.evidenceTransactions && adj.evidenceTransactions.length > 0) {
-      page.drawText("Supporting Evidence:", { x: PAD + 4, y, size: 7, font: boldFont, color: C.darkGray });
-      y -= 12;
-      // Mini table header
-      page.drawRectangle({ x: PAD + 8, y: y - 10, width: CONTENT_W - 16, height: 10, color: C.offWhite });
-      page.drawText("Date", { x: PAD + 12, y: y - 8, size: 6, font: boldFont, color: C.midGray });
-      page.drawText("Description", { x: PAD + 80, y: y - 8, size: 6, font: boldFont, color: C.midGray });
-      page.drawText("Amount", { x: PAD + 400, y: y - 8, size: 6, font: boldFont, color: C.midGray });
-      page.drawText("Quality", { x: PAD + 500, y: y - 8, size: 6, font: boldFont, color: C.midGray });
-      y -= 14;
-      for (const ev of adj.evidenceTransactions.slice(0, 5)) {
-        page.drawText(safeText(ev.date || ""), { x: PAD + 12, y, size: 6, font, color: C.darkGray });
-        page.drawText(truncate(stripMd(ev.description || ""), 55), { x: PAD + 80, y, size: 6, font, color: C.darkGray });
-        page.drawText(fmtCurrency(ev.amount), { x: PAD + 400, y, size: 6, font, color: C.darkGray });
-        page.drawText(safeText(ev.matchQuality || ""), { x: PAD + 500, y, size: 6, font, color: C.midGray });
-        y -= 10;
+    // Confidence segment
+    if (adj.supportTier != null || adj.verificationStatus) {
+      const parts: string[] = [];
+      if (adj.supportTier != null) {
+        const tierLabel = adj.supportTierLabel || TIER_LABELS[adj.supportTier] || `Tier ${adj.supportTier}`;
+        parts.push(`Tier ${adj.supportTier} - ${tierLabel}`);
       }
+      if (adj.verificationStatus && adj.verificationStatus !== "pending") {
+        const score = adj.verificationScore != null ? ` (verification score ${adj.verificationScore}/100)` : "";
+        parts.push(`${safeText(adj.verificationStatus)}${score}`);
+      }
+      if (parts.length > 0) segments.push({ label: "Confidence.", body: parts.join("; ") + "." });
     }
 
-    // Verification Result
-    if (adj.verificationStatus && adj.verificationStatus !== "pending") {
-      const vColor = adj.verificationStatus === "validated" || adj.verificationStatus === "supported" ? C.green
-        : adj.verificationStatus === "contradictory" || adj.verificationStatus === "insufficient" ? C.red : C.amber;
-      const vLabel = `${safeText(adj.verificationStatus)} ${adj.verificationScore != null ? `(${adj.verificationScore})` : ""}`;
-      page.drawText(`Verification: ${vLabel}`, { x: PAD + 4, y, size: 7, font: boldFont, color: vColor });
-      y -= 11;
-      if (adj.keyFindings && adj.keyFindings.length > 0) {
-        for (const f of adj.keyFindings.slice(0, 2)) {
-          page.drawText(`  - ${truncate(stripMd(f), 100)}`, { x: PAD + 12, y, size: 6.5, font, color: C.midGray });
-          y -= 10;
+    // Render prose: bold label, then body, wrapped at ~120 chars per line
+    const fontSize = 7;
+    const lineH = 10;
+    const indent = PAD + 4;
+    const maxChars = 130;
+
+    // Flatten into a single tokenized stream so wrapping respects bold labels
+    type Tok = { text: string; bold: boolean };
+    const toks: Tok[] = [];
+    segments.forEach((seg, i) => {
+      if (i > 0) toks.push({ text: " ", bold: false });
+      toks.push({ text: seg.label, bold: true });
+      toks.push({ text: " " + seg.body, bold: false });
+    });
+
+    // Word-wrap manually
+    const lines: Array<Array<Tok>> = [[]];
+    let lineLen = 0;
+    for (const tok of toks) {
+      const words = tok.text.split(/(\s+)/);
+      for (const w of words) {
+        if (!w) continue;
+        if (lineLen + w.length > maxChars && w.trim().length > 0) {
+          lines.push([]);
+          lineLen = 0;
+          if (/^\s+$/.test(w)) continue;
         }
-      }
-      if (adj.redFlags && adj.redFlags.length > 0) {
-        page.drawText(`Red Flags: ${adj.redFlags.map(f => truncate(stripMd(f), 40)).join("; ")}`, {
-          x: PAD + 12, y, size: 6.5, font, color: C.red,
-        });
-        y -= 10;
+        lines[lines.length - 1].push({ text: w, bold: tok.bold });
+        lineLen += w.length;
       }
     }
+
+    for (const lineToks of lines) {
+      if (y < CONTENT_Y_BOT + 12) break;
+      let cx = indent;
+      for (const t of lineToks) {
+        const f = t.bold ? boldFont : font;
+        page.drawText(t.text, { x: cx, y, size: fontSize, font: f, color: t.bold ? C.darkBlue : C.darkGray });
+        cx += f.widthOfTextAtSize(t.text, fontSize);
+      }
+      y -= lineH;
+    }
+
+    // Red flags get a separate compact line if present
+    if (adj.redFlags && adj.redFlags.length > 0 && y > CONTENT_Y_BOT + 12) {
+      page.drawText(`Red Flags: ${adj.redFlags.map(f => truncate(stripMd(f), 40)).join("; ")}`, {
+        x: PAD + 12, y, size: 6.5, font, color: C.red,
+      });
+      y -= 10;
+    }
+
 
     y -= 10; // spacing between adjustments
   }

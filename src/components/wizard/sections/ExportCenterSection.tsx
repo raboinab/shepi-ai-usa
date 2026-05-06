@@ -8,7 +8,7 @@ import { getExportReadiness } from "@/lib/dataCompleteness";
 import { exportWorkbookXlsx } from "@/lib/exportWorkbookXlsx";
 import { buildClientPDF } from "@/lib/pdf/buildClientPDF";
 import type { PDFReportData, ReportMeta, AttentionItem, ExecSummary, DDAdjustment, FinancialRatio, FlaggedItem, GLFinding, CIMInsights } from "@/lib/pdf/pdfWorker";
-import { normalizeAttentionItems, type RawAttentionInput } from "@/lib/pdf/exportNormalize";
+import { normalizeAttentionItems, buildMonthlyRevenue, buildPLReconciliation, buildBusinessOverview, type RawAttentionInput } from "@/lib/pdf/exportNormalize";
 import type { WizardReportData } from "@/lib/wizardReportBuilder";
 import type { DealData } from "@/lib/workbook-types";
 import type { GridData } from "@/lib/workbook-types";
@@ -527,6 +527,9 @@ export const ExportCenterSection = ({ data, updateData, wizardData, projectId, p
         grids,
         traceabilityAdjustments: enrichedAdjustments,
         narratives: narratives as Record<string, never>,
+        monthlyRevenue: buildMonthlyRevenue(dealData),
+        plReconciliation: buildPLReconciliation(dealData),
+        businessOverview: buildBusinessOverview(wizardData, projectName, cimInsights),
       };
 
       // Build PDF in Web Worker (background thread)

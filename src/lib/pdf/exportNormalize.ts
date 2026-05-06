@@ -238,3 +238,103 @@ export function formatCompactCurrency(n: number | null | undefined): string {
   else body = `$${abs.toFixed(0)}`;
   return n < 0 ? `(${body})` : body;
 }
+
+/* ─────────── Monthly revenue / Reconciliation / Business Overview ─────────── */
+
+import type { DealData } from "@/lib/workbook-types";
+import * as calc from "@/lib/calculations";
+import type { MonthlyRevenuePoint, PLReconciliation, BusinessOverview } from "@/lib/pdf/pdfWorker";
+
+const MONTH_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+/** Pull monthly revenue series from DealData periods + trial balance. */
+export function buildMonthlyRevenue(dealData: DealData | undefined): MonthlyRevenuePoint[] | undefined {
+  if (!dealData?.deal?.periods?.length) return undefined;
+  const tb = dealData.trialBalance;
+  const out: MonthlyRevenuePoint[] = [];
+  for (const p of dealData.deal.periods) {
+    const rev = Math.abs(calc.calcRevenue(tb, p.id) || 0);
+    if (!isFinite(rev)) continue;
+    const mLabel = `${MONTH_SHORT[(p.month || 1) - 1]} ${String(p.year).slice(2)}`;
+    out.push({ month: mLabel, revenue: rev });
+  }
+  return out.length >= 6 ? out : undefined;
+}
+
+/** Build Reported -> Adjusted EBITDA bridge using the latest aggregate (TTM/FY) period. */
+export function buildPLReconciliation(dealData: DealData | undefined): PLReconciliation | undefined {
+  if (!dealData) return undefined;
+  const agg = dealData.deal.aggregatePeriods?.[dealData.deal.aggregatePeriods.length - 1];
+  const fallback = dealData.deal.periods?.[dealData.deal.periods.length - 1];
+  const periodId = agg?.id || fallback?.id;
+  if (!periodId) return undefined;
+
+  const tb = dealData.trialBalance;
+  const ab = dealData.addbacks;
+  const adj = dealData.adjustments;
+
+  const reported = -calc.calcReportedEBITDA(tb, periodId, ab); // calcReportedEBITDA returns negative for positive EBITDA in this codebase
+  const revenue = calc.calcRevenue(tb, periodId);
+
+  const ebitdaAdj = adj.filter(a => a.effectType !== "NonQoE");
+  const adjustments = ebitdaAdj
+    .map(a => ({
+      label: a.label || a.notes || `${a.type} adjustment`,
+      amount: a.amounts?.[periodId] || 0,
+      category: a.type,
+    }))
+    .filter(x => Math.abs(x.amount) > 0.5);
+
+  const totalAdj = adjustments.reduce((s, x) => s + x.amount, 0);
+  const adjusted = reported + totalAdj;
+
+  if (!isFinite(reported) || adjustments.length === 0) return undefined;
+
+  return { reportedEBITDA: reported, adjustments, adjustedEBITDA: adjusted, revenue: Math.abs(revenue) };
+}
+
+/** Assemble business overview from wizard intake + project metadata. */
+export function buildBusinessOverview(
+  wizardData: Record<string, unknown> | undefined,
+  projectName?: string,
+  cimFallback?: { businessOverview?: string; productsServices?: string[]; keyRisks?: string[]; growthDrivers?: string[] },
+): BusinessOverview | undefined {
+  const wd = wizardData || {};
+  const intake = (wd.intake || wd.businessProfile || wd.companyProfile || {}) as Record<string, unknown>;
+
+  const pick = (...keys: string[]): string | undefined => {
+    for (const k of keys) {
+      const v = (intake[k] ?? wd[k]) as unknown;
+      if (typeof v === "string" && v.trim()) return v.trim();
+      if (typeof v === "number") return String(v);
+    }
+    return undefined;
+  };
+  const pickList = (...keys: string[]): string[] | undefined => {
+    for (const k of keys) {
+      const v = (intake[k] ?? wd[k]) as unknown;
+      if (Array.isArray(v) && v.length > 0) return v.map(String).filter(Boolean);
+      if (typeof v === "string" && v.includes("\n")) {
+        const parts = v.split(/\n|;/).map(s => s.trim()).filter(Boolean);
+        if (parts.length > 0) return parts;
+      }
+    }
+    return undefined;
+  };
+
+  const description = pick("businessDescription", "description", "whatBusinessDoes", "companyDescription") || cimFallback?.businessOverview;
+  const productsServices = pickList("productsServices", "products", "services") || cimFallback?.productsServices;
+  const customerProfile = pick("customerProfile", "customers", "customerSegments");
+  const growthDrivers = pickList("growthDrivers", "drivers") || cimFallback?.growthDrivers;
+  const keyRisks = pickList("keyRisks", "risks") || cimFallback?.keyRisks;
+  const founded = pick("foundedYear", "yearFounded", "founded");
+  const headquarters = pick("hqLocation", "headquarters", "location");
+  const employeeCount = pick("employeeCount", "employees", "headcount");
+  const ownershipType = pick("ownershipType", "ownership");
+
+  const hasAnything = description || productsServices?.length || customerProfile || growthDrivers?.length || keyRisks?.length
+    || founded || headquarters || employeeCount || ownershipType;
+  if (!hasAnything) return undefined;
+
+  return { description, productsServices, customerProfile, growthDrivers, keyRisks, founded, headquarters, employeeCount, ownershipType };
+}

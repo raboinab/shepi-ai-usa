@@ -20,6 +20,7 @@ import { computeQoEMetrics } from "../src/lib/qoeMetrics";
 import * as calc from "../src/lib/calculations";
 import * as rh from "../src/lib/reclassHelpers";
 import { buildPDFReport, type PDFReportData, type ReportMeta, type ExecSummary, type DDAdjustment, type FinancialRatio, type AttentionItem, type FlaggedItem, type GLFinding } from "../src/lib/pdf/pdfWorker";
+import { buildMonthlyRevenue, buildPLReconciliation } from "../src/lib/pdf/exportNormalize";
 import { NARRATIVE_SLIDES, serializeGrid, serializeAttentionItems, type NarrativeContent } from "../src/lib/pdf/narratives";
 import type { GridData, DealData } from "../src/lib/workbook-types";
 
@@ -273,6 +274,32 @@ async function main() {
     jeFindings: [],
     grids,
     narratives,
+    monthlyRevenue: buildMonthlyRevenue(dealData),
+    plReconciliation: buildPLReconciliation(dealData),
+    businessOverview: {
+      description: "Acme Industrial Supply Co. is a regional distributor of MRO (maintenance, repair, operations) consumables, fasteners, and safety equipment serving manufacturing and construction customers across the Midwest. Founded in 2008, the company operates from a single 60,000 sq ft warehouse with a fleet of 12 delivery vehicles and a counter-sales showroom.",
+      productsServices: [
+        "Industrial fasteners & hardware (38% of revenue)",
+        "Safety equipment & PPE (24%)",
+        "MRO consumables — adhesives, lubricants, abrasives (22%)",
+        "Cutting tools & abrasives (16%)",
+      ],
+      customerProfile: "B2B only. ~340 active accounts; top 10 customers represent 31% of revenue. Average order $1,850. Net 30 terms standard.",
+      growthDrivers: [
+        "Reshoring of manufacturing in primary metro markets",
+        "Vendor-managed inventory program with three top-10 accounts",
+        "E-commerce launch (2024) currently 4% of orders, growing 12% MoM",
+      ],
+      keyRisks: [
+        "Customer concentration: largest account 8.4% of revenue",
+        "One key salesperson controls ~22% of book; no formal non-compete",
+        "Inventory turns at 4.1x vs. industry median 5.8x",
+      ],
+      founded: "2008",
+      headquarters: "Cleveland, OH",
+      employeeCount: "47 FTE",
+      ownershipType: "S-Corporation, single owner",
+    },
   };
 
   console.log("Building report from real pdf-lib pipeline...");
