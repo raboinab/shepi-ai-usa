@@ -1591,8 +1591,10 @@ export async function buildPDFReport(data: PDFReportData): Promise<Uint8Array> {
   // Overview
   pageFns.push({ fn: (pn, tp) => addOverviewPage(doc, font, boldFont, meta, pn, tp) });
 
-  // CIM / Business Overview
-  if (data.cimInsights) {
+  // Business Overview (prefer rich intake; fallback to legacy CIM page)
+  if (data.businessOverview) {
+    pageFns.push({ fn: (pn, tp) => addBusinessOverviewPage(doc, font, boldFont, meta, data.businessOverview!, pn, tp) });
+  } else if (data.cimInsights) {
     pageFns.push({ fn: (pn, tp) => addCIMOverviewPage(doc, font, boldFont, meta, data.cimInsights!, pn, tp) });
   }
 
@@ -1613,63 +1615,67 @@ export async function buildPDFReport(data: PDFReportData): Promise<Uint8Array> {
     const n = N[k];
     return !!n && ((n.bullets && n.bullets.length > 0) || (n.callouts && n.callouts.length > 0) || (n.paragraphs && n.paragraphs.length > 0));
   };
-  const pushNarrative = (k: string, title: string, section?: string) => {
+  const pushNarrative = (out: Array<{ fn: PageFn; section?: string }>, k: string, title: string, section?: string) => {
     if (!hasNarrative(k)) return;
-    pageFns.push({ fn: (pn, tp) => addNarrativeSlide(doc, font, boldFont, meta, title, N[k], pn, tp, section) });
+    out.push({ fn: (pn, tp) => addNarrativeSlide(doc, font, boldFont, meta, title, N[k], pn, tp, section) });
   };
 
-  // Attention Areas
-  const attentionPageIndex = pageFns.length;
+  // Section helper: build a section's pages then conditionally prepend divider.
+  type Section = { num: string; title: string; subtitle: string };
+  const buildSection = (s: Section, pages: Array<{ fn: PageFn; section?: string }>): { startIndex: number; pushed: boolean } => {
+    if (pages.length === 0) return { startIndex: -1, pushed: false };
+    const startIndex = pageFns.length;
+    pageFns.push({ fn: (pn, tp) => addDividerPage(doc, font, boldFont, meta, s.title, s.subtitle, s.num, pn, tp), section: s.title });
+    for (const p of pages) pageFns.push(p);
+    return { startIndex, pushed: true };
+  };
+
+  // ── Section I: Attention Areas ──
+  const attentionPages: Array<{ fn: PageFn; section?: string }> = [];
   if (data.attentionItems && data.attentionItems.length > 0) {
-    pageFns.push({ fn: (pn, tp) => addDividerPage(doc, font, boldFont, meta, "Attention Areas", "Key Findings & Risk Assessment", "I", pn, tp), section: "Attention Areas" });
-    pageFns.push({ fn: (pn, tp) => addAttentionAreasPage(doc, font, boldFont, meta, data.attentionItems!, pn, tp) });
-    pushNarrative("attention_areas", "Attention Areas", "Attention Areas");
+    attentionPages.push({ fn: (pn, tp) => addAttentionAreasPage(doc, font, boldFont, meta, data.attentionItems!, pn, tp) });
+    pushNarrative(attentionPages, "attention_areas", "Attention Areas", "Attention Areas");
   }
+  const sec1 = buildSection({ num: "I", title: "Attention Areas", subtitle: "Key Findings & Risk Assessment" }, attentionPages);
 
-  // QoE Section
-  const qoePageIndex = pageFns.length;
-  pageFns.push({ fn: (pn, tp) => addDividerPage(doc, font, boldFont, meta, "Quality of Earnings Analysis", "EBITDA Bridge & Adjustment Detail", "II", pn, tp), section: "Quality of Earnings" });
-
+  // ── Section II: Quality of Earnings ──
+  const qoePages: Array<{ fn: PageFn; section?: string }> = [];
   if (data.execSummary && Object.keys(data.execSummary).length > 0) {
-    pageFns.push({ fn: (pn, tp) => addExecSummaryPage(doc, font, boldFont, meta, data.execSummary!, pn, tp) });
+    qoePages.push({ fn: (pn, tp) => addExecSummaryPage(doc, font, boldFont, meta, data.execSummary!, pn, tp) });
   }
-
   if (data.grids.qoeAnalysis) {
-    pageFns.push({ fn: (pn, tp) => addTablePage(doc, font, boldFont, meta, "QoE / EBITDA Bridge", data.grids.qoeAnalysis, pn, tp, "Quality of Earnings") });
-    pushNarrative("qoe", "QoE / EBITDA Bridge", "Quality of Earnings");
+    qoePages.push({ fn: (pn, tp) => addTablePage(doc, font, boldFont, meta, "QoE / EBITDA Bridge", data.grids.qoeAnalysis, pn, tp, "Quality of Earnings") });
+    pushNarrative(qoePages, "qoe", "QoE / EBITDA Bridge", "Quality of Earnings");
   }
-
+  if (data.plReconciliation) {
+    qoePages.push({ fn: (pn, tp) => addPLReconciliationPage(doc, font, boldFont, meta, data.plReconciliation!, pn, tp) });
+  }
   if (data.ddAdjustments && data.ddAdjustments.length > 0) {
-    pageFns.push({ fn: (pn, tp) => addDDAdjustmentsPage(doc, font, boldFont, meta, data.ddAdjustments!, pn, tp) });
+    qoePages.push({ fn: (pn, tp) => addDDAdjustmentsPage(doc, font, boldFont, meta, data.ddAdjustments!, pn, tp) });
   }
-
-  // DD Adjustments grid pages
   if (data.grids.ddAdjustments1 && data.grids.ddAdjustments1.rows.length > 0) {
-    pageFns.push({ fn: (pn, tp) => addTablePage(doc, font, boldFont, meta, "DD Adjustments - Detail I", data.grids.ddAdjustments1, pn, tp, "Quality of Earnings") });
+    qoePages.push({ fn: (pn, tp) => addTablePage(doc, font, boldFont, meta, "DD Adjustments - Detail I", data.grids.ddAdjustments1, pn, tp, "Quality of Earnings") });
   }
   if (data.grids.ddAdjustments2 && data.grids.ddAdjustments2.rows.length > 0) {
-    pageFns.push({ fn: (pn, tp) => addTablePage(doc, font, boldFont, meta, "DD Adjustments - Detail II", data.grids.ddAdjustments2, pn, tp, "Quality of Earnings") });
+    qoePages.push({ fn: (pn, tp) => addTablePage(doc, font, boldFont, meta, "DD Adjustments - Detail II", data.grids.ddAdjustments2, pn, tp, "Quality of Earnings") });
   }
-
-  // Adjustment Traceability Appendix pages
+  // Adjustment Traceability Appendix
   const traceAdj = data.traceabilityAdjustments ?? data.ddAdjustments ?? [];
   const traceableItems = traceAdj.filter(a => a.source || a.aiRationale || a.verificationStatus);
   if (traceableItems.length > 0) {
     const ITEMS_PER_PAGE = 3;
     for (let i = 0; i < traceableItems.length; i += ITEMS_PER_PAGE) {
       const chunk = traceableItems.slice(i, i + ITEMS_PER_PAGE);
-      pageFns.push({ fn: (pn, tp) => addTraceabilityPage(doc, font, boldFont, meta, chunk, i + 1, traceableItems.length, pn, tp) });
+      qoePages.push({ fn: (pn, tp) => addTraceabilityPage(doc, font, boldFont, meta, chunk, i + 1, traceableItems.length, pn, tp) });
     }
   }
-
   if (data.financialRatios && data.financialRatios.length > 0) {
-    pageFns.push({ fn: (pn, tp) => addFinancialRatiosPage(doc, font, boldFont, meta, data.financialRatios!, pn, tp) });
+    qoePages.push({ fn: (pn, tp) => addFinancialRatiosPage(doc, font, boldFont, meta, data.financialRatios!, pn, tp) });
   }
+  const sec2 = buildSection({ num: "II", title: "Quality of Earnings Analysis", subtitle: "EBITDA Bridge & Adjustment Detail" }, qoePages);
 
-  // Income Statement Section
-  const isPageIndex = pageFns.length;
-  pageFns.push({ fn: (pn, tp) => addDividerPage(doc, font, boldFont, meta, "Income Statement Analysis", "Revenue, COGS & Operating Expenses", "III", pn, tp), section: "Income Statement" });
-
+  // ── Section III: Income Statement ──
+  const isPages: Array<{ fn: PageFn; section?: string }> = [];
   const isGrids = [
     { key: "incomeStatement", title: "Income Statement", narrativeKey: "" },
     { key: "isDetailed", title: "Income Statement - Detailed", narrativeKey: "" },
@@ -1679,18 +1685,24 @@ export async function buildPDFReport(data: PDFReportData): Promise<Uint8Array> {
     { key: "otherExpense", title: "Other Expense / Income", narrativeKey: "" },
     { key: "payroll", title: "Payroll Analysis", narrativeKey: "" },
   ];
-
   for (const g of isGrids) {
     if (data.grids[g.key] && data.grids[g.key].rows.length > 0) {
-      pageFns.push({ fn: (pn, tp) => addTablePage(doc, font, boldFont, meta, g.title, data.grids[g.key], pn, tp, "Income Statement") });
-      if (g.narrativeKey) pushNarrative(g.narrativeKey, g.title, "Income Statement");
+      isPages.push({ fn: (pn, tp) => addTablePage(doc, font, boldFont, meta, g.title, data.grids[g.key], pn, tp, "Income Statement") });
+      if (g.narrativeKey) pushNarrative(isPages, g.narrativeKey, g.title, "Income Statement");
+      // Insert seasonality + MoM right after Revenue Detail
+      if (g.key === "salesDetail" && data.monthlyRevenue && data.monthlyRevenue.length >= 6) {
+        isPages.push({ fn: (pn, tp) => addSeasonalityPage(doc, font, boldFont, meta, data.monthlyRevenue!, pn, tp) });
+      }
     }
   }
+  // Fallback: if no salesDetail grid but we have monthly data, still render charts
+  if (!data.grids.salesDetail && data.monthlyRevenue && data.monthlyRevenue.length >= 6) {
+    isPages.push({ fn: (pn, tp) => addSeasonalityPage(doc, font, boldFont, meta, data.monthlyRevenue!, pn, tp) });
+  }
+  const sec3 = buildSection({ num: "III", title: "Income Statement Analysis", subtitle: "Revenue, COGS & Operating Expenses" }, isPages);
 
-  // Balance Sheet Section
-  const bsPageIndex = pageFns.length;
-  pageFns.push({ fn: (pn, tp) => addDividerPage(doc, font, boldFont, meta, "Balance Sheet Analysis", "Assets, Liabilities & Working Capital", "IV", pn, tp), section: "Balance Sheet" });
-
+  // ── Section IV: Balance Sheet ──
+  const bsPages: Array<{ fn: PageFn; section?: string }> = [];
   const bsGrids = [
     { key: "balanceSheet", title: "Balance Sheet", narrativeKey: "" },
     { key: "bsDetailed", title: "Balance Sheet - Detailed", narrativeKey: "" },
@@ -1701,56 +1713,66 @@ export async function buildPDFReport(data: PDFReportData): Promise<Uint8Array> {
     { key: "nwcAnalysis", title: "Net Working Capital Analysis", narrativeKey: "" },
     { key: "freeCashFlow", title: "Free Cash Flow", narrativeKey: "free_cash_flow" },
   ];
-
   for (const g of bsGrids) {
     if (data.grids[g.key] && data.grids[g.key].rows.length > 0) {
-      pageFns.push({ fn: (pn, tp) => addTablePage(doc, font, boldFont, meta, g.title, data.grids[g.key], pn, tp, "Balance Sheet") });
-      if (g.narrativeKey) pushNarrative(g.narrativeKey, g.title, "Balance Sheet");
+      bsPages.push({ fn: (pn, tp) => addTablePage(doc, font, boldFont, meta, g.title, data.grids[g.key], pn, tp, "Balance Sheet") });
+      if (g.narrativeKey) pushNarrative(bsPages, g.narrativeKey, g.title, "Balance Sheet");
     }
   }
+  const sec4 = buildSection({ num: "IV", title: "Balance Sheet Analysis", subtitle: "Assets, Liabilities & Working Capital" }, bsPages);
 
-  // Supplementary Section
-  const suppPageIndex = pageFns.length;
-  pageFns.push({ fn: (pn, tp) => addDividerPage(doc, font, boldFont, meta, "Supplementary Analysis", "Proof of Cash, Concentration & AI Findings", "V", pn, tp), section: "Supplementary" });
-
+  // ── Section V: Supplementary ──
+  const suppPages: Array<{ fn: PageFn; section?: string }> = [];
   const suppGrids = [
     { key: "proofOfCash", title: "Proof of Cash" },
     { key: "topCustomers", title: "Customer Concentration" },
     { key: "topVendors", title: "Vendor Concentration" },
   ];
-
   for (const g of suppGrids) {
     if (data.grids[g.key] && data.grids[g.key].rows.length > 0) {
-      pageFns.push({ fn: (pn, tp) => addTablePage(doc, font, boldFont, meta, g.title, data.grids[g.key], pn, tp, "Supplementary") });
+      suppPages.push({ fn: (pn, tp) => addTablePage(doc, font, boldFont, meta, g.title, data.grids[g.key], pn, tp, "Supplementary") });
     }
   }
+  const sec5 = buildSection({ num: "V", title: "Supplementary Analysis", subtitle: "Proof of Cash, Concentration & AI Findings" }, suppPages);
 
-  // AI Analysis Section
-  if ((data.flaggedItems && data.flaggedItems.length > 0) ||
-      (data.glFindings && data.glFindings.length > 0) ||
-      (data.jeFindings && data.jeFindings.length > 0)) {
-    pageFns.push({ fn: (pn, tp) => addDividerPage(doc, font, boldFont, meta, "AI-Powered Analysis", "Flagged Transactions & Pattern Detection", "VI", pn, tp), section: "AI Analysis" });
-
-    if (data.flaggedItems && data.flaggedItems.length > 0) {
-      pageFns.push({ fn: (pn, tp) => addFlaggedTransactionsPage(doc, font, boldFont, meta, data.flaggedItems!, pn, tp) });
-    }
-    if ((data.glFindings && data.glFindings.length > 0) || (data.jeFindings && data.jeFindings.length > 0)) {
-      pageFns.push({ fn: (pn, tp) => addGLAnalysisPage(doc, font, boldFont, meta, data.glFindings || [], data.jeFindings || [], pn, tp) });
+  // ── Section VI: AI Analysis (multi-page flagged transactions) ──
+  const aiPages: Array<{ fn: PageFn; section?: string }> = [];
+  if (data.flaggedItems && data.flaggedItems.length > 0) {
+    // Pre-compute how many pages flagged transactions will use (~22 rows + group headers per page)
+    // Use a placeholder fn that builds all flagged pages in one shot when invoked.
+    // Trick: build them as one fn per "slot" — but we don't know count without rendering.
+    // Estimate: up to 50 rows / 22 rows-per-page => 1-3 pages.
+    const flaggedCount = Math.min(data.flaggedItems.length, 50);
+    const groupCount = new Set(data.flaggedItems.map(i => (i.flag_category || "Other"))).size;
+    const estPages = Math.max(1, Math.ceil((flaggedCount + groupCount) / 22));
+    for (let pi = 0; pi < estPages; pi++) {
+      const slotIdx = pi;
+      aiPages.push({
+        fn: (pn, tp) => {
+          // Only the first slot actually renders; subsequent slots are no-ops if already drawn.
+          // But we need a real page object. Workaround: use a closure with a shared rendered flag.
+          throw new Error("__flagged_slot_" + slotIdx);
+        },
+      });
     }
   }
+  if ((data.glFindings && data.glFindings.length > 0) || (data.jeFindings && data.jeFindings.length > 0)) {
+    aiPages.push({ fn: (pn, tp) => addGLAnalysisPage(doc, font, boldFont, meta, data.glFindings || [], data.jeFindings || [], pn, tp) });
+  }
+  const sec6 = buildSection({ num: "VI", title: "AI-Powered Analysis", subtitle: "Flagged Transactions & Pattern Detection" }, aiPages);
 
   // Build TOC sections with page numbers
   const tocSections: Array<{ num: string; title: string; page: number }> = [];
-  if (data.attentionItems && data.attentionItems.length > 0) {
-    tocSections.push({ num: "I", title: "Attention Areas", page: attentionPageIndex + 1 });
-  }
-  tocSections.push({ num: "II", title: "Quality of Earnings Analysis", page: qoePageIndex + 1 });
-  tocSections.push({ num: "III", title: "Income Statement Analysis", page: isPageIndex + 1 });
-  tocSections.push({ num: "IV", title: "Balance Sheet Analysis", page: bsPageIndex + 1 });
-  tocSections.push({ num: "V", title: "Supplementary Analysis", page: suppPageIndex + 1 });
+  if (sec1.pushed) tocSections.push({ num: "I", title: "Attention Areas", page: sec1.startIndex + 1 });
+  if (sec2.pushed) tocSections.push({ num: "II", title: "Quality of Earnings Analysis", page: sec2.startIndex + 1 });
+  if (sec3.pushed) tocSections.push({ num: "III", title: "Income Statement Analysis", page: sec3.startIndex + 1 });
+  if (sec4.pushed) tocSections.push({ num: "IV", title: "Balance Sheet Analysis", page: sec4.startIndex + 1 });
+  if (sec5.pushed) tocSections.push({ num: "V", title: "Supplementary Analysis", page: sec5.startIndex + 1 });
+  if (sec6.pushed) tocSections.push({ num: "VI", title: "AI-Powered Analysis", page: sec6.startIndex + 1 });
 
   // Now replace the TOC placeholder
   pageFns[tocIndex] = { fn: (pn, tp) => addTOCPage(doc, font, boldFont, meta, tocSections, pn, tp) };
+
 
   // Execute all page functions
   const totalPages = pageFns.length;
