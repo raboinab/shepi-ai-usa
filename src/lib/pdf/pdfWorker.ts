@@ -679,39 +679,385 @@ function addFinancialRatiosPage(doc: PDFDocument, font: PDFFont, boldFont: PDFFo
   return page;
 }
 
-function addFlaggedTransactionsPage(doc: PDFDocument, font: PDFFont, boldFont: PDFFont, meta: ReportMeta,
-  items: FlaggedItem[], pageNum: number, totalPages: number): PDFPage {
+function cleanFlagLabel(s: string): string {
+  return safeText(String(s || "")).replace(/[_-]+/g, " ").replace(/\b\w/g, l => l.toUpperCase());
+}
+
+function addFlaggedTransactionsPages(doc: PDFDocument, font: PDFFont, boldFont: PDFFont, meta: ReportMeta,
+  items: FlaggedItem[], startPageNum: number, totalPages: number): PDFPage[] {
+  const pages: PDFPage[] = [];
+  if (!items || items.length === 0) return pages;
+
+  const groups = new Map<string, FlaggedItem[]>();
+  for (const it of items) {
+    const cat = cleanFlagLabel(it.flag_category || "Other");
+    if (!groups.has(cat)) groups.set(cat, []);
+    groups.get(cat)!.push(it);
+  }
+  const sortedGroups = Array.from(groups.entries()).sort((a, b) => b[1].length - a[1].length);
+
+  const highCount = items.filter(i => (i.flag_category || "").toLowerCase().includes("risk") || (i.confidence_score || 0) >= 0.9).length;
+  const totalAmount = items.reduce((s, i) => s + Math.abs(i.amount || 0), 0);
+
+  const kpis = [
+    { label: "TOTAL FLAGGED", value: String(items.length) },
+    { label: "HIGH PRIORITY", value: String(highCount) },
+    { label: "AGGREGATE $", value: fmtCurrency(totalAmount) },
+    { label: "CATEGORIES", value: String(sortedGroups.length) },
+  ];
+
+  const cap = Math.min(items.length, 50);
+  const ROWS_PER_PAGE = 22;
+  let drawnIdx = 0;
+  let pageIdx = 0;
+  let groupCursor = 0;
+  let inGroupCursor = 0;
+  let groupHeaderDrawn = false;
+
+  while (drawnIdx < cap) {
+    const page = doc.addPage([PW, PH]);
+    pages.push(page);
+    drawHeader(page, font, boldFont, "AI Analysis", meta);
+    drawFooter(page, font, meta, startPageNum + pageIdx, totalPages);
+    let y = CONTENT_Y_TOP - 4;
+
+    if (pageIdx === 0) {
+      page.drawText("AI-Flagged Transactions", { x: PAD, y, size: 14, font: boldFont, color: C.darkBlue });
+      page.drawRectangle({ x: PAD, y: y - 8, width: 50, height: 3, color: C.teal });
+      y -= 22;
+      const stripH = 36;
+      const cardW = (CONTENT_W - 18) / kpis.length;
+      kpis.forEach((k, i) => {
+        const cx = PAD + i * (cardW + 6);
+        page.drawRectangle({ x: cx, y: y - stripH, width: cardW, height: stripH, color: C.darkBlue });
+        page.drawRectangle({ x: cx, y: y - 3, width: cardW, height: 3, color: C.teal });
+        page.drawText(k.label, { x: cx + 8, y: y - 16, size: 6.5, font, color: C.lightGray });
+        page.drawText(k.value, { x: cx + 8, y: y - 30, size: 13, font: boldFont, color: C.white });
+      });
+      y -= stripH + 14;
+    } else {
+      page.drawText(`AI-Flagged Transactions (continued)`, { x: PAD, y, size: 12, font: boldFont, color: C.darkBlue });
+      y -= 22;
+    }
+
+    const colW = { desc: 280, acct: 140, amt: 70, type: 90, date: 60, conf: 50 };
+    page.drawRectangle({ x: PAD, y: y - 14, width: CONTENT_W, height: 14, color: C.darkBlue });
+    let hx = PAD + 4;
+    const hdrs: Array<[string, number]> = [
+      ["Description / Reason", colW.desc],
+      ["Account", colW.acct],
+      ["Amount", colW.amt],
+      ["Issue Type", colW.type],
+      ["Date", colW.date],
+      ["Conf.", colW.conf],
+    ];
+    hdrs.forEach(([h, w]) => {
+      page.drawText(h, { x: hx, y: y - 11, size: 6.5, font: boldFont, color: C.white });
+      hx += w;
+    });
+    y -= 16;
+
+    let r = 0;
+    while (r < ROWS_PER_PAGE && drawnIdx < cap && groupCursor < sortedGroups.length) {
+      const [catName, list] = sortedGroups[groupCursor];
+      if (!groupHeaderDrawn) {
+        if (y < CONTENT_Y_BOT + 26) break;
+        const subtotal = list.reduce((s, i) => s + Math.abs(i.amount || 0), 0);
+        page.drawRectangle({ x: PAD, y: y - 12, width: CONTENT_W, height: 12, color: rgb(0.93, 0.91, 0.87) });
+        page.drawText(`${catName}  (${list.length})`, { x: PAD + 6, y: y - 9, size: 7.5, font: boldFont, color: C.darkBlue });
+        page.drawText(fmtCurrency(subtotal), { x: PAD + colW.desc + colW.acct, y: y - 9, size: 7.5, font: boldFont, color: C.darkBlue });
+        y -= 14;
+        r++;
+        groupHeaderDrawn = true;
+      }
+      while (inGroupCursor < list.length && r < ROWS_PER_PAGE && drawnIdx < cap) {
+        if (y < CONTENT_Y_BOT + 14) break;
+        const it = list[inGroupCursor];
+        if (r % 2 === 1) page.drawRectangle({ x: PAD, y: y - 12, width: CONTENT_W, height: 12, color: C.offWhite });
+        let cx = PAD + 6;
+        page.drawText(truncate(safeText(it.description), 60), { x: cx, y: y - 9, size: 6.5, font, color: C.darkGray }); cx += colW.desc;
+        page.drawText(truncate(safeText(it.account_name), 26), { x: cx, y: y - 9, size: 6.5, font, color: C.darkGray }); cx += colW.acct;
+        page.drawText(fmtCurrency(it.amount), { x: cx, y: y - 9, size: 6.5, font: boldFont, color: C.darkBlue }); cx += colW.amt;
+        page.drawText(truncate(cleanFlagLabel(it.flag_type), 16), { x: cx, y: y - 9, size: 6.5, font, color: C.midGray }); cx += colW.type;
+        page.drawText(safeText(it.transaction_date || ""), { x: cx, y: y - 9, size: 6.5, font, color: C.midGray }); cx += colW.date;
+        const conf = it.confidence_score ? `${Math.round(it.confidence_score * 100)}%` : "-";
+        const confColor = (it.confidence_score || 0) >= 0.9 ? C.red : (it.confidence_score || 0) >= 0.75 ? C.amber : C.midGray;
+        page.drawText(conf, { x: cx, y: y - 9, size: 6.5, font: boldFont, color: confColor });
+        y -= 12;
+        inGroupCursor++;
+        drawnIdx++;
+        r++;
+      }
+      if (inGroupCursor >= list.length) {
+        groupCursor++;
+        inGroupCursor = 0;
+        groupHeaderDrawn = false;
+        y -= 4;
+      } else {
+        break;
+      }
+    }
+
+    if (drawnIdx >= cap && items.length > cap) {
+      page.drawText(`+ ${items.length - cap} additional flagged transactions available in the workbook.`, {
+        x: PAD, y: Math.max(y - 6, CONTENT_Y_BOT + 4), size: 7, font, color: C.midGray,
+      });
+    }
+    pageIdx++;
+  }
+
+  return pages;
+}
+
+function addPLReconciliationPage(doc: PDFDocument, font: PDFFont, boldFont: PDFFont, meta: ReportMeta,
+  recon: PLReconciliation, pageNum: number, totalPages: number): PDFPage {
   const page = doc.addPage([PW, PH]);
-  drawHeader(page, font, boldFont, "AI Analysis", meta);
+  drawHeader(page, font, boldFont, "Quality of Earnings", meta);
   drawFooter(page, font, meta, pageNum, totalPages);
 
   let y = CONTENT_Y_TOP - 4;
-  page.drawText("Flagged Transactions", { x: PAD, y, size: 14, font: boldFont, color: C.darkBlue });
-  y -= 22;
-
-  const cols = [180, 100, 80, 100, 100, CONTENT_W - 560];
-  const hdrs = ["Description", "Account", "Amount", "Flag Type", "Date", "Category"];
-  page.drawRectangle({ x: PAD, y: y - 14, width: CONTENT_W, height: 14, color: C.darkBlue });
-  let hx = PAD + 4;
-  hdrs.forEach((h, i) => {
-    page.drawText(h, { x: hx, y: y - 11, size: 6.5, font: boldFont, color: C.white });
-    hx += cols[i];
+  page.drawText("P&L Reconciliation Bridge", { x: PAD, y, size: 14, font: boldFont, color: C.darkBlue });
+  page.drawRectangle({ x: PAD, y: y - 8, width: 50, height: 3, color: C.teal });
+  y -= 8;
+  page.drawText("Owner / Broker stated EBITDA reconciled to Shepi reported and Shepi adjusted EBITDA.", {
+    x: PAD, y: y - 14, size: 8, font, color: C.midGray,
   });
-  y -= 18;
+  y -= 30;
 
-  for (let r = 0; r < Math.min(items.length, 18); r++) {
-    if (y < CONTENT_Y_BOT + 16) break;
-    const item = items[r];
-    if (r % 2 === 1) page.drawRectangle({ x: PAD, y: y - 13, width: CONTENT_W, height: 13, color: C.offWhite });
-    let cx = PAD + 4;
-    page.drawText(truncate(safeText(item.description), 35), { x: cx, y: y - 10, size: 6.5, font, color: C.darkGray }); cx += cols[0];
-    page.drawText(truncate(safeText(item.account_name), 18), { x: cx, y: y - 10, size: 6.5, font, color: C.darkGray }); cx += cols[1];
-    page.drawText(safeText(fmtCurrency(item.amount)), { x: cx, y: y - 10, size: 6.5, font: boldFont, color: C.darkBlue }); cx += cols[2];
-    page.drawText(truncate(safeText(item.flag_type), 18), { x: cx, y: y - 10, size: 6.5, font, color: C.midGray }); cx += cols[3];
-    page.drawText(safeText(item.transaction_date || ""), { x: cx, y: y - 10, size: 6.5, font, color: C.midGray }); cx += cols[4];
-    page.drawText(truncate(safeText(item.flag_category), 18), { x: cx, y: y - 10, size: 6.5, font, color: C.midGray });
-    y -= 14;
+  const labelX = PAD + 8;
+  const amtX = PW - PAD - 200;
+  const pctX = PW - PAD - 70;
+  page.drawRectangle({ x: PAD, y: y - 16, width: CONTENT_W, height: 16, color: C.darkBlue });
+  page.drawText("Item", { x: labelX, y: y - 12, size: 7.5, font: boldFont, color: C.white });
+  page.drawText("Amount ($)", { x: amtX, y: y - 12, size: 7.5, font: boldFont, color: C.white });
+  page.drawText("% Revenue", { x: pctX, y: y - 12, size: 7.5, font: boldFont, color: C.white });
+  y -= 20;
+
+  const revenue = recon.revenue || 0;
+  const pct = (n: number) => revenue > 0 ? `${((n / revenue) * 100).toFixed(1)}%` : "-";
+
+  const drawRow = (label: string, amount: number | undefined, opts: { bold?: boolean; rule?: boolean; muted?: boolean; indent?: number } = {}) => {
+    if (y < CONTENT_Y_BOT + 16) return;
+    if (opts.rule) {
+      page.drawRectangle({ x: PAD, y: y + 2, width: CONTENT_W, height: 1, color: C.teal });
+      y -= 4;
+    }
+    if (opts.bold) {
+      page.drawRectangle({ x: PAD, y: y - 14, width: CONTENT_W, height: 14, color: rgb(0.93, 0.91, 0.87) });
+    }
+    const f = opts.bold ? boldFont : font;
+    const color = opts.muted ? C.midGray : opts.bold ? C.darkBlue : C.darkGray;
+    const indent = (opts.indent || 0) * 12;
+    page.drawText(safeText(label), { x: labelX + indent, y: y - 10, size: opts.bold ? 9 : 8, font: f, color });
+    if (amount !== undefined) {
+      const amtColor = amount < 0 ? C.red : opts.bold ? C.darkBlue : C.darkGray;
+      page.drawText(fmtCurrency(amount), { x: amtX, y: y - 10, size: opts.bold ? 9 : 8, font: f, color: amtColor });
+      page.drawText(pct(amount), { x: pctX, y: y - 10, size: 8, font, color: C.midGray });
+    }
+    y -= opts.bold ? 16 : 14;
+  };
+
+  if (recon.brokerEBITDA !== undefined && recon.brokerEBITDA !== null) {
+    drawRow(recon.brokerLabel || "Owner / Broker Stated EBITDA", recon.brokerEBITDA, { bold: true });
+    if (recon.reconcilingItems && recon.reconcilingItems.length > 0) {
+      page.drawText("Reconciling items (per Shepi GL review):", { x: labelX, y: y - 8, size: 7, font, color: C.midGray });
+      y -= 14;
+      for (const it of recon.reconcilingItems) {
+        drawRow(it.label, it.amount, { indent: 1 });
+      }
+    }
+    drawRow("Shepi Reported EBITDA (per books)", recon.reportedEBITDA, { bold: true, rule: true });
+  } else {
+    drawRow("Shepi Reported EBITDA (per books)", recon.reportedEBITDA, { bold: true });
   }
+
+  if (recon.adjustments.length > 0) {
+    y -= 6;
+    page.drawText("Normalizing adjustments:", { x: labelX, y: y - 8, size: 7, font, color: C.midGray });
+    y -= 14;
+    for (const adj of recon.adjustments) {
+      drawRow(adj.label, adj.amount, { indent: 1 });
+    }
+  }
+  drawRow("Shepi Adjusted EBITDA", recon.adjustedEBITDA, { bold: true, rule: true });
+
+  return page;
+}
+
+function addSeasonalityPage(doc: PDFDocument, font: PDFFont, boldFont: PDFFont, meta: ReportMeta,
+  monthly: MonthlyRevenuePoint[], pageNum: number, totalPages: number): PDFPage {
+  const page = doc.addPage([PW, PH]);
+  drawHeader(page, font, boldFont, "Income Statement", meta);
+  drawFooter(page, font, meta, pageNum, totalPages);
+
+  let y = CONTENT_Y_TOP - 4;
+  page.drawText("Revenue Seasonality & Month-over-Month Trend", { x: PAD, y, size: 14, font: boldFont, color: C.darkBlue });
+  page.drawRectangle({ x: PAD, y: y - 8, width: 50, height: 3, color: C.teal });
+  y -= 24;
+
+  const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const sumByMonth = new Array(12).fill(0);
+  const cntByMonth = new Array(12).fill(0);
+  for (const p of monthly) {
+    const d = new Date(p.month + (p.month.length === 7 ? "-01" : ""));
+    if (isNaN(d.getTime())) continue;
+    const m = d.getMonth();
+    sumByMonth[m] += p.revenue;
+    cntByMonth[m] += 1;
+  }
+  const avgByMonth = sumByMonth.map((s, i) => cntByMonth[i] > 0 ? s / cntByMonth[i] : 0);
+  const annualAvg = avgByMonth.reduce((a, b) => a + b, 0) / 12;
+
+  const chartW = CONTENT_W;
+  const chart1H = 180;
+  const chart1Top = y;
+  const chart1Bottom = chart1Top - chart1H;
+  page.drawText("Seasonality - Avg Revenue by Calendar Month", { x: PAD, y: chart1Top - 12, size: 9, font: boldFont, color: C.darkGray });
+  const innerTop = chart1Top - 26;
+  const innerBottom = chart1Bottom + 18;
+  const innerH = innerTop - innerBottom;
+  const maxV = Math.max(...avgByMonth, 1);
+  const slot = (chartW - 24) / 12;
+  const barW = slot * 0.7;
+
+  page.drawLine({ start: { x: PAD + 24, y: innerBottom }, end: { x: PAD + chartW, y: innerBottom }, thickness: 0.5, color: C.midGray });
+
+  const refY = innerBottom + (annualAvg / maxV) * innerH;
+  page.drawLine({ start: { x: PAD + 24, y: refY }, end: { x: PAD + chartW, y: refY }, thickness: 0.6, color: C.gold, dashArray: [3, 2] });
+  page.drawText(`Annual avg: ${fmtCurrency(annualAvg)}`, { x: PAD + chartW - 130, y: refY + 3, size: 6.5, font, color: C.gold });
+
+  for (let i = 0; i < 12; i++) {
+    const v = avgByMonth[i];
+    const h = (v / maxV) * innerH;
+    const x = PAD + 24 + i * slot + (slot - barW) / 2;
+    page.drawRectangle({ x, y: innerBottom, width: barW, height: h, color: C.teal });
+    page.drawText(MONTHS[i], { x: x - 2, y: innerBottom - 10, size: 6.5, font, color: C.midGray });
+  }
+
+  y = chart1Bottom - 16;
+
+  const chart2H = 160;
+  const chart2Top = y;
+  const chart2Bottom = chart2Top - chart2H;
+  page.drawText("Month-over-Month Revenue Growth (%)", { x: PAD, y: chart2Top - 12, size: 9, font: boldFont, color: C.darkGray });
+
+  const sorted = [...monthly].sort((a, b) => a.month.localeCompare(b.month));
+  const mom: number[] = [];
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = sorted[i - 1].revenue;
+    const cur = sorted[i].revenue;
+    mom.push(prev > 0 ? (cur - prev) / prev : 0);
+  }
+  if (mom.length === 0) {
+    page.drawText("Not enough data for MoM analysis.", { x: PAD, y: chart2Top - 30, size: 8, font, color: C.midGray });
+    return page;
+  }
+
+  const innerTop2 = chart2Top - 22;
+  const innerBottom2 = chart2Bottom + 18;
+  const innerH2 = innerTop2 - innerBottom2;
+  const zeroY = innerBottom2 + innerH2 / 2;
+  const maxAbs = Math.max(0.05, ...mom.map(Math.abs));
+  const halfH = innerH2 / 2;
+
+  const slot2 = (chartW - 24) / mom.length;
+  const barW2 = Math.max(1, slot2 * 0.7);
+
+  page.drawLine({ start: { x: PAD + 24, y: zeroY }, end: { x: PAD + chartW, y: zeroY }, thickness: 0.6, color: C.midGray });
+
+  for (let i = 0; i < mom.length; i++) {
+    const v = mom[i];
+    const h = Math.abs(v / maxAbs) * halfH;
+    const x = PAD + 24 + i * slot2 + (slot2 - barW2) / 2;
+    if (v >= 0) {
+      page.drawRectangle({ x, y: zeroY, width: barW2, height: h, color: C.teal });
+    } else {
+      page.drawRectangle({ x, y: zeroY - h, width: barW2, height: h, color: C.red });
+    }
+  }
+
+  const labelIdxs = mom.length >= 6 ? [0, Math.floor(mom.length / 2), mom.length - 1] : [0, mom.length - 1];
+  for (const idx of labelIdxs) {
+    const x = PAD + 24 + idx * slot2;
+    const lbl = sorted[idx + 1].month;
+    page.drawText(lbl, { x, y: innerBottom2 - 10, size: 6, font, color: C.midGray });
+  }
+  page.drawText(`+${(maxAbs * 100).toFixed(0)}%`, { x: PAD, y: innerTop2 - 4, size: 6, font, color: C.midGray });
+  page.drawText(`-${(maxAbs * 100).toFixed(0)}%`, { x: PAD, y: innerBottom2, size: 6, font, color: C.midGray });
+  page.drawText("0%", { x: PAD, y: zeroY - 3, size: 6, font, color: C.midGray });
+
+  return page;
+}
+
+function addBusinessOverviewPage(doc: PDFDocument, font: PDFFont, boldFont: PDFFont, meta: ReportMeta,
+  bo: BusinessOverview, pageNum: number, totalPages: number): PDFPage {
+  const page = doc.addPage([PW, PH]);
+  drawHeader(page, font, boldFont, "Business Overview", meta);
+  drawFooter(page, font, meta, pageNum, totalPages);
+
+  let y = CONTENT_Y_TOP - 4;
+  page.drawText("Business Overview", { x: PAD, y, size: 14, font: boldFont, color: C.darkBlue });
+  page.drawRectangle({ x: PAD, y: y - 8, width: 50, height: 3, color: C.teal });
+  y -= 24;
+
+  const facts: Array<[string, string]> = [];
+  if (bo.founded) facts.push(["FOUNDED", bo.founded]);
+  if (bo.headquarters) facts.push(["HQ", bo.headquarters]);
+  if (bo.employeeCount) facts.push(["EMPLOYEES", bo.employeeCount]);
+  if (bo.ownershipType) facts.push(["OWNERSHIP", bo.ownershipType]);
+  if (meta.industry) facts.push(["INDUSTRY", meta.industry]);
+
+  if (facts.length > 0) {
+    const stripH = 38;
+    const cardW = (CONTENT_W - (facts.length - 1) * 6) / facts.length;
+    facts.forEach((f, i) => {
+      const cx = PAD + i * (cardW + 6);
+      page.drawRectangle({ x: cx, y: y - stripH, width: cardW, height: stripH, color: C.offWhite });
+      page.drawRectangle({ x: cx, y: y - 3, width: cardW, height: 3, color: C.teal });
+      page.drawText(f[0], { x: cx + 8, y: y - 16, size: 6.5, font: boldFont, color: C.midGray });
+      page.drawText(truncate(safeText(f[1]), 22), { x: cx + 8, y: y - 30, size: 10, font: boldFont, color: C.darkBlue });
+    });
+    y -= stripH + 16;
+  }
+
+  if (bo.description) {
+    page.drawText("About the Business", { x: PAD, y, size: 9, font: boldFont, color: C.teal });
+    y -= 14;
+    const lines = wrapTextLines(stripMd(bo.description), 130, 8);
+    for (const ln of lines) {
+      if (y < CONTENT_Y_BOT + 16) break;
+      page.drawText(ln, { x: PAD, y, size: 9, font, color: C.darkGray });
+      y -= 12;
+    }
+    y -= 10;
+  }
+
+  const colW = (CONTENT_W - 16) / 2;
+  const startY = y;
+  let leftY = startY;
+  let rightY = startY;
+
+  const drawCol = (xStart: number, startYC: number, title: string, items: string[] | undefined, dotColor: ReturnType<typeof rgb>): number => {
+    if (!items || items.length === 0) return startYC;
+    let yc = startYC;
+    page.drawText(title, { x: xStart, y: yc, size: 9, font: boldFont, color: C.darkBlue });
+    yc -= 14;
+    for (const it of items.slice(0, 6)) {
+      if (yc < CONTENT_Y_BOT + 16) break;
+      page.drawCircle({ x: xStart + 4, y: yc + 3, size: 1.8, color: dotColor });
+      const lns = wrapTextLines(stripMd(it), 60, 2);
+      lns.forEach((ln, i) => {
+        page.drawText(ln, { x: xStart + 12, y: yc - i * 11, size: 8, font, color: C.darkGray });
+      });
+      yc -= lns.length * 11 + 4;
+    }
+    return yc - 8;
+  };
+
+  leftY = drawCol(PAD, leftY, "Products & Services", bo.productsServices, C.teal);
+  leftY = drawCol(PAD, leftY, "Growth Drivers", bo.growthDrivers, C.green);
+  rightY = drawCol(PAD + colW + 16, rightY, "Customer Profile", bo.customerProfile ? [bo.customerProfile] : undefined, C.midBlue);
+  rightY = drawCol(PAD + colW + 16, rightY, "Key Risks", bo.keyRisks, C.red);
 
   return page;
 }
