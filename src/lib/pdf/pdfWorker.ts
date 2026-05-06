@@ -123,13 +123,9 @@ export interface BusinessOverview {
 }
 
 export interface PLReconciliation {
-  /** Owner / broker / SIM stated EBITDA before adjustments */
-  brokerEBITDA?: number;
-  brokerLabel?: string;
-  /** Reconciling items between broker figure and Shepi reported EBITDA */
-  reconcilingItems?: Array<{ label: string; amount: number }>;
+  /** Reported EBITDA tied out to the GL — Shepi's verifiable starting point */
   reportedEBITDA: number;
-  /** Adjustments from reported -> adjusted */
+  /** Normalizing adjustments from reported -> adjusted */
   adjustments: Array<{ label: string; amount: number; category?: string }>;
   adjustedEBITDA: number;
   revenue?: number;
