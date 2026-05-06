@@ -123,13 +123,9 @@ export interface BusinessOverview {
 }
 
 export interface PLReconciliation {
-  /** Owner / broker / SIM stated EBITDA before adjustments */
-  brokerEBITDA?: number;
-  brokerLabel?: string;
-  /** Reconciling items between broker figure and Shepi reported EBITDA */
-  reconcilingItems?: Array<{ label: string; amount: number }>;
+  /** Reported EBITDA tied out to the GL — Shepi's verifiable starting point */
   reportedEBITDA: number;
-  /** Adjustments from reported -> adjusted */
+  /** Normalizing adjustments from reported -> adjusted */
   adjustments: Array<{ label: string; amount: number; category?: string }>;
   adjustedEBITDA: number;
   revenue?: number;
@@ -153,7 +149,7 @@ export interface PDFReportData {
   narratives?: Record<string, NarrativeContent>;
   /** Monthly revenue series for seasonality / MoM charts */
   monthlyRevenue?: MonthlyRevenuePoint[];
-  /** Structured P&L reconciliation (broker -> reported -> adjusted) */
+  /** EBITDA bridge (reported -> adjusted) */
   plReconciliation?: PLReconciliation;
   /** Business overview pulled from intake (preferred over cimInsights) */
   businessOverview?: BusinessOverview;
@@ -912,10 +908,10 @@ function addPLReconciliationPage(doc: PDFDocument, font: PDFFont, boldFont: PDFF
   drawFooter(page, font, meta, pageNum, totalPages);
 
   let y = CONTENT_Y_TOP - 4;
-  page.drawText("P&L Reconciliation Bridge", { x: PAD, y, size: 14, font: boldFont, color: C.darkBlue });
+  page.drawText("EBITDA Bridge: Reported → Adjusted", { x: PAD, y, size: 14, font: boldFont, color: C.darkBlue });
   page.drawRectangle({ x: PAD, y: y - 8, width: 50, height: 3, color: C.teal });
   y -= 8;
-  page.drawText("Owner / Broker stated EBITDA reconciled to Shepi reported and Shepi adjusted EBITDA.", {
+  page.drawText("Reported EBITDA tied out to the general ledger, normalized to Shepi Adjusted EBITDA.", {
     x: PAD, y: y - 14, size: 8, font, color: C.midGray,
   });
   y -= 30;
@@ -953,19 +949,7 @@ function addPLReconciliationPage(doc: PDFDocument, font: PDFFont, boldFont: PDFF
     y -= opts.bold ? 16 : 14;
   };
 
-  if (recon.brokerEBITDA !== undefined && recon.brokerEBITDA !== null) {
-    drawRow(recon.brokerLabel || "Owner / Broker Stated EBITDA", recon.brokerEBITDA, { bold: true });
-    if (recon.reconcilingItems && recon.reconcilingItems.length > 0) {
-      page.drawText("Reconciling items (per Shepi GL review):", { x: labelX, y: y - 8, size: 7, font, color: C.midGray });
-      y -= 14;
-      for (const it of recon.reconcilingItems) {
-        drawRow(it.label, it.amount, { indent: 1 });
-      }
-    }
-    drawRow("Shepi Reported EBITDA (per books)", recon.reportedEBITDA, { bold: true, rule: true });
-  } else {
-    drawRow("Shepi Reported EBITDA (per books)", recon.reportedEBITDA, { bold: true });
-  }
+  drawRow("Reported EBITDA (per books)", recon.reportedEBITDA, { bold: true });
 
   if (recon.adjustments.length > 0) {
     y -= 6;
