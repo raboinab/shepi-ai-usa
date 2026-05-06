@@ -149,7 +149,7 @@ export interface PDFReportData {
   narratives?: Record<string, NarrativeContent>;
   /** Monthly revenue series for seasonality / MoM charts */
   monthlyRevenue?: MonthlyRevenuePoint[];
-  /** Structured P&L reconciliation (broker -> reported -> adjusted) */
+  /** EBITDA bridge (reported -> adjusted) */
   plReconciliation?: PLReconciliation;
   /** Business overview pulled from intake (preferred over cimInsights) */
   businessOverview?: BusinessOverview;
