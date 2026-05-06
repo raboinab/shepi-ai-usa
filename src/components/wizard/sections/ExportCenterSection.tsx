@@ -527,6 +527,9 @@ export const ExportCenterSection = ({ data, updateData, wizardData, projectId, p
         grids,
         traceabilityAdjustments: enrichedAdjustments,
         narratives: narratives as Record<string, never>,
+        monthlyRevenue: buildMonthlyRevenue(dealData),
+        plReconciliation: buildPLReconciliation(dealData),
+        businessOverview: buildBusinessOverview(wizardData, projectName, cimInsights),
       };
 
       // Build PDF in Web Worker (background thread)
