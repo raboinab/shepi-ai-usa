@@ -108,6 +108,33 @@ export interface NarrativeContent {
   paragraphs?: NarrativeParagraph[];
 }
 
+export interface MonthlyRevenuePoint { month: string; revenue: number }
+
+export interface BusinessOverview {
+  description?: string;
+  productsServices?: string[];
+  customerProfile?: string;
+  growthDrivers?: string[];
+  keyRisks?: string[];
+  founded?: string;
+  headquarters?: string;
+  employeeCount?: string;
+  ownershipType?: string;
+}
+
+export interface PLReconciliation {
+  /** Owner / broker / SIM stated EBITDA before adjustments */
+  brokerEBITDA?: number;
+  brokerLabel?: string;
+  /** Reconciling items between broker figure and Shepi reported EBITDA */
+  reconcilingItems?: Array<{ label: string; amount: number }>;
+  reportedEBITDA: number;
+  /** Adjustments from reported -> adjusted */
+  adjustments: Array<{ label: string; amount: number; category?: string }>;
+  adjustedEBITDA: number;
+  revenue?: number;
+}
+
 export interface PDFReportData {
   metadata: ReportMeta;
   attentionItems?: AttentionItem[];
@@ -124,6 +151,12 @@ export interface PDFReportData {
   traceabilityAdjustments?: DDAdjustment[];
   /** AI-generated narrative content keyed by slide_key (qoe, revenue_detail, ...) */
   narratives?: Record<string, NarrativeContent>;
+  /** Monthly revenue series for seasonality / MoM charts */
+  monthlyRevenue?: MonthlyRevenuePoint[];
+  /** Structured P&L reconciliation (broker -> reported -> adjusted) */
+  plReconciliation?: PLReconciliation;
+  /** Business overview pulled from intake (preferred over cimInsights) */
+  businessOverview?: BusinessOverview;
 }
 
 // ── Brand Colors ────────────────────────────────────────────────────────
