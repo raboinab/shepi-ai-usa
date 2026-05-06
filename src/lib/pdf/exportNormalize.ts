@@ -280,7 +280,7 @@ export function buildPLReconciliation(dealData: DealData | undefined): PLReconci
   const adjustments = ebitdaAdj
     .map(a => ({
       label: a.label || a.notes || `${a.type} adjustment`,
-      amount: -(a.amounts?.[periodId] || 0),
+      amount: a.amounts?.[periodId] || 0,
       category: a.type,
     }))
     .filter(x => Math.abs(x.amount) > 0.5);
