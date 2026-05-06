@@ -683,7 +683,103 @@ function cleanFlagLabel(s: string): string {
   return safeText(String(s || "")).replace(/[_-]+/g, " ").replace(/\b\w/g, l => l.toUpperCase());
 }
 
-function addFlaggedTransactionsPages(doc: PDFDocument, font: PDFFont, boldFont: PDFFont, meta: ReportMeta,
+function addFlaggedChunkPage(doc: PDFDocument, font: PDFFont, boldFont: PDFFont, meta: ReportMeta,
+  items: FlaggedItem[], isFirst: boolean, totalCount: number, remaining: number,
+  pageNum: number, totalPages: number): PDFPage {
+  const page = doc.addPage([PW, PH]);
+  drawHeader(page, font, boldFont, "AI Analysis", meta);
+  drawFooter(page, font, meta, pageNum, totalPages);
+  let y = CONTENT_Y_TOP - 4;
+
+  if (isFirst) {
+    page.drawText("AI-Flagged Transactions", { x: PAD, y, size: 14, font: boldFont, color: C.darkBlue });
+    page.drawRectangle({ x: PAD, y: y - 8, width: 50, height: 3, color: C.teal });
+    y -= 22;
+    const highCount = items.filter(i => (i.confidence_score || 0) >= 0.9).length;
+    const totalAmount = items.reduce((s, i) => s + Math.abs(i.amount || 0), 0);
+    const cats = new Set(items.map(i => i.flag_category || "Other")).size;
+    const kpis = [
+      { label: "TOTAL FLAGGED", value: String(totalCount) },
+      { label: "HIGH CONFIDENCE", value: String(highCount) },
+      { label: "AGGREGATE $", value: fmtCurrency(totalAmount) },
+      { label: "CATEGORIES", value: String(cats) },
+    ];
+    const stripH = 36;
+    const cardW = (CONTENT_W - 18) / kpis.length;
+    kpis.forEach((k, i) => {
+      const cx = PAD + i * (cardW + 6);
+      page.drawRectangle({ x: cx, y: y - stripH, width: cardW, height: stripH, color: C.darkBlue });
+      page.drawRectangle({ x: cx, y: y - 3, width: cardW, height: 3, color: C.teal });
+      page.drawText(k.label, { x: cx + 8, y: y - 16, size: 6.5, font, color: C.lightGray });
+      page.drawText(k.value, { x: cx + 8, y: y - 30, size: 13, font: boldFont, color: C.white });
+    });
+    y -= stripH + 14;
+  } else {
+    page.drawText("AI-Flagged Transactions (continued)", { x: PAD, y, size: 12, font: boldFont, color: C.darkBlue });
+    y -= 22;
+  }
+
+  const colW = { desc: 280, acct: 140, amt: 70, type: 100, date: 60, conf: 50 };
+  page.drawRectangle({ x: PAD, y: y - 14, width: CONTENT_W, height: 14, color: C.darkBlue });
+  let hx = PAD + 4;
+  const hdrs: Array<[string, number]> = [
+    ["Description / Reason", colW.desc],
+    ["Account", colW.acct],
+    ["Amount", colW.amt],
+    ["Issue Type", colW.type],
+    ["Date", colW.date],
+    ["Conf.", colW.conf],
+  ];
+  hdrs.forEach(([h, w]) => {
+    page.drawText(h, { x: hx, y: y - 11, size: 6.5, font: boldFont, color: C.white });
+    hx += w;
+  });
+  y -= 16;
+
+  // Group by category within this chunk
+  const groups = new Map<string, FlaggedItem[]>();
+  for (const it of items) {
+    const cat = cleanFlagLabel(it.flag_category || "Other");
+    if (!groups.has(cat)) groups.set(cat, []);
+    groups.get(cat)!.push(it);
+  }
+  let r = 0;
+  for (const [catName, list] of groups) {
+    if (y < CONTENT_Y_BOT + 26) break;
+    const subtotal = list.reduce((s, i) => s + Math.abs(i.amount || 0), 0);
+    page.drawRectangle({ x: PAD, y: y - 12, width: CONTENT_W, height: 12, color: rgb(0.93, 0.91, 0.87) });
+    page.drawText(`${catName}  (${list.length})`, { x: PAD + 6, y: y - 9, size: 7.5, font: boldFont, color: C.darkBlue });
+    page.drawText(fmtCurrency(subtotal), { x: PAD + colW.desc + colW.acct, y: y - 9, size: 7.5, font: boldFont, color: C.darkBlue });
+    y -= 14;
+    r++;
+    for (const it of list) {
+      if (y < CONTENT_Y_BOT + 14) break;
+      if (r % 2 === 1) page.drawRectangle({ x: PAD, y: y - 12, width: CONTENT_W, height: 12, color: C.offWhite });
+      let cx = PAD + 6;
+      page.drawText(truncate(safeText(it.description), 60), { x: cx, y: y - 9, size: 6.5, font, color: C.darkGray }); cx += colW.desc;
+      page.drawText(truncate(safeText(it.account_name), 26), { x: cx, y: y - 9, size: 6.5, font, color: C.darkGray }); cx += colW.acct;
+      page.drawText(fmtCurrency(it.amount), { x: cx, y: y - 9, size: 6.5, font: boldFont, color: C.darkBlue }); cx += colW.amt;
+      page.drawText(truncate(cleanFlagLabel(it.flag_type), 18), { x: cx, y: y - 9, size: 6.5, font, color: C.midGray }); cx += colW.type;
+      page.drawText(safeText(it.transaction_date || ""), { x: cx, y: y - 9, size: 6.5, font, color: C.midGray }); cx += colW.date;
+      const conf = it.confidence_score ? `${Math.round(it.confidence_score * 100)}%` : "-";
+      const confColor = (it.confidence_score || 0) >= 0.9 ? C.red : (it.confidence_score || 0) >= 0.75 ? C.amber : C.midGray;
+      page.drawText(conf, { x: cx, y: y - 9, size: 6.5, font: boldFont, color: confColor });
+      y -= 12;
+      r++;
+    }
+    y -= 4;
+  }
+
+  if (remaining > 0) {
+    page.drawText(`+ ${remaining} additional flagged transactions available in the workbook.`, {
+      x: PAD, y: Math.max(y - 6, CONTENT_Y_BOT + 4), size: 7, font, color: C.midGray,
+    });
+  }
+  return page;
+}
+
+// Legacy multi-page function kept for back-compat — unused now.
+function _unusedAddFlaggedPagesLegacy(doc: PDFDocument, font: PDFFont, boldFont: PDFFont, meta: ReportMeta,
   items: FlaggedItem[], startPageNum: number, totalPages: number): PDFPage[] {
   const pages: PDFPage[] = [];
   if (!items || items.length === 0) return pages;
