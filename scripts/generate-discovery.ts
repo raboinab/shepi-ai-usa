@@ -84,6 +84,7 @@ const ROUTES: RouteEntry[] = [
   { path: "/guides/ai-wont-do-your-qoe", changefreq: "monthly", priority: 0.8 },
   { path: "/guides/ai-accounting-anomaly-detection", changefreq: "monthly", priority: 0.7 },
   { path: "/guides/earnings-manipulation-signs", changefreq: "monthly", priority: 0.7 },
+  { path: "/guides/sellers-discretionary-earnings", changefreq: "monthly", priority: 0.8 },
 
   // Legal
   { path: "/privacy", changefreq: "yearly", priority: 0.3 },
