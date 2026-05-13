@@ -2,7 +2,7 @@
 
 > Long-form companion to llms.txt. Contains the full homepage FAQ (single source of truth — see src/data/homepageFaq.ts), the complete public content surface, and capability/limitation statements suitable for agent reasoning.
 
-Generated: 2026-04-29
+Generated: 2026-05-13
 
 ## Identity
 
@@ -97,6 +97,10 @@ shepi is a QoE analysis platform built on three pillars: a structured analysis f
 ### How is shepi different from using Excel templates?
 
 Excel templates give you a blank structure and hours of manual work. shepi gives you automated processing plus a guided workflow. Key differences: Connect to QuickBooks and import mapped data instantly — work that takes 8-12 hours manually. AI extracts structured data from tax returns, payroll, debt schedules, and contracts — no manual data entry. Multi-period normalization and IS/BS reconciliation happen automatically. A proven 6-phase workflow mirrors how experienced analysts work. You focus on analysis and judgment, not data wrangling.
+
+### What's the difference between Self-Service and Done-For-You?
+
+Self-Service ($2,000/project): you run the analysis inside the Shepi platform — typically 2–4 hours of hands-on time. Done-For-You ($4,000/project, includes CPA-led review): the Shepi team produces the deliverable for you and you review the output — turnaround in days. Both produce the same 27-tab workbook and PDF report. See the full Scope of Work →
 
 ### Does shepi replace a formal Quality of Earnings report from a CPA firm?
 

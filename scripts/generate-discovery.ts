@@ -37,6 +37,7 @@ const ROUTES: RouteEntry[] = [
   { path: "/resources", changefreq: "weekly", priority: 0.8 },
   { path: "/for-ai-agents", changefreq: "monthly", priority: 0.7 },
   { path: "/demo", changefreq: "monthly", priority: 0.6 },
+  { path: "/scope", changefreq: "monthly", priority: 0.5 },
 
   // Money pages
   { path: "/quality-of-earnings-cost", changefreq: "monthly", priority: 0.9 },
