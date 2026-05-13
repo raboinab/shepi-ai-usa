@@ -64,6 +64,7 @@ const CanAIReplaceQoE = lazy(() => import("./pages/guides/CanAIReplaceQoE"));
 const AIWontDoYourQoE = lazy(() => import("./pages/guides/AIWontDoYourQoE"));
 const AIAccountingAnomalyDetection = lazy(() => import("./pages/guides/AIAccountingAnomalyDetection"));
 const EarningsManipulationSigns = lazy(() => import("./pages/guides/EarningsManipulationSigns"));
+const SellersDiscretionaryEarnings = lazy(() => import("./pages/guides/SellersDiscretionaryEarnings"));
 const QualityOfEarningsCost = lazy(() => import("./pages/QualityOfEarningsCost"));
 const QualityOfEarningsSoftware = lazy(() => import("./pages/QualityOfEarningsSoftware"));
 const QualityOfEarningsTemplate = lazy(() => import("./pages/QualityOfEarningsTemplate"));
@@ -189,6 +190,7 @@ export const routes: RouteRecord[] = [
       { path: "guides/ai-wont-do-your-qoe", element: wrap(<AIWontDoYourQoE />) },
       { path: "guides/ai-accounting-anomaly-detection", element: wrap(<AIAccountingAnomalyDetection />) },
       { path: "guides/earnings-manipulation-signs", element: wrap(<EarningsManipulationSigns />) },
+      { path: "guides/sellers-discretionary-earnings", element: wrap(<SellersDiscretionaryEarnings />) },
 
       // P0 Money Pages
       { path: "quality-of-earnings-cost", element: wrap(<QualityOfEarningsCost />) },
@@ -267,6 +269,7 @@ export const prerenderPaths = [
   "/guides/ai-wont-do-your-qoe",
   "/guides/ai-accounting-anomaly-detection",
   "/guides/earnings-manipulation-signs",
+  "/guides/sellers-discretionary-earnings",
   "/use-cases/independent-searchers",
   "/use-cases/pe-firms",
   "/use-cases/deal-advisors",
