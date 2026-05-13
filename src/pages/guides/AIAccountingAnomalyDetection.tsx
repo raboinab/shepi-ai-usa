@@ -34,7 +34,7 @@ export default function AIAccountingAnomalyDetection() {
     <ContentPageLayout
       title="How AI Detects Accounting Anomalies"
       seoTitle="AI Anomaly Detection in Accounting — How It Works | Shepi"
-      seoDescription="How AI and machine learning detect accounting anomalies during M&A due diligence. Detection techniques, practical examples, and how AI-powered GL review compares to manual analysis."
+      seoDescription="How AI and machine learning detect accounting anomalies during M&A due diligence. Detection techniques, practical examples, and how AI-powered GL review."
       canonical="https://shepi.ai/guides/ai-accounting-anomaly-detection"
       breadcrumbs={[
         { label: "Resources", href: "/resources" },

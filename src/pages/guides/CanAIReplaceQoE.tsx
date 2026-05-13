@@ -33,7 +33,7 @@ export default function CanAIReplaceQoE() {
     <ContentPageLayout
       title="Can AI Replace a Quality of Earnings Report?"
       seoTitle="Can AI Replace a QoE Report? Honest Assessment | Shepi"
-      seoDescription="An honest look at whether AI can replace traditional Quality of Earnings reports. What AI does well, where human judgment is still essential, and the hybrid model emerging in M&A."
+      seoDescription="An honest look at whether AI can replace traditional Quality of Earnings reports. What AI does well, where human judgment is still essential, and the hybrid."
       canonical="https://shepi.ai/guides/can-ai-replace-qoe"
       breadcrumbs={[
         { label: "Resources", href: "/resources" },

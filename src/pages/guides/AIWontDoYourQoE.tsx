@@ -33,7 +33,7 @@ export default function AIWontDoYourQoE() {
   return (
     <ContentPageLayout
       title="AI Won't Do Your Quality of Earnings Analysis For You — But It Can Make You Much Better At It"
-      seoTitle="AI Won't Do Your QoE Analysis (And Why That's the Point) | Shepi"
+      seoTitle="AI Won't Do Your QoE Analysis (And Why That's the | Shepi"
       seoDescription="Honest take from an AI QoE company on what AI can and can't do in financial due diligence — and why 'AI-assisted' beats 'AI-generated' every time."
       canonical="https://shepi.ai/guides/ai-wont-do-your-qoe"
       breadcrumbs={[

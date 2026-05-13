@@ -34,8 +34,8 @@ export default function EBITDAAutomation() {
   return (
     <ContentPageLayout
       title="EBITDA Normalization & Add-Back Automation"
-      seoTitle="EBITDA Add-Back Automation — Normalize EBITDA with AI | Shepi"
-      seoDescription="Automate EBITDA normalization and add-back identification. AI scans your GL for non-recurring items, owner expenses, and pro forma adjustments — in minutes, not weeks."
+      seoTitle="EBITDA Add-Back Automation — Normalize EBITDA | Shepi"
+      seoDescription="Automate EBITDA normalization and add-back identification. AI scans your GL for non-recurring items, owner expenses, and pro forma adjustments — in minutes."
       canonical="https://shepi.ai/features/ebitda-automation"
       breadcrumbs={[
         { label: "Resources", href: "/resources" },

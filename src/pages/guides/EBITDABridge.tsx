@@ -33,8 +33,8 @@ export default function EBITDABridge() {
   return (
     <ContentPageLayout
       title="EBITDA Bridge Analysis — From Net Income to Adjusted EBITDA"
-      seoTitle="EBITDA Bridge — Net Income to Adjusted EBITDA Reconciliation | Shepi"
-      seoDescription="Learn how to build an EBITDA bridge for M&A: net income to EBITDA reconciliation, categorized adjustments, run-rate calculations, and documentation standards for lender-ready output."
+      seoTitle="EBITDA Bridge — Net Income to Adjusted EBITDA | Shepi"
+      seoDescription="Learn how to build an EBITDA bridge for M&A: net income to EBITDA reconciliation, categorized adjustments, run-rate calculations, and documentation standards."
       canonical="https://shepi.ai/guides/ebitda-bridge"
       breadcrumbs={[
         { label: "Resources", href: "/resources" },

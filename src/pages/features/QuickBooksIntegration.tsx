@@ -33,7 +33,7 @@ export default function QuickBooksIntegration() {
     <ContentPageLayout
       title="QuickBooks Integration for Quality of Earnings"
       seoTitle="QuickBooks Integration for QoE Analysis | Shepi"
-      seoDescription="Connect QuickBooks directly to Shepi for seamless QoE analysis. Automatic trial balance import, account mapping, multi-period data, and secure OAuth connection."
+      seoDescription="Connect QuickBooks directly to Shepi for seamless QoE analysis. Automatic trial balance import, account mapping, multi-period data, and secure OAuth."
       canonical="https://shepi.ai/features/quickbooks-integration"
       breadcrumbs={[
         { label: "Resources", href: "/resources" },

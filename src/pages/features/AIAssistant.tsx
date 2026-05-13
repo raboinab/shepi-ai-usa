@@ -32,7 +32,7 @@ export default function AIAssistant() {
     <ContentPageLayout
       title="AI-Powered QoE Analysis Assistant"
       seoTitle="AI-Powered Quality of Earnings Assistant | Shepi"
-      seoDescription="How Shepi's AI assistant accelerates QoE analysis — red flag identification, EBITDA adjustment guidance, educational support, and clear boundaries on what AI does and doesn't do."
+      seoDescription="How Shepi's AI assistant accelerates QoE analysis — red flag identification, EBITDA adjustment guidance, educational support, and clear boundaries on what AI."
       canonical="https://shepi.ai/features/ai-assistant"
       breadcrumbs={[
         { label: "Resources", href: "/resources" },

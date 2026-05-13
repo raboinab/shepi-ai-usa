@@ -68,8 +68,8 @@ export default function QoESoftware() {
   return (
     <ContentPageLayout
       title="AI-Powered Quality of Earnings Software"
-      seoTitle="Quality of Earnings AI Software | AI QoE Analysis Tool | Shepi"
-      seoDescription="Quality of Earnings AI software that automates EBITDA adjustments, GL anomaly detection, revenue analysis, and lender-ready QoE reports — in hours, not weeks. AI quality of earnings built for M&A."
+      seoTitle="Quality of Earnings AI Software | AI QoE Analysis | Shepi"
+      seoDescription="Quality of Earnings AI software that automates EBITDA adjustments, GL anomaly detection, revenue analysis, and lender-ready QoE reports — in hours, not weeks."
       canonical="https://shepi.ai/features/qoe-software"
       breadcrumbs={[
         { label: "Resources", href: "/resources" },
