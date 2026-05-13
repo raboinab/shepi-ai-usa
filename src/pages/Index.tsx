@@ -17,8 +17,8 @@ import { HOMEPAGE_FAQ, buildFaqJsonLd, groupFaqByCategory } from "@/data/homepag
 
 const Index = () => {
   const __seoTags = useSEO({
-    title: "AI Quality of Earnings Software | QoE Analysis Platform | shepi",
-    description: "AI quality of earnings analysis for M&A due diligence. Upload financials, get EBITDA adjustments and lender-ready QoE reports in hours. Quality of earnings AI built for deal teams, PE firms, and searchers.",
+    title: "AI Quality of Earnings Software | QoE Platform | Shepi",
+    description: "AI quality of earnings analysis for M&A due diligence. Upload financials and get EBITDA adjustments and lender-ready QoE reports in hours.",
     canonical: "https://shepi.ai/",
     ogImage: "/og-image.png",
     jsonLd: [

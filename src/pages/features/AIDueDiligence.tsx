@@ -36,8 +36,8 @@ export default function AIDueDiligence() {
   return (
     <ContentPageLayout
       title="AI for Financial Due Diligence — Automate Quality of Earnings"
-      seoTitle="AI for Financial Due Diligence — Automate QoE Analysis | Shepi"
-      seoDescription="How AI accelerates M&A due diligence: automated EBITDA adjustments, GL anomaly detection, revenue quality analysis, and working capital calculations. Compare AI vs traditional CPA firms."
+      seoTitle="AI for Financial Due Diligence — Automate QoE | Shepi"
+      seoDescription="How AI accelerates M&A due diligence: automated EBITDA adjustments, GL anomaly detection, revenue quality analysis, and working capital calculations."
       canonical="https://shepi.ai/features/ai-due-diligence"
       breadcrumbs={[
         { label: "Resources", href: "/resources" },

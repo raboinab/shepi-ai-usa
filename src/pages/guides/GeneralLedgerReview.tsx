@@ -35,8 +35,8 @@ export default function GeneralLedgerReview() {
   return (
     <ContentPageLayout
       title="General Ledger Review for M&A Due Diligence"
-      seoTitle="General Ledger Review — Anomaly Detection, Journal Entries & AI Analysis | Shepi"
-      seoDescription="Master GL-level due diligence: anomaly detection, unusual journal entries, personal expense identification, related party transactions, and how AI accelerates GL review."
+      seoTitle="General Ledger Review — Anomaly Detection | Shepi"
+      seoDescription="Master GL-level due diligence: anomaly detection, unusual journal entries, personal expense identification, related party transactions, and how AI."
       canonical="https://shepi.ai/guides/general-ledger-review"
       breadcrumbs={[
         { label: "Resources", href: "/resources" },

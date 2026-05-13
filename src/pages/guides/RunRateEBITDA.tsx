@@ -34,8 +34,8 @@ export default function RunRateEBITDA() {
   return (
     <ContentPageLayout
       title="Run-Rate EBITDA vs Historical EBITDA"
-      seoTitle="Run-Rate EBITDA vs Historical — Calculation & When to Use Each | Shepi"
-      seoDescription="Learn the difference between run-rate and historical EBITDA. How to calculate run-rate EBITDA, common pro forma adjustments, and red flags in M&A due diligence."
+      seoTitle="Run-Rate EBITDA vs Historical — Calculation & | Shepi"
+      seoDescription="Learn the difference between run-rate and historical EBITDA. How to calculate run-rate EBITDA, common pro forma adjustments, and red flags in M&A due."
       canonical="https://shepi.ai/guides/run-rate-ebitda"
       breadcrumbs={[
         { label: "Resources", href: "/resources" },

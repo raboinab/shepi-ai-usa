@@ -34,8 +34,8 @@ export default function WorkingCapitalAnalysis() {
   return (
     <ContentPageLayout
       title="Working Capital Analysis for M&A Due Diligence"
-      seoTitle="Working Capital Analysis — NWC Peg, Turnover Ratios & Seasonality | Shepi"
-      seoDescription="Master net working capital analysis for acquisitions. Learn NWC calculation, working capital peg negotiation, AR/AP/inventory turnover, and how seasonality affects the peg."
+      seoTitle="Working Capital Analysis — NWC Peg, Turnover | Shepi"
+      seoDescription="Master net working capital analysis for acquisitions. Learn NWC calculation, working capital peg negotiation, AR/AP/inventory turnover, and how seasonality."
       canonical="https://shepi.ai/guides/working-capital-analysis"
       breadcrumbs={[
         { label: "Resources", href: "/resources" },

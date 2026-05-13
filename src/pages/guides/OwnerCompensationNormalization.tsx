@@ -33,8 +33,8 @@ export default function OwnerCompensationNormalization() {
   return (
     <ContentPageLayout
       title="Owner Compensation Normalization for M&A"
-      seoTitle="Owner Compensation Normalization — How to Normalize Owner Salary for M&A | Shepi"
-      seoDescription="Learn how to normalize owner compensation for Quality of Earnings analysis. Covers salary, benefits, personal expenses, market-rate replacement, and documentation standards."
+      seoTitle="Owner Compensation Normalization — How to | Shepi"
+      seoDescription="Learn how to normalize owner compensation for Quality of Earnings analysis. Covers salary, benefits, personal expenses, market-rate replacement, and."
       canonical="https://shepi.ai/guides/owner-compensation-normalization"
       breadcrumbs={[
         { label: "Resources", href: "/resources" },

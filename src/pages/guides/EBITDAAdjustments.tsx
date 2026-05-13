@@ -32,8 +32,8 @@ export default function EBITDAAdjustments() {
   return (
     <ContentPageLayout
       title="EBITDA Adjustments: Types, Examples & Best Practices"
-      seoTitle="EBITDA Adjustments Guide — Types, Examples & Best Practices | Shepi"
-      seoDescription="Master EBITDA adjustments for Quality of Earnings analysis. Learn adjustment categories, common examples, documentation standards, and red flags in M&A due diligence."
+      seoTitle="EBITDA Adjustments Guide — Types, Examples & Best | Shepi"
+      seoDescription="Master EBITDA adjustments for Quality of Earnings analysis. Learn adjustment categories, common examples, documentation standards, and red flags in M&A due."
       canonical="https://shepi.ai/guides/ebitda-adjustments"
       breadcrumbs={[
         { label: "Resources", href: "/resources" },

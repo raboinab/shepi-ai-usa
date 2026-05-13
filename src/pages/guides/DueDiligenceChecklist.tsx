@@ -36,7 +36,7 @@ export default function DueDiligenceChecklist() {
     <ContentPageLayout
       title="Financial Due Diligence Checklist for M&A Transactions"
       seoTitle="Financial Due Diligence Checklist for M&A | Shepi"
-      seoDescription="Complete financial due diligence checklist for M&A transactions. Document requests, analysis steps, red flags, timeline planning, and common mistakes to avoid."
+      seoDescription="Complete financial due diligence checklist for M&A transactions. Document requests, analysis steps, red flags, timeline planning, and common mistakes to."
       canonical="https://shepi.ai/guides/due-diligence-checklist"
       breadcrumbs={[
         { label: "Resources", href: "/resources" },

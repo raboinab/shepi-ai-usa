@@ -31,8 +31,8 @@ export default function SellSideVsBuySideQoE() {
   return (
     <ContentPageLayout
       title="Sell-Side vs Buy-Side QoE: Differences and When You Need Each"
-      seoTitle="Sell-Side vs Buy-Side QoE — Key Differences Explained | Shepi"
-      seoDescription="Learn the differences between sell-side and buy-side Quality of Earnings reports. Understand scope, purpose, timing, and when each type of QoE is appropriate for your deal."
+      seoTitle="Sell-Side vs Buy-Side QoE — Key Differences | Shepi"
+      seoDescription="Learn the differences between sell-side and buy-side Quality of Earnings reports. Understand scope, purpose, timing, and when each type of QoE is appropriate."
       canonical="https://shepi.ai/guides/sell-side-vs-buy-side-qoe"
       breadcrumbs={[
         { label: "Resources", href: "/resources" },

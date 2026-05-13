@@ -33,8 +33,8 @@ export default function PersonalExpenseDetection() {
   return (
     <ContentPageLayout
       title="How to Detect Personal Expenses in a Business"
-      seoTitle="Personal Expense Detection — Find Owner Add-Backs in M&A | Shepi"
-      seoDescription="Learn how to detect personal expenses running through a business. GL keyword searches, pattern analysis, and AI-powered detection methods for EBITDA add-backs in M&A due diligence."
+      seoTitle="Personal Expense Detection — Find Owner Add-Backs | Shepi"
+      seoDescription="Learn how to detect personal expenses running through a business. GL keyword searches, pattern analysis, and AI-powered detection methods for EBITDA."
       canonical="https://shepi.ai/guides/personal-expense-detection"
       breadcrumbs={[
         { label: "Resources", href: "/resources" },

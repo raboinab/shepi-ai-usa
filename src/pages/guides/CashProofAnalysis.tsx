@@ -34,8 +34,8 @@ export default function CashProofAnalysis() {
   return (
     <ContentPageLayout
       title="Cash & Bank Tie-Out — Proof of Cash Analysis for M&A"
-      seoTitle="Proof of Cash Analysis — GL-to-Bank Reconciliation for M&A | Shepi"
-      seoDescription="Master proof of cash analysis for acquisitions: GL-to-bank reconciliation, detecting unrecorded transactions, commingled personal expenses, and validating cash flow completeness."
+      seoTitle="Proof of Cash Analysis — GL-to-Bank | Shepi"
+      seoDescription="Master proof of cash analysis for acquisitions: GL-to-bank reconciliation, detecting unrecorded transactions, commingled personal expenses, and validating."
       canonical="https://shepi.ai/guides/cash-proof-analysis"
       breadcrumbs={[
         { label: "Resources", href: "/resources" },

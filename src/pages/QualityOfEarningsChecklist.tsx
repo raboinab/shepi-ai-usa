@@ -33,8 +33,8 @@ export default function QualityOfEarningsChecklist() {
   return (
     <ContentPageLayout
       title="Quality of Earnings Checklist for M&A Due Diligence"
-      seoTitle="Quality of Earnings Checklist — Free QoE Diligence Checklist | Shepi"
-      seoDescription="Complete Quality of Earnings checklist covering data request, revenue quality, EBITDA adjustments, working capital, proof of cash, and lender-ready deliverables."
+      seoTitle="Quality of Earnings Checklist — Free QoE | Shepi"
+      seoDescription="Complete Quality of Earnings checklist covering data request, revenue quality, EBITDA adjustments, working capital, proof of cash, and lender-ready."
       canonical="https://shepi.ai/quality-of-earnings-checklist"
       breadcrumbs={[{ label: "Quality of Earnings Checklist" }]}
       toc={toc}
