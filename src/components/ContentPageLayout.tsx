@@ -37,6 +37,12 @@ interface ContentPageLayoutProps {
   publishedDate?: string;
   modifiedDate?: string;
   heroAccent?: boolean;
+  /**
+   * og:type for the page. Defaults to "article" because ContentPageLayout
+   * is used for editorial content (guides, use-cases, features, comparisons).
+   * Override with "website" for hub/index pages like /resources.
+   */
+  ogType?: string;
 }
 
 export function ContentPageLayout({
@@ -51,6 +57,7 @@ export function ContentPageLayout({
   publishedDate,
   modifiedDate,
   heroAccent,
+  ogType = "article",
 }: ContentPageLayoutProps) {
   // Auto-generate BreadcrumbList JSON-LD from the same array used by the
   // visible breadcrumb UI. Merge with any caller-supplied jsonLd so guides
@@ -67,6 +74,7 @@ export function ContentPageLayout({
     description: seoDescription,
     canonical,
     ogImage: "/og-image.png",
+    ogType,
     jsonLd: mergedJsonLd,
   });
 
