@@ -1,103 +1,108 @@
-## Goal
+## What GSC actually shows (pulled live from your Search Console)
 
-Rewrite `/guides/sellers-discretionary-earnings` as a **bridge page** that teaches a novice buyer the difference between SDE and Adjusted EBITDA, when each applies, and how to convert between them — so they don't get fooled by a broker quoting one number when the deal really trades on the other.
+Three findings explain almost the entire "Why pages aren't indexed" report.
 
-The page is positioned as education, not as "Shepi produces SDE." Shepi produces Adjusted EBITDA; SDE is the number many novice buyers *arrive* with (from broker CIMs, BizBuySell listings, etc.) and need to translate.
+### 1. Three live hostnames serving the same content, no canonical host
 
----
+- `https://shepi.ai/` → 200 ✓
+- `https://www.shepi.ai/` → 200 (NOT redirected to apex) ✗
+- `https://shepi-ai-usa.lovable.app/` → 200 (NOT redirected) ✗
 
-## Page structure (top to bottom)
+**Two sitemaps are submitted to GSC** — `shepi.ai/sitemap.xml` AND `www.shepi.ai/sitemap.xml`. Google indexes www and apex variants of every page, then forces itself to pick a canonical, sending the loser to the **Duplicate without canonical (1)** and **Alternate page with proper canonical (2)** buckets. The lone **Page with redirect (1)** is the same root cause.
 
-**1. Hero / one-line frame**
-> "Brokers quote SDE. Lenders and PE buyers underwrite to Adjusted EBITDA. They are not the same number — and the gap is usually the owner's paycheck."
+### 2. Legacy URLs Google still has indexed that no longer exist
 
-**2. The 30-second answer (callout box)**
-A two-column visual:
-- **SDE** = what the business earns *for an owner-operator* (includes one owner's salary as part of the return)
-- **Adjusted EBITDA** = what the business earns *as a standalone asset* (owner replaced with a market-rate manager)
-- **The bridge:** `Adjusted EBITDA = SDE − market-rate manager compensation`
+```text
+www.shepi.ai/limit-use            14 impressions / 90d
+www.shepi.ai/blog                  2
+www.shepi.ai/terms-of-service      3   (now /terms)
+www.shepi.ai/resources             8   (www variant)
+shepi.ai/#features                14   (legacy SPA anchor)
+shepi.ai/#how-it-works            14
+shepi.ai/#our-story               14
+shepi.ai/#contact                  2
+```
 
-**3. Why this matters (the trap)**
-Concrete worked example a novice can follow:
-- Broker lists business at "4× SDE of $500K = $2.0M asking"
-- Owner pays themselves $150K; market-rate GM would cost $120K
-- Adjusted EBITDA = $500K − $120K = $380K
-- At a 4× Adjusted EBITDA multiple → $1.52M, not $2.0M
-- **Lesson:** the "multiple" only means something attached to the right earnings number. Mixing them = overpaying.
+Hash-anchor URLs return the homepage HTML → Google reads "duplicate of /" → **Soft 404 (7)**. Dead paths return SPA fallback or 404 → **Soft 404** + **Not found (2)**. Counts line up exactly.
 
-**4. When SDE is the right number**
-- Owner-operator buyer (you'll run it full-time and take a paycheck)
-- Single-location Main Street businesses (typically <$1M earnings)
-- SBA 7(a) deals where the buyer is the operator
-- Broker-listed deals on BizBuySell, BizQuest, etc.
+### 3. 17 commercially-relevant pages have zero impressions in 90 days
 
-**5. When Adjusted EBITDA is the right number**
-- You'll hire a GM and not work in the business
-- Lower-middle-market deals (~$1M+ EBITDA)
-- PE, search fund (with equity partners), independent sponsor, family office
-- Lender underwriting beyond SBA — banks, mezz, unitranche
-- Any deal where multiple buyers are competing on a standardized metric
+Almost certainly the **Crawled-not-indexed (18)** + **Discovered-not-indexed (15)** buckets:
 
-**6. The conversion (step-by-step)**
-StepList walking through:
-1. Start with reported net income
-2. Add back interest, taxes, D&A → EBITDA
-3. Add back non-recurring + personal expenses → Adjusted EBITDA
-4. Add back owner's W-2 + benefits + payroll taxes → **SDE**
-5. To go SDE → Adjusted EBITDA: subtract market-rate replacement comp for the owner's role
+```text
+Money pages (3):  /quality-of-earnings-software, /quality-of-earnings-template,
+                  /quality-of-earnings-checklist
+Use cases (3):    /use-cases/accountants-cpa, /use-cases/lenders, /use-cases/pe-firms
+Features (1):     /features/ebitda-automation
+Guides (10):      /guides/ai-accounting-anomaly-detection,
+                  /guides/ai-wont-do-your-qoe,
+                  /guides/due-diligence-checklist,
+                  /guides/earnings-manipulation-signs,
+                  /guides/ebitda-bridge,
+                  /guides/financial-red-flags,
+                  /guides/general-ledger-review,
+                  /guides/personal-expense-detection,
+                  /guides/sellers-discretionary-earnings  (just rewritten — needs reindex)
+                  /guides/working-capital-analysis
+Marketing (3):    /demo, /for-ai-agents, /scope
+Legal (5):        /privacy, /terms, /cookies, /eula, /dpa  (fine to leave un-indexed)
+```
 
-Include a small "what counts as market-rate manager comp?" sub-section: BLS data, industry comp surveys, what the role actually does (GM vs technician vs absentee).
-
-**7. Common mistakes novice buyers make**
-- Comparing an SDE multiple to an Adjusted EBITDA multiple
-- Forgetting the owner's spouse / family member also on payroll
-- Using owner's current salary as the "replacement" (often under- or over-market)
-- Applying SDE to a business too large for one operator to run
-- Letting the broker pick which number to feature
-
-**8. Quick comparison table**
-ComparisonTable: SDE vs Adjusted EBITDA across — who uses it, deal size, buyer type, owner comp treatment, typical multiple range, lender acceptance.
-
-**9. FAQ (schema'd)**
-- Is SDE the same as cash flow?
-- Why do brokers prefer SDE?
-- Can a deal be priced on both?
-- Does Shepi produce SDE? *(Answer: Shepi produces Adjusted EBITDA — the institutional standard. SDE is derivable as a single line above.)*
-- What multiple should I pay on SDE vs Adjusted EBITDA?
-
-**10. Related resources**
-Links to: EBITDA Adjustments, Owner Compensation Normalization, EBITDA Bridge, QoE Report.
-
-**11. Soft CTA**
-"Shepi's QoE workflow normalizes to Adjusted EBITDA — the number lenders and institutional buyers underwrite. If a broker handed you an SDE figure, [start a deal] to see what it converts to."
+Legal exclusion is correct. The 17 commercial URLs are the painful ones.
 
 ---
 
-## Voice & tone
+## The sequenced fix ("all three, in that order" — plus a STEP 4)
 
-- Novice-friendly: assume the reader has never bought a business before
-- No jargon without immediate definition
-- Worked numeric examples over abstract definitions
-- "You" / "the buyer" — second person
-- One opinion stated clearly: **the number that matters is the one your capital stack underwrites to**
+### STEP 1 — Kill host duplication (root cause for ~half the report)
+
+Highest leverage. Done at DNS/hosting, not in code.
+
+- **a.** 301 `www.shepi.ai/*` → `https://shepi.ai/$1` via Cloudflare Bulk Redirect (your repo shows Cloudflare DNS → Vercel). I'll write the exact rule + dashboard click-path.
+- **b.** Set `shepi.ai` as **Primary** in Lovable Project Settings → Domains. Lovable then auto-301s the `.lovable.app` URL.
+- **c.** Delete the www sitemap submission via the GSC API (one call, I have the connection).
+- **d.** Submit removal requests for the 8 dead URLs in GSC → Removals (manual; API doesn't expose it).
+
+**Expected impact:** Soft 404 (7) + Not found (2) + Page with redirect (1) + Duplicate (1) + Alternate (2) ≈ 13 of 33 problem URLs resolve once Google recrawls (2–6 weeks).
+
+### STEP 2 — Audit the 17 un-indexed commercial pages
+
+Read all 17 side-by-side, score each against the SDE rewrite template (bridge intent, novice framing, distinctive H1, worked example, FAQ schema). Output is one table:
+
+```text
+Page                              Verdict                     Action
+/guides/ebitda-bridge             ?                           ?
+/use-cases/pe-firms               ?                           ?
+/quality-of-earnings-software     ?                           ?
+... (17 rows)
+```
+
+Verdicts: **OK (just needs links)** / **Thin (expand)** / **Duplicative of X (reframe)** / **Wrong intent (rewrite)**. Output is a **prioritized rewrite list**; actual rewrites happen in follow-up plans, one page at a time.
+
+### STEP 3 — Fix internal linking for orphaned pages
+
+For each of the 17, check linkage from `/`, `/resources`, sibling guides, and main nav. Output: orphan score per page + a concrete batch of internal-link additions, then implement them in one PR.
+
+### STEP 4 — Re-request indexing
+
+After STEPS 1–3 ship, manually request indexing on the 17 commercial pages via GSC URL Inspection (10/day quota).
 
 ---
 
-## Technical implementation
+## Why this order
 
-- File: `src/pages/guides/SellersDiscretionaryEarnings.tsx` (recreate the deleted page)
-- Use existing `ContentPageLayout` + `src/components/content/*` primitives (HeroCallout, StepList, ComparisonTable, BenefitGrid, AccordionFAQ, RelatedResourceCards) — same pattern as `RunRateEBITDA.tsx`
-- TOC anchors for each H2
-- JSON-LD: `Article` + `FAQPage` schema
-- SEO title targets "seller's discretionary earnings vs ebitda" (bridge intent), not the generic "what is SDE" head term
-- Re-add route to `src/App.tsx` and the entry to `src/pages/Resources.tsx` + `public/sitemap.xml`
-- Internal links from `EBITDAAdjustments` and `OwnerCompensationNormalization` pages back to this one (reciprocal anchor)
-
----
+Rewriting 17 pages while three hostnames compete for canonical wastes the work. STEP 1 = hygiene. STEP 2 = uniqueness. STEP 3 = link equity. STEP 4 = nudge Google. Out of order, each step is partly wasted.
 
 ## Out of scope
 
-- No claim that Shepi produces SDE as a primary deliverable
-- No SDE calculator widget (separate scope if we want it later)
-- No homepage copy changes — this guide stands alone
-- No Semrush volume check before writing (we already decided the bridge angle is right regardless of volume; this is topical-authority + buyer-education content)
+- Actual page rewrites (separate plans, one per page, after the audit)
+- Migrating canonical away from shepi.ai
+- Touching `/dashboard`, `/auth` (correct `noindex`)
+- New content (STEP 2 may surface gaps, addressed separately)
+
+---
+
+## Two confirmations before STEP 1
+
+1. **Cloudflare access** — ready? If yes, I'll write the exact Bulk Redirect rule + click-path.
+2. **shepi-ai-usa.lovable.app** — 301 to shepi.ai (recommended) or keep reachable as a preview URL?
