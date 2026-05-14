@@ -41,7 +41,7 @@ const sections = [
       { to: "/guides/can-ai-replace-qoe", label: "Can AI Replace a QoE Report?", description: "Honest assessment of AI capabilities and limitations in Quality of Earnings analysis." },
       { to: "/guides/ai-accounting-anomaly-detection", label: "How AI Detects Accounting Anomalies", description: "Detection techniques, practical examples, and how AI-powered GL review compares to manual analysis." },
       { to: "/guides/earnings-manipulation-signs", label: "Signs of Earnings Manipulation", description: "Revenue manipulation, expense timing, balance sheet signals, and GL-level indicators in M&A." },
-      { to: "/guides/sellers-discretionary-earnings", label: "Seller's Discretionary Earnings (SDE)", description: "What SDE is, the formula, common add-backs, SDE vs EBITDA, and typical small-business valuation multiples." },
+      { to: "/guides/sellers-discretionary-earnings", label: "SDE vs Adjusted EBITDA", description: "A novice buyer's guide: what each number means, when to use it, how to convert between them, and why mixing them up is the most expensive mistake in small-business M&A." },
     ],
   },
   {

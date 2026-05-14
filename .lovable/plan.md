@@ -1,80 +1,103 @@
-## The honest starting point
+## Goal
 
-Per Semrush, shepi.ai currently ranks for **1 keyword** ("normalizing ebitda", position 64) and gets ~0 organic traffic. The site has been live but essentially invisible. The good news: the content depth is already there (35+ guides, features, use-case, and compare pages). The problem is **discoverability**, not content volume.
+Rewrite `/guides/sellers-discretionary-earnings` as a **bridge page** that teaches a novice buyer the difference between SDE and Adjusted EBITDA, when each applies, and how to convert between them — so they don't get fooled by a broker quoting one number when the deal really trades on the other.
 
-Two critical findings:
+The page is positioned as education, not as "Shepi produces SDE." Shepi produces Adjusted EBITDA; SDE is the number many novice buyers *arrive* with (from broker CIMs, BizBuySell listings, etc.) and need to translate.
 
-1. **"quality of earnings software" has 0 search volume.** Buyers don't search for the category we're inventing. We have to rank for the *problems* searchers already type.
-2. **Real demand lives in adjacent terms** (US, monthly volume, keyword difficulty):
+---
 
-| Keyword | Volume | KDI | Notes |
-|---|---|---|---|
-| quality of earnings | 1,600 | 30 (possible) | The big one |
-| quality of earnings report | 720 | 27 (easy) | Money page target |
-| seller's discretionary earnings | 1,000 | 16 (easy) | SMB acquirer's #1 metric — we have no page |
-| qoe report | 140 | 17 (easy) | Easy win |
-| ebitda adjustments | 210 | 10 (very easy) | We rank #64 already |
-| sde calculator | 70 | 5 (very easy) | Interactive tool, backlink magnet |
-| buying a small business | 880 | 31 | Top-of-funnel |
+## Page structure (top to bottom)
 
-## Plan: 4 workstreams
+**1. Hero / one-line frame**
+> "Brokers quote SDE. Lenders and PE buyers underwrite to Adjusted EBITDA. They are not the same number — and the gap is usually the owner's paycheck."
 
-### 1. Foundation fixes (do first — unblocks indexing)
+**2. The 30-second answer (callout box)**
+A two-column visual:
+- **SDE** = what the business earns *for an owner-operator* (includes one owner's salary as part of the return)
+- **Adjusted EBITDA** = what the business earns *as a standalone asset* (owner replaced with a market-rate manager)
+- **The bridge:** `Adjusted EBITDA = SDE − market-rate manager compensation`
 
-- **Submit sitemap to Google Search Console.** Verification meta tag is already deployed; finish GSC setup, submit `https://shepi.ai/sitemap.xml`, request indexing on the 8–10 highest-priority URLs.
-- **Submit to Bing Webmaster Tools** (powers ChatGPT search, DuckDuckGo, Copilot).
-- **Audit sitemap coverage.** Static `public/sitemap.xml` is generated from `scripts/generate-discovery.ts`. Verify every page is listed and `lastmod` is current.
-- **Add JSON-LD structured data** sitewide:
-  - `Organization` + `SoftwareApplication` on home
-  - `FAQPage` on the homepage FAQ (already exists in `src/data/homepageFaq.ts`)
-  - `Article` on every `/guides/*` page
-  - `BreadcrumbList` on deep pages (hook `useBreadcrumbJsonLd` already exists — apply it consistently)
-- **Internal linking pass.** Most guides are orphaned from each other. Add a "Related guides" block at the bottom of every guide (the `RelatedResourceCards` component already exists) and contextual links between related topics. This is usually the single highest-leverage move for content-rich sites with no rankings.
+**3. Why this matters (the trap)**
+Concrete worked example a novice can follow:
+- Broker lists business at "4× SDE of $500K = $2.0M asking"
+- Owner pays themselves $150K; market-rate GM would cost $120K
+- Adjusted EBITDA = $500K − $120K = $380K
+- At a 4× Adjusted EBITDA multiple → $1.52M, not $2.0M
+- **Lesson:** the "multiple" only means something attached to the right earnings number. Mixing them = overpaying.
 
-### 2. Re-target existing pages to keywords that actually exist
+**4. When SDE is the right number**
+- Owner-operator buyer (you'll run it full-time and take a paycheck)
+- Single-location Main Street businesses (typically <$1M earnings)
+- SBA 7(a) deals where the buyer is the operator
+- Broker-listed deals on BizBuySell, BizQuest, etc.
 
-Rewrite titles, H1s, and intros only — no content changes:
+**5. When Adjusted EBITDA is the right number**
+- You'll hire a GM and not work in the business
+- Lower-middle-market deals (~$1M+ EBITDA)
+- PE, search fund (with equity partners), independent sponsor, family office
+- Lender underwriting beyond SBA — banks, mezz, unitranche
+- Any deal where multiple buyers are competing on a standardized metric
 
-| Page | New primary keyword | Volume |
-|---|---|---|
-| `/features/qoe-software` | "quality of earnings report" + "qoe report" | 720 + 140 |
-| `/guides/quality-of-earnings` | "quality of earnings" | 1,600 |
-| `/guides/qoe-report-template` | "quality of earnings report template" | long-tail |
-| `/guides/ebitda-adjustments` | push existing #64 ranking with stronger internal links | 210 |
-| `/quality-of-earnings-cost` | "how much does a quality of earnings cost" | long-tail high-intent |
-| `/guides/sell-side-vs-buy-side-qoe` | "buy side qoe" / "sell side qoe" | bottom-funnel |
+**6. The conversion (step-by-step)**
+StepList walking through:
+1. Start with reported net income
+2. Add back interest, taxes, D&A → EBITDA
+3. Add back non-recurring + personal expenses → Adjusted EBITDA
+4. Add back owner's W-2 + benefits + payroll taxes → **SDE**
+5. To go SDE → Adjusted EBITDA: subtract market-rate replacement comp for the owner's role
 
-### 3. New pages to fill demand gaps
+Include a small "what counts as market-rate manager comp?" sub-section: BLS data, industry comp surveys, what the role actually does (GM vs technician vs absentee).
 
-- **`/guides/sellers-discretionary-earnings`** — targets SDE (1,000/mo, easy). The SMB acquirer's #1 metric and we have no page on it.
-- **`/tools/sde-calculator`** — interactive calculator. Becomes a natural backlink magnet on r/sweatystartup, BizBuySell forums, etc.
-- **`/tools/ebitda-adjustments-calculator`** — same playbook applied to our existing #64 keyword.
-- **`/guides/buying-a-small-business-due-diligence`** — top-of-funnel capture for the 880/mo audience; funnels into the QoE pages.
-- **`/guides/sba-loan-due-diligence`** — SBA buyers are a huge slice of self-funded searchers; almost no competition.
+**7. Common mistakes novice buyers make**
+- Comparing an SDE multiple to an Adjusted EBITDA multiple
+- Forgetting the owner's spouse / family member also on payroll
+- Using owner's current salary as the "replacement" (often under- or over-market)
+- Applying SDE to a business too large for one operator to run
+- Letting the broker pick which number to feature
 
-### 4. AI answer-engine optimization (AEO)
+**8. Quick comparison table**
+ComparisonTable: SDE vs Adjusted EBITDA across — who uses it, deal size, buyer type, owner comp treatment, typical multiple range, lender acceptance.
 
-We have `llms.txt`, `llms-full.txt`, `agent.json`, `ai-plugin.json`, `mcp.json`, `openapi.json`, `/for-ai-agents` — strong baseline. To actually get cited:
+**9. FAQ (schema'd)**
+- Is SDE the same as cash flow?
+- Why do brokers prefer SDE?
+- Can a deal be priced on both?
+- Does Shepi produce SDE? *(Answer: Shepi produces Adjusted EBITDA — the institutional standard. SDE is derivable as a single line above.)*
+- What multiple should I pay on SDE vs Adjusted EBITDA?
 
-- **Expand `llms-full.txt`** to include canonical Q&A from every guide (regenerated via `scripts/generate-discovery.ts`).
-- **Add an "Answer block"** to the top of every guide — 2–3 sentence direct answer, then long-form below. This is what LLMs pull into citations.
-- **FAQPage schema on every guide** with 5–8 questions specific to that topic.
-- **External citations.** LLMs lean on Reddit (r/SmallBusiness, r/Entrepreneur, r/sweatystartup, r/businessbroker), G2/Capterra, Hacker News. Plan: one genuinely useful post per week on those forums; never spam.
-- **Submit to directories LLMs scrape**: G2, Capterra, Product Hunt, AlternativeTo, There's An AI For That.
+**10. Related resources**
+Links to: EBITDA Adjustments, Owner Compensation Normalization, EBITDA Bridge, QoE Report.
 
-## What I need from you to start building
+**11. Soft CTA**
+"Shepi's QoE workflow normalizes to Adjusted EBITDA — the number lenders and institutional buyers underwrite. If a broker handed you an SDE figure, [start a deal] to see what it converts to."
 
-1. **Canonical domain confirmation.** Sitemap and JSON-LD use `shepi.ai`. Keeping that.
-2. **Google Search Console access.** Verification meta tag is already deployed. I can submit the sitemap via the GSC connector once you confirm.
-3. **Green light on the new pages and tools** in workstream 3 — those are real build work (~5 pages + 2 calculators).
+---
 
-## Suggested order
+## Voice & tone
 
-1. **Week 1:** Workstream 1 (foundations + JSON-LD + internal links + GSC/Bing submission). High leverage, low effort, unblocks everything else.
-2. **Week 2:** Workstream 2 (rewrite existing pages for real keywords). Re-uses content we already have.
-3. **Weeks 3–4:** Workstream 3 (new pages + calculators). The SDE calculator is the highest-ROI single asset.
-4. **Ongoing:** Workstream 4 (AEO + external citations). Compounds over months.
+- Novice-friendly: assume the reader has never bought a business before
+- No jargon without immediate definition
+- Worked numeric examples over abstract definitions
+- "You" / "the buyer" — second person
+- One opinion stated clearly: **the number that matters is the one your capital stack underwrites to**
 
-Realistic timeline: meaningful Google traffic in 2–4 months; AI answer-engine citations earlier (4–8 weeks) because LLMs reindex faster than Google ranks.
+---
 
-Approve and I'll start with workstream 1.
+## Technical implementation
+
+- File: `src/pages/guides/SellersDiscretionaryEarnings.tsx` (recreate the deleted page)
+- Use existing `ContentPageLayout` + `src/components/content/*` primitives (HeroCallout, StepList, ComparisonTable, BenefitGrid, AccordionFAQ, RelatedResourceCards) — same pattern as `RunRateEBITDA.tsx`
+- TOC anchors for each H2
+- JSON-LD: `Article` + `FAQPage` schema
+- SEO title targets "seller's discretionary earnings vs ebitda" (bridge intent), not the generic "what is SDE" head term
+- Re-add route to `src/App.tsx` and the entry to `src/pages/Resources.tsx` + `public/sitemap.xml`
+- Internal links from `EBITDAAdjustments` and `OwnerCompensationNormalization` pages back to this one (reciprocal anchor)
+
+---
+
+## Out of scope
+
+- No claim that Shepi produces SDE as a primary deliverable
+- No SDE calculator widget (separate scope if we want it later)
+- No homepage copy changes — this guide stands alone
+- No Semrush volume check before writing (we already decided the bridge angle is right regardless of volume; this is topical-authority + buyer-education content)
