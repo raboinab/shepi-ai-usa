@@ -1,108 +1,61 @@
-## What GSC actually shows (pulled live from your Search Console)
+## STEP 2 — Scored audit of the 17 un-indexed commercial pages
 
-Three findings explain almost the entire "Why pages aren't indexed" report.
+### Headline finding (read this first)
 
-### 1. Three live hostnames serving the same content, no canonical host
+- **GSC, last 90 days: 0 pages on shepi.ai received any impressions.** The "17 un-indexed" framing understates the problem — the entire site is functionally invisible to Google right now. Until STEP 1 (canonical host, sitemap, removals) propagates, no rewrite ranks. This audit is the queue to execute *as* indexing comes back online.
+- **Semrush: only `/guides/ebitda-adjustments` ranks at all** — position 64 for "normalizing ebitda". Everything else: zero.
+- **Several existing slugs target keywords with literally 0 search volume** ("qoe software", "qoe template"). No on-page work fixes a page nobody searches for — slug/intent must change.
 
-- `https://shepi.ai/` → 200 ✓
-- `https://www.shepi.ai/` → 200 (NOT redirected to apex) ✗
-- `https://shepi-ai-usa.lovable.app/` → 200 (NOT redirected) ✗
+### The 17 pages — scored
 
-**Two sitemaps are submitted to GSC** — `shepi.ai/sitemap.xml` AND `www.shepi.ai/sitemap.xml`. Google indexes www and apex variants of every page, then forces itself to pick a canonical, sending the loser to the **Duplicate without canonical (1)** and **Alternate page with proper canonical (2)** buckets. The lone **Page with redirect (1)** is the same root cause.
+Score logic: `volume × intent_fit ÷ difficulty`. Verdict explains what to do, not just what's wrong.
 
-### 2. Legacy URLs Google still has indexed that no longer exist
+| # | Page | Best target keyword | Vol/mo | KDI | Verdict | Priority |
+|---|---|---|---|---|---|---|
+| 1 | /quality-of-earnings-software | qoe software | 0 | — | **REPOSITION** → "quality of earnings analysis" (390/mo, KDI 22). Keep slug, rewrite H1 + intro. | P2 |
+| 2 | /quality-of-earnings-template | qoe template | 0 | — | **REPOSITION** → "quality of earnings report" (720/mo, KDI 27). Pivot from template-bait to "what a QoE report contains" + sample preview. | P3 |
+| 3 | /quality-of-earnings-checklist | qoe checklist | **70** | **9** | **KEEP & REWRITE** — best ROI on the site. Apply SDE template: clear H1, downloadable list, FAQ schema, 8-12 internal links. | **P1** |
+| 4 | /use-cases/accountants-cpa | qoe for accountants | 0 | — | **REPOSITION** → "white label qoe" / "qoe for cpa firms" — verify volume first via keyword_research. | P7 |
+| 5 | /use-cases/lenders | qoe for lenders | 0 | — | **REPOSITION** → "sba quality of earnings" or "lender due diligence" — verify volume. | P8 |
+| 6 | /use-cases/pe-firms | qoe for pe | 0 | — | **REPOSITION** → "private equity due diligence software" — verify volume. | P9 |
+| 7 | /features/ebitda-automation | ebitda automation | 0 | — | **REPOSITION** → "ebitda adjustments" (210/mo, KDI 10) or "ebitda normalization" (110/mo, KDI 0). Both winnable. | **P4** |
+| 8 | /guides/ai-accounting-anomaly-detection | ai accounting anomaly | — | — | **THIN — expand**. Long-tail informational; ride coattails of "ai due diligence". Keep, add depth + internal links. | P10 |
+| 9 | /guides/ai-wont-do-your-qoe | (opinion piece) | — | — | **OK — link-build**. Strong POV, no kw target. Promote internally + on LinkedIn, don't rewrite. | P15 |
+| 10 | /guides/due-diligence-checklist | due diligence checklist | **1,300** | **35** | **KEEP & REWRITE** — second-highest ceiling. KDI 35 is competitive but doable with depth + downloadable. SERP analysis required first. | **P5** |
+| 11 | /guides/earnings-manipulation-signs | earnings manipulation | — | — | **THIN — expand**. Editorial-style topic; wins on freshness + examples. Add 3-5 case patterns. | P11 |
+| 12 | /guides/ebitda-bridge | ebitda bridge | **260** | **11** | **KEEP & REWRITE** — clean kw, low difficulty, decent volume. Worked example + downloadable bridge template. | **P6** |
+| 13 | /guides/financial-red-flags | financial red flags | — | — | **THIN — expand**. Listicle format; ride "financial statement red flags" long tail. | P12 |
+| 14 | /guides/general-ledger-review | general ledger review | — | — | **THIN — expand**. Informational; pair with download. | P13 |
+| 15 | /guides/personal-expense-detection | personal expenses business | 0 | — | **REPOSITION** → "owner personal expenses tax deductible" or similar — needs research. | P14 |
+| 16 | /guides/sellers-discretionary-earnings | seller's discretionary earnings | **1,000** | **16** | **JUST REWRITTEN — request reindex only**. No further work needed; this is the SDE template that informs the others. | (already done) |
+| 17 | /guides/working-capital-analysis | working capital analysis | **170** | **31** | **KEEP — light polish**. Decent kw but KDI mid. Add worked example + 5 internal links. | P16 |
 
-```text
-www.shepi.ai/limit-use            14 impressions / 90d
-www.shepi.ai/blog                  2
-www.shepi.ai/terms-of-service      3   (now /terms)
-www.shepi.ai/resources             8   (www variant)
-shepi.ai/#features                14   (legacy SPA anchor)
-shepi.ai/#how-it-works            14
-shepi.ai/#our-story               14
-shepi.ai/#contact                  2
-```
+### Prioritized rewrite queue (top 6 — execute in order)
 
-Hash-anchor URLs return the homepage HTML → Google reads "duplicate of /" → **Soft 404 (7)**. Dead paths return SPA fallback or 404 → **Soft 404** + **Not found (2)**. Counts line up exactly.
+1. **P1 — /quality-of-earnings-checklist** — 70/mo, KDI 9. Cleanest win on the site. Slug correct.
+2. **P2 — /quality-of-earnings-software → "quality of earnings analysis"** — 390/mo, KDI 22.
+3. **P3 — /quality-of-earnings-template → "quality of earnings report"** — 720/mo, KDI 27. Slug change + 301.
+4. **P4 — /features/ebitda-automation → "ebitda adjustments"** — 210/mo, KDI 10. Repurpose existing page.
+5. **P5 — /guides/due-diligence-checklist** — 1,300/mo, KDI 35. Highest volume, hardest fight.
+6. **P6 — /guides/ebitda-bridge** — 260/mo, KDI 11. Clean win, fast.
 
-### 3. 17 commercially-relevant pages have zero impressions in 90 days
+P7–P16 are batch-2 work — most need keyword research before commit (the use-case pages especially).
 
-Almost certainly the **Crawled-not-indexed (18)** + **Discovered-not-indexed (15)** buckets:
+### Cumulative addressable demand from the top 6
 
-```text
-Money pages (3):  /quality-of-earnings-software, /quality-of-earnings-template,
-                  /quality-of-earnings-checklist
-Use cases (3):    /use-cases/accountants-cpa, /use-cases/lenders, /use-cases/pe-firms
-Features (1):     /features/ebitda-automation
-Guides (10):      /guides/ai-accounting-anomaly-detection,
-                  /guides/ai-wont-do-your-qoe,
-                  /guides/due-diligence-checklist,
-                  /guides/earnings-manipulation-signs,
-                  /guides/ebitda-bridge,
-                  /guides/financial-red-flags,
-                  /guides/general-ledger-review,
-                  /guides/personal-expense-detection,
-                  /guides/sellers-discretionary-earnings  (just rewritten — needs reindex)
-                  /guides/working-capital-analysis
-Marketing (3):    /demo, /for-ai-agents, /scope
-Legal (5):        /privacy, /terms, /cookies, /eula, /dpa  (fine to leave un-indexed)
-```
+~3,480 monthly searches once these rank (today: 0). Realistic 12-month capture with proper rewrites + STEP 1 hygiene fixed: 15-25% of that = **~600-870 organic visits/month** from these six pages alone.
 
-Legal exclusion is correct. The 17 commercial URLs are the painful ones.
+### What I need from you
 
----
+1. **Confirm the queue order** — particularly that P5 (due diligence checklist) is worth the heavier lift before P6.
+2. **Use-cases pages** — choose the path:
+   - **(a)** Repurpose each into the closest real keyword (research per page, ~30 min each)
+   - **(b)** Demote to nav-only / no-index, freeing crawl budget for pages that can rank
 
-## The sequenced fix ("all three, in that order" — plus a STEP 4)
+Once you confirm, I'll start P1: run `serp_analysis` on "quality of earnings checklist", read the current page, and come back with a proposed rewrite for your approval before any code changes.
 
-### STEP 1 — Kill host duplication (root cause for ~half the report)
+### Out of scope (separate plans)
 
-Highest leverage. Done at DNS/hosting, not in code.
-
-- **a.** 301 `www.shepi.ai/*` → `https://shepi.ai/$1` via Cloudflare Bulk Redirect (your repo shows Cloudflare DNS → Vercel). I'll write the exact rule + dashboard click-path.
-- **b.** Set `shepi.ai` as **Primary** in Lovable Project Settings → Domains. Lovable then auto-301s the `.lovable.app` URL.
-- **c.** Delete the www sitemap submission via the GSC API (one call, I have the connection).
-- **d.** Submit removal requests for the 8 dead URLs in GSC → Removals (manual; API doesn't expose it).
-
-**Expected impact:** Soft 404 (7) + Not found (2) + Page with redirect (1) + Duplicate (1) + Alternate (2) ≈ 13 of 33 problem URLs resolve once Google recrawls (2–6 weeks).
-
-### STEP 2 — Audit the 17 un-indexed commercial pages
-
-Read all 17 side-by-side, score each against the SDE rewrite template (bridge intent, novice framing, distinctive H1, worked example, FAQ schema). Output is one table:
-
-```text
-Page                              Verdict                     Action
-/guides/ebitda-bridge             ?                           ?
-/use-cases/pe-firms               ?                           ?
-/quality-of-earnings-software     ?                           ?
-... (17 rows)
-```
-
-Verdicts: **OK (just needs links)** / **Thin (expand)** / **Duplicative of X (reframe)** / **Wrong intent (rewrite)**. Output is a **prioritized rewrite list**; actual rewrites happen in follow-up plans, one page at a time.
-
-### STEP 3 — Fix internal linking for orphaned pages
-
-For each of the 17, check linkage from `/`, `/resources`, sibling guides, and main nav. Output: orphan score per page + a concrete batch of internal-link additions, then implement them in one PR.
-
-### STEP 4 — Re-request indexing
-
-After STEPS 1–3 ship, manually request indexing on the 17 commercial pages via GSC URL Inspection (10/day quota).
-
----
-
-## Why this order
-
-Rewriting 17 pages while three hostnames compete for canonical wastes the work. STEP 1 = hygiene. STEP 2 = uniqueness. STEP 3 = link equity. STEP 4 = nudge Google. Out of order, each step is partly wasted.
-
-## Out of scope
-
-- Actual page rewrites (separate plans, one per page, after the audit)
-- Migrating canonical away from shepi.ai
-- Touching `/dashboard`, `/auth` (correct `noindex`)
-- New content (STEP 2 may surface gaps, addressed separately)
-
----
-
-## Two confirmations before STEP 1
-
-1. **Cloudflare access** — ready? If yes, I'll write the exact Bulk Redirect rule + click-path.
-2. **shepi-ai-usa.lovable.app** — 301 to shepi.ai (recommended) or keep reachable as a preview URL?
+- Actual page rewrites (one plan per page, after you approve this queue)
+- STEP 3 internal-linking work (depends on which pages survive STEP 2)
+- STEP 4 reindex requests (last; after STEPS 1–3 land)
