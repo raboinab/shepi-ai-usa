@@ -195,9 +195,9 @@ async function main() {
     }
     for (const item of s.items) {
       ensureSpace(18);
-      // Checkbox
+      // Checkbox aligned with text baseline (text x-height)
       page.drawRectangle({
-        x: MARGIN_X, y: y - 9, width: 9, height: 9,
+        x: MARGIN_X, y: y - 1, width: 9, height: 9,
         borderColor: NAVY, borderWidth: 0.8,
       });
       y = wrapText(page, item, MARGIN_X + 16, y, W - 2 * MARGIN_X - 16, 10.5, helv, TEXT, 14);
