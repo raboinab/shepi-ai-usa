@@ -1,61 +1,52 @@
-## STEP 2 — Scored audit of the 17 un-indexed commercial pages
+## Plan: P1 rewrite — `/quality-of-earnings-checklist`
 
-### Headline finding (read this first)
+Target keyword: **"quality of earnings checklist"** (vol 70/mo, KDI 9). Ship 7 on-page fixes + a static, downloadable PDF.
 
-- **GSC, last 90 days: 0 pages on shepi.ai received any impressions.** The "17 un-indexed" framing understates the problem — the entire site is functionally invisible to Google right now. Until STEP 1 (canonical host, sitemap, removals) propagates, no rewrite ranks. This audit is the queue to execute *as* indexing comes back online.
-- **Semrush: only `/guides/ebitda-adjustments` ranks at all** — position 64 for "normalizing ebitda". Everything else: zero.
-- **Several existing slugs target keywords with literally 0 search volume** ("qoe software", "qoe template"). No on-page work fixes a page nobody searches for — slug/intent must change.
+### File changes
 
-### The 17 pages — scored
+**1. `src/pages/QualityOfEarningsChecklist.tsx`** — single edit, presentation-only.
 
-Score logic: `volume × intent_fit ÷ difficulty`. Verdict explains what to do, not just what's wrong.
+- **SEO title** → `Quality of Earnings Checklist: 8-Section M&A Due Diligence Guide (2026) | Shepi`
+- **Meta description** (≤160 chars, leads with keyword + verb) →
+  `Free Quality of Earnings checklist covering data request, revenue, EBITDA, working capital, proof of cash & deliverables. Download the 8-section PDF.`
+- **Featured-snippet intro** — new 60–80 word paragraph above §1 (under the HeroCallout/StatRow), defining what a QoE checklist is and what the 8 sections cover. Targets the "what is on a QoE checklist?" PAA.
+- **"Last updated: February 2026"** line under H1 (use `publishedDate` prop on `ContentPageLayout`, matching `WorkingCapitalAnalysis.tsx` pattern).
+- **5 new internal links** woven into existing section copy (no layout change):
+  - §2 Revenue → `/guides/customer-concentration-risk`
+  - §3 EBITDA → `/guides/owner-compensation-normalization` (alongside the existing ebitda-adjustments link)
+  - §4 Working Capital → `/guides/working-capital-analysis`
+  - §5 Proof of Cash → `/guides/cash-proof-analysis`
+  - §8 Deliverables → `/guides/ebitda-bridge`
+- **Expanded section blurbs** — add a 1–2 sentence intro paragraph above each of the 8 H2s that currently jumps straight to the list/grid (raises word count from ~600 → ~1,400, matches competitor depth).
+- **Download CTA block** — new component-free section after intro: prominent button linking to `/qoe-checklist.pdf` with `download` attribute. Mirror StatRow visual weight.
+- **JSON-LD** — extend existing `faqSchema` to also emit an `Article` schema (headline, datePublished `2026-02-23`, dateModified, author Shepi) like `WorkingCapitalAnalysis.tsx` does.
 
-| # | Page | Best target keyword | Vol/mo | KDI | Verdict | Priority |
-|---|---|---|---|---|---|---|
-| 1 | /quality-of-earnings-software | qoe software | 0 | — | **REPOSITION** → "quality of earnings analysis" (390/mo, KDI 22). Keep slug, rewrite H1 + intro. | P2 |
-| 2 | /quality-of-earnings-template | qoe template | 0 | — | **REPOSITION** → "quality of earnings report" (720/mo, KDI 27). Pivot from template-bait to "what a QoE report contains" + sample preview. | P3 |
-| 3 | /quality-of-earnings-checklist | qoe checklist | **70** | **9** | **KEEP & REWRITE** — best ROI on the site. Apply SDE template: clear H1, downloadable list, FAQ schema, 8-12 internal links. | **P1** |
-| 4 | /use-cases/accountants-cpa | qoe for accountants | 0 | — | **REPOSITION** → "white label qoe" / "qoe for cpa firms" — verify volume first via keyword_research. | P7 |
-| 5 | /use-cases/lenders | qoe for lenders | 0 | — | **REPOSITION** → "sba quality of earnings" or "lender due diligence" — verify volume. | P8 |
-| 6 | /use-cases/pe-firms | qoe for pe | 0 | — | **REPOSITION** → "private equity due diligence software" — verify volume. | P9 |
-| 7 | /features/ebitda-automation | ebitda automation | 0 | — | **REPOSITION** → "ebitda adjustments" (210/mo, KDI 10) or "ebitda normalization" (110/mo, KDI 0). Both winnable. | **P4** |
-| 8 | /guides/ai-accounting-anomaly-detection | ai accounting anomaly | — | — | **THIN — expand**. Long-tail informational; ride coattails of "ai due diligence". Keep, add depth + internal links. | P10 |
-| 9 | /guides/ai-wont-do-your-qoe | (opinion piece) | — | — | **OK — link-build**. Strong POV, no kw target. Promote internally + on LinkedIn, don't rewrite. | P15 |
-| 10 | /guides/due-diligence-checklist | due diligence checklist | **1,300** | **35** | **KEEP & REWRITE** — second-highest ceiling. KDI 35 is competitive but doable with depth + downloadable. SERP analysis required first. | **P5** |
-| 11 | /guides/earnings-manipulation-signs | earnings manipulation | — | — | **THIN — expand**. Editorial-style topic; wins on freshness + examples. Add 3-5 case patterns. | P11 |
-| 12 | /guides/ebitda-bridge | ebitda bridge | **260** | **11** | **KEEP & REWRITE** — clean kw, low difficulty, decent volume. Worked example + downloadable bridge template. | **P6** |
-| 13 | /guides/financial-red-flags | financial red flags | — | — | **THIN — expand**. Listicle format; ride "financial statement red flags" long tail. | P12 |
-| 14 | /guides/general-ledger-review | general ledger review | — | — | **THIN — expand**. Informational; pair with download. | P13 |
-| 15 | /guides/personal-expense-detection | personal expenses business | 0 | — | **REPOSITION** → "owner personal expenses tax deductible" or similar — needs research. | P14 |
-| 16 | /guides/sellers-discretionary-earnings | seller's discretionary earnings | **1,000** | **16** | **JUST REWRITTEN — request reindex only**. No further work needed; this is the SDE template that informs the others. | (already done) |
-| 17 | /guides/working-capital-analysis | working capital analysis | **170** | **31** | **KEEP — light polish**. Decent kw but KDI mid. Add worked example + 5 internal links. | P16 |
+**2. `public/qoe-checklist.pdf`** — new static asset.
 
-### Prioritized rewrite queue (top 6 — execute in order)
+Generate one-time via a new script `scripts/generate-qoe-checklist-pdf.ts`:
+- Use `reportlab`-equivalent in TS: **`pdf-lib`** (already in deps via demo-pdf script) or **`@react-pdf/renderer`** (already used in `src/components/pdf-slides/`).
+- Recommended: minimal `pdf-lib` script that draws the 8 checklists as plain text + checkboxes — no React PDF runtime needed for a static handout.
+- Branded header: Shepi logo (`src/assets/shepi-dog.svg` rasterized) + title + "shepi.ai/quality-of-earnings-checklist" footer on every page.
+- Output ~3–4 pages, A4 + Letter compatible.
+- Run script once; commit `public/qoe-checklist.pdf`. Document regen command in script header.
 
-1. **P1 — /quality-of-earnings-checklist** — 70/mo, KDI 9. Cleanest win on the site. Slug correct.
-2. **P2 — /quality-of-earnings-software → "quality of earnings analysis"** — 390/mo, KDI 22.
-3. **P3 — /quality-of-earnings-template → "quality of earnings report"** — 720/mo, KDI 27. Slug change + 301.
-4. **P4 — /features/ebitda-automation → "ebitda adjustments"** — 210/mo, KDI 10. Repurpose existing page.
-5. **P5 — /guides/due-diligence-checklist** — 1,300/mo, KDI 35. Highest volume, hardest fight.
-6. **P6 — /guides/ebitda-bridge** — 260/mo, KDI 11. Clean win, fast.
+**3. `public/sitemap.xml`** — verify `/quality-of-earnings-checklist` entry has fresh `<lastmod>2026-02-23</lastmod>`. Update if stale.
 
-P7–P16 are batch-2 work — most need keyword research before commit (the use-case pages especially).
+### Out of scope (deferred)
 
-### Cumulative addressable demand from the top 6
+- Changing slug/URL (keep `/quality-of-earnings-checklist`, no redirect needed).
+- Other 16 pages in the queue — proceed to P2 (`/quality-of-earnings-software` reposition) only after this lands.
+- STEP 4 reindex request — happens after P1–P6 all land.
+- Print stylesheet (rejected in favor of static PDF).
 
-~3,480 monthly searches once these rank (today: 0). Realistic 12-month capture with proper rewrites + STEP 1 hygiene fixed: 15-25% of that = **~600-870 organic visits/month** from these six pages alone.
+### QA before declaring done
 
-### What I need from you
+1. `code--view` the rewritten page; confirm all 5 internal links resolve to existing route files.
+2. Generate the PDF, then convert page 1 to image with `pdftoppm` and visually inspect — confirm no clipped text, working logo, correct footer URL.
+3. Confirm the page renders in preview at `/quality-of-earnings-checklist` with the new title in the tab and download button visible.
 
-1. **Confirm the queue order** — particularly that P5 (due diligence checklist) is worth the heavier lift before P6.
-2. **Use-cases pages** — choose the path:
-   - **(a)** Repurpose each into the closest real keyword (research per page, ~30 min each)
-   - **(b)** Demote to nav-only / no-index, freeing crawl budget for pages that can rank
+### Technical notes
 
-Once you confirm, I'll start P1: run `serp_analysis` on "quality of earnings checklist", read the current page, and come back with a proposed rewrite for your approval before any code changes.
-
-### Out of scope (separate plans)
-
-- Actual page rewrites (one plan per page, after you approve this queue)
-- STEP 3 internal-linking work (depends on which pages survive STEP 2)
-- STEP 4 reindex requests (last; after STEPS 1–3 land)
+- `ContentPageLayout` already accepts `publishedDate` and `jsonLd` (array form supported per `WorkingCapitalAnalysis.tsx`) — no layout changes.
+- This codebase still uses React Router DOM + `useSEO`/`ContentPageLayout` for content pages (not TanStack `head()`), so SEO meta flows through the existing `seoTitle`/`seoDescription` props. Do not migrate to `head()` here.
+- PDF script will live alongside `scripts/generate-demo-workbook.ts` and follow the same `bun run scripts/...` invocation convention noted in project memory.
