@@ -1,52 +1,57 @@
-## Plan: P1 rewrite — `/quality-of-earnings-checklist`
+## What I found
 
-Target keyword: **"quality of earnings checklist"** (vol 70/mo, KDI 9). Ship 7 on-page fixes + a static, downloadable PDF.
+The current visible card is stale. The latest Supabase runs are not producing the `Unknown / $0 / Other: 76` result anymore.
 
-### File changes
+Latest `general_ledger_analysis` rows for the project:
 
-**1. `src/pages/QualityOfEarningsChecklist.tsx`** — single edit, presentation-only.
+```text
+2026-05-16 13:08  score 54, accounts 15, account types ASSET:9 / LIABILITY:5 / EQUITY:1
+2026-05-16 13:04  score 54, accounts 15, account types ASSET:9 / LIABILITY:5 / EQUITY:1
+2026-04-16 22:49  score 0,  accounts 76, account types Other:76, Unknown/$0 rows
+```
 
-- **SEO title** → `Quality of Earnings Checklist: 8-Section M&A Due Diligence Guide (2026) | Shepi`
-- **Meta description** (≤160 chars, leads with keyword + verb) →
-  `Free Quality of Earnings checklist covering data request, revenue, EBITDA, working capital, proof of cash & deliverables. Download the 8-section PDF.`
-- **Featured-snippet intro** — new 60–80 word paragraph above §1 (under the HeroCallout/StatRow), defining what a QoE checklist is and what the 8 sections cover. Targets the "what is on a QoE checklist?" PAA.
-- **"Last updated: February 2026"** line under H1 (use `publishedDate` prop on `ContentPageLayout`, matching `WorkingCapitalAnalysis.tsx` pattern).
-- **5 new internal links** woven into existing section copy (no layout change):
-  - §2 Revenue → `/guides/customer-concentration-risk`
-  - §3 EBITDA → `/guides/owner-compensation-normalization` (alongside the existing ebitda-adjustments link)
-  - §4 Working Capital → `/guides/working-capital-analysis`
-  - §5 Proof of Cash → `/guides/cash-proof-analysis`
-  - §8 Deliverables → `/guides/ebitda-bridge`
-- **Expanded section blurbs** — add a 1–2 sentence intro paragraph above each of the 8 H2s that currently jumps straight to the list/grid (raises word count from ~600 → ~1,400, matches competitor depth).
-- **Download CTA block** — new component-free section after intro: prominent button linking to `/qoe-checklist.pdf` with `download` attribute. Mirror StatRow visual weight.
-- **JSON-LD** — extend existing `faqSchema` to also emit an `Article` schema (headline, datePublished `2026-02-23`, dateModified, author Shepi) like `WorkingCapitalAnalysis.tsx` does.
+So: yes, auto-refresh should change the displayed values from the stale 0%/Unknown card to the newer 54%/15-account result.
 
-**2. `public/qoe-checklist.pdf`** — new static asset.
+## Why it still doesn’t make sense
 
-Generate one-time via a new script `scripts/generate-qoe-checklist-pdf.ts`:
-- Use `reportlab`-equivalent in TS: **`pdf-lib`** (already in deps via demo-pdf script) or **`@react-pdf/renderer`** (already used in `src/components/pdf-slides/`).
-- Recommended: minimal `pdf-lib` script that draws the 8 checklists as plain text + checkboxes — no React PDF runtime needed for a static handout.
-- Branded header: Shepi logo (`src/assets/shepi-dog.svg` rasterized) + title + "shepi.ai/quality-of-earnings-checklist" footer on every page.
-- Output ~3–4 pages, A4 + Letter compatible.
-- Run script once; commit `public/qoe-checklist.pdf`. Document regen command in script header.
+There is a second backend/data-quality issue in the latest “good” run: the GL parser/analysis is only using `source_type = general_ledger` rows in `canonical_transactions`, and the dataset appears capped/partial. The function logs show 15 accounts and the stored result has only 1,000 transactions in the summary, while direct canonical data shows more GL rows and many income/expense accounts.
 
-**3. `public/sitemap.xml`** — verify `/quality-of-earnings-checklist` entry has fresh `<lastmod>2026-02-23</lastmod>`. Update if stale.
+That means there are two fixes:
 
-### Out of scope (deferred)
+1. **UI refresh bug**: the card can keep showing the old April row after re-run.
+2. **Analysis completeness bug**: the latest run is better than April, but may still be incomplete/filtered incorrectly, so its values may still not fully match expectations.
 
-- Changing slug/URL (keep `/quality-of-earnings-checklist`, no redirect needed).
-- Other 16 pages in the queue — proceed to P2 (`/quality-of-earnings-software` reposition) only after this lands.
-- STEP 4 reindex request — happens after P1–P6 all land.
-- Print stylesheet (rejected in favor of static PDF).
+## Plan
 
-### QA before declaring done
+### 1. Make “Re-run analysis” update the parent card immediately
 
-1. `code--view` the rewritten page; confirm all 5 internal links resolve to existing route files.
-2. Generate the PDF, then convert page 1 to image with `pdftoppm` and visually inspect — confirm no clipped text, working logo, correct footer URL.
-3. Confirm the page renders in preview at `/quality-of-earnings-checklist` with the new title in the tab and download button visible.
+- Add an `onComplete` callback to `AnalysisRunButton`.
+- After `useAnalysisTrigger` finishes and refetches the stored result, call the parent `fetchGLAnalysis()`.
+- Pass `onComplete={fetchGLAnalysis}` from `DocumentUploadSection` for General Ledger.
+- Do the same for Journal Entries if that button uses the same shared component, to avoid the same stale-card behavior there.
 
-### Technical notes
+### 2. Make the GL fetch deterministic and resilient
 
-- `ContentPageLayout` already accepts `publishedDate` and `jsonLd` (array form supported per `WorkingCapitalAnalysis.tsx`) — no layout changes.
-- This codebase still uses React Router DOM + `useSEO`/`ContentPageLayout` for content pages (not TanStack `head()`), so SEO meta flows through the existing `seoTitle`/`seoDescription` props. Do not migrate to `head()` here.
-- PDF script will live alongside `scripts/generate-demo-workbook.ts` and follow the same `bun run scripts/...` invocation convention noted in project memory.
+- In `fetchGLAnalysis`, select `id`, `created_at`, and `data` so we can key the card by the actual processed row rather than array index.
+- Clear `glAnalysis` to an empty array if no row exists, instead of leaving old state in place.
+- Prefer the newest `created_at` row as it already does, but make the rendered key include the row id/created timestamp so React cannot preserve old card internals.
+
+### 3. Stop duplicate success toasts
+
+- The shared trigger already shows “Analysis complete”.
+- The realtime listener also shows “General ledger analysis complete”.
+- Keep only one clean completion signal for this path or make the realtime toast conditional so users don’t get duplicate/contradictory messages.
+
+### 4. Investigate the GL completeness issue separately in the same pass
+
+- Inspect the canonical GL query and the analysis function’s `.limit(50000)` usage.
+- Compare counts in `canonical_transactions` by source/account/date with the latest analysis output.
+- If the analysis is unintentionally excluding income/expense accounts or using a capped parser result, adjust the backend query/aggregation so the displayed values reflect the complete uploaded GL.
+
+## Expected result
+
+After implementation:
+
+- Clicking **Re-run analysis** updates the visible GL card without a hard refresh.
+- The old `0% / 76 Unknown / Other` card should no longer remain after a successful run.
+- If backend completeness is fixed, the card should also show a more credible account mix beyond just ASSET/LIABILITY/EQUITY.

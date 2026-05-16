@@ -10,6 +10,7 @@ interface AnalysisRunButtonProps {
   label: string;
   hasDocuments: boolean;
   hasAnalysis: boolean;
+  onComplete?: () => void | Promise<void>;
 }
 
 /**
@@ -24,13 +25,19 @@ export const AnalysisRunButton = ({
   label,
   hasDocuments,
   hasAnalysis,
+  onComplete,
 }: AnalysisRunButtonProps) => {
-  const { running, runAnalysis } = useAnalysisTrigger({
+  const { running, runAnalysis: triggerAnalysis } = useAnalysisTrigger({
     projectId,
     functionName,
     resultDataType,
     projectIdKey: "projectId",
   });
+
+  const runAnalysis = async () => {
+    await triggerAnalysis();
+    if (onComplete) await onComplete();
+  };
 
   if (!hasDocuments) return null;
 

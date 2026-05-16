@@ -622,11 +622,9 @@ export const DocumentUploadSection = ({
           }
           if (newData.data_type === 'general_ledger_analysis' && newData.data) {
             fetchGLAnalysis();
-            toast.success("General ledger analysis complete!");
           }
           if (newData.data_type === 'journal_entry_analysis' && newData.data) {
             fetchJEAnalysis();
-            toast.success("Journal entry analysis complete!");
           }
         }
       )
@@ -785,7 +783,7 @@ export const DocumentUploadSection = ({
     try {
       const { data, error } = await supabase
         .from("processed_data")
-        .select("data")
+        .select("id, data, created_at")
         .eq("project_id", projectId)
         .eq("data_type", "general_ledger_analysis")
         .order("created_at", { ascending: false })
@@ -793,6 +791,8 @@ export const DocumentUploadSection = ({
       if (error) throw error;
       if (data && data.length > 0) {
         setGlAnalysis(data.map(d => ({ docName: "General Ledger", data: d.data as unknown as GLAnalysisData })));
+      } else {
+        setGlAnalysis([]);
       }
     } catch (e) { console.error("Error fetching GL analysis:", e); }
   };
@@ -801,7 +801,7 @@ export const DocumentUploadSection = ({
     try {
       const { data, error } = await supabase
         .from("processed_data")
-        .select("data")
+        .select("id, data, created_at")
         .eq("project_id", projectId)
         .eq("data_type", "journal_entry_analysis")
         .order("created_at", { ascending: false })
@@ -809,6 +809,8 @@ export const DocumentUploadSection = ({
       if (error) throw error;
       if (data && data.length > 0) {
         setJeAnalysis(data.map(d => ({ docName: "Journal Entries", data: d.data as unknown as JEAnalysisData })));
+      } else {
+        setJeAnalysis([]);
       }
     } catch (e) { console.error("Error fetching JE analysis:", e); }
   };
@@ -1940,7 +1942,7 @@ export const DocumentUploadSection = ({
               <div className="space-y-4">
                 {glAnalysis.map((item, i) => (
                   <GeneralLedgerInsightsCard
-                    key={i}
+                    key={`gl-${item.data?.analyzedAt ?? i}`}
                     analysisData={item.data}
                     documentName={item.docName}
                   />
@@ -1952,6 +1954,7 @@ export const DocumentUploadSection = ({
                   label="General Ledger"
                   hasDocuments={filteredDocs.length > 0}
                   hasAnalysis={glAnalysis.length > 0}
+                  onComplete={fetchGLAnalysis}
                 />
               </div>
             )}
