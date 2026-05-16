@@ -75,16 +75,28 @@ serve(async (req) => {
       }
     }
 
-    // ── Pull canonical GL transactions for the period ──
-    const { data: glTxns, error: glErr } = await supabase
-      .from("canonical_transactions")
-      .select("account_name, account_number, amount_signed, amount_abs, txn_date")
-      .eq("project_id", projectId)
-      .eq("source_type", "general_ledger")
-      .limit(50000);
-
-    if (glErr) console.error("[ANALYZE-GL] GL txn fetch error:", glErr);
-    const txns = glTxns || [];
+    // ── Pull canonical GL transactions for the period (paginated to bypass PostgREST default 1000-row cap) ──
+    type GlTxn = { account_name: string | null; account_number: string | null; amount_signed: number | null; amount_abs: number | null; txn_date: string | null };
+    const txns: GlTxn[] = [];
+    const PAGE = 1000;
+    let from = 0;
+    while (true) {
+      const { data: page, error: pageErr } = await supabase
+        .from("canonical_transactions")
+        .select("account_name, account_number, amount_signed, amount_abs, txn_date")
+        .eq("project_id", projectId)
+        .eq("source_type", "general_ledger")
+        .order("txn_date", { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (pageErr) {
+        console.error("[ANALYZE-GL] GL txn fetch error:", pageErr);
+        break;
+      }
+      if (!page || page.length === 0) break;
+      txns.push(...(page as GlTxn[]));
+      if (page.length < PAGE || txns.length >= 200000) break;
+      from += PAGE;
+    }
     console.log(`[ANALYZE-GL] Found ${txns.length} GL transactions`);
 
     // ── Aggregate by account ──
