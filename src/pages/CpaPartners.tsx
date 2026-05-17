@@ -98,18 +98,11 @@ export default function CpaPartners() {
         ))}
       </ul>
 
-      <div className="not-prose mt-12 p-6 rounded-lg border border-border bg-muted/30">
-        <h3 className="text-xl font-semibold mb-2">Ready to apply?</h3>
-        <p className="text-muted-foreground mb-4">
-          Send us your name, state of licensure, license number, and a short note about your QoE
-          or transaction-services background. We'll come back within 3 business days.
-        </p>
-        <Button asChild>
-          <a href="mailto:partners@shepi.ai?subject=shepi%20Network%20Application">
-            Apply to the shepi Network
-          </a>
-        </Button>
-      </div>
+      <h2 id="apply">Apply</h2>
+      <p className="text-muted-foreground mb-6">
+        Tell us a bit about you. We'll review and come back within 3 business days.
+      </p>
+      <CpaApplicationForm />
 
       <p className="text-sm text-muted-foreground mt-10">
         Questions before applying? Email{" "}
