@@ -237,6 +237,31 @@ const Pricing = () => {
           a: "shepi may not be right for you if: You need a CPA-certified QoE report (we don't provide certification); Your lender has specific QoE vendor requirements; You're looking for a valuation tool (we focus on earnings quality, not valuation); You want the AI to \"do it for you\" (we assist, you decide)."
         }
       ]
+    },
+    {
+      title: "Done-For-You (CPA-Signed)",
+      questions: [
+        {
+          q: "Who is the CPA that does my Done-For-You analysis?",
+          a: "A licensed CPA from the shepi Network, matched to your deal based on availability and any independence considerations. Our Network CPAs are individually-licensed professionals with backgrounds in transaction services, audit, or financial advisory — most have W-2 day jobs at accounting or finance firms and pick up Done-For-You projects through shepi as additional work. You see their name, state of licensure, and license number on your final deliverable."
+        },
+        {
+          q: "Is the QoE \"CPA-signed\" the way a Big 4 audit is?",
+          a: "It's signed by a licensed CPA in their professional capacity — meaning their license is on the deliverable and they're professionally accountable for the work product. It's a consulting engagement under AICPA SSCS-100, not an attestation engagement like an audit. For SMB and lower-mid-market M&A, this is what most lenders, buyers, and brokers want — a real CPA standing behind real work, faster and cheaper than a traditional firm engagement."
+        },
+        {
+          q: "What happens if the CPA's analysis turns out to be wrong?",
+          a: "The Matched CPA is professionally accountable, backed by shepi's $1M+ professional liability umbrella that covers all active Network CPAs. If something material is wrong, you have a real path to resolution — first directly with your CPA, then through shepi's escalation process. This is meaningfully more accountability than software-only analysis."
+        },
+        {
+          q: "When do I sign an engagement letter?",
+          a: "You buy DFY when you check out; at that point you've agreed to our Terms of Service (which describe the matching process). Once your project is matched with a CPA, you'll receive an engagement letter from the matched CPA outlining scope, fees, and timeline — you confirm it in-app, and the CPA begins work. If we can't match you within 15 days, or you don't confirm the engagement letter, you get a refund of the unused portion."
+        },
+        {
+          q: "Can shepi match me with a CPA in my state / industry / deal size?",
+          a: "We match based on availability, deal complexity, and independence (the matched CPA can't have a conflict with your deal). State-specific matching isn't typically required for QoE consulting work, but if you need someone with specific industry experience or in your local market, mention it at intake and we'll prioritize accordingly."
+        }
+      ]
     }
   ];
 
@@ -382,29 +407,29 @@ const Pricing = () => {
           <Card className="border-2 border-accent relative flex flex-col">
             <div className="absolute -top-3 left-1/2 -translate-x-1/2">
               <span className="bg-accent text-accent-foreground px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap">
-                CPA-Led
+                CPA-Signed
               </span>
             </div>
             <CardHeader>
               <CardTitle>Done-For-You</CardTitle>
-              <CardDescription>For anyone who needs it done right</CardDescription>
+              <CardDescription>A licensed CPA on your deal — without the four-week wait.</CardDescription>
               <div className="mt-4">
                 <span className="text-4xl font-bold text-primary">{PRICING.doneForYou.display}</span>
                 <span className="text-muted-foreground">{PRICING.doneForYou.period}</span>
               </div>
             </CardHeader>
             <CardContent className="flex flex-col h-full space-y-4">
-              <p className="text-sm font-medium text-muted-foreground">Everything included in Per Project, plus:</p>
+              <p className="text-sm font-medium text-muted-foreground">Everything in Per Project, plus a Matched CPA who signs the work:</p>
               <ul className="space-y-3">
                 {[
-                  "CPA-led QoE review",
-                  "End-to-end project completion",
-                  "EBITDA adjustment summary memo",
-                  "Working capital analysis",
-                  "Lender-ready QoE workbook",
-                  "Direct CPA communication",
-                  "48–72 hour turnaround",
-                  "White-glove onboarding",
+                  "Matched with a licensed CPA in 1–2 business days",
+                  "CPA prepares your QoE end-to-end using our software",
+                  "EBITDA adjustment summary memo, signed by the CPA",
+                  "Working capital analysis + NWC peg recommendation",
+                  "Lender-ready QoE workbook on CPA letterhead",
+                  "Direct CPA communication throughout the engagement",
+                  "48–72 hour turnaround once your CPA has what they need",
+                  "Backed by shepi's $1M+ professional liability umbrella",
                 ].map((feature) => (
                   <li key={feature} className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-primary flex-shrink-0" />
@@ -434,7 +459,7 @@ const Pricing = () => {
                   </Link>
                 )}
                 <p className="text-xs text-muted-foreground text-center">
-                  Ideal for anyone who needs speed, clarity, and lender-ready diligence.
+                  For when you want a real CPA on the report, fast.
                 </p>
               </div>
             </CardContent>
