@@ -382,29 +382,29 @@ const Pricing = () => {
           <Card className="border-2 border-accent relative flex flex-col">
             <div className="absolute -top-3 left-1/2 -translate-x-1/2">
               <span className="bg-accent text-accent-foreground px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap">
-                CPA-Led
+                CPA-Signed
               </span>
             </div>
             <CardHeader>
               <CardTitle>Done-For-You</CardTitle>
-              <CardDescription>For anyone who needs it done right</CardDescription>
+              <CardDescription>A licensed CPA on your deal — without the four-week wait.</CardDescription>
               <div className="mt-4">
                 <span className="text-4xl font-bold text-primary">{PRICING.doneForYou.display}</span>
                 <span className="text-muted-foreground">{PRICING.doneForYou.period}</span>
               </div>
             </CardHeader>
             <CardContent className="flex flex-col h-full space-y-4">
-              <p className="text-sm font-medium text-muted-foreground">Everything included in Per Project, plus:</p>
+              <p className="text-sm font-medium text-muted-foreground">Everything in Per Project, plus a Matched CPA who signs the work:</p>
               <ul className="space-y-3">
                 {[
-                  "CPA-led QoE review",
-                  "End-to-end project completion",
-                  "EBITDA adjustment summary memo",
-                  "Working capital analysis",
-                  "Lender-ready QoE workbook",
-                  "Direct CPA communication",
-                  "48–72 hour turnaround",
-                  "White-glove onboarding",
+                  "Matched with a licensed CPA in 1–2 business days",
+                  "CPA prepares your QoE end-to-end using our software",
+                  "EBITDA adjustment summary memo, signed by the CPA",
+                  "Working capital analysis + NWC peg recommendation",
+                  "Lender-ready QoE workbook on CPA letterhead",
+                  "Direct CPA communication throughout the engagement",
+                  "48–72 hour turnaround once your CPA has what they need",
+                  "Backed by shepi's $1M+ professional liability umbrella",
                 ].map((feature) => (
                   <li key={feature} className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-primary flex-shrink-0" />
@@ -434,7 +434,7 @@ const Pricing = () => {
                   </Link>
                 )}
                 <p className="text-xs text-muted-foreground text-center">
-                  Ideal for anyone who needs speed, clarity, and lender-ready diligence.
+                  For when you want a real CPA on the report, fast.
                 </p>
               </div>
             </CardContent>

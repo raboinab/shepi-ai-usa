@@ -1,8 +1,8 @@
 import { cn } from "@/lib/utils";
 
 interface ComparisonTableProps {
-  headers: [string, string, string];
-  rows: [string, string, string][];
+  headers: string[];
+  rows: string[][];
   className?: string;
 }
 
@@ -22,9 +22,17 @@ export function ComparisonTable({ headers, rows, className }: ComparisonTablePro
         <tbody>
           {rows.map((row, i) => (
             <tr key={i} className={cn("border-b border-border last:border-0", i % 2 === 1 && "bg-muted/10")}>
-              <td className="p-3 font-medium text-foreground">{row[0]}</td>
-              <td className="p-3 text-muted-foreground">{row[1]}</td>
-              <td className="p-3 text-foreground">{row[2]}</td>
+              {row.map((cell, j) => (
+                <td
+                  key={j}
+                  className={cn(
+                    "p-3",
+                    j === 0 ? "font-medium text-foreground" : "text-muted-foreground",
+                  )}
+                >
+                  {cell}
+                </td>
+              ))}
             </tr>
           ))}
         </tbody>
