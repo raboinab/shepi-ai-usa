@@ -186,6 +186,7 @@ async function classifyIntent(
 
   // LLM classifier for ambiguous queries. Short structured task (<256 tokens, 8s budget).
   try {
+    await ensureZdrEnabled();
     const anthropic = new Anthropic({ apiKey, baseURL: "https://ai-gateway.vercel.sh" });
     const classifyResponse = await anthropic.messages.create(
       {
