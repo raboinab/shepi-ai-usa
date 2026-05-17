@@ -307,6 +307,13 @@ export default function AdminCpaApplications() {
                     Approve
                   </Button>
                   <Button
+                    variant="default"
+                    onClick={() => promote.mutate(selected.id)}
+                    disabled={promote.isPending}
+                  >
+                    {promote.isPending ? "Promoting…" : "Approve & promote to CPA"}
+                  </Button>
+                  <Button
                     variant="destructive"
                     onClick={() =>
                       updateStatus.mutate({
