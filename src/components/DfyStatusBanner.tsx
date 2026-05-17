@@ -280,6 +280,11 @@ export const DfyStatusBanner = ({ projectId, serviceTier }: DfyStatusBannerProps
                 Licensed in {reviewer.state_of_licensure}
                 {reviewer.years_experience ? ` • ${reviewer.years_experience}+ yrs experience` : ""}
               </p>
+              {autoAccepted && ["accepted", "in_review", "completed"].includes(status) && (
+                <p className="text-xs text-muted-foreground mt-1 italic">
+                  Auto-confirmed after 48h
+                </p>
+              )}
               {reviewer.bio && (
                 <p className="text-sm text-muted-foreground mt-2 max-w-2xl">{reviewer.bio}</p>
               )}
