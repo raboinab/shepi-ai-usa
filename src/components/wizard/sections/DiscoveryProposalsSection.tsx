@@ -38,6 +38,8 @@ import {
 } from "@/hooks/useDiscoveryProposals";
 import type { QoeLedgerAdjustment } from "@/types/qoeLedger";
 import { ProposalDetailCard } from "./discovery/ProposalDetailCard";
+import { useCpaReviewMap } from "@/hooks/useCpaReviewMap";
+import { CpaReviewBadge } from "@/components/cpa/CpaReviewBadge";
 
 interface DiscoveryProposalsSectionProps {
   projectId: string;
@@ -148,6 +150,9 @@ export function DiscoveryProposalsSection({
 
   // Use mock proposals in demo mode
   const proposals = isDemo && mockProposals ? mockProposals : hookProposals;
+
+  // CPA reviews (DFY only; returns {} when no claim exists)
+  const { data: cpaReviewMap } = useCpaReviewMap(isDemo ? undefined : projectId);
 
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [evidenceMap, setEvidenceMap] = useState<Record<string, ProposalEvidence[]>>({});
@@ -362,6 +367,10 @@ export function DiscoveryProposalsSection({
           </div>
 
           <StatusBadge status={proposal.status} />
+          <CpaReviewBadge
+            review={cpaReviewMap?.[proposal.id]}
+            originalAmount={proposal.proposed_amount}
+          />
         </div>
 
         {isExpanded && (

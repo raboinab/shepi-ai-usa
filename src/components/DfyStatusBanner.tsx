@@ -96,6 +96,7 @@ interface ReviewerProfile {
 export const DfyStatusBanner = ({ projectId, serviceTier }: DfyStatusBannerProps) => {
   const [status, setStatus] = useState<ClaimStatus>("unclaimed");
   const [claimId, setClaimId] = useState<string | null>(null);
+  const [autoAccepted, setAutoAccepted] = useState(false);
   const [reviewer, setReviewer] = useState<ReviewerProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [chatOpen, setChatOpen] = useState(false);
@@ -108,7 +109,7 @@ export const DfyStatusBanner = ({ projectId, serviceTier }: DfyStatusBannerProps
       if (serviceTier === "done_for_you") {
         const { data: claim } = await supabase
           .from("cpa_claims")
-          .select("id, status, cpa_user_id")
+          .select("id, status, cpa_user_id, accepted_by_user_id, accepted_at")
           .eq("project_id", projectId)
           .order("claimed_at", { ascending: false })
           .limit(1)
@@ -117,6 +118,9 @@ export const DfyStatusBanner = ({ projectId, serviceTier }: DfyStatusBannerProps
         if (claim) {
           setClaimId(claim.id);
           setStatus((claim.status as ClaimStatus) || "unclaimed");
+          setAutoAccepted(
+            !!claim.accepted_at && claim.accepted_by_user_id == null,
+          );
           // RLS: project members can view assigned CPA profile
           const { data: profile } = await supabase
             .from("cpa_profiles")
@@ -276,6 +280,11 @@ export const DfyStatusBanner = ({ projectId, serviceTier }: DfyStatusBannerProps
                 Licensed in {reviewer.state_of_licensure}
                 {reviewer.years_experience ? ` • ${reviewer.years_experience}+ yrs experience` : ""}
               </p>
+              {autoAccepted && ["accepted", "in_review", "completed"].includes(status) && (
+                <p className="text-xs text-muted-foreground mt-1 italic">
+                  Auto-confirmed after 48h
+                </p>
+              )}
               {reviewer.bio && (
                 <p className="text-sm text-muted-foreground mt-2 max-w-2xl">{reviewer.bio}</p>
               )}

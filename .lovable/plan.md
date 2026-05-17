@@ -1,115 +1,62 @@
-# Phase 4 — Make the CPA marketplace functional end-to-end
 
-Two tracks in parallel. 4a unblocks CPA supply (currently nothing links to the application form). 4b makes a "claim" mean something real — for the CPA, the client, and the DFY product promise of CPA-led review.
+# Phase 4c — Close the engagement loop for live CPAs
 
-Skipped on purpose: ratings, reputation scoring, payouts, complex disputes. Not needed yet.
+Three deferred items, sequenced so each unblocks the next.
 
----
+## 1. Auto-accept cron (`proposed` → `accepted` after 48h)
 
-## 4a — Discovery surface
+Why: CPA can't start review work until the claim is `accepted`. We can't wait on every client to manually confirm — that stalls real engagements.
 
-Goal: A CPA who hears about Shepi can find the application in under 30 seconds from any entry point.
+- New TanStack server route `src/routes/api/public/hooks/cpa-auto-accept.ts`
+  - `POST` handler, no auth header required (route lives under `/api/public/*`)
+  - Uses `supabaseAdmin` to flip `cpa_claims` where `status='proposed'` AND `claimed_at < now() - interval '48 hours'` AND `withdrawn_at IS NULL` to `status='accepted'`, sets `accepted_at=now()`, leaves `accepted_by_user_id NULL` (signals auto-accept).
+  - Logs how many rows were flipped, returns `{ accepted: <count> }`.
+  - For each accepted claim, inserts a `cpa_notifications` row for the CPA (`event_type='claim_auto_accepted'`) and one for the project owner (`event_type='claim_auto_accepted_client'`).
+- Schedule with `pg_cron` every hour calling that route (empty body). One-time setup via the insert tool (not migration) per the schedule-jobs-modern guidance.
+- Surface auto-accept in the existing `DfyStatusBanner`: when `accepted_by_user_id IS NULL` and `status IN ('accepted','in_review','completed')`, show a small "auto-confirmed after 48h" caption next to the CPA name.
 
-1. **`/for-cpas` marketing page** — typographic SEO page using the `src/components/content/*` pattern (consistent with the rest of the marketing site per project memory). Sections:
-   - Hero: "Earn side income reviewing QoE adjustments"
-   - Who it's for (independent CPAs, small-firm partners with capacity)
-   - How it works (apply → onboard → claim DFY deals → review adjustments → get paid)
-   - Compensation framing (placeholder until payments phase — "competitive per-engagement fees")
-   - What we are NOT (no attestation/audit opinion — protects UPL/insurance posture per Core memory)
-   - CTA → `/cpa-partners` application form
-2. **Footer link** — "For CPAs" added to the marketing footer.
-3. **Homepage strip** — small inline section on `Index.tsx` (bg-secondary band, eyebrow + serif heading + one-line pitch + button), placed below an existing section. Follows the inline section pattern per memory.
-4. **Head metadata** — unique title/description/og for `/for-cpas`.
+## 2. "CPA reviewed" badges on the client's adjustment UI
 
-No backend changes. Pure presentation.
+Why: clients in DFY need to see which adjustments their assigned CPA has already touched (and how), not just trust the banner.
 
----
+- Extend the client's adjustment review screen (the per-proposal cards rendered in the project workspace's adjustments tab) with a small badge driven by `cpa_adjustment_reviews`:
+  - `confirmed` → green "CPA confirmed" pill with reviewer name on hover
+  - `modified` → amber "CPA modified" pill, shows original vs `modified_amount`
+  - `rejected` → red "CPA rejected" pill with `cpa_note` in a popover
+  - no row → no badge
+- Data: one server function `getCpaReviewsForProject(projectId)` returning a map keyed by `proposal_id`. Reads `cpa_adjustment_reviews` joined to `cpa_profiles` for the CPA's display name. RLS already allows project members to SELECT via the existing `Project members can view cpa reviews` policy, so a normal `requireSupabaseAuth` server fn is sufficient.
+- New presentation component `src/components/cpa/CpaReviewBadge.tsx`. Mounted only when the project has a non-withdrawn `cpa_claims` row (avoid noise for SD/non-DFY projects).
+- Also surface the badge inline in the report's adjustments list (PDF/XLSX builders are untouched — UI only) so it shows up wherever the client browses adjustments.
 
-## 4b — Engagement loop
+## 3. Admin "Reassign CPA" action
 
-Goal: Drive `cpa_claims.status` through a real state machine with UI on both sides (CPA + client) and surface adjustment review — the actual DFY deliverable.
+Why: when a CPA goes dark, is conflicted, or the client requested a different reviewer, ops needs a one-click recovery.
 
-### State machine on `cpa_claims.status`
+- Extend `src/pages/admin/AdminDFYEngagements.tsx` with a "Reassign" button on each engagement row, opening a dialog that:
+  - Lists active CPAs (`cpa_profiles` where `active=true`) excluding the current assignee, with current open-engagement count next to each name (respect `max_concurrent_engagements` — disable rows at capacity).
+  - Requires a short reason (stored in `withdrawn_reason` on the old claim).
+- One server function `reassignCpaClaim({ claimId, newCpaUserId, reason })`, admin-gated via `requireSupabaseAuth` + `has_role(uid,'admin')` check inside the handler. Steps inside a transaction:
+  1. Mark old `cpa_claims` row `status='withdrawn'`, set `withdrawn_at=now()`, `withdrawn_reason=reason`.
+  2. Insert a new `cpa_claims` row for `newCpaUserId` with `status='proposed'`, `claimed_at=now()` (admin-initiated proposal).
+  3. Insert two `cpa_notifications`: `claim_withdrawn` to the old CPA, `claim_proposed_by_admin` to the new CPA. Also notify the project owner via the in-app notification surface the banner already reads from.
+- Existing `cpa_adjustment_reviews` rows tied to the old `claim_id` are kept as historical record; the new CPA starts fresh. Badges keep showing prior decisions but their popover labels the reviewer's name so clients see continuity.
 
-```text
-proposed     ← CPA hits "Claim" on a DFY project (was: in_progress)
-   │
-   ├─ withdrawn   (CPA backs out before client accepts)
-   │
-   ▼
-accepted     ← client confirms the assigned CPA (auto-accept after 48h)
-   │
-   ▼
-in_review    ← CPA opens engagement workspace, begins review
-   │
-   ▼
-completed    ← CPA submits completion summary; client notified
-```
+## Status filter on admin engagements list
 
-No dispute flow yet — admin can reassign manually from `AdminDFYEngagements`.
+Small UX win that lands cheaply with #3: add a status segmented control (All / Proposed / Accepted / In review / Completed / Withdrawn) on `AdminDFYEngagements.tsx`.
 
-### Schema changes (migration)
+## Technical notes
 
-- Replace loose default `'in_progress'` on `cpa_claims.status` with `'proposed'`.
-- Add columns: `accepted_at`, `accepted_by_user_id`, `completed_at`, `completion_summary text`, `withdrawn_at`, `withdrawn_reason text`.
-- New table `cpa_adjustment_reviews`:
-  - `id`, `claim_id` (fk cpa_claims), `proposal_id` (fk adjustment_proposals), `cpa_user_id`
-  - `decision` (`confirmed | modified | rejected`)
-  - `cpa_note text`, `modified_amount numeric NULL`, `modified_period_values jsonb NULL`
-  - `reviewed_at timestamptz`, standard timestamps
-  - Unique `(claim_id, proposal_id)`
-  - RLS: CPA on own claim can read/write; client (project owner / shared editor) can read; admin full; service_role full.
-- Auto-accept job: extend existing `cpa-sla-check` to also auto-flip `proposed → accepted` after 48h.
-
-### CPA-side UI
-
-- `CpaQueue.tsx`: claim button writes `status='proposed'`, then routes to new engagement workspace.
-- New `src/pages/cpa/CpaEngagement.tsx` (route: `/cpa/engagements/:projectId`):
-  - Header: project, client, current status, days-in-stage.
-  - "Adjustments to review" tab — list of `adjustment_proposals` for the project, each with confirm / modify / reject + note. Writes to `cpa_adjustment_reviews`.
-  - "Documents" tab — read-only list of project documents (already accessible via `auto_share_on_cpa_claim` share).
-  - "Complete engagement" button (enabled when all proposals reviewed) → opens summary modal → writes `status='completed'`, `completion_summary`.
-  - "Withdraw" button → confirm dialog → `status='withdrawn'`.
-- `CpaEngagements.tsx`: list view grouped by status.
-
-### Client-side UI
-
-- New `src/components/dfy/CpaReviewerPanel.tsx` mounted on the project workspace when `service_tier='done_for_you'` AND a `cpa_claims` row exists:
-  - Shows assigned CPA's `cpa_profiles` (name, firm, state, years experience, bio) — RLS already allows this via `Project members view assigned CPA profile`.
-  - Current stage with progress dots.
-  - If `status='proposed'`: "Accept this reviewer" / "Request different reviewer" buttons. The latter posts to admin (writes a notification, doesn't auto-reassign).
-  - If `status='in_review'`: shows count of reviewed-so-far adjustments.
-  - If `status='completed'`: shows CPA's completion summary + downloadable indicator that the DFY review is done.
-- Surfacing on each `adjustment_proposals` row in the client's review UI: if `cpa_adjustment_reviews` exists, show a "CPA reviewed: ✓ confirmed / modified / rejected" badge + CPA note. Read-only for the client. This is the visible payoff for the DFY tier.
-
-### Admin
-
-- `AdminDFYEngagements.tsx` gains a status filter and a "Reassign CPA" action (sets current claim to `withdrawn`, allows a new CPA to claim).
-
-### Notifications (extends existing `cpa-notify`)
-
-Add event types — DB triggers piggyback on the same function:
-- `claim_accepted_by_client` → CPA
-- `claim_auto_accepted` → CPA + client
-- `engagement_completed` → client
-- `claim_withdrawn` → admin + client
-
----
+- No new tables. Reuses `cpa_claims`, `cpa_adjustment_reviews`, `cpa_notifications`, `cpa_profiles`.
+- No edge functions. Cron hits a TanStack server route per stack convention.
+- The auto-accept route is idempotent: running it twice in the same hour is a no-op because the `status='proposed'` filter excludes already-flipped rows.
+- The `accepted_by_user_id IS NULL` convention is the single source of truth for "this was auto-accepted" — no extra column needed.
+- Migration only needed if we discover `cpa_notifications.event_type` doesn't already accept the new event strings; the column is `text` with no CHECK constraint, so no migration required.
 
 ## Build order
 
-1. Migration: `cpa_claims` columns + `cpa_adjustment_reviews` table + RLS.
-2. Backend wiring: extend `cpa-notify` event types; extend `cpa-sla-check` for auto-accept.
-3. CPA engagement workspace (`CpaEngagement.tsx`) + claim flow update.
-4. Client `CpaReviewerPanel` + per-proposal CPA review badge.
-5. Admin reassign action.
-6. In parallel: 4a discovery surface (`/for-cpas` page, footer link, homepage strip).
+1. Server fn `getCpaReviewsForProject` + `CpaReviewBadge` component + mount in client adjustment UI. (Lowest risk, immediately visible value.)
+2. Auto-accept route + pg_cron schedule + banner caption.
+3. Admin Reassign dialog + server fn + status filter.
 
----
-
-## Open questions before I start
-
-1. **Auto-accept window** — 48h reasonable, or do you want shorter/longer? Or require explicit client acceptance with no auto-flip?
-2. **"Request different reviewer"** — should this just notify admin (light-touch), or should it instantly free the project back into the pool?
-3. **Where exactly on the project workspace** does `CpaReviewerPanel` mount — top of the deal workspace, sidebar, or its own tab? I'd default to a prominent banner at the top, collapsible.
-4. **Per-proposal review badge** — confirm this should appear in the *client's* adjustment review UI (the existing screen where they see AI-flagged adjustments), not just in the CPA's workspace.
+After each step I'll verify with a build check; for the cron I'll also trigger the route once manually via `invoke-server-function` and confirm `cpa_claims` rows flip as expected.
