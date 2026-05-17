@@ -1,4 +1,4 @@
-import { ClipboardList, Briefcase, ArrowLeft } from 'lucide-react';
+import { ClipboardList, Briefcase, ArrowLeft, UserCog } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import {
   Sidebar,
@@ -15,6 +15,7 @@ import {
 const menuItems = [
   { title: 'Queue', url: '/cpa', icon: ClipboardList },
   { title: 'My Engagements', url: '/cpa/engagements', icon: Briefcase },
+  { title: 'Onboarding & Profile', url: '/cpa/onboarding', icon: UserCog },
 ];
 
 export function CpaSidebar() {
