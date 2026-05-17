@@ -774,6 +774,72 @@ export type Database = {
         }
         Relationships: []
       }
+      cpa_applications: {
+        Row: {
+          conflicts_disclosure: string | null
+          created_at: string
+          decision_notes: string | null
+          email: string
+          firm_affiliation: string | null
+          full_name: string
+          id: string
+          license_number: string
+          linkedin_url: string | null
+          phone: string | null
+          qoe_background: string | null
+          referral_source: string | null
+          reviewed_at: string | null
+          reviewer_user_id: string | null
+          side_work_permitted: boolean | null
+          state_of_licensure: string
+          status: Database["public"]["Enums"]["cpa_application_status"]
+          updated_at: string
+          years_experience: number | null
+        }
+        Insert: {
+          conflicts_disclosure?: string | null
+          created_at?: string
+          decision_notes?: string | null
+          email: string
+          firm_affiliation?: string | null
+          full_name: string
+          id?: string
+          license_number: string
+          linkedin_url?: string | null
+          phone?: string | null
+          qoe_background?: string | null
+          referral_source?: string | null
+          reviewed_at?: string | null
+          reviewer_user_id?: string | null
+          side_work_permitted?: boolean | null
+          state_of_licensure: string
+          status?: Database["public"]["Enums"]["cpa_application_status"]
+          updated_at?: string
+          years_experience?: number | null
+        }
+        Update: {
+          conflicts_disclosure?: string | null
+          created_at?: string
+          decision_notes?: string | null
+          email?: string
+          firm_affiliation?: string | null
+          full_name?: string
+          id?: string
+          license_number?: string
+          linkedin_url?: string | null
+          phone?: string | null
+          qoe_background?: string | null
+          referral_source?: string | null
+          reviewed_at?: string | null
+          reviewer_user_id?: string | null
+          side_work_permitted?: boolean | null
+          state_of_licensure?: string
+          status?: Database["public"]["Enums"]["cpa_application_status"]
+          updated_at?: string
+          years_experience?: number | null
+        }
+        Relationships: []
+      }
       cpa_claims: {
         Row: {
           claimed_at: string
@@ -2714,6 +2780,12 @@ export type Database = {
     }
     Enums: {
       app_role: "admin" | "moderator" | "user" | "cpa"
+      cpa_application_status:
+        | "submitted"
+        | "in_review"
+        | "approved"
+        | "rejected"
+        | "withdrawn"
       proof_validation_status:
         | "validated"
         | "supported"
@@ -2863,6 +2935,13 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "moderator", "user", "cpa"],
+      cpa_application_status: [
+        "submitted",
+        "in_review",
+        "approved",
+        "rejected",
+        "withdrawn",
+      ],
       proof_validation_status: [
         "validated",
         "supported",
