@@ -339,7 +339,7 @@ serve(async (req) => {
       );
     }
 
-    const anthropicApiKey = Deno.env.get("ANTHROPIC_API_KEY")!;
+    const anthropicApiKey = Deno.env.get("VERCEL_AI_GATEWAY_KEY")!;
 
     // ── Global prepass on cursor=0: build registry from ALL transactions ──
     if (cursor === 0) {
@@ -574,7 +574,7 @@ serve(async (req) => {
               const evidence: EvidenceAtom[] = [
                 {
                   type: "llm_classification",
-                  model: "claude-sonnet-4",
+                  model: "anthropic/claude-sonnet-4",
                   llm_confidence: clusterResult.confidence,
                   weight: clusterResult.confidence * 0.8,
                 },

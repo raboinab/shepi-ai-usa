@@ -23,15 +23,10 @@ const subprocessors = [
     location: "United States",
   },
   {
-    name: "Google AI (Gemini)",
-    purpose: "AI-assisted financial analysis",
-    dataProcessed: "Financial data sent for analysis",
-    location: "United States",
-  },
-  {
-    name: "OpenAI (GPT)",
-    purpose: "AI-assisted financial analysis",
-    dataProcessed: "Financial data sent for analysis",
+    name: "Vercel (AI Gateway)",
+    purpose:
+      "AI model routing for document parsing, financial analysis, narrative generation, and vector embeddings. Operates under a Zero Data Retention agreement; upstream model providers (Anthropic Claude, OpenAI) process requests as sub-processors under no-retention terms.",
+    dataProcessed: "Financial data and document contents sent for analysis",
     location: "United States",
   },
   {
@@ -88,7 +83,7 @@ export default function Subprocessors() {
       </Table>
 
       <p className="text-sm text-muted-foreground mt-8">
-        <strong>Last updated:</strong> February 22, 2026
+        <strong>Last updated:</strong> May 17, 2026
       </p>
 
       <p className="text-sm text-muted-foreground mt-4">

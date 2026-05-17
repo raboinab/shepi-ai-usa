@@ -187,9 +187,9 @@ serve(async (req) => {
       );
     }
 
-    const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
-    if (!OPENAI_API_KEY) {
-      console.error("OPENAI_API_KEY not configured");
+    const VERCEL_AI_GATEWAY_KEY = Deno.env.get('VERCEL_AI_GATEWAY_KEY');
+    if (!VERCEL_AI_GATEWAY_KEY) {
+      console.error("VERCEL_AI_GATEWAY_KEY not configured");
       // Fail open - allow upload if AI not available
       return new Response(
         JSON.stringify({
@@ -220,14 +220,14 @@ serve(async (req) => {
     const prompt = buildPrompt(selectedType);
 
     // Use gpt-4o-mini for cost-effective vision analysis
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const response = await fetch("https://ai-gateway.vercel.sh/v1/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        Authorization: `Bearer ${VERCEL_AI_GATEWAY_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model: "openai/gpt-4o-mini",
         messages: [
           {
             role: "user",

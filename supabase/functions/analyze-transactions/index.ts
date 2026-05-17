@@ -767,9 +767,9 @@ const corsHeaders = {
   // AI-POWERED GL-FIRST ANALYSIS ENGINE
   // ============================================================================
 
-   const AI_GATEWAY_URL = "https://api.openai.com/v1/chat/completions";
-   const GL_AI_MODEL = "gpt-4o";
-   const BANK_AI_MODEL = "gpt-4o";
+   const AI_GATEWAY_URL = "https://ai-gateway.vercel.sh/v1/chat/completions";
+   const GL_AI_MODEL = "openai/gpt-4o";
+   const BANK_AI_MODEL = "openai/gpt-4o";
    const GL_BATCH_SIZE = 200;
    const BANK_BATCH_SIZE = 100;
 
@@ -793,9 +793,9 @@ const corsHeaders = {
   }
 
    async function callAI(messages: Array<{role: string; content: string}>, model: string = GL_AI_MODEL): Promise<string | null> {
-     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
-     if (!OPENAI_API_KEY) {
-       console.warn("OPENAI_API_KEY not configured, falling back to deterministic analysis");
+     const VERCEL_AI_GATEWAY_KEY = Deno.env.get("VERCEL_AI_GATEWAY_KEY");
+     if (!VERCEL_AI_GATEWAY_KEY) {
+       console.warn("VERCEL_AI_GATEWAY_KEY not configured, falling back to deterministic analysis");
        return null;
      }
  
@@ -803,7 +803,7 @@ const corsHeaders = {
        const response = await fetch(AI_GATEWAY_URL, {
          method: "POST",
          headers: {
-           Authorization: `Bearer ${OPENAI_API_KEY}`,
+           Authorization: `Bearer ${VERCEL_AI_GATEWAY_KEY}`,
            "Content-Type": "application/json",
          },
          body: JSON.stringify({
@@ -1066,7 +1066,7 @@ Return ONLY the JSON array.`;
     industry: string = ""
   ): Promise<FlaggedTransaction[]> {
     const flagged: FlaggedTransaction[] = [];
-    const hasAIKey = !!Deno.env.get("OPENAI_API_KEY");
+    const hasAIKey = !!Deno.env.get("VERCEL_AI_GATEWAY_KEY");
 
     // ── STEP 1: GL ANALYSIS ──
     if (hasAIKey && index.glEntries.length > 0) {

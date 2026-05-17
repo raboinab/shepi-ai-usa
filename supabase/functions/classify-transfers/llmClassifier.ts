@@ -2,8 +2,8 @@
 
 import type { TransactionCluster, ClusterClassification, BatchClusterClassification } from "./types.ts";
 
-const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
-const ANTHROPIC_MODEL = "claude-sonnet-4-20250514";
+const ANTHROPIC_API_URL = "https://ai-gateway.vercel.sh/v1/messages";
+const ANTHROPIC_MODEL = "anthropic/claude-sonnet-4-20250514";
 
 /**
  * Classify a single cluster via Anthropic Claude with structured tool-call output.

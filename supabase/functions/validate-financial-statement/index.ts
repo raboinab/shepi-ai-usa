@@ -242,8 +242,8 @@ async function extractTotalsViaAI(
   textContent: string,
   documentType: string
 ): Promise<DerivedTotals | null> {
-  const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
-  if (!OPENAI_API_KEY) return null;
+  const VERCEL_AI_GATEWAY_KEY = Deno.env.get("VERCEL_AI_GATEWAY_KEY");
+  if (!VERCEL_AI_GATEWAY_KEY) return null;
 
   let prompt = '';
   if (documentType === 'balance_sheet') {
@@ -273,14 +273,14 @@ Spreadsheet data:\n${textContent.slice(0, 12000)}`;
   if (!prompt) return null;
 
   try {
-    const aiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+    const aiResponse = await fetch("https://ai-gateway.vercel.sh/v1/chat/completions", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${OPENAI_API_KEY}`,
+        "Authorization": `Bearer ${VERCEL_AI_GATEWAY_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4o",
+        model: "openai/gpt-4o",
         messages: [
           { role: "system", content: "You are a financial data extraction specialist. Extract exact numerical values from spreadsheet data. When data has monthly columns, sum them or use the Total column. Return only valid JSON, no markdown." },
           { role: "user", content: prompt }
