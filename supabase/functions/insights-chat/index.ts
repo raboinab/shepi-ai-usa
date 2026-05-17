@@ -3,6 +3,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.87.1";
 import Anthropic from "npm:@anthropic-ai/sdk@0.88.0";
 
+import { aiFetch, ensureZdrEnabled } from "../_shared/zdrGuard.ts";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-api-key, x-service-name, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
@@ -185,6 +186,7 @@ async function classifyIntent(
 
   // LLM classifier for ambiguous queries. Short structured task (<256 tokens, 8s budget).
   try {
+    await ensureZdrEnabled();
     const anthropic = new Anthropic({ apiKey, baseURL: "https://ai-gateway.vercel.sh" });
     const classifyResponse = await anthropic.messages.create(
       {
@@ -718,7 +720,7 @@ serve(async (req) => {
     // Embed the user query once; shared across project-RAG + textbook-RAG.
     let queryEmbedding: number[] | null = null;
     try {
-      const embeddingRes = await fetch("https://ai-gateway.vercel.sh/v1/embeddings", {
+      const embeddingRes = await aiFetch("https://ai-gateway.vercel.sh/v1/embeddings", {
         method: "POST",
         headers: { Authorization: `Bearer ${VERCEL_AI_GATEWAY_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({ model: "openai/text-embedding-3-small", input: userMessage }),
@@ -984,6 +986,7 @@ You have expertise across: EBITDA adjustments, cash flow analysis, and risk asse
 
     console.log(`[orchestrator] Sending to Anthropic. Agents: ${classification.agents.join(',')}. System: ${systemPrompt.length} chars. RAG chunks: project=${ragChunkCount}, textbook=${ragResult?.chunkCount || 0}`);
 
+    await ensureZdrEnabled();
     const anthropic = new Anthropic({ apiKey: VERCEL_AI_GATEWAY_KEY, baseURL: "https://ai-gateway.vercel.sh" });
     const anthropicStream = anthropic.messages.stream({
       model: "anthropic/claude-opus-4-7",

@@ -1,3 +1,4 @@
+import { aiFetch, ensureZdrEnabled } from "../_shared/zdrGuard.ts";
 /**
  * suggest-wip-account
  * Given a list of COA accounts and a WIP slot definition, asks OpenAI (gpt-4o-mini)
@@ -86,7 +87,7 @@ ${accountList}
 
 Pick the account whose NAME and (if present) CATEGORY most clearly matches the slot definition. If no account is a reasonable match, set confidence to "none" and pick the closest candidate anyway. Be conservative — high confidence only when the name explicitly references the WIP concept (e.g., "Billings in Excess", "Underbillings", "WIP").`;
 
-    const response = await fetch("https://ai-gateway.vercel.sh/v1/chat/completions", {
+    const response = await aiFetch("https://ai-gateway.vercel.sh/v1/chat/completions", {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${VERCEL_AI_GATEWAY_KEY}`,
