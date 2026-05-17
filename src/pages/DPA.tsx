@@ -161,6 +161,18 @@ export default function DPA() {
             Processor shall securely delete or return all Personal Data within
             30 days, unless retention is required by applicable law.
           </p>
+          <p className="text-muted-foreground mt-4">
+            <strong>AI sub-processor retention.</strong> All AI model requests
+            (document parsing, financial analysis, narrative generation, and
+            vector embeddings) are routed through Vercel AI Gateway under a
+            Zero Data Retention (ZDR) agreement. Upstream model providers
+            (including Anthropic and OpenAI) act as sub-processors under
+            no-retention terms: prompts and completions containing Controller
+            data are <strong>not stored</strong> by the model provider after
+            the request completes, and are <strong>not used to train</strong>{" "}
+            any model. ZDR enforcement is verified at runtime by the Processor
+            before any AI request is issued.
+          </p>
         </section>
 
         {/* 7. Audit Rights */}
