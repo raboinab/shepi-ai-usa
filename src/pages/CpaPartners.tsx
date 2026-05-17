@@ -59,9 +59,7 @@ export default function CpaPartners() {
 
       <div className="not-prose mb-12">
         <Button asChild size="lg">
-          <a href="mailto:partners@shepi.ai?subject=shepi%20Network%20Application">
-            Apply to the shepi Network
-          </a>
+          <a href="#apply">Apply to the shepi Network</a>
         </Button>
       </div>
 
