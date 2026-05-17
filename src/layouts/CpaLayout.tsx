@@ -7,6 +7,7 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { CpaSidebar } from '@/components/cpa/CpaSidebar';
+import { NotificationBell } from '@/components/notifications/NotificationBell';
 
 export function CpaLayout() {
   const { isCpa, isLoading } = useCpaCheck();
@@ -27,6 +28,9 @@ export function CpaLayout() {
           <header className="flex h-12 items-center gap-2 border-b px-4">
             <SidebarTrigger />
             <span className="text-sm font-medium text-muted-foreground">CPA Portal</span>
+            <div className="ml-auto">
+              <NotificationBell />
+            </div>
           </header>
           <main className="flex-1 p-6">
             <Outlet />

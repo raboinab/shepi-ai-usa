@@ -878,6 +878,42 @@ export type Database = {
           },
         ]
       }
+      cpa_notifications: {
+        Row: {
+          body: string | null
+          created_at: string
+          event_type: string
+          id: string
+          link: string | null
+          payload: Json
+          read_at: string | null
+          title: string
+          user_id: string
+        }
+        Insert: {
+          body?: string | null
+          created_at?: string
+          event_type: string
+          id?: string
+          link?: string | null
+          payload?: Json
+          read_at?: string | null
+          title: string
+          user_id: string
+        }
+        Update: {
+          body?: string | null
+          created_at?: string
+          event_type?: string
+          id?: string
+          link?: string | null
+          payload?: Json
+          read_at?: string | null
+          title?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       cpa_onboarding_documents: {
         Row: {
           cpa_user_id: string
