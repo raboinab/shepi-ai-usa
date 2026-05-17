@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Spinner } from '@/components/ui/spinner';
@@ -12,6 +13,7 @@ import { useProviderAgreement } from '@/hooks/useProviderAgreement';
 import { ProviderAgreementModal } from '@/components/cpa/ProviderAgreementModal';
 
 export default function CpaQueue() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { hasAccepted, loading: agreementLoading } = useProviderAgreement();
   const [agreementOpen, setAgreementOpen] = useState(false);
@@ -50,13 +52,19 @@ export default function CpaQueue() {
       const { error } = await supabase.from('cpa_claims').insert({
         project_id: projectId,
         cpa_user_id: user.id,
+        status: 'proposed',
       });
       if (error) throw error;
+      return projectId;
     },
-    onSuccess: () => {
+    onSuccess: (projectId) => {
       queryClient.invalidateQueries({ queryKey: ['cpa-dfy-projects'] });
       queryClient.invalidateQueries({ queryKey: ['cpa-claims-all'] });
-      toast({ title: 'Project claimed', description: 'You now have editor access to this project.' });
+      toast({
+        title: 'Project claimed',
+        description: 'The client will be notified to confirm you as their reviewer.',
+      });
+      navigate(`/cpa/engagements/${projectId}`);
     },
     onError: (err) => {
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
