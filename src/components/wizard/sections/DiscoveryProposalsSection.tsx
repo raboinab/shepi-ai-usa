@@ -151,6 +151,9 @@ export function DiscoveryProposalsSection({
   // Use mock proposals in demo mode
   const proposals = isDemo && mockProposals ? mockProposals : hookProposals;
 
+  // CPA reviews (DFY only; returns {} when no claim exists)
+  const { data: cpaReviewMap } = useCpaReviewMap(isDemo ? undefined : projectId);
+
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [evidenceMap, setEvidenceMap] = useState<Record<string, ProposalEvidence[]>>({});
   const [editDialogOpen, setEditDialogOpen] = useState(false);
