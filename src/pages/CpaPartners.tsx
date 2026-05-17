@@ -3,6 +3,7 @@ import { LegalPageLayout } from "@/components/LegalPageLayout";
 import { useSEO } from "@/hooks/useSEO";
 import { Button } from "@/components/ui/button";
 import { CheckCircle } from "lucide-react";
+import { CpaApplicationForm } from "@/components/cpa/CpaApplicationForm";
 
 const howItWorks = [
   {
