@@ -1,52 +1,50 @@
-## Use Vercel AI Gateway with ZDR (revised plan)
+## Scope
 
-You're right — this is a much better path than rewriting 12 functions to swap SDKs.
+Four marketing/legal-adjacent copy updates that align the public site with the now-shipping DFY (CPA-Signed) tier. Frontend/content only — no business logic, pricing, or routing-engine changes beyond registering one new page.
 
-### What Vercel AI Gateway ZDR gives us
+---
 
-- Single OpenAI-compatible endpoint that routes to OpenAI, Anthropic, Google, etc.
-- ZDR mode restricts routing to provider deployments that have signed zero-data-retention agreements with Vercel.
-- We keep the existing `fetch` + chat-completions code shape; we only change:
-  - base URL → `https://ai-gateway.vercel.sh/v1`
-  - auth header → `Authorization: Bearer $VERCEL_AI_GATEWAY_KEY`
-  - add `?zdr=1` (or the equivalent header/param per their docs) to enforce ZDR routing
-  - model strings → namespaced (`anthropic/claude-sonnet-4.5`, `openai/gpt-4o`, `openai/text-embedding-3-small`)
-- Embeddings, vision, and chat completions all go through the same endpoint, so `embed-project-data` and `process-reclassification-job` (which uses both) are covered too.
+## 1. Pricing page — DFY card (`src/pages/Pricing.tsx`, ~lines 381–441)
 
-### What this changes vs the previous plan
+- Badge: `CPA-Led` → `CPA-Signed`.
+- Description: → "A licensed CPA on your deal — without the four-week wait."
+- Sub-line above bullets: → "Everything in Per Project, plus a Matched CPA who signs the work:"
+- Replace 8 bullets with the 8 new ones (matched in 1–2 days, end-to-end on our software, CPA-signed memo, WC + NWC peg, CPA letterhead, direct comms, 48–72h after match, $1M+ liability umbrella).
+- Tagline: → "For when you want a real CPA on the report, fast."
 
-- **No SDK rewrite.** No Anthropic-specific payload shape, no converting `image_url` → `image/base64` blocks, no swapping JSON-mode for tool-use blocks. Vercel translates that for us when the model is OpenAI-compatible, and we can keep the OpenAI Chat Completions wire format for Anthropic models too via the gateway.
-- **Embeddings stay safe.** Project-data embeddings (which DO contain financial data — confirmed against `embed-project-data/index.ts`) get ZDR coverage without migrating off the OpenAI embedding model.
-- **One vendor row on the Subprocessors page** instead of three: Vercel (AI Gateway, ZDR). Upstream providers become sub-subprocessors of Vercel under their ZDR contract, which is how Vercel documents it.
+## 2. Comparison page (`src/pages/compare/AIvsTraditional.tsx`)
 
-### Scope of the change
+- Update headline/H1 + SEO title + intro paragraph to reflect three options instead of two ("shepi DIY vs shepi DFY vs Traditional CPA Firm").
+- Expand `ComparisonTable` from 2 to 3 data columns:
+  - Headers: `["Factor", "shepi DIY", "shepi DFY", "Traditional CPA Firm"]`
+  - Rows: Cost ($2k / $4k / $20k+), Timeline (2–4h / 48–72h from match / 4+ weeks), Professional attestation (No / Yes – CPA-signed / Yes), Liability coverage (No / Yes – shepi E&O umbrella + CPA / Yes – firm E&O), Management interviews (Not included / Not included by default, available as upgrade / Included), Lender acceptance (Varies / Generally accepted with CPA signature / Generally accepted).
+- Refresh "When to Use Each" benefit grid to mention DFY as the middle option.
+- Update `jsonLd.dateModified` to today.
+- `ComparisonTable` already accepts arbitrary-width rows; verify by reading the component if needed, otherwise widen its types in the same edit.
 
-1. Add secret `VERCEL_AI_GATEWAY_KEY` (you generate it in the Vercel dashboard).
-2. New shared helper `supabase/functions/_shared/aiGateway.ts` exporting:
-   - `chatCompletion({ model, messages, ...openaiParams })`
-   - `embeddings({ model, input })`
-   - Both hit the gateway, pin ZDR, and return the OpenAI-shaped response.
-3. Find/replace `https://api.openai.com/v1/chat/completions` and `https://api.openai.com/v1/embeddings` across all functions, swap to the helper. Keep model strings the same initially (OpenAI through gateway) so we ship the ZDR fix in one PR without changing model behavior.
-4. Optional follow-up PR: switch document-parsing functions to `anthropic/claude-sonnet-4.5` (or keep on OpenAI — your call, model quality is the only question once ZDR is solved).
-5. Re-point `generate-narrative` and `classify-transfers/llmClassifier.ts` from direct Anthropic API → gateway too, so we have one auth path and one subprocessor.
+## 3. New FAQ entries on Pricing page
 
-### Functions touched
+- Add a new category to `faqCategories` in `src/pages/Pricing.tsx` (~line 110) titled **"Done-For-You (CPA-Signed)"** containing the 5 Q&A pairs verbatim from the brief (who's the CPA, is it like a Big 4 audit, what if it's wrong, engagement letter timing, state/industry matching).
+- Keep wording exactly as supplied — it's been legal-reviewed (SSCS-100 reference, 15-day refund window, $1M+ umbrella).
 
-All 12 you listed + the 3 RAG functions (`embed-project-data`, `embed-qoe-book`, `embed-rag-chunks`) + the 2 existing Claude functions (`generate-narrative`, `classify-transfers`). ~17 functions, mechanical search/replace.
+## 4. New CPA recruiting page
 
-### Subprocessors page result
+- Create `src/pages/CpaPartners.tsx` using `LegalPageLayout` or a simple `ContentPageLayout` (match existing marketing-page pattern — confirm by glance at neighbors).
+- Sections: Hero (headline + sub-line), How it works (3 steps), What you get (6 bullets), What we ask (4 bullets), CTA "Apply to the shepi Network".
+- Use the supplied copy verbatim.
+- CTA target: `mailto:partners@shepi.ai` placeholder until application form exists (flag for user to confirm).
+- Register route in `src/App.tsx`: `lazy(() => import("./pages/CpaPartners"))` and `{ path: "cpa-partners", element: wrap(<CpaPartners />) }` alongside other marketing routes.
+- Add `useSEO` tags: title "Join the shepi Network — CPA Partners", canonical `https://shepi.ai/cpa-partners`.
 
-- Remove: Google AI (Gemini), OpenAI, (later) drop direct Anthropic listing.
-- Add: **Vercel (AI Gateway, Zero Data Retention)** — "AI model routing for document parsing, analysis, narrative generation, and embeddings. Operates under a ZDR agreement; upstream providers (OpenAI, Anthropic) process requests under sub-processor terms with no data retention."
+---
 
-### Open questions
+## Out of scope (explicitly not touched)
 
-1. Confirm you want to centralize on Vercel AI Gateway (vs Lovable AI Gateway, which is the project's default — but Lovable AI Gateway's ZDR status with each upstream provider is unverified for this use case).
-2. Do you want to keep the same models (lowest-risk migration: just adds ZDR), or take this opportunity to move document parsing to Claude Sonnet 4.5?
-3. Pricing: gateway adds a small markup over provider rates per their docs — fine?
+- Pricing amounts in `src/lib/pricing.ts` (unchanged — $2k / $4k).
+- DPA / Subprocessors / Terms / Privacy (already updated in prior turns).
+- Stripe checkout, CPA matching backend, engagement-letter flow.
+- Footer/nav links — call out for user whether to add a footer link to `/cpa-partners`.
 
-### Cost / risk
+## Open question
 
-- Low engineering risk: no payload-shape changes if we keep OpenAI models, just URL + auth.
-- One new vendor relationship (Vercel) — they become the only AI subprocessor.
-- Single point of failure: gateway downtime = all AI features down. Mitigation: each helper call falls back to direct provider on 5xx. Optional, can add later.
+The brief says "link to application" for the CPA Partners CTA. Should the button be (a) `mailto:partners@shepi.ai`, (b) a Typeform/external URL you'll supply, or (c) a stub `/cpa-partners/apply` route I should also scaffold? Default if no answer: `mailto:partners@shepi.ai`.
