@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2.87.1";
+import { aiFetch } from "../_shared/zdrGuard.ts";
  
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",

@@ -1,6 +1,7 @@
 // ─── Anthropic Claude LLM Classifier ────────────────────────────────
 
 import type { TransactionCluster, ClusterClassification, BatchClusterClassification } from "./types.ts";
+import { aiFetch } from "../_shared/zdrGuard.ts";
 
 const ANTHROPIC_API_URL = "https://ai-gateway.vercel.sh/v1/messages";
 const ANTHROPIC_MODEL = "anthropic/claude-sonnet-4-20250514";
