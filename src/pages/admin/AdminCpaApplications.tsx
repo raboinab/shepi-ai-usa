@@ -122,6 +122,29 @@ export default function AdminCpaApplications() {
       toast({ title: "Update failed", description: err?.message, variant: "destructive" }),
   });
 
+  const promote = useMutation({
+    mutationFn: async (id: string) => {
+      const { data, error } = await supabase.functions.invoke("promote-cpa-application", {
+        body: { application_id: id },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      return data as { ok: boolean; cpa_user_id: string; invited: boolean };
+    },
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["admin-cpa-applications"] });
+      toast({
+        title: "Promoted to CPA",
+        description: data.invited
+          ? "Invite email sent. They'll land on onboarding after setting their password."
+          : "User already had an account. They can sign in and complete onboarding now.",
+      });
+      setSelected(null);
+    },
+    onError: (err: any) =>
+      toast({ title: "Promote failed", description: err?.message, variant: "destructive" }),
+  });
+
   function openDetail(a: CpaApplication) {
     setSelected(a);
     setNotes(a.decision_notes ?? "");
