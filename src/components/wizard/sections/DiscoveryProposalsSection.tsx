@@ -367,6 +367,10 @@ export function DiscoveryProposalsSection({
           </div>
 
           <StatusBadge status={proposal.status} />
+          <CpaReviewBadge
+            review={cpaReviewMap?.[proposal.id]}
+            originalAmount={proposal.proposed_amount}
+          />
         </div>
 
         {isExpanded && (
