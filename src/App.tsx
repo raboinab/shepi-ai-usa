@@ -72,6 +72,7 @@ const QualityOfEarningsChecklist = lazy(() => import("./pages/QualityOfEarningsC
 const ScopeOfWork = lazy(() => import("./pages/ScopeOfWork"));
 const ForAiAgents = lazy(() => import("./pages/ForAiAgents"));
 const CpaPartners = lazy(() => import("./pages/CpaPartners"));
+const ForCpas = lazy(() => import("./pages/ForCpas"));
 const AdminLayout = lazy(() => import("./layouts/AdminLayout").then(m => ({ default: m.AdminLayout })));
 const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
 const AdminUsers = lazy(() => import("./pages/admin/AdminUsers"));
@@ -159,6 +160,7 @@ export const routes: RouteRecord[] = [
       { path: "subprocessors", element: wrap(<Subprocessors />) },
       { path: "dpa", element: wrap(<DPA />) },
       { path: "cpa-partners", element: wrap(<CpaPartners />) },
+      { path: "for-cpas", element: wrap(<ForCpas />) },
 
       // SEO Content Pages
       { path: "resources", element: wrap(<Resources />) },
