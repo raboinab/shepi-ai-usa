@@ -38,6 +38,8 @@ import {
 } from "@/hooks/useDiscoveryProposals";
 import type { QoeLedgerAdjustment } from "@/types/qoeLedger";
 import { ProposalDetailCard } from "./discovery/ProposalDetailCard";
+import { useCpaReviewMap } from "@/hooks/useCpaReviewMap";
+import { CpaReviewBadge } from "@/components/cpa/CpaReviewBadge";
 
 interface DiscoveryProposalsSectionProps {
   projectId: string;
