@@ -89,6 +89,7 @@ const AdminMigration = lazy(() => import("./pages/admin/AdminMigration"));
 const CpaLayout = lazy(() => import("./layouts/CpaLayout").then(m => ({ default: m.CpaLayout })));
 const CpaQueue = lazy(() => import("./pages/cpa/CpaQueue"));
 const CpaEngagements = lazy(() => import("./pages/cpa/CpaEngagements"));
+const CpaOnboarding = lazy(() => import("./pages/cpa/CpaOnboarding"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
