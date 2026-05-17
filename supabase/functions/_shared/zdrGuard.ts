@@ -27,7 +27,7 @@ export async function ensureZdrEnabled(): Promise<void> {
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: "openai/gpt-4o-mini",
-        max_tokens: 1,
+        max_tokens: 16,
         messages: [{ role: "user", content: "ok" }],
         providerOptions: { gateway: { zeroDataRetention: true } },
       }),
