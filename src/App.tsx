@@ -235,6 +235,7 @@ export const routes: RouteRecord[] = [
         children: [
           { index: true, element: wrap(<CpaQueue />) },
           { path: "engagements", element: wrap(<CpaEngagements />) },
+          { path: "engagements/:projectId", element: wrap(<CpaEngagement />) },
           { path: "onboarding", element: wrap(<CpaOnboarding />) },
         ],
       },
