@@ -986,6 +986,7 @@ You have expertise across: EBITDA adjustments, cash flow analysis, and risk asse
 
     console.log(`[orchestrator] Sending to Anthropic. Agents: ${classification.agents.join(',')}. System: ${systemPrompt.length} chars. RAG chunks: project=${ragChunkCount}, textbook=${ragResult?.chunkCount || 0}`);
 
+    await ensureZdrEnabled();
     const anthropic = new Anthropic({ apiKey: VERCEL_AI_GATEWAY_KEY, baseURL: "https://ai-gateway.vercel.sh" });
     const anthropicStream = anthropic.messages.stream({
       model: "anthropic/claude-opus-4-7",
