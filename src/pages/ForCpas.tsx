@@ -163,28 +163,28 @@ export default function ForCpas() {
       <AccordionFAQ
         items={[
           {
-            q: "How much time does a typical review take?",
-            a: "Most engagements take 2–4 hours of focused review work, depending on the size and complexity of the target. You see the scope before you claim.",
+            question: "How much time does a typical review take?",
+            answer: "Most engagements take 2–4 hours of focused review work, depending on the size and complexity of the target. You see the scope before you claim.",
           },
           {
-            q: "Do I need malpractice / E&O coverage?",
-            a: "Yes. You must carry your own professional liability insurance and provide proof during onboarding.",
+            question: "Do I need malpractice / E&O coverage?",
+            answer: "Yes. You must carry your own professional liability insurance and provide proof during onboarding.",
           },
           {
-            q: "Can I work on Shepi alongside my firm job?",
-            a: "Only if your primary employer's policy permits outside engagements. You'll disclose this during application and it's your responsibility to keep it accurate.",
+            question: "Can I work on Shepi alongside my firm job?",
+            answer: "Only if your primary employer's policy permits outside engagements. You'll disclose this during application and it's your responsibility to keep it accurate.",
           },
           {
-            q: "Am I issuing a CPA opinion?",
-            a: "No. You are providing review of AI-generated adjustments. Shepi does not produce CPA-attested reports, and your role does not constitute attestation, audit, or SSARS work.",
+            question: "Am I issuing a CPA opinion?",
+            answer: "No. You are providing review of AI-generated adjustments. Shepi does not produce CPA-attested reports, and your role does not constitute attestation, audit, or SSARS work.",
           },
           {
-            q: "How quickly do I need to respond when matched to a project?",
-            a: "Initial claim or pass within a reasonable window. Once claimed, engagements have SLAs we share during onboarding. You can always pass on a match.",
+            question: "How quickly do I need to respond when matched to a project?",
+            answer: "Initial claim or pass within a reasonable window. Once claimed, engagements have SLAs we share during onboarding. You can always pass on a match.",
           },
           {
-            q: "Can I work with clients from any state?",
-            a: "You set your states served during onboarding. We match engagements based on your licensure and stated coverage.",
+            question: "Can I work with clients from any state?",
+            answer: "You set your states served during onboarding. We match engagements based on your licensure and stated coverage.",
           },
         ]}
       />
