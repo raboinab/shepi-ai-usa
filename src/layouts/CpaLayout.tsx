@@ -7,6 +7,7 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { CpaSidebar } from '@/components/cpa/CpaSidebar';
+import { NotificationBell } from '@/components/notifications/NotificationBell';
 
 export function CpaLayout() {
   const { isCpa, isLoading } = useCpaCheck();
