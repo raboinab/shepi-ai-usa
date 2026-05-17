@@ -774,6 +774,66 @@ export type Database = {
         }
         Relationships: []
       }
+      cpa_adjustment_reviews: {
+        Row: {
+          claim_id: string
+          cpa_note: string | null
+          cpa_user_id: string
+          created_at: string
+          decision: string
+          id: string
+          modified_amount: number | null
+          modified_period_values: Json | null
+          project_id: string
+          proposal_id: string
+          reviewed_at: string
+          updated_at: string
+        }
+        Insert: {
+          claim_id: string
+          cpa_note?: string | null
+          cpa_user_id: string
+          created_at?: string
+          decision: string
+          id?: string
+          modified_amount?: number | null
+          modified_period_values?: Json | null
+          project_id: string
+          proposal_id: string
+          reviewed_at?: string
+          updated_at?: string
+        }
+        Update: {
+          claim_id?: string
+          cpa_note?: string | null
+          cpa_user_id?: string
+          created_at?: string
+          decision?: string
+          id?: string
+          modified_amount?: number | null
+          modified_period_values?: Json | null
+          project_id?: string
+          proposal_id?: string
+          reviewed_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cpa_adjustment_reviews_claim_id_fkey"
+            columns: ["claim_id"]
+            isOneToOne: false
+            referencedRelation: "cpa_claims"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cpa_adjustment_reviews_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "adjustment_proposals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cpa_applications: {
         Row: {
           conflicts_disclosure: string | null
@@ -842,31 +902,49 @@ export type Database = {
       }
       cpa_claims: {
         Row: {
+          accepted_at: string | null
+          accepted_by_user_id: string | null
           claimed_at: string
+          completed_at: string | null
+          completion_summary: string | null
           cpa_user_id: string
           id: string
           notes: string | null
           project_id: string
           status: string
           updated_at: string
+          withdrawn_at: string | null
+          withdrawn_reason: string | null
         }
         Insert: {
+          accepted_at?: string | null
+          accepted_by_user_id?: string | null
           claimed_at?: string
+          completed_at?: string | null
+          completion_summary?: string | null
           cpa_user_id: string
           id?: string
           notes?: string | null
           project_id: string
           status?: string
           updated_at?: string
+          withdrawn_at?: string | null
+          withdrawn_reason?: string | null
         }
         Update: {
+          accepted_at?: string | null
+          accepted_by_user_id?: string | null
           claimed_at?: string
+          completed_at?: string | null
+          completion_summary?: string | null
           cpa_user_id?: string
           id?: string
           notes?: string | null
           project_id?: string
           status?: string
           updated_at?: string
+          withdrawn_at?: string | null
+          withdrawn_reason?: string | null
         }
         Relationships: [
           {
