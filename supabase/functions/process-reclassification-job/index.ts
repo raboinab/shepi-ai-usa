@@ -41,7 +41,7 @@ async function getClassificationContext(supabase: any, params: {
     console.log(`[RAG] Getting classification context (industry: ${params.industry})`);
 
     const embedding = await params.openai.embeddings.create({
-      model: "text-embedding-3-small",
+      model: "openai/text-embedding-3-small",
       input: contextQuery,
     });
 
@@ -241,7 +241,7 @@ Review each account's current classification (fsType, category, classification, 
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model: "openai/gpt-4o-mini",
         messages: [
           { role: "system", content: enhancedSystemPrompt },
           { role: "user", content: userPrompt },
@@ -575,7 +575,7 @@ Deno.serve(async (req) => {
             is_reclassification: true,
             suggested_from_line_item: s.from_line_item,
             suggested_to_line_item: s.to_line_item,
-            model: "gpt-4o-mini",
+            model: "openai/gpt-4o-mini",
             analysis_type: "enhanced_coa_review_with_rag",
             rag_enhanced: !!(classificationContext.industryGuidance || classificationContext.companyContext),
           },

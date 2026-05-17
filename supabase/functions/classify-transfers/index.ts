@@ -574,7 +574,7 @@ serve(async (req) => {
               const evidence: EvidenceAtom[] = [
                 {
                   type: "llm_classification",
-                  model: "claude-sonnet-4",
+                  model: "anthropic/claude-sonnet-4",
                   llm_confidence: clusterResult.confidence,
                   weight: clusterResult.confidence * 0.8,
                 },

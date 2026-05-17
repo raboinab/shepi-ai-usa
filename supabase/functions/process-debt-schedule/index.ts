@@ -89,7 +89,7 @@ Set confidence to:
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4o",
+        model: "openai/gpt-4o",
         messages: [
           { role: "system", content: systemPrompt },
           {

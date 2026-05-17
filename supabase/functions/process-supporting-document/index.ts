@@ -179,7 +179,7 @@ serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4o",
+        model: "openai/gpt-4o",
         messages,
         temperature: 0.1,
         max_tokens: 4096,

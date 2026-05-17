@@ -163,7 +163,7 @@ serve(async (req) => {
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              model: "text-embedding-3-small",
+              model: "openai/text-embedding-3-small",
               input: chunk.content,
             }),
           });

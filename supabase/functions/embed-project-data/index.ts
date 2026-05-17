@@ -857,7 +857,7 @@ serve(async (req) => {
           const embRes = await fetch("https://ai-gateway.vercel.sh/v1/embeddings", {
             method: "POST",
             headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ model: "text-embedding-3-small", input: batch.map(c => c.content) }),
+            body: JSON.stringify({ model: "openai/text-embedding-3-small", input: batch.map(c => c.content) }),
           });
           if (!embRes.ok) {
             console.error(`[embed-project-data] Embedding API error:`, await embRes.text());

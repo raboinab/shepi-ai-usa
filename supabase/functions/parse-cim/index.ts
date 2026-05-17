@@ -199,7 +199,7 @@ Return ONLY valid JSON, no markdown code blocks or additional text.`;
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-4o",
+        model: "openai/gpt-4o",
         messages: [
           {
             role: "user",

@@ -188,7 +188,7 @@ async function classifyIntent(
     const anthropic = new Anthropic({ apiKey });
     const classifyResponse = await anthropic.messages.create(
       {
-        model: "claude-sonnet-4-6",
+        model: "anthropic/claude-sonnet-4-6",
         max_tokens: 256,
         system: `Classify this QoE analysis question into one or more agent categories. Pick the minimum set needed.
 
@@ -725,7 +725,7 @@ serve(async (req) => {
       const embeddingRes = await fetch("https://ai-gateway.vercel.sh/v1/embeddings", {
         method: "POST",
         headers: { Authorization: `Bearer ${VERCEL_AI_GATEWAY_KEY}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "text-embedding-3-small", input: userMessage }),
+        body: JSON.stringify({ model: "openai/text-embedding-3-small", input: userMessage }),
       });
       if (embeddingRes.ok) {
         const embData = await embeddingRes.json();
@@ -990,7 +990,7 @@ You have expertise across: EBITDA adjustments, cash flow analysis, and risk asse
 
     const anthropic = new Anthropic({ apiKey: VERCEL_AI_GATEWAY_KEY });
     const anthropicStream = anthropic.messages.stream({
-      model: "claude-opus-4-7",
+      model: "anthropic/claude-opus-4-7",
       max_tokens: 16384,
       thinking: { type: "adaptive" },
       system: [
