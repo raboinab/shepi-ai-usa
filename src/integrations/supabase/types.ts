@@ -878,6 +878,140 @@ export type Database = {
           },
         ]
       }
+      cpa_onboarding_documents: {
+        Row: {
+          cpa_user_id: string
+          created_at: string
+          document_type: string
+          file_name: string
+          file_path: string
+          file_size: number | null
+          id: string
+          mime_type: string | null
+          notes: string | null
+          reviewed_at: string | null
+          reviewer_user_id: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          cpa_user_id: string
+          created_at?: string
+          document_type: string
+          file_name: string
+          file_path: string
+          file_size?: number | null
+          id?: string
+          mime_type?: string | null
+          notes?: string | null
+          reviewed_at?: string | null
+          reviewer_user_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          cpa_user_id?: string
+          created_at?: string
+          document_type?: string
+          file_name?: string
+          file_path?: string
+          file_size?: number | null
+          id?: string
+          mime_type?: string | null
+          notes?: string | null
+          reviewed_at?: string | null
+          reviewer_user_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      cpa_profiles: {
+        Row: {
+          active: boolean
+          application_id: string | null
+          background_check_status: string
+          bio: string | null
+          created_at: string
+          email: string
+          full_name: string
+          id: string
+          industries: string[]
+          liability_covered: boolean
+          liability_expires_at: string | null
+          license_number: string
+          license_verified_at: string | null
+          linkedin_url: string | null
+          max_concurrent_engagements: number
+          onboarding_completed_at: string | null
+          phone: string | null
+          state_of_licensure: string
+          states_served: string[]
+          updated_at: string
+          user_id: string
+          w9_on_file: boolean
+          years_experience: number | null
+        }
+        Insert: {
+          active?: boolean
+          application_id?: string | null
+          background_check_status?: string
+          bio?: string | null
+          created_at?: string
+          email: string
+          full_name: string
+          id?: string
+          industries?: string[]
+          liability_covered?: boolean
+          liability_expires_at?: string | null
+          license_number: string
+          license_verified_at?: string | null
+          linkedin_url?: string | null
+          max_concurrent_engagements?: number
+          onboarding_completed_at?: string | null
+          phone?: string | null
+          state_of_licensure: string
+          states_served?: string[]
+          updated_at?: string
+          user_id: string
+          w9_on_file?: boolean
+          years_experience?: number | null
+        }
+        Update: {
+          active?: boolean
+          application_id?: string | null
+          background_check_status?: string
+          bio?: string | null
+          created_at?: string
+          email?: string
+          full_name?: string
+          id?: string
+          industries?: string[]
+          liability_covered?: boolean
+          liability_expires_at?: string | null
+          license_number?: string
+          license_verified_at?: string | null
+          linkedin_url?: string | null
+          max_concurrent_engagements?: number
+          onboarding_completed_at?: string | null
+          phone?: string | null
+          state_of_licensure?: string
+          states_served?: string[]
+          updated_at?: string
+          user_id?: string
+          w9_on_file?: boolean
+          years_experience?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cpa_profiles_application_id_fkey"
+            columns: ["application_id"]
+            isOneToOne: false
+            referencedRelation: "cpa_applications"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       demo_views: {
         Row: {
           id: string
