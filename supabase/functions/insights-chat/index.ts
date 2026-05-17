@@ -3,6 +3,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.87.1";
 import Anthropic from "npm:@anthropic-ai/sdk@0.88.0";
 
+import { aiFetch, ensureZdrEnabled } from "../_shared/zdrGuard.ts";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-api-key, x-service-name, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
@@ -718,7 +719,7 @@ serve(async (req) => {
     // Embed the user query once; shared across project-RAG + textbook-RAG.
     let queryEmbedding: number[] | null = null;
     try {
-      const embeddingRes = await fetch("https://ai-gateway.vercel.sh/v1/embeddings", {
+      const embeddingRes = await aiFetch("https://ai-gateway.vercel.sh/v1/embeddings", {
         method: "POST",
         headers: { Authorization: `Bearer ${VERCEL_AI_GATEWAY_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({ model: "openai/text-embedding-3-small", input: userMessage }),

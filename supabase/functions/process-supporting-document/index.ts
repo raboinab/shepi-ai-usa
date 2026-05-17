@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.87.1";
 import * as XLSX from "npm:xlsx@0.18.5";
 
+import { aiFetch, ensureZdrEnabled } from "../_shared/zdrGuard.ts";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
@@ -172,7 +173,7 @@ serve(async (req) => {
     }
 
     stage = "openai_call";
-    const response = await fetch("https://ai-gateway.vercel.sh/v1/chat/completions", {
+    const response = await aiFetch("https://ai-gateway.vercel.sh/v1/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${VERCEL_AI_GATEWAY_KEY}`,

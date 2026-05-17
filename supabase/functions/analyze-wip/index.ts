@@ -1,3 +1,4 @@
+import { aiFetch, ensureZdrEnabled } from "../_shared/zdrGuard.ts";
 /**
  * analyze-wip
  * Runs structured WIP analysis via OpenAI (gpt-4o-mini).
@@ -112,7 +113,7 @@ Identify findings in these categories — only emit a finding if it is materiall
 
 Be conservative. Empty findings array is acceptable for a clean schedule.`;
 
-    const response = await fetch("https://ai-gateway.vercel.sh/v1/chat/completions", {
+    const response = await aiFetch("https://ai-gateway.vercel.sh/v1/chat/completions", {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${VERCEL_AI_GATEWAY_KEY}`,

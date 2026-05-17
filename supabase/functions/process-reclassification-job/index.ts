@@ -3,6 +3,7 @@ import { OpenAI } from "npm:openai@4.65.0";
 
 // Classification-focused query aligned to actual misclassification patterns
 // (COA line-item placement follows the same rules regardless of industry)
+import { aiFetch, ensureZdrEnabled } from "../_shared/zdrGuard.ts";
 const classificationQuery =
   'account classification financial statements depreciation amortization ' +
   'cost of goods sold operating expenses interest expense owner compensation ' +
@@ -234,7 +235,7 @@ Review each account's current classification (fsType, category, classification, 
 
   const startTime = Date.now();
   try {
-    const response = await fetch("https://ai-gateway.vercel.sh/v1/chat/completions", {
+    const response = await aiFetch("https://ai-gateway.vercel.sh/v1/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${lovableApiKey}`,

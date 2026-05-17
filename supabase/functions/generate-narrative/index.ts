@@ -3,6 +3,7 @@
 // against the source rawData, and persists the result to project_narratives.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+import { aiFetch, ensureZdrEnabled } from "../_shared/zdrGuard.ts";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
@@ -152,7 +153,7 @@ async function callClaude(
   userPrompt: string,
   tool: typeof bulletsTool | typeof paragraphsTool,
 ): Promise<NarrativeContent> {
-  const res = await fetch("https://ai-gateway.vercel.sh/v1/messages", {
+  const res = await aiFetch("https://ai-gateway.vercel.sh/v1/messages", {
     method: "POST",
     headers: {
       "x-api-key": VERCEL_AI_GATEWAY_KEY,
