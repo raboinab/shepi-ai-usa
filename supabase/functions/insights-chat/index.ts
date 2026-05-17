@@ -185,7 +185,7 @@ async function classifyIntent(
 
   // LLM classifier for ambiguous queries. Short structured task (<256 tokens, 8s budget).
   try {
-    const anthropic = new Anthropic({ apiKey });
+    const anthropic = new Anthropic({ apiKey, baseURL: "https://ai-gateway.vercel.sh" });
     const classifyResponse = await anthropic.messages.create(
       {
         model: "anthropic/claude-sonnet-4-6",
@@ -661,14 +661,10 @@ serve(async (req) => {
 
   try {
     const { messages, wizardData, projectInfo, currentSection } = await req.json();
-    const VERCEL_AI_GATEWAY_KEY = Deno.env.get("VERCEL_AI_GATEWAY_KEY"); // still used for embeddings
     const VERCEL_AI_GATEWAY_KEY = Deno.env.get("VERCEL_AI_GATEWAY_KEY");
 
     if (!VERCEL_AI_GATEWAY_KEY) {
       throw new Error("VERCEL_AI_GATEWAY_KEY is not configured");
-    }
-    if (!VERCEL_AI_GATEWAY_KEY) {
-      throw new Error("VERCEL_AI_GATEWAY_KEY is not configured (required for embeddings)");
     }
 
     // === Security: Prompt injection guard ===
@@ -988,7 +984,7 @@ You have expertise across: EBITDA adjustments, cash flow analysis, and risk asse
 
     console.log(`[orchestrator] Sending to Anthropic. Agents: ${classification.agents.join(',')}. System: ${systemPrompt.length} chars. RAG chunks: project=${ragChunkCount}, textbook=${ragResult?.chunkCount || 0}`);
 
-    const anthropic = new Anthropic({ apiKey: VERCEL_AI_GATEWAY_KEY });
+    const anthropic = new Anthropic({ apiKey: VERCEL_AI_GATEWAY_KEY, baseURL: "https://ai-gateway.vercel.sh" });
     const anthropicStream = anthropic.messages.stream({
       model: "anthropic/claude-opus-4-7",
       max_tokens: 16384,
