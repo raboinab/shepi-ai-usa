@@ -661,14 +661,14 @@ serve(async (req) => {
 
   try {
     const { messages, wizardData, projectInfo, currentSection } = await req.json();
-    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY"); // still used for embeddings
-    const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
+    const VERCEL_AI_GATEWAY_KEY = Deno.env.get("VERCEL_AI_GATEWAY_KEY"); // still used for embeddings
+    const VERCEL_AI_GATEWAY_KEY = Deno.env.get("VERCEL_AI_GATEWAY_KEY");
 
-    if (!ANTHROPIC_API_KEY) {
-      throw new Error("ANTHROPIC_API_KEY is not configured");
+    if (!VERCEL_AI_GATEWAY_KEY) {
+      throw new Error("VERCEL_AI_GATEWAY_KEY is not configured");
     }
-    if (!OPENAI_API_KEY) {
-      throw new Error("OPENAI_API_KEY is not configured (required for embeddings)");
+    if (!VERCEL_AI_GATEWAY_KEY) {
+      throw new Error("VERCEL_AI_GATEWAY_KEY is not configured (required for embeddings)");
     }
 
     // === Security: Prompt injection guard ===
@@ -713,7 +713,7 @@ serve(async (req) => {
     console.log(`[orchestrator] Request: project=${projectInfo?.name}, section=${currentSection?.sectionName || 'none'}`);
 
     // === STEP 1: Classify intent ===
-    const classification = await classifyIntent(userMessage, currentSection, ANTHROPIC_API_KEY);
+    const classification = await classifyIntent(userMessage, currentSection, VERCEL_AI_GATEWAY_KEY);
     console.log(`[orchestrator] Classification: ${classification.agents.join(', ')} — ${classification.reasoning}`);
 
     // === STEP 2: Retrieve project data via RAG ===
@@ -722,9 +722,9 @@ serve(async (req) => {
     // Embed the user query once; shared across project-RAG + textbook-RAG.
     let queryEmbedding: number[] | null = null;
     try {
-      const embeddingRes = await fetch("https://api.openai.com/v1/embeddings", {
+      const embeddingRes = await fetch("https://ai-gateway.vercel.sh/v1/embeddings", {
         method: "POST",
-        headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
+        headers: { Authorization: `Bearer ${VERCEL_AI_GATEWAY_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({ model: "text-embedding-3-small", input: userMessage }),
       });
       if (embeddingRes.ok) {
@@ -988,7 +988,7 @@ You have expertise across: EBITDA adjustments, cash flow analysis, and risk asse
 
     console.log(`[orchestrator] Sending to Anthropic. Agents: ${classification.agents.join(',')}. System: ${systemPrompt.length} chars. RAG chunks: project=${ragChunkCount}, textbook=${ragResult?.chunkCount || 0}`);
 
-    const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+    const anthropic = new Anthropic({ apiKey: VERCEL_AI_GATEWAY_KEY });
     const anthropicStream = anthropic.messages.stream({
       model: "claude-opus-4-7",
       max_tokens: 16384,

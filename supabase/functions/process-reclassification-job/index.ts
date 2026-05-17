@@ -234,7 +234,7 @@ Review each account's current classification (fsType, category, classification, 
 
   const startTime = Date.now();
   try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const response = await fetch("https://ai-gateway.vercel.sh/v1/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${lovableApiKey}`,
@@ -314,8 +314,8 @@ Deno.serve(async (req) => {
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const lovableApiKey = Deno.env.get("OPENAI_API_KEY");
-  const openaiKey = Deno.env.get("OPENAI_API_KEY");
+  const lovableApiKey = Deno.env.get("VERCEL_AI_GATEWAY_KEY");
+  const openaiKey = Deno.env.get("VERCEL_AI_GATEWAY_KEY");
   const supabase = createClient(supabaseUrl, serviceKey);
 
   let jobId: string | undefined;
@@ -377,9 +377,9 @@ Deno.serve(async (req) => {
     if (!lovableApiKey) {
       await supabase
         .from("reclassification_jobs")
-        .update({ status: "failed", error_message: "OPENAI_API_KEY not configured", updated_at: new Date().toISOString() })
+        .update({ status: "failed", error_message: "VERCEL_AI_GATEWAY_KEY not configured", updated_at: new Date().toISOString() })
         .eq("id", jobId);
-      return new Response(JSON.stringify({ error: "OPENAI_API_KEY not configured" }), {
+      return new Response(JSON.stringify({ error: "VERCEL_AI_GATEWAY_KEY not configured" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

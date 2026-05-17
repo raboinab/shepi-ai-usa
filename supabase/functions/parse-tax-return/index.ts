@@ -580,7 +580,7 @@ async function extractWithAI(base64: string, mimeType: string, apiKey: string): 
 
   console.log("Sending document to AI for comprehensive extraction...");
   
-  const aiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+  const aiResponse = await fetch("https://ai-gateway.vercel.sh/v1/chat/completions", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -654,11 +654,11 @@ serve(async (req) => {
       );
     }
 
-    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+    const VERCEL_AI_GATEWAY_KEY = Deno.env.get("VERCEL_AI_GATEWAY_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-    if (!OPENAI_API_KEY || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    if (!VERCEL_AI_GATEWAY_KEY || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
       throw new Error("Missing required environment variables");
     }
 
@@ -703,7 +703,7 @@ serve(async (req) => {
     const fileType = document.file_type?.toLowerCase() || "pdf";
     const mimeType = fileType === "pdf" ? "application/pdf" : `image/${fileType}`;
     
-    const extractedData = await extractWithAI(base64, mimeType, OPENAI_API_KEY);
+    const extractedData = await extractWithAI(base64, mimeType, VERCEL_AI_GATEWAY_KEY);
 
     // Log extraction summary
     console.log("Extracted form type:", extractedData.formType);

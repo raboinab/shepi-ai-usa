@@ -54,11 +54,11 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const lovableApiKey = Deno.env.get('OPENAI_API_KEY');
+    const lovableApiKey = Deno.env.get('VERCEL_AI_GATEWAY_KEY');
 
     if (!lovableApiKey) {
       return new Response(
-        JSON.stringify({ error: 'OPENAI_API_KEY not configured' }),
+        JSON.stringify({ error: 'VERCEL_AI_GATEWAY_KEY not configured' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -219,7 +219,7 @@ Return your response as a valid JSON object with this exact structure:
     console.log('Calling OpenAI for fixed assets extraction...');
 
     // Call OpenAI
-    const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+    const aiResponse = await fetch('https://ai-gateway.vercel.sh/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${lovableApiKey}`,

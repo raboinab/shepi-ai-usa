@@ -9,10 +9,10 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY")!;
+const VERCEL_AI_GATEWAY_KEY = Deno.env.get("VERCEL_AI_GATEWAY_KEY")!;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const MODEL = "claude-sonnet-4-5";
+const MODEL = "anthropic/claude-sonnet-4-5";
 
 type Style = "bullets" | "paragraphs";
 
@@ -152,10 +152,10 @@ async function callClaude(
   userPrompt: string,
   tool: typeof bulletsTool | typeof paragraphsTool,
 ): Promise<NarrativeContent> {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+  const res = await fetch("https://ai-gateway.vercel.sh/v1/messages", {
     method: "POST",
     headers: {
-      "x-api-key": ANTHROPIC_API_KEY,
+      "x-api-key": VERCEL_AI_GATEWAY_KEY,
       "anthropic-version": "2023-06-01",
       "content-type": "application/json",
     },

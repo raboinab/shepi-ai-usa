@@ -27,7 +27,7 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const lovableApiKey = Deno.env.get('OPENAI_API_KEY');
+    const lovableApiKey = Deno.env.get('VERCEL_AI_GATEWAY_KEY');
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
@@ -171,7 +171,7 @@ Extract everything you can see. If the document is unclear or has limited conten
     console.log('Calling OpenAI for text extraction...');
 
     // Call OpenAI with Gemini (vision-capable)
-    const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+    const aiResponse = await fetch('https://ai-gateway.vercel.sh/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${lovableApiKey}`,

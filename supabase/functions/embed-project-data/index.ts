@@ -795,10 +795,10 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
+    const openaiApiKey = Deno.env.get("VERCEL_AI_GATEWAY_KEY");
 
     if (!openaiApiKey) {
-      throw new Error("OPENAI_API_KEY not configured");
+      throw new Error("VERCEL_AI_GATEWAY_KEY not configured");
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
@@ -854,7 +854,7 @@ serve(async (req) => {
       for (let i = 0; i < chunks.length; i += EMBEDDING_BATCH_SIZE) {
         const batch = chunks.slice(i, i + EMBEDDING_BATCH_SIZE);
         try {
-          const embRes = await fetch("https://api.openai.com/v1/embeddings", {
+          const embRes = await fetch("https://ai-gateway.vercel.sh/v1/embeddings", {
             method: "POST",
             headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
             body: JSON.stringify({ model: "text-embedding-3-small", input: batch.map(c => c.content) }),

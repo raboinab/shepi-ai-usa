@@ -23,10 +23,10 @@ serve(async (req) => {
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+    const VERCEL_AI_GATEWAY_KEY = Deno.env.get("VERCEL_AI_GATEWAY_KEY");
 
-    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !OPENAI_API_KEY) {
-      throw new Error("Missing configuration: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, or OPENAI_API_KEY");
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !VERCEL_AI_GATEWAY_KEY) {
+      throw new Error("Missing configuration: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, or VERCEL_AI_GATEWAY_KEY");
     }
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -92,10 +92,10 @@ serve(async (req) => {
       const embeddingPromises = batch.map(async (chunk) => {
         try {
           // Call OpenAI embeddings API
-          const response = await fetch("https://api.openai.com/v1/embeddings", {
+          const response = await fetch("https://ai-gateway.vercel.sh/v1/embeddings", {
             method: "POST",
             headers: {
-              "Authorization": `Bearer ${OPENAI_API_KEY}`,
+              "Authorization": `Bearer ${VERCEL_AI_GATEWAY_KEY}`,
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
