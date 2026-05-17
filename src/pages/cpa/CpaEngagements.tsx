@@ -160,22 +160,13 @@ export default function CpaEngagements() {
                     Message Client
                   </Button>
 
-                <div className="mt-auto pt-3 space-y-2">
-                  <Button
-                    variant="outline"
-                    className="w-full gap-2"
-                    onClick={() => setChatOpenFor(chatOpenFor === eng.project_id ? null : eng.project_id)}
-                  >
-                    <MessageCircle className="h-4 w-4" />
-                    Message Client
-                  </Button>
                   <Button
                     variant="outline"
                     className="w-full gap-2"
                     onClick={() => navigate(`/project/${eng.project_id}`)}
                   >
                     <ExternalLink className="h-4 w-4" />
-                    Open Project
+                    View Client Project
                   </Button>
                 </div>
                 {chatOpenFor === eng.project_id && (
