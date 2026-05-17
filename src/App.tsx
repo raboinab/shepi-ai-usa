@@ -72,6 +72,7 @@ const QualityOfEarningsChecklist = lazy(() => import("./pages/QualityOfEarningsC
 const ScopeOfWork = lazy(() => import("./pages/ScopeOfWork"));
 const ForAiAgents = lazy(() => import("./pages/ForAiAgents"));
 const CpaPartners = lazy(() => import("./pages/CpaPartners"));
+const ForCpas = lazy(() => import("./pages/ForCpas"));
 const AdminLayout = lazy(() => import("./layouts/AdminLayout").then(m => ({ default: m.AdminLayout })));
 const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
 const AdminUsers = lazy(() => import("./pages/admin/AdminUsers"));
@@ -89,6 +90,7 @@ const AdminMigration = lazy(() => import("./pages/admin/AdminMigration"));
 const CpaLayout = lazy(() => import("./layouts/CpaLayout").then(m => ({ default: m.CpaLayout })));
 const CpaQueue = lazy(() => import("./pages/cpa/CpaQueue"));
 const CpaEngagements = lazy(() => import("./pages/cpa/CpaEngagements"));
+const CpaEngagement = lazy(() => import("./pages/cpa/CpaEngagement"));
 const CpaOnboarding = lazy(() => import("./pages/cpa/CpaOnboarding"));
 
 const queryClient = new QueryClient({
@@ -159,6 +161,7 @@ export const routes: RouteRecord[] = [
       { path: "subprocessors", element: wrap(<Subprocessors />) },
       { path: "dpa", element: wrap(<DPA />) },
       { path: "cpa-partners", element: wrap(<CpaPartners />) },
+      { path: "for-cpas", element: wrap(<ForCpas />) },
 
       // SEO Content Pages
       { path: "resources", element: wrap(<Resources />) },
@@ -232,6 +235,7 @@ export const routes: RouteRecord[] = [
         children: [
           { index: true, element: wrap(<CpaQueue />) },
           { path: "engagements", element: wrap(<CpaEngagements />) },
+          { path: "engagements/:projectId", element: wrap(<CpaEngagement />) },
           { path: "onboarding", element: wrap(<CpaOnboarding />) },
         ],
       },

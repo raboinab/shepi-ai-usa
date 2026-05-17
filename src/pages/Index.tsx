@@ -1197,6 +1197,28 @@ const Index = () => {
         </div>
       </section>
 
+      {/* For CPAs strip */}
+      <section className="bg-secondary py-16 px-6 md:px-12">
+        <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-8">
+          <div className="max-w-2xl">
+            <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3">For CPAs</p>
+            <h2 className="text-3xl md:text-4xl font-serif text-foreground mb-3">
+              Review QoE adjustments. Earn side income.
+            </h2>
+            <p className="text-muted-foreground">
+              Licensed CPAs review AI-generated adjustments on Shepi's Done-For-You
+              engagements. Flexible, per-engagement work — no business development required.
+            </p>
+          </div>
+          <Link
+            to="/for-cpas"
+            className="inline-flex items-center justify-center rounded-md bg-foreground px-6 py-3 text-sm font-medium text-background hover:bg-foreground/90 transition-colors shrink-0"
+          >
+            Learn more →
+          </Link>
+        </div>
+      </section>
+
       {/* Footer */}
       <footer className="bg-foreground py-12 px-6 md:px-12">
         <div className="max-w-6xl mx-auto">
@@ -1230,6 +1252,7 @@ const Index = () => {
               <ul className="space-y-2">
                 <li><a href="#our-story" className="text-secondary/70 hover:text-secondary text-sm">About</a></li>
                 <li><a href="#contact" className="text-secondary/70 hover:text-secondary text-sm">Contact</a></li>
+                <li><Link to="/for-cpas" className="text-secondary/70 hover:text-secondary text-sm">For CPAs</Link></li>
               </ul>
             </div>
             <div>

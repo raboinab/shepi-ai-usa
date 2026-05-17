@@ -15,6 +15,12 @@ import { Briefcase, ExternalLink, MessageCircle } from 'lucide-react';
 import { EngagementChat } from '@/components/EngagementChat';
 
 const statusColors: Record<string, 'default' | 'secondary' | 'outline'> = {
+  proposed: 'secondary',
+  accepted: 'default',
+  in_review: 'default',
+  completed: 'outline',
+  withdrawn: 'outline',
+  // legacy
   in_progress: 'default',
   review: 'secondary',
   delivered: 'outline',
@@ -124,18 +130,27 @@ export default function CpaEngagements() {
                     value={eng.status}
                     onValueChange={(value) => updateStatusMutation.mutate({ claimId: eng.id, status: value })}
                   >
-                    <SelectTrigger className="h-7 text-xs w-[130px]">
+                    <SelectTrigger className="h-7 text-xs w-[150px]">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="in_progress">In Progress</SelectItem>
-                      <SelectItem value="review">Review</SelectItem>
-                      <SelectItem value="delivered">Delivered</SelectItem>
+                      <SelectItem value="proposed">Proposed</SelectItem>
+                      <SelectItem value="accepted">Accepted</SelectItem>
+                      <SelectItem value="in_review">In Review</SelectItem>
+                      <SelectItem value="completed">Completed</SelectItem>
+                      <SelectItem value="withdrawn">Withdrawn</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
                 <div className="mt-auto pt-3 space-y-2">
+                  <Button
+                    className="w-full gap-2"
+                    onClick={() => navigate(`/cpa/engagements/${eng.project_id}`)}
+                  >
+                    <Briefcase className="h-4 w-4" />
+                    Open Engagement
+                  </Button>
                   <Button
                     variant="outline"
                     className="w-full gap-2"
@@ -144,13 +159,14 @@ export default function CpaEngagements() {
                     <MessageCircle className="h-4 w-4" />
                     Message Client
                   </Button>
+
                   <Button
                     variant="outline"
                     className="w-full gap-2"
                     onClick={() => navigate(`/project/${eng.project_id}`)}
                   >
                     <ExternalLink className="h-4 w-4" />
-                    Open Project
+                    View Client Project
                   </Button>
                 </div>
                 {chatOpenFor === eng.project_id && (
