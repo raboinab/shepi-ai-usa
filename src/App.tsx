@@ -219,6 +219,7 @@ export const routes: RouteRecord[] = [
           { path: "documents", element: wrap(<AdminDocuments />) },
           { path: "data-export", element: wrap(<AdminDataExport />) },
           { path: "dfy-engagements", element: wrap(<AdminDFYEngagements />) },
+          { path: "cpa-applications", element: wrap(<AdminCpaApplications />) },
           { path: "migration", element: wrap(<AdminMigration />) },
         ],
       },
