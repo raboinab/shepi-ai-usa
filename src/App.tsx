@@ -84,6 +84,7 @@ const AdminDiagnostics = lazy(() => import("./pages/admin/AdminDiagnostics"));
 const AdminDocuments = lazy(() => import("./pages/admin/AdminDocuments"));
 const AdminDataExport = lazy(() => import("./pages/admin/AdminDataExport"));
 const AdminDFYEngagements = lazy(() => import("./pages/admin/AdminDFYEngagements"));
+const AdminCpaApplications = lazy(() => import("./pages/admin/AdminCpaApplications"));
 const AdminMigration = lazy(() => import("./pages/admin/AdminMigration"));
 const CpaLayout = lazy(() => import("./layouts/CpaLayout").then(m => ({ default: m.CpaLayout })));
 const CpaQueue = lazy(() => import("./pages/cpa/CpaQueue"));
