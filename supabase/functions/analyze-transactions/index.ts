@@ -800,7 +800,7 @@ const corsHeaders = {
      }
  
      try {
-       const response = await fetch(AI_GATEWAY_URL, {
+       const response = await aiFetch(AI_GATEWAY_URL, {
          method: "POST",
          headers: {
            Authorization: `Bearer ${VERCEL_AI_GATEWAY_KEY}`,

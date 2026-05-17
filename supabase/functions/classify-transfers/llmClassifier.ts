@@ -42,7 +42,7 @@ Classify the cluster as:
 Provide your confidence (0-1), what evidence supports your classification, what contradicts it, and what review action you recommend.
 When uncertain, default to OPERATING with lower confidence.`;
 
-  const response = await fetch(ANTHROPIC_API_URL, {
+  const response = await aiFetch(ANTHROPIC_API_URL, {
     method: "POST",
     headers: {
       "x-api-key": apiKey,
@@ -197,7 +197,7 @@ Classify each cluster as:
 You will receive multiple clusters numbered [0] through [${clusters.length - 1}]. Classify ALL of them in one response.
 When uncertain, default to OPERATING with lower confidence.`;
 
-  const response = await fetch(ANTHROPIC_API_URL, {
+  const response = await aiFetch(ANTHROPIC_API_URL, {
     method: "POST",
     headers: {
       "x-api-key": apiKey,
