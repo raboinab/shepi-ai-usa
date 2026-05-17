@@ -128,3 +128,5 @@ additional_redirect_urls = [
     verify_jwt = false
   [functions.cpa-sla-check]
     verify_jwt = false
+  [functions.cpa-auto-accept]
+    verify_jwt = false
