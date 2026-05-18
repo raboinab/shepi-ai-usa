@@ -33,8 +33,8 @@ export default function FinancialRedFlags() {
   return (
     <ContentPageLayout
       title="Financial Due Diligence Red Flags — Complete Checklist"
-      seoTitle="Financial Red Flags Checklist for M&A Due | Shepi"
-      seoDescription="Comprehensive checklist of financial red flags in acquisitions: revenue manipulation, expense anomalies, balance sheet risks, cash flow signals, GL-level."
+      seoTitle="Financial Red Flags Checklist for M&A Due Diligence | Shepi"
+      seoDescription="Comprehensive checklist of financial red flags in acquisitions: revenue manipulation, expense anomalies, balance sheet risks, cash flow signals, GL-level anomalies, and how to investigate each one."
       canonical="https://shepi.ai/guides/financial-red-flags"
       breadcrumbs={[
         { label: "Resources", href: "/resources" },
