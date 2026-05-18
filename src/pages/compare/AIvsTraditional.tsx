@@ -70,7 +70,7 @@ export default function AIvsTraditional() {
           ["Cost per project", "$2,000", "$4,000", "$20,000+"],
           ["Timeline", "2–4 hours of work", "48–72 hours from match", "4+ weeks"],
           ["Professional attestation", "No", "Yes (CPA-signed)", "Yes"],
-          ["Liability coverage", "No", "Yes (shepi E&O umbrella + CPA's professional standing)", "Yes (firm's E&O)"],
+          ["Liability coverage", "No", "CPA's professional standing and own E&O", "Yes (firm's E&O)"],
           ["Lender acceptance", "Varies", "Generally accepted with CPA signature", "Generally accepted"],
           ["Management interviews", "Not included", "Not included by default; available as upgrade", "Included"],
           ["Who does the work", "You", "Matched licensed CPA, on shepi software", "Firm staff"],
