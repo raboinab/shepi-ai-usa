@@ -12,7 +12,10 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "generate-guides": "npx tsx scripts/generate-industry-guides.ts",
-    "backfill-flags": "npx tsx scripts/backfill-classifications.ts"
+    "backfill-flags": "npx tsx scripts/backfill-classifications.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
