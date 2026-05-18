@@ -210,9 +210,9 @@ export default function ForCpas() {
         </li>
       </ul>
       <p>
-        This keeps the work inside what the platform's professional liability and
-        terms of service cover, and keeps you clear of unauthorized-practice and
-        scope-creep risk.
+        This keeps the work inside the scope defined by Shepi's terms of service
+        and your own professional liability coverage, and keeps you clear of
+        unauthorized-practice and scope-creep risk.
       </p>
 
       <h2 id="compensation">Compensation</h2>
@@ -223,34 +223,7 @@ export default function ForCpas() {
       </p>
 
       <h2 id="faq">FAQ</h2>
-      <AccordionFAQ
-        items={[
-          {
-            question: "How much time does a typical review take?",
-            answer: "Most engagements take 2–4 hours of focused review work, depending on the size and complexity of the target. You see the scope before you claim.",
-          },
-          {
-            question: "Do I need malpractice / E&O coverage?",
-            answer: "Yes. You must carry your own professional liability insurance and provide proof during onboarding.",
-          },
-          {
-            question: "Can I work on Shepi alongside my firm job?",
-            answer: "Only if your primary employer's policy permits outside engagements. You'll disclose this during application and it's your responsibility to keep it accurate.",
-          },
-          {
-            question: "Am I issuing a CPA opinion?",
-            answer: "No. You are providing review of AI-generated adjustments. Shepi does not produce CPA-attested reports, and your role does not constitute attestation, audit, or SSARS work.",
-          },
-          {
-            question: "How quickly do I need to respond when matched to a project?",
-            answer: "Initial claim or pass within a reasonable window. Once claimed, engagements have SLAs we share during onboarding. You can always pass on a match.",
-          },
-          {
-            question: "Can I work with clients from any state?",
-            answer: "You set your states served during onboarding. We match engagements based on your licensure and stated coverage.",
-          },
-        ]}
-      />
+      <AccordionFAQ items={faqItems} />
 
       <div className="mt-12 rounded-2xl border border-border bg-secondary/40 p-8 text-center">
         <h3 className="text-2xl font-serif mb-3">Ready to apply?</h3>
