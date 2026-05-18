@@ -14,8 +14,10 @@ import { join } from "node:path";
 
 const GUIDES_DIR = join(process.cwd(), "src/pages/guides");
 
-const TITLE_RE = /seoTitle=\{?["']([^"']+)["']\}?/;
-const DESC_RE = /seoDescription=\{?["']([^"']+)["']\}?/;
+// Match seoTitle="..." or seoTitle='...' or seoTitle={"..."} — quote-aware so
+// apostrophes inside double-quoted strings don't terminate the match early.
+const TITLE_RE = /seoTitle=\{?(?:"([^"]+)"|'([^']+)')\}?/;
+const DESC_RE = /seoDescription=\{?(?:"([^"]+)"|'([^']+)')\}?/;
 
 const guideFiles = readdirSync(GUIDES_DIR).filter((f) => f.endsWith(".tsx"));
 
