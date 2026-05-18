@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
 // Bump this string whenever the ToS is updated — all users will be re-prompted
-export const CURRENT_TOS_VERSION = '2026-04-13';
+export const CURRENT_TOS_VERSION = '2026-05-18';
 
 interface TosAcceptanceState {
   hasAccepted: boolean;

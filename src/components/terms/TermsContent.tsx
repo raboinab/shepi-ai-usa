@@ -2,7 +2,7 @@ export function TermsContent() {
   return (
     <div className="prose prose-sm max-w-none dark:prose-invert">
       <p className="text-muted-foreground text-xs mb-4">
-        <strong>Effective Date:</strong> April 13, 2026
+        <strong>Effective Date:</strong> May 18, 2026
       </p>
       <p>
         These Terms of Service (&ldquo;Terms&rdquo;) govern your access to and use of the shepi platform, website, software, outputs, and related services provided by SMB EDGE d/b/a shepi (&ldquo;shepi,&rdquo; &ldquo;we,&rdquo; &ldquo;us,&rdquo; or &ldquo;our&rdquo;).
@@ -100,13 +100,10 @@ export function TermsContent() {
 
       <h2 className="text-base font-semibold mt-6 mb-2">7. Service Providers</h2>
       <p>
-        shepi may use employees, contractors, affiliates, subprocessors, independent analysts, licensed professionals, and other service providers to help deliver the Service.
+        shepi may use employees, contractors, affiliates, subprocessors, and other service providers to help deliver the Service. You authorize shepi to share Customer Data with those service providers as reasonably necessary to provide, maintain, support, and secure the Service, subject to confidentiality and data-protection obligations.
       </p>
       <p>
-        You authorize shepi to share Customer Data with those service providers as reasonably necessary to provide, maintain, support, and secure the Service, subject to confidentiality and data-protection obligations.
-      </p>
-      <p>
-        Their involvement does not create a separate professional engagement with you or any recipient of outputs unless expressly stated in a separate written agreement.
+        For Done-For-You projects, the licensed CPA who performs the professional services (the &ldquo;Matched CPA&rdquo;) is not shepi&rsquo;s service provider. The Matched CPA is an independent licensed professional who performs the professional services in their professional capacity under §10 of these Terms and the Matched CPA&rsquo;s professional license. The Matched CPA&rsquo;s involvement creates a direct professional relationship between you and the Matched CPA, governed by the Matched CPA&rsquo;s professional standards and applicable state rules.
       </p>
 
       <h2 className="text-base font-semibold mt-6 mb-2">8. Confidentiality and Data Protection</h2>
@@ -135,34 +132,46 @@ export function TermsContent() {
         <li>shepi may change pricing with reasonable notice.</li>
       </ul>
       <p>
-        Done-for-you or assisted services may be subject to separate pricing, scope, or engagement terms.
+        Done-For-You services are subject to the additional terms in §10.
       </p>
 
-      <h2 className="text-base font-semibold mt-6 mb-2">10. Done-For-You and Assisted Services</h2>
+      <h2 className="text-base font-semibold mt-6 mb-2">10. Done-For-You Services</h2>
+
+      <h3 className="text-sm font-semibold mt-4 mb-1">10.1 What Done-For-You is.</h3>
       <p>
-        Done-for-you and assisted services are part of shepi&rsquo;s decision-support and analytical workflow support offering.
+        When you purchase a Done-For-You (&ldquo;DFY&rdquo;) project, shepi matches you with a licensed CPA from the shepi Network (the &ldquo;Matched CPA&rdquo;) who performs the Quality of Earnings analysis for you. shepi provides the software, matching, billing, and operational infrastructure. The Matched CPA performs the professional services in their professional capacity as a licensed CPA. The final Work Product carries the Matched CPA&rsquo;s name, state of licensure, and CPA license number. The Matched CPA is professionally responsible for the Work Product as a licensed CPA; shepi is not a CPA firm and does not provide accountancy services.
       </p>
+
+      <h3 className="text-sm font-semibold mt-4 mb-1">10.2 Pricing and billing.</h3>
       <p>
-        These services may involve a combination of software, automation, AI tools, human review, and service providers acting on shepi&rsquo;s behalf.
+        The DFY price is shown at checkout. You pay shepi via the Platform&rsquo;s billing system. shepi retains a Network Fee for the platform, matching, billing, and operational services and remits the balance &mdash; the Matched CPA&rsquo;s professional fee &mdash; to the Matched CPA. Standard milestones, unless otherwise agreed: 20% on engagement acceptance, 40% on first reviewable draft, 40% on final delivery.
       </p>
+
+      <h3 className="text-sm font-semibold mt-4 mb-1">10.3 What DFY is and isn&rsquo;t.</h3>
       <p>
-        Unless expressly stated in a separate written agreement, done-for-you and assisted services do not include an audit, review, compilation, attestation engagement, legal advice, tax advice, valuation opinion, underwriting opinion, third-party reliance letter, or any certification of facts or conclusions.
+        A DFY project is a consulting engagement under AICPA Statements on Standards for Consulting Services (CS Section 100). It is not an audit, review, compilation, or other attestation engagement. The Matched CPA does not provide legal advice, tax advice, valuation opinions, underwriting opinions, or third-party reliance letters unless expressly agreed in writing. The Work Product is the Matched CPA&rsquo;s professional opinion, not a certification of facts or conclusions.
       </p>
+
+      <h3 className="text-sm font-semibold mt-4 mb-1">10.4 Your responsibilities.</h3>
       <p>
-        The specific scope, deliverables, timing, and pricing for done-for-you and assisted services may be described in checkout terms, an order form, proposal, statement of work, or similar written communication.
+        You agree to: provide accurate, complete information for the target company and the proposed transaction; respond to information requests within a reasonable time; review draft deliverables and provide comments within five (5) business days; and make timely payment of milestone fees. The Work Product depends on the materials you provide; neither shepi nor the Matched CPA independently audits or verifies your records, and neither is responsible for fraud, intentional misstatement, or omission by target-company personnel.
       </p>
+
+      <h3 className="text-sm font-semibold mt-4 mb-1">10.5 Timelines.</h3>
       <p>
-        You agree to timely provide the records, information, clarifications, access, and approvals reasonably needed for those services. shepi is not responsible for delays, deficiencies, or inaccuracies caused by incomplete, inconsistent, delayed, unusable, or inaccessible Customer Data.
+        Any timelines or turnaround estimates published on the site (including the 48&ndash;72 hour estimate associated with the DFY tier) are good-faith estimates depending on timely receipt of complete, accurate materials, Platform availability, and Matched CPA availability. shepi does not guarantee a specific delivery date and is not liable for delays caused by incomplete, inconsistent, delayed, or inaccessible materials you provide.
       </p>
+
+      <h3 className="text-sm font-semibold mt-4 mb-1">10.6 Refunds and disputes.</h3>
       <p>
-        Any timelines or turnaround estimates are good-faith estimates only and depend on timely receipt of complete and usable information.
+        If shepi is unable to match you with a Matched CPA within fifteen (15) days, or if the Matched CPA withdraws before completion of the engagement, shepi will re-match you or refund the unused portion of your fee. Complaints about the substance of the Matched CPA&rsquo;s professional work are between you and the Matched CPA, whose own professional-liability coverage covers professional malpractice claims; shepi will help facilitate resolution. shepi&rsquo;s direct refund obligation under these Terms is limited to the Network Fee portion of your payment.
       </p>
+
+      <h3 className="text-sm font-semibold mt-4 mb-1">10.7 Engagement commencement and refundability.</h3>
       <p>
-        Unless otherwise stated in writing, done-for-you services include the initial deliverable and a limited opportunity to correct factual errors based on information originally provided. Additional revisions, updated datasets, expanded procedures, or changed assumptions may require additional fees.
+        A DFY project is deemed commenced when the Matched CPA claims the project through the Platform and begins professional work. Once commenced, the Matched CPA&rsquo;s portion of the fee is non-refundable except as the Matched CPA agrees in writing. shepi&rsquo;s portion (the Network Fee) is refundable on a pro-rata basis if shepi terminates the DFY service or fails to deliver. Additional revisions, updated datasets, expanded procedures, or changed assumptions beyond the initial deliverable may require additional fees as the Matched CPA reasonably determines.
       </p>
-      <p>
-        A done-for-you or assisted engagement is deemed commenced when shepi begins intake, file review, processing, analysis, project setup, or other substantive work. Unless otherwise expressly stated in writing, fees for done-for-you or assisted services are non-refundable once work has commenced.
-      </p>
+
 
       <h2 className="text-base font-semibold mt-6 mb-2">11. Acceptable Use</h2>
       <p>You agree not to:</p>
