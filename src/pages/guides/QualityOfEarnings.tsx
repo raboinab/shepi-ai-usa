@@ -66,8 +66,8 @@ export default function QualityOfEarnings() {
   return (
     <ContentPageLayout
       title="What Is a Quality of Earnings Report? The Complete Guide"
-      seoTitle="What Is a Quality of Earnings Report? Complete | Shepi"
-      seoDescription="Learn what a Quality of Earnings report is, why it matters in M&A transactions, key components, who provides QoE, costs, timelines, and how AI is."
+      seoTitle="What Is a Quality of Earnings Report? Complete Guide for M&A | Shepi"
+      seoDescription="Learn what a Quality of Earnings report is, why it matters in M&A transactions, key components, who provides QoE, costs, timelines, and how AI is changing QoE analysis."
       canonical="https://shepi.ai/guides/quality-of-earnings"
       breadcrumbs={[
         { label: "Resources", href: "/resources" },
