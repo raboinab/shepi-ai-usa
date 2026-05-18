@@ -14,14 +14,77 @@ const toc = [
   { id: "faq", label: "FAQ" },
 ];
 
+const faqItems = [
+  {
+    question: "How much time does a typical review take?",
+    answer:
+      "Most engagements take 2–4 hours of focused review work, depending on the size and complexity of the target. You see the scope before you claim.",
+  },
+  {
+    question: "How and when do I get paid?",
+    answer:
+      "Reviewers are paid per engagement after the completion summary is submitted and accepted. Payment is issued via ACH on a regular cadence shared at onboarding. You're an independent contractor; Shepi issues a 1099-NEC at year end where applicable.",
+  },
+  {
+    question: "Am I issuing a CPA opinion?",
+    answer:
+      "No. You are providing review of AI-generated adjustments. Shepi does not produce CPA-attested reports, and your role does not constitute attestation, audit, or SSARS work.",
+  },
+  {
+    question: "Do I need malpractice / E&O coverage?",
+    answer:
+      "Yes. You must carry your own professional liability insurance and provide proof during onboarding. Shepi does not extend its coverage to reviewers — each party carries its own.",
+  },
+  {
+    question: "Can I work on Shepi alongside my firm job?",
+    answer:
+      "Only if your primary employer's policy permits outside engagements. You'll disclose this during application and it's your responsibility to keep it accurate.",
+  },
+  {
+    question: "What if I have a conflict with the target or buyer?",
+    answer:
+      "Disclose it before claiming. Each engagement shows the buyer and target up front so you can run an independence and conflict check. If there's a conflict, pass on the match — there's no obligation to claim.",
+  },
+  {
+    question: "How is the target's financial data handled?",
+    answer:
+      "All review happens inside Shepi. Target data stays on the platform — you don't need to download files locally. You're bound by Shepi's reviewer NDA, which covers buyer, target, and engagement-specific information.",
+  },
+  {
+    question: "What if I disagree with an AI-generated adjustment?",
+    answer:
+      "That's exactly the point of the review. Modify or reject any adjustment with a short note explaining your reasoning. The final deliverable reflects your confirmed judgment, not the AI's draft — your review is what makes the DFY output defensible.",
+  },
+  {
+    question: "How quickly do I need to respond when matched to a project?",
+    answer:
+      "Initial claim or pass within a reasonable window. Once claimed, engagements have SLAs we share during onboarding. You can always pass on a match.",
+  },
+  {
+    question: "Can I work with clients from any state?",
+    answer:
+      "You set your states served during onboarding. We match engagements based on your licensure and stated coverage.",
+  },
+  {
+    question: "Can I be removed from the reviewer network?",
+    answer:
+      "Yes. Grounds include license lapse or discipline, repeated missed SLAs, low-quality reviews flagged in QA, or breach of the provider agreement. We share the quality bar transparently at onboarding.",
+  },
+];
+
 const jsonLd = {
   "@context": "https://schema.org",
-  "@type": "WebPage",
+  "@type": "FAQPage",
+  url: "https://shepi.ai/for-cpas",
   name: "For CPAs — Review QoE Adjustments on Shepi",
   description:
     "Independent CPAs and small-firm partners can earn side income reviewing AI-generated Quality of Earnings adjustments on Shepi's Done-For-You engagements.",
   publisher: { "@type": "Organization", name: "Shepi", url: "https://shepi.ai" },
-  url: "https://shepi.ai/for-cpas",
+  mainEntity: faqItems.map((f) => ({
+    "@type": "Question",
+    name: f.question,
+    acceptedAnswer: { "@type": "Answer", text: f.answer },
+  })),
 };
 
 export default function ForCpas() {
@@ -147,9 +210,9 @@ export default function ForCpas() {
         </li>
       </ul>
       <p>
-        This keeps the work inside what the platform's professional liability and
-        terms of service cover, and keeps you clear of unauthorized-practice and
-        scope-creep risk.
+        This keeps the work inside the scope defined by Shepi's terms of service
+        and your own professional liability coverage, and keeps you clear of
+        unauthorized-practice and scope-creep risk.
       </p>
 
       <h2 id="compensation">Compensation</h2>
@@ -160,34 +223,7 @@ export default function ForCpas() {
       </p>
 
       <h2 id="faq">FAQ</h2>
-      <AccordionFAQ
-        items={[
-          {
-            question: "How much time does a typical review take?",
-            answer: "Most engagements take 2–4 hours of focused review work, depending on the size and complexity of the target. You see the scope before you claim.",
-          },
-          {
-            question: "Do I need malpractice / E&O coverage?",
-            answer: "Yes. You must carry your own professional liability insurance and provide proof during onboarding.",
-          },
-          {
-            question: "Can I work on Shepi alongside my firm job?",
-            answer: "Only if your primary employer's policy permits outside engagements. You'll disclose this during application and it's your responsibility to keep it accurate.",
-          },
-          {
-            question: "Am I issuing a CPA opinion?",
-            answer: "No. You are providing review of AI-generated adjustments. Shepi does not produce CPA-attested reports, and your role does not constitute attestation, audit, or SSARS work.",
-          },
-          {
-            question: "How quickly do I need to respond when matched to a project?",
-            answer: "Initial claim or pass within a reasonable window. Once claimed, engagements have SLAs we share during onboarding. You can always pass on a match.",
-          },
-          {
-            question: "Can I work with clients from any state?",
-            answer: "You set your states served during onboarding. We match engagements based on your licensure and stated coverage.",
-          },
-        ]}
-      />
+      <AccordionFAQ items={faqItems} />
 
       <div className="mt-12 rounded-2xl border border-border bg-secondary/40 p-8 text-center">
         <h3 className="text-2xl font-serif mb-3">Ready to apply?</h3>
