@@ -6,9 +6,6 @@ export function ProviderAgreementContent() {
         <p className="text-muted-foreground">Shepi Network — CPA Partner clickwrap agreement</p>
       </header>
 
-      <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
-        <strong>DRAFT — for counsel review.</strong> Counsel sign-off and procurement of the shepi E&amp;O Umbrella (§16) are prerequisites to deployment.
-      </div>
 
       <p>This DFY Provider Agreement (this "Agreement") is entered into between SMB EDGE d/b/a shepi, a Virginia company ("shepi," "we," "us," or "our"), and you, the individual licensed CPA accepting this Agreement ("Provider" or "you"). It takes effect when you click "Accept &amp; Continue" below and remains in effect until terminated as set out below.</p>
 
