@@ -1,59 +1,54 @@
 ## Goal
 
-Strip all insurance/E&O/umbrella claims and commitments from marketing pages and the Provider Agreement. We'll revisit when there's a policy to describe.
+Update `src/components/terms/TermsContent.tsx` to replace §7 and §10 with the new DFY-aware text, with all "shepi-maintained professional-liability umbrella" phrases stripped. Bring the public ToS (shown in `TermsAcceptanceModal` at checkout) into alignment with the live Provider Agreement and the standing rule: no shepi insurance claims.
 
-## Files to change
+## Changes
 
-### 1. `src/components/cpa/ProviderAgreementContent.tsx` (legal — biggest delta)
+### 1. `src/components/terms/TermsContent.tsx`
 
-- **§16 "Insurance"** — replace the entire section with a minimal "each party maintains its own insurance" clause. No mention of shepi E&O umbrella, no additional-insured naming, no Cyber policy limits, no certificate-on-request. New text, roughly:
-  > "16. Insurance. Each party is responsible for maintaining the insurance coverage it deems appropriate for its own business and professional activities. Provider is responsible for maintaining any professional liability (Errors & Omissions) coverage required by Provider's state board, employer, or professional judgment."
-- **§15 (Limitation of Liability)** — drop the trailing sentence "shepi's indemnity obligations under §14.A … are limited to the proceeds of shepi's Tech E&O and Cyber insurance under §16." Indemnity simply sits outside the cap (standard).
-- **§14.A** — remove the parenthetical "(and Provider's E&O insurer where applicable)".
-- **§17 (Survival)** — drop "§16 (insurance, for the duration of any applicable tail)" from the survival list (the new §16 is a simple ongoing obligation, no tail).
-- **§19 (Entire Agreement / third-party beneficiaries)** — drop "and Provider's E&O insurer with respect to indemnification under §14.A". Leave the Clients-confidentiality beneficiary clause intact.
-- **§7 (Confidentiality permitted disclosures)** — keep "E&O insurer" in the permitted-disclosure list. That's about Provider's own insurer, not a shepi representation, and it's standard. No change.
-- Bump `CURRENT_PROVIDER_AGREEMENT_VERSION` in `src/hooks/useProviderAgreement.ts` from `2026-04-13` to today's date (`2026-05-18`) so any future acceptances re-version cleanly. Zero CPAs have accepted, so no amendment flow needed.
+**Effective Date (line 5)** — `April 13, 2026` → `May 18, 2026`.
 
-### 2. `src/pages/CpaPartners.tsx`
+**§7 Service Providers (lines 101–110)** — replace with:
 
-- Hero paragraph: remove "— backed by our $1M+ professional liability umbrella and our software that handles the mechanical heavy lifting." Replace with "— with software that handles the mechanical heavy lifting."
-- `useSEO` description: same removal — drop the "backed by our $1M+ professional liability umbrella" tail.
-- `whatYouGet` list: delete the bullet `"Professional liability covered by our $1M+ umbrella (no need for your own E&O policy)"`.
-- `whatWeAsk` list: add a replacement bullet `"You carry your own professional liability (E&O) coverage as required by your state board or employer"` so the obligation is explicit and accurate.
+> shepi may use employees, contractors, affiliates, subprocessors, and other service providers to help deliver the Service. You authorize shepi to share Customer Data with those service providers as reasonably necessary to provide, maintain, support, and secure the Service, subject to confidentiality and data-protection obligations.
+>
+> For Done-For-You projects, the licensed CPA who performs the professional services (the "Matched CPA") is not shepi's service provider. The Matched CPA is an independent licensed professional who performs the professional services in their professional capacity under §10 of these Terms and the Matched CPA's professional license. The Matched CPA's involvement creates a direct professional relationship between you and the Matched CPA, governed by the Matched CPA's professional standards and applicable state rules.
 
-### 3. `src/pages/Pricing.tsx`
+**§10 Done-For-You Services (lines 141–165)** — full replacement. Heading changes from "Done-For-You and Assisted Services" → "Done-For-You Services". Seven subsections, with the two umbrella references removed:
 
-- FAQ answer (line 254, "Matched CPA accountability"): rewrite without insurance claim. New version:
-  > "The Matched CPA is a licensed professional accountable for the analytical work they sign off on, and carries their own professional liability coverage. If something material is wrong, you have a real path to resolution — first directly with your CPA, then through shepi's escalation process. This is meaningfully more accountability than software-only analysis."
-- DFY tier feature list (line 432): replace `"Backed by shepi's $1M+ professional liability umbrella"` with `"CPA-led review by a licensed, accountable professional"` (or remove the bullet entirely if it duplicates an existing one — I'll check during the edit).
-- Leave the line 150 FAQ untouched: it accurately notes that traditional CPA firms have attestation + firm-level liability coverage as a differentiator. That's a true statement about *other* firms, not a shepi claim.
+**10.1 What Done-For-You is.** When you purchase a Done-For-You ("DFY") project, shepi matches you with a licensed CPA from the shepi Network (the "Matched CPA") who performs the Quality of Earnings analysis for you. shepi provides the software, matching, billing, and operational infrastructure. The Matched CPA performs the professional services in their professional capacity as a licensed CPA. The final Work Product carries the Matched CPA's name, state of licensure, and CPA license number. The Matched CPA is professionally responsible for the Work Product as a licensed CPA; shepi is not a CPA firm and does not provide accountancy services.
 
-### 4. `src/pages/compare/AIvsTraditional.tsx`
+**10.2 Pricing and billing.** *(cleaned — umbrella parenthetical removed)* The DFY price is shown at checkout. You pay shepi via the Platform's billing system. shepi retains a Network Fee for the platform, matching, billing, and operational services and remits the balance — the Matched CPA's professional fee — to the Matched CPA. Standard milestones, unless otherwise agreed: 20% on engagement acceptance, 40% on first reviewable draft, 40% on final delivery.
 
-- Comparison table row "Liability coverage" (line 73): change the middle column (shepi DFY) from `"Yes (shepi E&O umbrella + CPA's professional standing)"` to `"CPA's professional standing and own E&O"`. Left column (DIY) stays `"No"`. Right column (Traditional) stays `"Yes (firm's E&O)"`.
-- Leave the line 63 description of traditional firms ("firm-level E&O") — accurate statement about competitors.
+**10.3 What DFY is and isn't.** A DFY project is a consulting engagement under AICPA Statements on Standards for Consulting Services (CS Section 100). It is not an audit, review, compilation, or other attestation engagement. The Matched CPA does not provide legal advice, tax advice, valuation opinions, underwriting opinions, or third-party reliance letters unless expressly agreed in writing. The Work Product is the Matched CPA's professional opinion, not a certification of facts or conclusions.
 
-### 5. `src/data/homepageFaq.ts` and `src/pages/Pricing.tsx` line 150
+**10.4 Your responsibilities.** You agree to: provide accurate, complete information for the target company and the proposed transaction; respond to information requests within a reasonable time; review draft deliverables and provide comments within five (5) business days; and make timely payment of milestone fees. The Work Product depends on the materials you provide; neither shepi nor the Matched CPA independently audits or verifies your records, and neither is responsible for fraud, intentional misstatement, or omission by target-company personnel.
 
-- The phrase "attestation letter and professional liability coverage" describes what traditional CPA firms offer that shepi does not. It's a factual contrast, not a shepi insurance claim. **Leave as-is.**
+**10.5 Timelines.** Any timelines or turnaround estimates published on the site (including the 48–72 hour estimate associated with the DFY tier) are good-faith estimates depending on timely receipt of complete, accurate materials, Platform availability, and Matched CPA availability. shepi does not guarantee a specific delivery date and is not liable for delays caused by incomplete, inconsistent, delayed, or inaccessible materials you provide.
 
-## What's explicitly out of scope
+**10.6 Refunds and disputes.** *(cleaned — umbrella parenthetical removed)* If shepi is unable to match you with a Matched CPA within fifteen (15) days, or if the Matched CPA withdraws before completion of the engagement, shepi will re-match you or refund the unused portion of your fee. Complaints about the substance of the Matched CPA's professional work are between you and the Matched CPA, whose own professional-liability coverage covers professional malpractice claims; shepi will help facilitate resolution. shepi's direct refund obligation under these Terms is limited to the Network Fee portion of your payment.
 
-- Guide pages (`WorkingCapitalAnalysis`, `RevenueQuality`, `PersonalExpenseDetection`, `OwnerCompensationNormalization`, `QoEReportTemplate`) mention "insurance" as an *accounting category* (insurance expense, insurance proceeds, life insurance add-backs). Untouched.
-- `mockWizardData.ts`, `mockDeal.ts`, `chartOfAccountsUtils.ts`, `industryConfig.ts`, `qoeAdjustmentTaxonomy.ts`, `useTransferClassification.ts`, `trialBalanceUtils.ts` — all reference insurance as a chart-of-accounts line item or industry vertical. Untouched.
-- No DB changes. No new migration. No edits to `dfy_provider_agreements` rows (zero rows exist).
-- Not touching the §14.A Platform-Defect indemnity itself — that survives independently of insurance and is the actual protection mechanism for CPAs against platform errors.
+**10.7 Engagement commencement and refundability.** A DFY project is deemed commenced when the Matched CPA claims the project through the Platform and begins professional work. Once commenced, the Matched CPA's portion of the fee is non-refundable except as the Matched CPA agrees in writing. shepi's portion (the Network Fee) is refundable on a pro-rata basis if shepi terminates the DFY service or fails to deliver. Additional revisions, updated datasets, expanded procedures, or changed assumptions beyond the initial deliverable may require additional fees as the Matched CPA reasonably determines.
 
-## Memory update
+### 2. `src/hooks/useTosAcceptance.ts`
 
-Update `mem://index.md` Core rule about insurance: replace the current insurance/revenue-triggered language with:
-> "Marketing and legal docs MUST NOT claim shepi carries E&O, umbrella, cyber, or any other insurance, name CPAs as additional insureds, or promise future coverage. Each party carries its own. Revisit only when a policy is actually bound."
+Bump `CURRENT_TOS_VERSION` to `'2026-05-18'` so existing Clients get re-prompted via the existing clickwrap modal on next session. This matches the Effective Date and keeps the acceptance audit trail clean.
 
-## Verification
+### 3. Out of scope
 
-After edits, run:
+- §§1–6, 8–9, 11–18 untouched.
+- No DB migration, no edits to `tos_acceptances` rows.
+- No Provider Agreement changes (already done last pass).
+- Counsel sign-off items in the drop-in (Network Fee tax characterization, Stripe refund flow) are operational/legal review, not code.
+
+### 4. Verification
+
 ```
-rg -n -i "umbrella|additional insured|maintains.*insurance|backed by.*insurance|shepi.*E&O|E&amp;O umbrella" src/
+rg -n -i "umbrella|maintained.*insurance|shepi.*E&O|backed by.*insurance" src/components/terms/TermsContent.tsx
 ```
-Expected matches: only the Provider Agreement's §7 "E&O insurer" permitted-disclosure clause (Provider's own insurer) and guide pages' personal-expense "umbrella policies" examples. Anything else is a miss.
+Expected: zero matches.
+
+```
+rg -n -i "umbrella" src/
+```
+Expected: only the unchanged guide-page personal-expense "umbrella policies" examples.
