@@ -1,41 +1,21 @@
-# Fix stale insurance reference in Provider Agreement §3
+# Resolve SEO findings (shepi.ai is the correct domain)
 
-## Problem
+## Decision
 
-`src/components/cpa/ProviderAgreementContent.tsx` line 43 still says:
+Keep sitemap and robots pointing at `https://shepi.ai`. The two failing findings (`http:robots`, `http:sitemap`) are false positives — the SEO scanner only knows about the lovable preview host and doesn't know shepi.ai is the published custom domain.
 
-> "shepi provides the software, matching, billing, operational infrastructure, **and professional-liability backstop described in §16**. shepi is not a CPA firm and does not provide accountancy services."
+## Action
 
-This contradicts the cleaned §16, which now says each party carries its own insurance and shepi maintains no umbrella/backstop. It also violates the core memory rule: marketing/legal docs must not imply shepi carries E&O, umbrella, or any insurance.
+Mark both findings as fixed via `seo_chat--update_findings` with an explanation noting that shepi.ai is the intentional production domain and matches every canonical/og:url across the codebase. No file changes.
 
-## Change
+## Save a project memory
 
-Edit one line in `src/components/cpa/ProviderAgreementContent.tsx`:
+Add a Core memory rule so future scans don't loop on this:
 
-**From:**
-> shepi provides the software, matching, billing, operational infrastructure, and professional-liability backstop described in §16. shepi is not a CPA firm and does not provide accountancy services.
-
-**To:**
-> shepi provides the software, matching, billing, and operational infrastructure that supports the engagement. shepi is not a CPA firm and does not provide accountancy services, and does not maintain professional-liability insurance covering Provider's work.
-
-## Other legal surfaces — verified clean
-
-- `src/pages/DPA.tsx` — no insurance language
-- `src/pages/Subprocessors.tsx` — no insurance language
-- `src/pages/ScopeOfWork.tsx` — only "GL coverage" (data scope, not insurance)
-- `src/components/terms/TermsContent.tsx` §7/§10 — cleaned previous round, "own professional-liability coverage" wording is correct (refers to the Matched CPA's own coverage, not shepi's)
-- `src/components/cpa/ProviderAgreementContent.tsx` §16 itself — already correct
-- Termageddon-embedded pages (`Privacy`, `Cookies`, `EULA`) — out of scope per user, managed in Termageddon dashboard
+> Production domain is `https://shepi.ai` (apex, no www). All canonicals, og:url, sitemap.xml, and robots.txt Sitemap directive must use shepi.ai — not the lovable preview host. SEO findings flagging shepi.ai as "wrong domain" are false positives; mark them fixed.
 
 ## Out of scope
 
-- No version bump for Provider Agreement — single-line internal-consistency fix to a clause already aligned with the live posture; not a material change in obligations. If you want a bump anyway, say so and I'll roll the Provider Agreement version.
-- No DB changes, no Terms re-prompt, no marketing-page edits.
-
-## Verification
-
-After edit:
-```
-rg -in "backstop|backed by.*insur|shepi.*(umbrella|maintains.*insur|carries.*insur|professional-liability backstop)" src/
-```
-Should return zero hits (the `AccountantsCPA.tsx` "backed by comprehensive analysis" match is unrelated copy and stays).
+- No edits to `public/sitemap.xml` or `public/robots.txt`.
+- No edits to `useSEO` defaults or per-page canonicals.
+- No www variant.
