@@ -37,14 +37,12 @@ describe("SEO metadata on guide pages", () => {
       });
 
       it("seoTitle ends with '| Shepi', is ≤ 60 chars, and isn't truncated mid-word", () => {
-        const title = titleMatch?.[1] ?? "";
+        const title = (titleMatch?.[1] ?? titleMatch?.[2]) ?? "";
         expect(title).toMatch(/\| Shepi$/);
         expect(
           title.length,
           `${file} seoTitle is ${title.length} chars (max 60): "${title}"`
         ).toBeLessThanOrEqual(60);
-        // Reject dangling separators just before "| Shepi" — the smoking-gun
-        // pattern from the previous incident (e.g. "Calculation & | Shepi").
         expect(
           title,
           `${file} seoTitle looks truncated mid-phrase: "${title}"`
@@ -56,7 +54,7 @@ describe("SEO metadata on guide pages", () => {
       });
 
       it("seoDescription is 80–160 chars and ends with terminal punctuation", () => {
-        const desc = descMatch?.[1] ?? "";
+        const desc = (descMatch?.[1] ?? descMatch?.[2]) ?? "";
         expect(
           desc.length,
           `${file} seoDescription is ${desc.length} chars (want 80–160): "${desc}"`
