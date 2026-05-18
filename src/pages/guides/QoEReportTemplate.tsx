@@ -35,8 +35,8 @@ export default function QoEReportTemplate() {
   return (
     <ContentPageLayout
       title="QoE Report Template — Structure, Sections & Schedules"
-      seoTitle="QoE Report Template — Executive Summary, EBITDA Schedules & More | Shepi"
-      seoDescription="Quality of Earnings report template covering executive summary, EBITDA adjustment schedules, revenue and expense analysis, working capital, proof of cash, and supporting schedules."
+      seoTitle="QoE Report Template: Sections & Schedules | Shepi"
+      seoDescription="QoE report template: executive summary, EBITDA adjustment schedules, revenue and expense analysis, working capital, and proof of cash."
       canonical="https://shepi.ai/guides/qoe-report-template"
       breadcrumbs={[
         { label: "Resources", href: "/resources" },
