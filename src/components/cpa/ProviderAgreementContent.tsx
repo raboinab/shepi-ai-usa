@@ -116,13 +116,12 @@ export function ProviderAgreementContent() {
       <section>
         <h3 className="font-semibold text-base mb-2">15. Limitation of liability</h3>
         <p>Except for liability arising from breach of confidentiality, indemnification obligations, professional negligence not caused by a Platform Defect, gross negligence, willful misconduct, fraud, or unlawful acts, neither party will be liable to the other for any indirect, incidental, consequential, special, exemplary, or punitive damages arising out of this Agreement.</p>
-        <p className="mt-2">To the maximum extent permitted by law, each party's aggregate liability to the other arising out of or relating to this Agreement (other than the carve-outs above) will not exceed the greater of (x) the amounts paid between the parties under this Agreement during the 12 months preceding the event giving rise to the claim or (y) $100,000. shepi's indemnity obligations under §14.A are not subject to this cap and are limited to the proceeds of shepi's Tech E&amp;O and Cyber insurance under §16.</p>
+        <p className="mt-2">To the maximum extent permitted by law, each party's aggregate liability to the other arising out of or relating to this Agreement (other than the carve-outs above) will not exceed the greater of (x) the amounts paid between the parties under this Agreement during the 12 months preceding the event giving rise to the claim or (y) $100,000. shepi's indemnity obligations under §14.A are not subject to this cap.</p>
       </section>
 
       <section>
         <h3 className="font-semibold text-base mb-2">16. Insurance</h3>
-        <p>shepi maintains a professional liability (Errors &amp; Omissions) umbrella policy that names active Providers in good standing as additional insureds, with limits of not less than $1,000,000 per claim / $2,000,000 aggregate, for claims arising from Provider's performance of DFY projects through the Platform (the "shepi E&amp;O Umbrella"). shepi also maintains Cyber Liability insurance with limits of not less than $2,000,000 per claim covering Platform-side data and security risk. shepi will provide Provider with a current certificate of insurance upon request.</p>
-        <p className="mt-2">The shepi E&amp;O Umbrella is your required E&amp;O coverage for the DFY projects you perform under this Agreement. You are responsible for any insurance required for your other professional activities, including any required by your employer. You acknowledge that the shepi E&amp;O Umbrella does not cover your activities outside DFY projects performed through the Platform.</p>
+        <p>Each party is responsible for maintaining the insurance coverage it deems appropriate for its own business and professional activities. Provider is responsible for maintaining any professional liability (Errors &amp; Omissions) coverage required by Provider's state board, employer, or professional judgment.</p>
       </section>
 
       <section>
