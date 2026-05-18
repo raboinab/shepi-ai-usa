@@ -40,7 +40,7 @@ export function ProviderAgreementContent() {
       <section>
         <h3 className="font-semibold text-base mb-2">5. Direct client relationship</h3>
         <p>For each DFY project you accept, you perform the professional services in your professional capacity as a licensed CPA. The final Work Product carries your name, state of licensure, and CPA license number. You are professionally responsible for the Work Product as a licensed CPA.</p>
-        <p className="mt-2">shepi provides the software, matching, billing, operational infrastructure, and professional-liability backstop described in §16. shepi is not a CPA firm and does not provide accountancy services.</p>
+        <p className="mt-2">shepi provides the software, matching, billing, and operational infrastructure that supports the engagement. shepi is not a CPA firm and does not provide accountancy services, and does not maintain professional-liability insurance covering Provider's work.</p>
         <p className="mt-2">You will not represent yourself as shepi staff and will not use shepi email addresses or business cards. You may describe yourself as a "shepi Network CPA Partner" or substantially similar language consistent with shepi's brand guidelines.</p>
       </section>
 
