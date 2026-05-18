@@ -2,7 +2,7 @@ export function TermsContent() {
   return (
     <div className="prose prose-sm max-w-none dark:prose-invert">
       <p className="text-muted-foreground text-xs mb-4">
-        <strong>Effective Date:</strong> April 13, 2026
+        <strong>Effective Date:</strong> May 18, 2026
       </p>
       <p>
         These Terms of Service (&ldquo;Terms&rdquo;) govern your access to and use of the shepi platform, website, software, outputs, and related services provided by SMB EDGE d/b/a shepi (&ldquo;shepi,&rdquo; &ldquo;we,&rdquo; &ldquo;us,&rdquo; or &ldquo;our&rdquo;).
