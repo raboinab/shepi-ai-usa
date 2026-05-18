@@ -6,7 +6,6 @@ export function ProviderAgreementContent() {
         <p className="text-muted-foreground">Shepi Network — CPA Partner clickwrap agreement</p>
       </header>
 
-
       <p>This DFY Provider Agreement (this "Agreement") is entered into between SMB EDGE d/b/a shepi, a Virginia company ("shepi," "we," "us," or "our"), and you, the individual licensed CPA accepting this Agreement ("Provider" or "you"). It takes effect when you click "Accept &amp; Continue" below and remains in effect until terminated as set out below.</p>
 
       <p>By accepting, you confirm that you have read, understood, and agreed to be bound by this Agreement. Your electronic acceptance has the same legal effect as a handwritten signature under the U.S. Electronic Signatures in Global and National Commerce Act and any applicable state equivalent (including UETA).</p>
