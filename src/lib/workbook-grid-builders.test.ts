@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { TAB_GRID_BUILDERS } from "./workbook-grid-builders";
-import { WORKBOOK_TABS } from "./workbook-tabs";
+// WORKBOOK_TABS import kept for future use; not needed in current assertions.
 import { createMockDealData } from "./mockDeal";
 
 const deal = createMockDealData();
