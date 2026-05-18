@@ -32,8 +32,8 @@ export default function EarningsManipulationSigns() {
   return (
     <ContentPageLayout
       title="Signs of Earnings Manipulation in M&A"
-      seoTitle="Signs of Earnings Manipulation — Financial Red Flags in M&A | Shepi"
-      seoDescription="Learn to spot earnings manipulation in M&A due diligence. Revenue manipulation, expense timing, balance sheet red flags, GL-level indicators, and detection techniques for QoE analysts."
+      seoTitle="Earnings Manipulation Signs: Red Flags in M&A | Shepi"
+      seoDescription="Spot earnings manipulation in M&A due diligence. Revenue manipulation, expense timing, balance sheet red flags, GL indicators, and detection techniques."
       canonical="https://shepi.ai/guides/earnings-manipulation-signs"
       breadcrumbs={[
         { label: "Resources", href: "/resources" },
