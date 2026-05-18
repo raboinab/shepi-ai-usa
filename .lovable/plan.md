@@ -1,62 +1,59 @@
+## Goal
 
-# Phase 4c — Close the engagement loop for live CPAs
+Strip all insurance/E&O/umbrella claims and commitments from marketing pages and the Provider Agreement. We'll revisit when there's a policy to describe.
 
-Three deferred items, sequenced so each unblocks the next.
+## Files to change
 
-## 1. Auto-accept cron (`proposed` → `accepted` after 48h)
+### 1. `src/components/cpa/ProviderAgreementContent.tsx` (legal — biggest delta)
 
-Why: CPA can't start review work until the claim is `accepted`. We can't wait on every client to manually confirm — that stalls real engagements.
+- **§16 "Insurance"** — replace the entire section with a minimal "each party maintains its own insurance" clause. No mention of shepi E&O umbrella, no additional-insured naming, no Cyber policy limits, no certificate-on-request. New text, roughly:
+  > "16. Insurance. Each party is responsible for maintaining the insurance coverage it deems appropriate for its own business and professional activities. Provider is responsible for maintaining any professional liability (Errors & Omissions) coverage required by Provider's state board, employer, or professional judgment."
+- **§15 (Limitation of Liability)** — drop the trailing sentence "shepi's indemnity obligations under §14.A … are limited to the proceeds of shepi's Tech E&O and Cyber insurance under §16." Indemnity simply sits outside the cap (standard).
+- **§14.A** — remove the parenthetical "(and Provider's E&O insurer where applicable)".
+- **§17 (Survival)** — drop "§16 (insurance, for the duration of any applicable tail)" from the survival list (the new §16 is a simple ongoing obligation, no tail).
+- **§19 (Entire Agreement / third-party beneficiaries)** — drop "and Provider's E&O insurer with respect to indemnification under §14.A". Leave the Clients-confidentiality beneficiary clause intact.
+- **§7 (Confidentiality permitted disclosures)** — keep "E&O insurer" in the permitted-disclosure list. That's about Provider's own insurer, not a shepi representation, and it's standard. No change.
+- Bump `CURRENT_PROVIDER_AGREEMENT_VERSION` in `src/hooks/useProviderAgreement.ts` from `2026-04-13` to today's date (`2026-05-18`) so any future acceptances re-version cleanly. Zero CPAs have accepted, so no amendment flow needed.
 
-- New TanStack server route `src/routes/api/public/hooks/cpa-auto-accept.ts`
-  - `POST` handler, no auth header required (route lives under `/api/public/*`)
-  - Uses `supabaseAdmin` to flip `cpa_claims` where `status='proposed'` AND `claimed_at < now() - interval '48 hours'` AND `withdrawn_at IS NULL` to `status='accepted'`, sets `accepted_at=now()`, leaves `accepted_by_user_id NULL` (signals auto-accept).
-  - Logs how many rows were flipped, returns `{ accepted: <count> }`.
-  - For each accepted claim, inserts a `cpa_notifications` row for the CPA (`event_type='claim_auto_accepted'`) and one for the project owner (`event_type='claim_auto_accepted_client'`).
-- Schedule with `pg_cron` every hour calling that route (empty body). One-time setup via the insert tool (not migration) per the schedule-jobs-modern guidance.
-- Surface auto-accept in the existing `DfyStatusBanner`: when `accepted_by_user_id IS NULL` and `status IN ('accepted','in_review','completed')`, show a small "auto-confirmed after 48h" caption next to the CPA name.
+### 2. `src/pages/CpaPartners.tsx`
 
-## 2. "CPA reviewed" badges on the client's adjustment UI
+- Hero paragraph: remove "— backed by our $1M+ professional liability umbrella and our software that handles the mechanical heavy lifting." Replace with "— with software that handles the mechanical heavy lifting."
+- `useSEO` description: same removal — drop the "backed by our $1M+ professional liability umbrella" tail.
+- `whatYouGet` list: delete the bullet `"Professional liability covered by our $1M+ umbrella (no need for your own E&O policy)"`.
+- `whatWeAsk` list: add a replacement bullet `"You carry your own professional liability (E&O) coverage as required by your state board or employer"` so the obligation is explicit and accurate.
 
-Why: clients in DFY need to see which adjustments their assigned CPA has already touched (and how), not just trust the banner.
+### 3. `src/pages/Pricing.tsx`
 
-- Extend the client's adjustment review screen (the per-proposal cards rendered in the project workspace's adjustments tab) with a small badge driven by `cpa_adjustment_reviews`:
-  - `confirmed` → green "CPA confirmed" pill with reviewer name on hover
-  - `modified` → amber "CPA modified" pill, shows original vs `modified_amount`
-  - `rejected` → red "CPA rejected" pill with `cpa_note` in a popover
-  - no row → no badge
-- Data: one server function `getCpaReviewsForProject(projectId)` returning a map keyed by `proposal_id`. Reads `cpa_adjustment_reviews` joined to `cpa_profiles` for the CPA's display name. RLS already allows project members to SELECT via the existing `Project members can view cpa reviews` policy, so a normal `requireSupabaseAuth` server fn is sufficient.
-- New presentation component `src/components/cpa/CpaReviewBadge.tsx`. Mounted only when the project has a non-withdrawn `cpa_claims` row (avoid noise for SD/non-DFY projects).
-- Also surface the badge inline in the report's adjustments list (PDF/XLSX builders are untouched — UI only) so it shows up wherever the client browses adjustments.
+- FAQ answer (line 254, "Matched CPA accountability"): rewrite without insurance claim. New version:
+  > "The Matched CPA is a licensed professional accountable for the analytical work they sign off on, and carries their own professional liability coverage. If something material is wrong, you have a real path to resolution — first directly with your CPA, then through shepi's escalation process. This is meaningfully more accountability than software-only analysis."
+- DFY tier feature list (line 432): replace `"Backed by shepi's $1M+ professional liability umbrella"` with `"CPA-led review by a licensed, accountable professional"` (or remove the bullet entirely if it duplicates an existing one — I'll check during the edit).
+- Leave the line 150 FAQ untouched: it accurately notes that traditional CPA firms have attestation + firm-level liability coverage as a differentiator. That's a true statement about *other* firms, not a shepi claim.
 
-## 3. Admin "Reassign CPA" action
+### 4. `src/pages/compare/AIvsTraditional.tsx`
 
-Why: when a CPA goes dark, is conflicted, or the client requested a different reviewer, ops needs a one-click recovery.
+- Comparison table row "Liability coverage" (line 73): change the middle column (shepi DFY) from `"Yes (shepi E&O umbrella + CPA's professional standing)"` to `"CPA's professional standing and own E&O"`. Left column (DIY) stays `"No"`. Right column (Traditional) stays `"Yes (firm's E&O)"`.
+- Leave the line 63 description of traditional firms ("firm-level E&O") — accurate statement about competitors.
 
-- Extend `src/pages/admin/AdminDFYEngagements.tsx` with a "Reassign" button on each engagement row, opening a dialog that:
-  - Lists active CPAs (`cpa_profiles` where `active=true`) excluding the current assignee, with current open-engagement count next to each name (respect `max_concurrent_engagements` — disable rows at capacity).
-  - Requires a short reason (stored in `withdrawn_reason` on the old claim).
-- One server function `reassignCpaClaim({ claimId, newCpaUserId, reason })`, admin-gated via `requireSupabaseAuth` + `has_role(uid,'admin')` check inside the handler. Steps inside a transaction:
-  1. Mark old `cpa_claims` row `status='withdrawn'`, set `withdrawn_at=now()`, `withdrawn_reason=reason`.
-  2. Insert a new `cpa_claims` row for `newCpaUserId` with `status='proposed'`, `claimed_at=now()` (admin-initiated proposal).
-  3. Insert two `cpa_notifications`: `claim_withdrawn` to the old CPA, `claim_proposed_by_admin` to the new CPA. Also notify the project owner via the in-app notification surface the banner already reads from.
-- Existing `cpa_adjustment_reviews` rows tied to the old `claim_id` are kept as historical record; the new CPA starts fresh. Badges keep showing prior decisions but their popover labels the reviewer's name so clients see continuity.
+### 5. `src/data/homepageFaq.ts` and `src/pages/Pricing.tsx` line 150
 
-## Status filter on admin engagements list
+- The phrase "attestation letter and professional liability coverage" describes what traditional CPA firms offer that shepi does not. It's a factual contrast, not a shepi insurance claim. **Leave as-is.**
 
-Small UX win that lands cheaply with #3: add a status segmented control (All / Proposed / Accepted / In review / Completed / Withdrawn) on `AdminDFYEngagements.tsx`.
+## What's explicitly out of scope
 
-## Technical notes
+- Guide pages (`WorkingCapitalAnalysis`, `RevenueQuality`, `PersonalExpenseDetection`, `OwnerCompensationNormalization`, `QoEReportTemplate`) mention "insurance" as an *accounting category* (insurance expense, insurance proceeds, life insurance add-backs). Untouched.
+- `mockWizardData.ts`, `mockDeal.ts`, `chartOfAccountsUtils.ts`, `industryConfig.ts`, `qoeAdjustmentTaxonomy.ts`, `useTransferClassification.ts`, `trialBalanceUtils.ts` — all reference insurance as a chart-of-accounts line item or industry vertical. Untouched.
+- No DB changes. No new migration. No edits to `dfy_provider_agreements` rows (zero rows exist).
+- Not touching the §14.A Platform-Defect indemnity itself — that survives independently of insurance and is the actual protection mechanism for CPAs against platform errors.
 
-- No new tables. Reuses `cpa_claims`, `cpa_adjustment_reviews`, `cpa_notifications`, `cpa_profiles`.
-- No edge functions. Cron hits a TanStack server route per stack convention.
-- The auto-accept route is idempotent: running it twice in the same hour is a no-op because the `status='proposed'` filter excludes already-flipped rows.
-- The `accepted_by_user_id IS NULL` convention is the single source of truth for "this was auto-accepted" — no extra column needed.
-- Migration only needed if we discover `cpa_notifications.event_type` doesn't already accept the new event strings; the column is `text` with no CHECK constraint, so no migration required.
+## Memory update
 
-## Build order
+Update `mem://index.md` Core rule about insurance: replace the current insurance/revenue-triggered language with:
+> "Marketing and legal docs MUST NOT claim shepi carries E&O, umbrella, cyber, or any other insurance, name CPAs as additional insureds, or promise future coverage. Each party carries its own. Revisit only when a policy is actually bound."
 
-1. Server fn `getCpaReviewsForProject` + `CpaReviewBadge` component + mount in client adjustment UI. (Lowest risk, immediately visible value.)
-2. Auto-accept route + pg_cron schedule + banner caption.
-3. Admin Reassign dialog + server fn + status filter.
+## Verification
 
-After each step I'll verify with a build check; for the cron I'll also trigger the route once manually via `invoke-server-function` and confirm `cpa_claims` rows flip as expected.
+After edits, run:
+```
+rg -n -i "umbrella|additional insured|maintains.*insurance|backed by.*insurance|shepi.*E&O|E&amp;O umbrella" src/
+```
+Expected matches: only the Provider Agreement's §7 "E&O insurer" permitted-disclosure clause (Provider's own insurer) and guide pages' personal-expense "umbrella policies" examples. Anything else is a miss.
