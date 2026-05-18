@@ -66,8 +66,8 @@ export default function RevenueQualityAnalysis() {
   return (
     <ContentPageLayout
       title="Revenue Quality Analysis for M&A Due Diligence"
-      seoTitle="Revenue Quality Analysis for M&A — Customer | Shepi"
-      seoDescription="Learn how to evaluate revenue quality during acquisitions. Covers customer concentration, recurring vs non-recurring revenue, AR aging analysis, revenue."
+      seoTitle="Revenue Quality Analysis for M&A — Customer & Recurring Revenue | Shepi"
+      seoDescription="Learn how to evaluate revenue quality during acquisitions. Covers customer concentration, recurring vs non-recurring revenue, AR aging analysis, and revenue recognition red flags."
       canonical="https://shepi.ai/guides/revenue-quality-analysis"
       breadcrumbs={[
         { label: "Resources", href: "/resources" },
