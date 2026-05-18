@@ -43,7 +43,7 @@ export default function CpaPartners() {
   const __seoTags = useSEO({
     title: "Join the shepi Network — CPA Partners",
     description:
-      "shepi connects licensed CPAs with M&A deal teams that need Quality of Earnings analyses. Stay independent, set your hours, put your license on real work — backed by our $1M+ professional liability umbrella.",
+      "shepi connects licensed CPAs with M&A deal teams that need Quality of Earnings analyses. Stay independent, set your hours, put your license on real work — with software that handles the mechanical heavy lifting.",
     canonical: "https://shepi.ai/cpa-partners",
   });
 
@@ -53,8 +53,8 @@ export default function CpaPartners() {
 
       <p className="text-lg text-muted-foreground mb-10">
         shepi connects licensed CPAs with M&amp;A deal teams that need Quality of Earnings analyses.
-        You stay independent, set your hours, and put your license on real work — backed by our $1M+
-        professional liability umbrella and our software that handles the mechanical heavy lifting.
+        You stay independent, set your hours, and put your license on real work — with software that
+        handles the mechanical heavy lifting.
       </p>
 
       <div className="not-prose mb-12">
