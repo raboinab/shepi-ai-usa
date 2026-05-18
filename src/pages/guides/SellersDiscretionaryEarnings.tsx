@@ -70,7 +70,7 @@ export default function SellersDiscretionaryEarnings() {
     <ContentPageLayout
       title="Seller's Discretionary Earnings vs Adjusted EBITDA"
       seoTitle="SDE vs Adjusted EBITDA: A Buyer's Guide | Shepi"
-      seoDescription="Brokers quote SDE. Lenders and PE buyers underwrite to Adjusted EBITDA. Learn the difference, when each applies, and how to convert between them before you overpay."
+      seoDescription="Brokers quote SDE. Lenders and PE buyers underwrite Adjusted EBITDA. Learn the difference and how to convert between them before overpaying."
       canonical="https://shepi.ai/guides/sellers-discretionary-earnings"
       breadcrumbs={[
         { label: "Resources", href: "/resources" },
