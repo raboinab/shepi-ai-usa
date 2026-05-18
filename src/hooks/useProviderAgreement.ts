@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
-export const CURRENT_PROVIDER_AGREEMENT_VERSION = '2026-04-13';
+export const CURRENT_PROVIDER_AGREEMENT_VERSION = '2026-05-18';
 
 interface ProviderAgreementState {
   hasAccepted: boolean;

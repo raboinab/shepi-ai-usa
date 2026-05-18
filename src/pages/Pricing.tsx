@@ -251,7 +251,7 @@ const Pricing = () => {
         },
         {
           q: "What happens if the CPA's analysis turns out to be wrong?",
-          a: "The Matched CPA is professionally accountable, backed by shepi's $1M+ professional liability umbrella that covers all active Network CPAs. If something material is wrong, you have a real path to resolution — first directly with your CPA, then through shepi's escalation process. This is meaningfully more accountability than software-only analysis."
+          a: "The Matched CPA is a licensed professional accountable for the analytical work they sign off on, and carries their own professional liability coverage. If something material is wrong, you have a real path to resolution — first directly with your CPA, then through shepi's escalation process. This is meaningfully more accountability than software-only analysis."
         },
         {
           q: "When do I sign an engagement letter?",
@@ -429,7 +429,7 @@ const Pricing = () => {
                   "Lender-ready QoE workbook on CPA letterhead",
                   "Direct CPA communication throughout the engagement",
                   "48–72 hour turnaround once your CPA has what they need",
-                  "Backed by shepi's $1M+ professional liability umbrella",
+                  "CPA-led review by a licensed, accountable professional",
                 ].map((feature) => (
                   <li key={feature} className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-primary flex-shrink-0" />

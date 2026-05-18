@@ -26,7 +26,6 @@ const howItWorks = [
 const whatYouGet = [
   "Quality deals routed to you (we vet Clients before they reach you)",
   "Software that handles the keystroke work — focus on judgment, not data entry",
-  "Professional liability covered by our $1M+ umbrella (no need for your own E&O policy)",
   "Predictable per-engagement payment, paid promptly after completion",
   "Your workpapers stay yours, downloadable anytime, forever",
   "Direct CPA-to-Client communication — no gatekeeping",
@@ -34,6 +33,7 @@ const whatYouGet = [
 
 const whatWeAsk = [
   "Active, unrestricted CPA license in any US state",
+  "You carry your own professional liability (E&O) coverage as required by your state board or employer",
   "If you have a day job at a CPA firm: you've checked that side work is permitted (or you're independent)",
   "You disclose independence conflicts before accepting any engagement",
   "You meet our response time and quality standards (we'll show you what those are at onboarding)",
@@ -43,7 +43,7 @@ export default function CpaPartners() {
   const __seoTags = useSEO({
     title: "Join the shepi Network — CPA Partners",
     description:
-      "shepi connects licensed CPAs with M&A deal teams that need Quality of Earnings analyses. Stay independent, set your hours, put your license on real work — backed by our $1M+ professional liability umbrella.",
+      "shepi connects licensed CPAs with M&A deal teams that need Quality of Earnings analyses. Stay independent, set your hours, put your license on real work — with software that handles the mechanical heavy lifting.",
     canonical: "https://shepi.ai/cpa-partners",
   });
 
@@ -53,8 +53,8 @@ export default function CpaPartners() {
 
       <p className="text-lg text-muted-foreground mb-10">
         shepi connects licensed CPAs with M&amp;A deal teams that need Quality of Earnings analyses.
-        You stay independent, set your hours, and put your license on real work — backed by our $1M+
-        professional liability umbrella and our software that handles the mechanical heavy lifting.
+        You stay independent, set your hours, and put your license on real work — with software that
+        handles the mechanical heavy lifting.
       </p>
 
       <div className="not-prose mb-12">
