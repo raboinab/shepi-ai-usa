@@ -26,7 +26,7 @@ const howItWorks = [
 const whatYouGet = [
   "Quality deals routed to you (we vet Clients before they reach you)",
   "Software that handles the keystroke work — focus on judgment, not data entry",
-  "Professional liability covered by our $1M+ umbrella (no need for your own E&O policy)",
+  "Predictable per-engagement payment, paid promptly after completion",
   "Predictable per-engagement payment, paid promptly after completion",
   "Your workpapers stay yours, downloadable anytime, forever",
   "Direct CPA-to-Client communication — no gatekeeping",
