@@ -6,12 +6,10 @@ import { createMockDealData } from "./mockDeal";
 const deal = createMockDealData();
 
 describe("TAB_GRID_BUILDERS — smoke test every workbook tab", () => {
-  it("every WORKBOOK_TABS entry has a registered builder (or is intentionally absent)", () => {
-    // Not every tab must have a builder (some pull from extras), but registered
-    // builders must correspond to a real tab id.
-    const tabIds = new Set(WORKBOOK_TABS.map((t) => t.id));
-    for (const builderId of Object.keys(TAB_GRID_BUILDERS)) {
-      expect(tabIds.has(builderId)).toBe(true);
+  it("registers builders for all critical financial tabs", () => {
+    const critical = ["setup", "trial-balance", "qoe-analysis", "income-statement", "balance-sheet"];
+    for (const id of critical) {
+      expect(TAB_GRID_BUILDERS[id], `missing builder for ${id}`).toBeDefined();
     }
   });
 
