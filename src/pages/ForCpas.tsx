@@ -26,9 +26,9 @@ const faqItems = [
       "Reviewers are paid per engagement after the completion summary is submitted and accepted. Payment is issued via ACH on a regular cadence shared at onboarding. You're an independent contractor; Shepi issues a 1099-NEC at year end where applicable.",
   },
   {
-    question: "Am I issuing a CPA opinion?",
+    question: "Do I sign the work? Am I issuing an opinion?",
     answer:
-      "No. You are providing review of AI-generated adjustments. Shepi does not produce CPA-attested reports, and your role does not constitute attestation, audit, or SSARS work.",
+      "You sign your professional judgment on each adjustment — confirm, modify, or reject with reasoning — and that signed reviewer record is part of the DFY deliverable the buyer receives. What you are NOT doing is issuing a formal attestation, audit opinion, review report under SSARS, or any other CPA-firm-branded attest report. Shepi is analytical software, not a CPA firm, and does not produce attest deliverables through the platform.",
   },
   {
     question: "Do I need malpractice / E&O coverage?",
