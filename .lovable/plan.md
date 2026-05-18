@@ -1,51 +1,64 @@
-## Audit findings — /for-cpas
+## Fix: 12 truncated seoTitles + seoDescriptions in /guides
 
-### 1. Memory violation (must fix)
-Line 150–152 says: *"This keeps the work inside what the **platform's professional liability** and terms of service cover…"*
+Confirmed the regression on every file you listed. Git history isn't accessible from this sandbox, so I can't `git log -p` the originals — I'll rewrite to complete sentences (option B). Titles intentionally exceed 60 chars where needed; Google will truncate with `…` and that reads as a real page, vs. the current hand-cut `& |` endings.
 
-This implies shepi carries professional liability insurance covering CPAs — directly violates the Core memory rule: shepi must not claim it carries E&O / professional liability or extend coverage to CPAs. Each party carries its own.
+### Proposed values
 
-**Fix:** Reword to drop the platform-insurance claim:
-> "This keeps the work inside the scope defined by Shepi's terms of service and your own professional liability coverage, and keeps you clear of unauthorized-practice and scope-creep risk."
+Each row: file → new `seoTitle` → new `seoDescription`.
 
-### 2. DFY framing alignment
-Per memory, DFY tier is "CPA-led *review* of adjustments (confirmed accurate)". The page says "reviews the AI-generated adjustments before delivery" — already aligned. No change.
+1. **RunRateEBITDA.tsx**
+   - `Run-Rate EBITDA vs Historical EBITDA — Calculation & When to Use Each | Shepi`
+   - `…common pro forma adjustments, and red flags in M&A due diligence.`
 
-But hero/lede could foreground that reviewer judgment is what makes the DFY deliverable trustworthy. Minor tightening to the intro paragraph (line 44–49) to emphasize "your review is what the buyer is paying for in DFY" — strengthens recruitment pitch without overclaiming.
+2. **EBITDAAdjustments.tsx**
+   - `EBITDA Adjustments Guide — Types, Examples & Best Practices | Shepi`
+   - `…common examples, documentation standards, and red flags in M&A due diligence.`
 
-### 3. FAQ review — gaps to add
-Current 6 FAQs cover time, E&O, day-job, opinion scope, response SLA, state coverage. Missing recruiter-blocking questions:
+3. **WorkingCapitalAnalysis.tsx**
+   - `Working Capital Analysis — NWC Peg, Turnover & Seasonality in M&A | Shepi`
+   - `…AR/AP/inventory turnover, and how seasonality affects the working capital peg.`
 
-- **Payment timing / 1099 status** — "How and when do I get paid?" (per-engagement, paid X days after completion, 1099-NEC at year end).
-- **Independence / conflicts** — "What if I have a conflict with the target or buyer?" (disclose before claiming; pass on the match).
-- **Confidentiality & data handling** — "How is target data handled?" (NDA on file, data stays in Shepi, no local download required).
-- **What if I disagree with the AI's adjustment?** — "Modify or reject with a note; the buyer sees your judgment, not the AI's draft, on the final deliverable." (Reinforces value of CPA's role.)
-- **Can I lose access to the queue?** — Quality bar / removal grounds (license lapse, missed SLAs, repeated low-quality reviews).
+4. **EarningsManipulationSigns.tsx**
+   - `Signs of Earnings Manipulation — Financial Red Flags in M&A | Shepi`
+   - `…GL-level indicators, and detection techniques for QoE analysts.`
 
-Recommend adding these 5, keeping the existing 6 — total 11 FAQ items. Order: time → payment → opinion scope → E&O → day-job → conflicts → confidentiality → disagreement → response SLA → state coverage → removal.
+5. **QualityOfEarnings.tsx**
+   - `What Is a Quality of Earnings Report? Complete Guide for M&A | Shepi`
+   - `…costs, timelines, and how AI is changing QoE analysis.`
 
-### 4. SEO — switch JSON-LD to FAQPage
-Page has 6+ FAQs but uses generic `WebPage` schema. Replace `jsonLd` with combined `WebPage` + `FAQPage` (or just `FAQPage` mainEntity) so Google can surface the FAQs as rich results. Use the final FAQ list from item 3.
+6. **QoEReportTemplate.tsx**
+   - `QoE Report Template — Executive Summary, EBITDA Schedules & More | Shepi`
+   - `…working capital, proof of cash, and supporting schedules.`
 
-### 5. Page-role overlap with /cpa-partners
-`/for-cpas` and `/cpa-partners` are both recruiting pages with applications. `/for-cpas` ends with a CTA to `/cpa-partners` ("Start your application"). They cover overlapping ground (how it works, what we ask, FAQ). Two options — flagging, not deciding:
+7. **RevenueQualityAnalysis.tsx**
+   - `Revenue Quality Analysis for M&A — Customer & Recurring Revenue | Shepi`
+   - `…AR aging analysis, and revenue recognition red flags.`
 
-- **A. Keep both, sharpen roles:** `/for-cpas` = SEO-targeted ("for CPAs" search intent) marketing page that funnels to `/cpa-partners`; `/cpa-partners` = the application page. Keep distinct H1s and copy.
-- **B. Consolidate** to one page and 301 the other.
+8. **AIWontDoYourQoE.tsx**
+   - `AI Won't Do Your QoE Analysis (And Why That's the Point) | Shepi`
+   - keep current description — already complete.
 
-Out of scope unless you want it tackled now — defaulting to A (no structural change).
+9. **FinancialRedFlags.tsx**
+   - `Financial Red Flags Checklist for M&A Due Diligence | Shepi`
+   - `…cash flow signals, GL-level anomalies, and how to investigate each one.`
 
-### 6. Minor copy nits
-- CTA button label "Start your application →" is fine; consistent with target page.
-- "Compensation" section is vague ("rates shared during onboarding"). Acceptable for recruiting page but a range ("typically $X–$Y per engagement") would convert better. Leaving as-is unless you have a number to publish.
+10. **OwnerCompensationNormalization.tsx**
+    - `Owner Compensation Normalization — How to Adjust for QoE | Shepi`
+    - `…market-rate replacement, and supporting documentation.`
 
----
+11. **CashProofAnalysis.tsx**
+    - `Proof of Cash Analysis — GL-to-Bank Reconciliation Guide | Shepi`
+    - `…commingled personal expenses, and validating reported revenue.`
 
-## Proposed edits (scoped to /for-cpas)
+12. **CustomerConcentrationRisk.tsx**
+    - `Customer Concentration Risk — Analysis Guide for M&A | Shepi`
+    - `…evaluate mitigating factors, and price concentration into the deal.`
 
-1. Rewrite the paragraph at lines 149–153 to remove the platform-insurance claim.
-2. Expand the FAQ array from 6 → 11 items with the additions in section 3.
-3. Replace `jsonLd` with a `FAQPage`-bearing structure built from the final FAQ list.
-4. (Optional) Light tightening of the intro paragraph (44–49) to foreground reviewer judgment as the DFY value driver.
+### Out of scope
+- `/use-cases/AccountantsCPA.tsx` — title/description already complete; skipping.
+- Other guides (EBITDABridge, SDE, DueDiligenceChecklist, SellSide, CanAIReplace, PersonalExpense, AIAccountingAnomaly, GeneralLedgerReview) — checked, all already complete.
 
-No changes to `/cpa-partners`, routing, sitemap, or other pages.
+### Process
+Two edits per file (one for `seoTitle`, one for `seoDescription`) — 24 edits total, all in `src/pages/guides/`. No routing, no JSON-LD, no other copy changes.
+
+Approve and I'll apply all 24 edits in parallel.
