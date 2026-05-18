@@ -27,8 +27,8 @@ describe("signedAdjustmentTotal", () => {
     expect(signedAdjustmentTotal({ intent: "normalize_down_expense", amount: 100 })).toBe(100);
   });
 
-  it("other intent yields zero sign", () => {
-    expect(signedAdjustmentTotal({ intent: "other", amount: 999 })).toBe(0);
+  it("'other' intent defaults to positive sign (user picks direction manually)", () => {
+    expect(signedAdjustmentTotal({ intent: "other", amount: 999 })).toBe(999);
   });
 
   it("excludeNonQoE skips NonQoE and PresentationOnly effects", () => {
