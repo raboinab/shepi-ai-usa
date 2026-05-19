@@ -1,64 +1,68 @@
-# Test coverage plan for shepi
+# Why some visitors see JSON instead of the page
 
-Goal: stand up a real testing baseline (currently zero tests) and cover the highest-risk paths first — Client↔CPA messaging, money/calculation logic, RLS/auth boundaries, and deal export integrity.
+## What I verified
 
-## Phase 1 — Test infrastructure (one-time setup)
+I probed production directly. The **root URL is fine** for every user-agent I tested (Chrome, curl, GPTBot, Facebook scraper) — Vercel returns `Content-Type: text/html` with the prerendered React app. No service worker is registered, no rogue rewrite, no SSR error. So nobody hitting `https://shepi.ai/` is actually getting JSON.
 
-1. Add Vitest + React Testing Library + jsdom to devDependencies.
-2. Create `vitest.config.ts`, `src/test/setup.ts`, and add `"vitest/globals"` to `tsconfig.app.json`.
-3. Add npm scripts: `test`, `test:watch`, `test:e2e`.
-4. Verify Playwright config (already installed) and create `e2e/` folder.
+What *does* return JSON to a browser are these intentionally-public, machine-readable endpoints we ship in `public/`:
 
-## Phase 2 — Messaging (the thing you actually asked about)
+| Path | Purpose | Content-Type |
+|---|---|---|
+| `/openapi.json` | OpenAPI spec for AI tool-calling | application/json |
+| `/mcp.json` | Model Context Protocol manifest | application/json |
+| `/.well-known/agent.json` | Agent discovery (A2A) | application/json |
+| `/.well-known/ai-plugin.json` | ChatGPT plugin manifest | application/json |
 
-**Unit / component (Vitest, fast, runs every push):**
-- `src/components/EngagementChat.test.tsx`
-  - Renders empty state when no messages.
-  - Sends a message → calls `supabase.from('chat_messages').insert` with `context_type: 'engagement'`, role `user`, correct `project_id` and `user_id`.
-  - Optimistic message appears immediately; rolled back on insert error.
-  - Incoming realtime INSERT for the same project appends; mismatched `context_type` is ignored; duplicate id is deduped.
-  - Self vs other label/styling based on `user_id === currentUserId`.
-  - Enter sends, Shift+Enter newlines.
-  - Supabase client mocked via `vi.mock('@/integrations/supabase/client')`.
+They're advertised to crawlers via `public/llms.txt`, `public/llms-full.txt`, and `robots.txt`. So the most likely paths to a human seeing raw JSON are:
 
-**E2E (Playwright, one happy-path round trip):**
-- `e2e/engagement-chat.spec.ts`
-  - Seed (or reuse) two test accounts: a Client owner of a project and a matched CPA.
-  - Two browser contexts in parallel. Client opens engagement → sends "hello from client". CPA on `/cpa/engagements/:id` sees it via realtime within 5s. CPA replies; Client sees the reply. Asserts message order, sender labels, persistence on reload.
+1. **AI chatbot citations.** ChatGPT/Perplexity/Claude fetch `/.well-known/ai-plugin.json` or `/openapi.json` while answering "what is shepi?", then cite that URL in their sources panel. User clicks → JSON.
+2. **Bookmark / share-link copy** from one of those AI tools.
+3. **Search-engine indexing** of the JSON endpoints surfacing in results.
+4. (Edge cases) Browser extensions, link-prefetchers, or a copy-paste that included a trailing path.
 
-**RLS guardrail (Deno test against edge/db):**
-- `supabase/functions/_shared/chat_rls_test.ts` — using anon key + two seeded JWTs, assert:
-  - Client can SELECT/INSERT on their own project's `chat_messages` with `context_type='engagement'`.
-  - Matched CPA can SELECT/INSERT on the same project.
-  - An unrelated authenticated user gets zero rows on SELECT and a policy error on INSERT.
+## Recommended fix
 
-## Phase 3 — Other critical paths
+Add a tiny **content-negotiation middleware** in front of those four paths: if the request looks like a real browser (Accept header contains `text/html` and User-Agent isn't a known bot), 302 to `/`. Bots, curl, and any `Accept: application/json` client continue to receive the raw JSON unchanged.
 
-Prioritized by blast radius if broken:
+This solves the "humans see JSON" problem without breaking AI discoverability (which is the whole reason those files exist).
 
-1. **Pricing & checkout math** — `src/lib/pricing.ts` unit tests (every tier, every add-on, Network Fee split, refundability boundary from Terms §10.6).
-2. **QoE metric calculations** — `src/lib/qoeMetrics.ts`, `src/lib/adjustmentSignUtils.ts`, `src/lib/derivePriorBalances.ts`, `src/lib/nwcDataUtils.ts`. Pure functions, golden-value tests with fixed inputs.
-3. **Workbook + PDF builders** — smoke tests for `buildPDFReport` and `TAB_GRID_BUILDERS` using `src/lib/mockDeal.ts` so the demo export regen scripts can't silently break.
-4. **Auth / role gates** — `useAdminCheck`, `useCpaCheck`, `useTosAcceptance` hooks (mocked Supabase, assert deny-by-default).
-5. **Edge functions (Deno tests)** highest risk first:
-   - `create-checkout` — correct line items, metadata, refund path.
-   - `cpa-auto-accept` / `cpa-sla-check` — matching + timeout behavior.
-   - `check-subscription`, `customer-portal` — entitlement parsing.
-   - `export-pdf`, `export-workbook-xlsx` — render without crashing on mock deal.
-   - `insights-chat`, `generate-narrative` — auth required, returns 401 without JWT.
-6. **SEO regression test** — a tiny Vitest spec that imports every `src/pages/guides/*.tsx`, mounts each, and asserts `seoTitle` ends with `| Shepi` and is ≤ 60 chars, and `seoDescription` is 80–160 chars. Prevents another mid-word truncation incident.
+### Implementation
 
-## Phase 4 — CI hook
+1. Create `api/_well-known.ts` Vercel Edge Middleware (or a `middleware.ts` at repo root, which Vercel runs on every request). Pattern-match the four JSON paths; sniff `Accept` + `User-Agent`; redirect humans, pass through bots.
+2. Add a small Vitest unit test for the UA/Accept decision function so we don't accidentally redirect GPTBot.
+3. Leave `llms.txt`, `robots.txt`, and the JSON files themselves untouched.
 
-- Add a single `test` script that runs Vitest in CI mode + Deno tests for edge functions. Playwright stays opt-in via `test:e2e` (needs seeded test users + env).
+```ts
+// middleware.ts (sketch)
+import { NextRequest, NextResponse } from "next/server"; // works on Vercel for Vite projects too via @vercel/edge
+export const config = {
+  matcher: ["/openapi.json", "/mcp.json", "/.well-known/agent.json", "/.well-known/ai-plugin.json"],
+};
+export default function middleware(req: NextRequest) {
+  const accept = req.headers.get("accept") ?? "";
+  const ua = (req.headers.get("user-agent") ?? "").toLowerCase();
+  const isBot = /(bot|crawler|spider|gpt|claude|perplexity|facebookexternalhit|slackbot|discordbot|twitterbot)/.test(ua);
+  const wantsHtml = accept.includes("text/html") && !accept.includes("application/json");
+  if (wantsHtml && !isBot) {
+    const url = req.nextUrl.clone();
+    url.pathname = "/";
+    return NextResponse.redirect(url, 302);
+  }
+  return NextResponse.next();
+}
+```
 
-## Technical details
+(Will use `@vercel/edge` `Request`/`Response` directly since this isn't a Next project — same logic, no Next dependency.)
 
-- Vitest deps: `vitest`, `@testing-library/react`, `@testing-library/jest-dom`, `@testing-library/user-event`, `jsdom`.
-- Supabase mocking pattern: `vi.mock('@/integrations/supabase/client', () => ({ supabase: { from: vi.fn(...), auth: { getUser: vi.fn(...) }, channel: vi.fn(...), removeChannel: vi.fn() } }))`. A small `src/test/supabaseMock.ts` helper to keep tests terse.
-- Playwright needs two env vars for seeded users: `TEST_CLIENT_EMAIL/PASSWORD`, `TEST_CPA_EMAIL/PASSWORD`, plus `TEST_ENGAGEMENT_PROJECT_ID`. Documented in README.
-- Deno tests load `.env` via `https://deno.land/std/dotenv/load.ts` (per project convention) and run with `--allow-net --allow-env`.
+### Optional follow-up (not in this change)
 
-## What I'll build first if you approve
+Add request logging on those four paths (Vercel Analytics or a tiny edge log line) for a week so we can see how often humans actually land there and confirm the fix worked.
 
-Phase 1 + Phase 2 in one pass (infra + full messaging coverage: component tests, E2E spec, RLS test). Then we iterate on Phase 3 sections you care most about — I'd suggest pricing math next since that's where a silent bug costs you real money.
+## What I am NOT changing
+
+- Root `https://shepi.ai/` — already correct, returns HTML.
+- `vercel.json` rewrites — already correct.
+- The JSON files' contents — they're working as designed for AI agents.
+- `robots.txt` / `llms.txt` — keeping AI discoverability intact.
+
+If you'd rather just **delete** the AI-agent endpoints entirely (option 3 from my earlier question) instead of redirecting, say the word and I'll swap the plan.
