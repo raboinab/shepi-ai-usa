@@ -35,10 +35,23 @@ const bootLoader = `
         </div>
       </div>`;
 
-html = html.replace(
-  /<div id="root"[^>]*>[\s\S]*?<\/div>(?=\s*<script)/,
-  `<div id="root">${bootLoader}\n    </div>`
-);
+// Locate <div id="root" ...> ... </div> as the slice from the opening tag
+// up to (and including) the matching closing </div> that sits immediately
+// before the SSG hash <script>. The prerendered HTML always has the shape:
+//   <div id="root" data-server-rendered="true">…app…</div><script>window.__VITE_REACT_SSG_HASH__=…</script>
+const rootStart = html.indexOf('<div id="root"');
+const hashScript = html.indexOf("<script>window.__VITE_REACT_SSG_HASH__");
+if (rootStart === -1 || hashScript === -1 || hashScript < rootStart) {
+  console.error("[build-spa-shell] could not locate root container; aborting.");
+  process.exit(1);
+}
+// Walk back from hashScript to the nearest </div>
+const closeIdx = html.lastIndexOf("</div>", hashScript);
+const rootEnd = closeIdx + "</div>".length;
+html =
+  html.slice(0, rootStart) +
+  `<div id="root">${bootLoader}\n    </div>` +
+  html.slice(rootEnd);
 
 // 2) Remove the SSR marker so vite-react-ssg's client entry does not attempt
 //    hydration against the (now empty) root.
