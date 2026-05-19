@@ -106,8 +106,8 @@ export default function CpaPartners() {
 
       <p className="text-sm text-muted-foreground mt-10">
         Questions before applying? Email{" "}
-        <a href="mailto:partners@shepi.ai" className="text-primary hover:underline">
-          partners@shepi.ai
+        <a href="mailto:hello@shepi.ai" className="text-primary hover:underline">
+          hello@shepi.ai
         </a>{" "}
         or read our <Link to="/compare/ai-qoe-vs-traditional" className="text-primary hover:underline">DIY vs. DFY vs. Traditional comparison</Link> to see where Network CPAs fit.
       </p>
