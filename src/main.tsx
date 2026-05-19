@@ -27,15 +27,20 @@ if (typeof window !== "undefined") {
               : "";
 
       let isStaticLoaderRequest = false;
+      let isSameOriginJson = false;
       try {
-        isStaticLoaderRequest = new URL(requestUrl, window.location.origin).pathname.includes("/static-loader-data");
+        const parsed = new URL(requestUrl, window.location.origin);
+        const sameOrigin = parsed.origin === window.location.origin;
+        isStaticLoaderRequest = parsed.pathname.includes("/static-loader-data");
+        isSameOriginJson = sameOrigin && parsed.pathname.endsWith(".json");
       } catch {
         isStaticLoaderRequest = false;
       }
 
-      if (!isStaticLoaderRequest) {
+      if (!isStaticLoaderRequest && !isSameOriginJson) {
         return originalFetch(input, init);
       }
+
 
       try {
         const response = await originalFetch(input, init);
