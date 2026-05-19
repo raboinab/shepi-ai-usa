@@ -2,10 +2,11 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": "vite",
+  "cleanUrls": true,
   "rewrites": [
     {
       "source": "/((?!static-loader-data/|assets/|.*\\.(?:json|js|css|svg|png|jpg|jpeg|gif|webp|ico|woff|woff2|ttf|otf|map|xml|txt|pdf|xlsx)$).*)",
-      "destination": "/index.html"
+      "destination": "/spa-shell.html"
     }
   ],
   "headers": [
@@ -15,6 +16,18 @@
         { "key": "X-Content-Type-Options", "value": "nosniff" },
         { "key": "X-Frame-Options", "value": "DENY" },
         { "key": "X-XSS-Protection", "value": "1; mode=block" }
+      ]
+    },
+    {
+      "source": "/spa-shell.html",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
+      ]
+    },
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
       ]
     }
   ]
