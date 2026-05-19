@@ -92,9 +92,36 @@ export default function CpaOnboarding() {
         .eq("user_id", u.user.id)
         .maybeSingle();
       if (error) throw error;
-      return (data ?? null) as unknown as CpaProfile | null;
+      if (data) return data as unknown as CpaProfile;
+
+      // Defensive fallback: user has cpa role but no profile row (e.g.
+      // role was granted manually). Create a stub so onboarding works.
+      const fullName =
+        (u.user.user_metadata as Record<string, unknown> | null)?.full_name as
+          | string
+          | undefined;
+      const { data: created, error: insErr } = await supabase
+        .from("cpa_profiles" as any)
+        .insert({
+          user_id: u.user.id,
+          full_name: fullName ?? u.user.email ?? "CPA",
+          email: u.user.email ?? "",
+          license_number: "",
+          state_of_licensure: "",
+          states_served: [],
+          industries: [],
+          active: true,
+        })
+        .select("*")
+        .single();
+      if (insErr) {
+        console.warn("[cpa-onboarding] stub create failed", insErr);
+        return null;
+      }
+      return created as unknown as CpaProfile;
     },
   });
+
 
   const { data: docs } = useQuery({
     queryKey: ["cpa-onboarding-docs"],
