@@ -101,6 +101,7 @@ export type Database = {
           edited_period_values: Json | null
           evidence_report: Json | null
           evidence_strength: string
+          finding_group: string | null
           finding_id: string | null
           hypothesis_id: string | null
           id: string
@@ -147,6 +148,7 @@ export type Database = {
           edited_period_values?: Json | null
           evidence_report?: Json | null
           evidence_strength?: string
+          finding_group?: string | null
           finding_id?: string | null
           hypothesis_id?: string | null
           id?: string
@@ -193,6 +195,7 @@ export type Database = {
           edited_period_values?: Json | null
           evidence_report?: Json | null
           evidence_strength?: string
+          finding_group?: string | null
           finding_id?: string | null
           hypothesis_id?: string | null
           id?: string
