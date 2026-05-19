@@ -7,7 +7,7 @@ import "./index.css";
 
 // Pre-React OAuth interception — browser-only. Catches OAuth tokens that land
 // on wrong paths and redirects to /auth/callback before React mounts.
-if (typeof window !== "undefined") {
+if (typeof window !== "undefined" && typeof window.fetch === "function" && typeof window.location !== "undefined") {
   const installStaticLoaderDataFetchGuard = () => {
     if ((window as typeof window & { __SHEPI_STATIC_LOADER_FETCH_GUARD__?: boolean }).__SHEPI_STATIC_LOADER_FETCH_GUARD__) {
       return;
