@@ -7,8 +7,8 @@
   "scripts": {
     "dev": "vite",
     "prebuild": "npx tsx scripts/generate-discovery.ts",
-    "build": "vite-react-ssg build",
-    "build:dev": "vite-react-ssg build --mode development",
+    "build": "vite-react-ssg build && node scripts/build-spa-shell.mjs",
+    "build:dev": "vite-react-ssg build --mode development && node scripts/build-spa-shell.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "generate-guides": "npx tsx scripts/generate-industry-guides.ts",

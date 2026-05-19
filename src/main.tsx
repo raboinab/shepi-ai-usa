@@ -90,7 +90,77 @@ if (typeof window !== "undefined") {
   });
 }
 
+// On the SPA shell HTML (non-prerendered routes like /dashboard, /auth,
+// /project/*, /admin/*) the root container is intentionally empty and the
+// data-server-rendered marker is absent. We must avoid vite-react-ssg's
+// auto-hydration in that case — hydrateRoot against an empty container in
+// React 19 throws (React error #418) and forces a full client re-render,
+// which is what was making /dashboard refreshes appear to hang. Instead we
+// rename #root so the library's IIFE no-ops, then mount with createRoot
+// ourselves.
+const isSpaShell =
+  typeof window !== "undefined" &&
+  !document.querySelector("[data-server-rendered=true]");
+
+if (isSpaShell) {
+  const rootEl = document.getElementById("root");
+  if (rootEl) {
+    rootEl.id = "__shepi_spa_root__";
+    // Clear the boot loader so React's first commit replaces it cleanly.
+    rootEl.innerHTML = "";
+  }
+}
+
 // vite-react-ssg entry: returns a function the framework calls during prerender
 // (server) and hydration (client). Providers (Unhead, ErrorBoundary, Query, etc.)
 // are mounted inside RootLayout in App.tsx so the same tree runs in both envs.
+// On the SPA shell, ViteReactSSG's IIFE will see no #root and bail out.
 export const createRoot = ViteReactSSG({ routes });
+
+if (isSpaShell && typeof window !== "undefined") {
+  void (async () => {
+    const [
+      { createRoot: reactCreateRoot },
+      { RouterProvider, createBrowserRouter, matchRoutes },
+      { HelmetProvider },
+      React,
+    ] = await Promise.all([
+      import("react-dom/client"),
+      import("react-router-dom"),
+      import("react-helmet-async"),
+      import("react"),
+    ]);
+
+    const container = document.getElementById("__shepi_spa_root__");
+    if (!container) return;
+
+    // Resolve lazy routes for the current path before mounting so the first
+    // render produces the real page instead of a generic Suspense fallback.
+    const matches = matchRoutes(routes as never, window.location) as
+      | Array<{ route: { lazy?: () => Promise<Record<string, unknown>> } }>
+      | null;
+    if (matches) {
+      await Promise.all(
+        matches
+          .filter((m) => m.route.lazy)
+          .map(async (m) => {
+            const mod = await m.route.lazy!();
+            Object.assign(m.route, { ...mod, lazy: undefined });
+          }),
+      );
+    }
+
+    const router = createBrowserRouter(routes as never);
+    const root = reactCreateRoot(container);
+    React.startTransition(() => {
+      root.render(
+        React.createElement(
+          HelmetProvider,
+          null,
+          React.createElement(RouterProvider, { router }),
+        ),
+      );
+    });
+  })();
+}
+
