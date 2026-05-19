@@ -1,45 +1,49 @@
-# Fix CPA role toggle blocked by RLS
-
 ## Problem
-`src/pages/admin/AdminUsers.tsx > toggleCpaRole` does a client-side `insert` / `delete` on `public.user_roles`. That table has RLS enabled but **only one policy**: a SELECT policy `auth.uid() = user_id`. There are no INSERT or DELETE policies for anyone (not even admins), so every toggle from the admin UI is rejected by RLS — that's the "new row violates row-level security policy" you saw.
 
-Same gap will hit any future admin-driven role change (granting `admin`, removing `cpa`, etc.). The `promote-cpa-application` edge function isn't affected because it uses the service role and bypasses RLS.
+Two paths grant the `cpa` role today:
+
+1. **Application approval** (`promote-cpa-application` edge function) — grants role, creates `cpa_profiles` row, marks application approved, sends welcome email. Works end-to-end.
+2. **Direct admin toggle** in `/admin/users` (Chris, Mike, Alex) — does a raw `INSERT INTO user_roles` from the browser. Grants the role but **never creates `cpa_profiles`** and **never sends an email**.
+
+That's why Chris sees "Profile not ready yet" on `/cpa/onboarding` and got no notification: the role exists, the profile row doesn't.
 
 ## Fix
-Add two policies to `public.user_roles`, scoped to admins via the existing `has_role()` security-definer function (which already avoids recursion):
 
-```sql
-CREATE POLICY "Admins can grant roles"
-ON public.user_roles
-FOR INSERT
-TO authenticated
-WITH CHECK (public.has_role(auth.uid(), 'admin'::app_role));
+Make every path that grants the `cpa` role guarantee a profile stub and notify the user.
 
-CREATE POLICY "Admins can revoke roles"
-ON public.user_roles
-FOR DELETE
-TO authenticated
-USING (public.has_role(auth.uid(), 'admin'::app_role));
+### 1. New edge function: `grant-cpa-role`
 
-CREATE POLICY "Admins can view all roles"
-ON public.user_roles
-FOR SELECT
-TO authenticated
-USING (public.has_role(auth.uid(), 'admin'::app_role));
-```
+- Inputs: `user_id` (or `email`), optional `full_name`, `state_of_licensure`.
+- Auth: admin only (verify via `has_role(_, 'admin')`).
+- Steps:
+  - Upsert `user_roles (user_id, 'cpa')`.
+  - Upsert minimal `cpa_profiles` row (`user_id`, `email`, `full_name`, `license_number=''`, `state_of_licensure=''`, `active=true`) if none exists. CPA finishes the rest on `/cpa/onboarding`.
+  - Send the same "Welcome to the shepi Network" Resend email used by `promote-cpa-application` (extract the HTML into a shared helper or inline copy).
+  - Return `{ ok, created_profile, sent_email }`.
 
-The third policy is additive — admins currently can only see their own row, which means the `admin-cpa-roles` query in `AdminUsers.tsx` returns an incomplete set (you'd only see yourself as CPA). Adding it makes the toggle UI actually reflect reality.
+### 2. Rewire `/admin/users` CPA toggle
 
-No UPDATE policy — role rows are immutable; toggling = delete + insert.
+`src/pages/admin/AdminUsers.tsx` currently writes directly to `user_roles`. Change the mutation to:
+- On **grant**: call `supabase.functions.invoke('grant-cpa-role', { body: { user_id } })`.
+- On **revoke**: keep the direct delete (profile row can stay; flipping `cpa_profiles.active=false` is a separate concern).
+- Toast on success: "CPA role granted, welcome email sent."
 
-## Why not service-role edge function instead
-Pure RLS is simpler, no new function to deploy, and `has_role()` already gates the rest of the admin surface this way. Service-role would only be needed if we wanted non-admins to self-grant — we don't.
+### 3. Backfill the three existing CPAs
 
-## Verification
-1. Sign in as an admin, open Admin → Users, toggle CPA on a user → row appears in `user_roles`, toast shows success.
-2. Toggle off → row deleted.
-3. Sign in as a non-admin, attempt the same call → still rejected (policies require `has_role('admin')`).
-4. The `admin-cpa-roles` query now returns all CPA assignments, not just the current admin's row.
+One-off insert: create `cpa_profiles` rows for Chris, Mike, Alex (pull `full_name` / `email` from `profiles`/`auth.users`). Optionally re-send the welcome email — confirm with user before sending.
 
-## Files touched
-- One Supabase migration adding the three policies above. No app code changes.
+### 4. Soften the "Profile not ready" screen (small polish)
+
+`src/pages/cpa/CpaOnboarding.tsx` should auto-create a stub on first load if the user has the `cpa` role but no profile row (defensive fallback for any future path we forget). One-line `upsert` keyed on `user_id`.
+
+## Technical notes
+
+- RLS on `cpa_profiles` already has `Service role full access`, so the edge function (service role) can upsert.
+- Welcome email template lives in `promote-cpa-application/index.ts` lines 126–137 — copy or extract.
+- No schema change needed. No new tables.
+- `cpa_profiles.license_number` and `state_of_licensure` are `NOT NULL` — stub with empty strings; onboarding form already lets the CPA fill them in.
+
+## Open questions
+
+- For the 3 existing CPAs: send the welcome email retroactively, or just silently backfill the profile?
+- Should revoking the `cpa` role also deactivate (`active=false`) their `cpa_profiles` row?
