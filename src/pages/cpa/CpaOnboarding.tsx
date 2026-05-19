@@ -257,7 +257,7 @@ export default function CpaOnboarding() {
             <CardDescription>
               We haven't created your CPA profile. An admin will activate your account shortly
               after approving your application. If you think this is a mistake, email
-              partners@shepi.ai.
+              hello@shepi.ai.
             </CardDescription>
           </CardHeader>
         </Card>

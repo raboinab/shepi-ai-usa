@@ -91,7 +91,7 @@ export function CpaApplicationForm() {
     } catch (err: any) {
       toast({
         title: "Couldn't submit",
-        description: err?.message ?? "Please try again or email partners@shepi.ai.",
+        description: err?.message ?? "Please try again or email hello@shepi.ai.",
         variant: "destructive",
       });
     } finally {

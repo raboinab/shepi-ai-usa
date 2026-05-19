@@ -127,7 +127,7 @@ serve(async (req) => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          from: "shepi Partners <partners@shepi.ai>",
+          from: "shepi <hello@shepi.ai>",
           to: [email],
           subject: "Welcome to the shepi Network",
           html,
