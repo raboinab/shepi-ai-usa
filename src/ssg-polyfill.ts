@@ -10,11 +10,14 @@
 // rely on `typeof window === 'undefined'` after this module runs, since we
 // install a `window` shim for module-evaluation safety.
 
+// Detect Node by process.versions.node alone — `globalThis.window` may already
+// be shimmed by vite-react-ssg before this module runs, so checking for window
+// is unreliable. Node 25 also ships a stub `globalThis.localStorage` without a
+// usable file path (see `--localstorage-file` warning), so we must overwrite it.
 const isNode =
   typeof process !== "undefined" &&
   !!(process as any).versions &&
-  !!(process as any).versions.node &&
-  typeof (globalThis as any).window === "undefined";
+  !!(process as any).versions.node;
 
 (globalThis as any).__IS_SSG__ = isNode;
 
@@ -31,18 +34,26 @@ if (isNode) {
   // Minimal stand-ins. Components that actually use these only run inside
   // useEffect (post-mount), which never executes during prerender — so the
   // shapes only need to satisfy module-evaluation-time references.
+  // Always overwrite — Node 25's built-in localStorage is a broken stub.
   (globalThis as any).localStorage = noopStorage;
   (globalThis as any).sessionStorage = noopStorage;
-  (globalThis as any).window = globalThis;
-  (globalThis as any).document = {
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    createElement: () => ({}),
-    documentElement: { style: {} },
-    head: {},
-    body: {},
-  };
-  (globalThis as any).navigator = { userAgent: "ssg" };
+  if (typeof (globalThis as any).window === "undefined") {
+    (globalThis as any).window = globalThis;
+  }
+  if (typeof (globalThis as any).document === "undefined") {
+    (globalThis as any).document = {
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      createElement: () => ({}),
+      documentElement: { style: {} },
+      head: {},
+      body: {},
+      querySelector: () => null,
+    };
+  }
+  if (typeof (globalThis as any).navigator === "undefined") {
+    (globalThis as any).navigator = { userAgent: "ssg" };
+  }
 }
 
 export {};
