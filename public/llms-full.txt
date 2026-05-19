@@ -2,7 +2,7 @@
 
 > Long-form companion to llms.txt. Contains the full homepage FAQ (single source of truth — see src/data/homepageFaq.ts), the complete public content surface, and capability/limitation statements suitable for agent reasoning.
 
-Generated: 2026-05-13
+Generated: 2026-05-19
 
 ## Identity
 
@@ -71,6 +71,7 @@ shepi is an AI-assisted Quality of Earnings (QoE) analysis platform for small an
 - https://shepi.ai/guides/ai-wont-do-your-qoe
 - https://shepi.ai/guides/ai-accounting-anomaly-detection
 - https://shepi.ai/guides/earnings-manipulation-signs
+- https://shepi.ai/guides/sellers-discretionary-earnings
 
 ## Frequently Asked Questions
 
