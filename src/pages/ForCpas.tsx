@@ -148,7 +148,7 @@ export default function ForCpas() {
           {
             title: "Onboard",
             description:
-              "Upload your license, proof of liability coverage, and a W-9. Acknowledge the provider agreement.",
+              "Upload your license verification and a W-9. Acknowledge the provider agreement.",
           },
           {
             title: "Claim an engagement",
