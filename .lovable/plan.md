@@ -1,49 +1,73 @@
-## Problem
 
-Two paths grant the `cpa` role today:
+# DFY Document Intake & Readiness Gate
 
-1. **Application approval** (`promote-cpa-application` edge function) — grants role, creates `cpa_profiles` row, marks application approved, sends welcome email. Works end-to-end.
-2. **Direct admin toggle** in `/admin/users` (Chris, Mike, Alex) — does a raw `INSERT INTO user_roles` from the browser. Grants the role but **never creates `cpa_profiles`** and **never sends an email**.
+## The problem
+When a buyer/client purchases Done-For-You, the CPA is assigned but cannot start until the client has uploaded all source documents. Today there is no shared workspace, no "required documents" checklist, no readiness gate, and no nudge loop. We need all four.
 
-That's why Chris sees "Profile not ready yet" on `/cpa/onboarding` and got no notification: the role exists, the profile row doesn't.
+## Core model
 
-## Fix
+1. **One project, shared access.** The DFY client is the project owner; the assigned CPA gets project access via the existing `cpa_claims` row + `has_project_access()`. Both work in the same `/project/:id` workspace. Client uses the existing wizard upload UI; CPA sees uploads in real time.
 
-Make every path that grants the `cpa` role guarantee a profile stub and notify the user.
+2. **Required-document checklist per engagement.** We already have `DOCUMENT_CHECKLIST` in `fetchDocumentSources.ts` with `required | recommended | optional` tiers. We promote this to a **per-project intake checklist** with explicit status: `not_uploaded → uploaded → cpa_approved | cpa_rejected (with reason)`. The CPA can mark any required item as "still missing" or "wrong file — please re-upload."
 
-### 1. New edge function: `grant-cpa-role`
+3. **Readiness gate.** A `cpa_claim` cannot move past `accepted` into `in_review` until all **required** items are `uploaded` (auto) and (optionally) `cpa_approved`. The DFY status banner already has an "Awaiting documents" stage we'll add between `accepted` and `in_review`.
 
-- Inputs: `user_id` (or `email`), optional `full_name`, `state_of_licensure`.
-- Auth: admin only (verify via `has_role(_, 'admin')`).
-- Steps:
-  - Upsert `user_roles (user_id, 'cpa')`.
-  - Upsert minimal `cpa_profiles` row (`user_id`, `email`, `full_name`, `license_number=''`, `state_of_licensure=''`, `active=true`) if none exists. CPA finishes the rest on `/cpa/onboarding`.
-  - Send the same "Welcome to the shepi Network" Resend email used by `promote-cpa-application` (extract the HTML into a shared helper or inline copy).
-  - Return `{ ok, created_profile, sent_email }`.
+4. **Nudge loop.** Both system-driven (cron) and CPA-driven ("Nudge client" button). Emails via Resend + in-app `cpa_notifications`.
 
-### 2. Rewire `/admin/users` CPA toggle
+## Client experience (DFY buyer)
 
-`src/pages/admin/AdminUsers.tsx` currently writes directly to `user_roles`. Change the mutation to:
-- On **grant**: call `supabase.functions.invoke('grant-cpa-role', { body: { user_id } })`.
-- On **revoke**: keep the direct delete (profile row can stay; flipping `cpa_profiles.active=false` is a separate concern).
-- Toast on success: "CPA role granted, welcome email sent."
+- On the project page, a new **"Document Intake"** panel appears above the wizard for DFY projects. It shows:
+  - Progress bar: `X of Y required documents uploaded`
+  - Each required item with status pill, upload button, and any CPA rejection note
+  - Banner: *"Your CPA reviewer is waiting on these documents to begin."*
+- Once all required are uploaded → banner flips to *"All set — your CPA will begin review shortly."* and the claim auto-advances to `in_review`-eligible.
+- Email + in-app notification when the CPA rejects a file or requests additional docs.
 
-### 3. Backfill the three existing CPAs
+## CPA experience
 
-One-off insert: create `cpa_profiles` rows for Chris, Mike, Alex (pull `full_name` / `email` from `profiles`/`auth.users`). Optionally re-send the welcome email — confirm with user before sending.
+- On `/cpa/engagement/:projectId`, a new **"Document Intake"** tab (first tab, before "Adjustment review") shows the same checklist with:
+  - Approve / Reject (with reason) per item
+  - "Request additional document" → adds an ad-hoc required item with description
+  - **"Nudge client"** button → sends email + in-app notification, rate-limited to once per 48h
+- Adjustment-review tab is disabled with a tooltip until all required items are `cpa_approved` (or the CPA explicitly overrides with "Start review anyway").
 
-### 4. Soften the "Profile not ready" screen (small polish)
+## Nudge system
 
-`src/pages/cpa/CpaOnboarding.tsx` should auto-create a stub on first load if the user has the `cpa` role but no profile row (defensive fallback for any future path we forget). One-line `upsert` keyed on `user_id`.
+- New edge function `nudge-dfy-client` (callable by CPA button and by cron):
+  - For a given claim, finds missing required docs, sends a Resend email to the client with the list + deep link, inserts a `cpa_notifications` row, and logs the nudge.
+- Scheduled cron (Supabase scheduled function) `dfy-readiness-cron` runs daily:
+  - For every `cpa_claim` in `accepted` status older than 3 days with missing required docs → auto-nudge (escalating cadence: day 3, day 7, then weekly; cap at 4 total auto-nudges).
+  - Notifies admin + CPA after day 14 of inactivity so they can intervene.
 
-## Technical notes
+## Technical details
 
-- RLS on `cpa_profiles` already has `Service role full access`, so the edge function (service role) can upsert.
-- Welcome email template lives in `promote-cpa-application/index.ts` lines 126–137 — copy or extract.
-- No schema change needed. No new tables.
-- `cpa_profiles.license_number` and `state_of_licensure` are `NOT NULL` — stub with empty strings; onboarding form already lets the CPA fill them in.
+### Database (one migration)
 
-## Open questions
+- `project_document_requirements` table:
+  - `id`, `project_id`, `requirement_key` (e.g. `chart_of_accounts`), `label`, `tier` (required/recommended/optional), `is_custom` (bool, for CPA-added ad-hoc requests), `requested_by_user_id`, `notes`, `created_at`
+  - Seeded by trigger on `projects` insert when `service_tier='done_for_you'` from the canonical checklist.
+- `project_document_reviews` table (CPA approvals per requirement):
+  - `id`, `requirement_id`, `document_id` (nullable until uploaded), `status` (`pending|approved|rejected`), `rejection_reason`, `reviewed_by_user_id`, `reviewed_at`
+- `cpa_nudges` table:
+  - `id`, `claim_id`, `project_id`, `sent_by` (`system|cpa_user_id`), `missing_keys jsonb`, `email_id`, `created_at`
+- RLS: project members + assigned CPA read/write their scope; service role full access.
+- Add `cpa_claim.status = 'awaiting_documents'` enum value (or use a derived view; status stays `accepted` and we compute readiness from the checklist — simpler, recommended).
 
-- For the 3 existing CPAs: send the welcome email retroactively, or just silently backfill the profile?
-- Should revoking the `cpa` role also deactivate (`active=false`) their `cpa_profiles` row?
+### Edge functions
+- `nudge-dfy-client` — POST `{claim_id, sent_by}` → email + notification + log
+- `dfy-readiness-cron` — scheduled daily; finds candidates and calls `nudge-dfy-client`
+- Extend `grant-cpa-role` / claim creation flow to seed `project_document_requirements` when a DFY project is created (or backfill on first CPA claim if missing).
+
+### Frontend
+- `src/components/dfy/DocumentIntakePanel.tsx` — used on Project page (client view) and CpaEngagement page (CPA view), behavior switches on role.
+- Extend `DfyStatusBanner` with "Awaiting documents (X/Y uploaded)" state, derived from requirements.
+- New tab in `CpaEngagement.tsx`: "Document Intake" with approve/reject + nudge button. Gate the "Adjustment review" tab on readiness.
+- Email templates (Resend): client nudge, CPA "docs ready" notification, admin escalation.
+
+## Open questions for you
+1. Should the CPA be able to **bypass the readiness gate** and start review anyway, or is the gate hard? (Recommendation: soft gate with an explicit override that logs to admin.)
+2. Default required set: keep the existing 4 (`COA`, `TB`, `GL`, `Bank Statements`) or expand for DFY (e.g. add Tax Returns, AR/AP aging)?
+3. Nudge cadence: day 3 / 7 / 14 / 21 OK, or more aggressive?
+4. Should clients be able to mark a requirement as "N/A — does not apply to my business" (subject to CPA approval)?
+
+If those are fine as proposed, I'll build it in this order: migration → intake panel (client) → CPA intake tab + nudge button → readiness gate on banner/review tab → cron nudge function.
