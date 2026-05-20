@@ -46,7 +46,7 @@ interface CpaApplication {
   firm_affiliation: string | null;
   side_work_permitted: boolean | null;
   conflicts_disclosure: string | null;
-  linkedin_url: string | null;
+  
   referral_source: string | null;
   status: Status;
   reviewed_at: string | null;
