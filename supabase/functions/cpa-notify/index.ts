@@ -14,34 +14,64 @@ const cors = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
 const ADMIN_EMAIL = Deno.env.get("CPA_ADMIN_EMAIL") || "team@shepi.ai";
 const APP_URL = Deno.env.get("APP_URL") || "https://shepi.ai";
 const FROM = "Shepi <notifications@shepi.ai>";
+const FUNCTION_NAME = "cpa-notify";
 
 const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
 
 type Recipient = { user_id: string; email: string | null };
 
-async function sendEmail(to: string, subject: string, html: string) {
-  if (!RESEND_API_KEY || !LOVABLE_API_KEY) {
-    console.log("[cpa-notify] email skipped — missing keys", { to, subject });
+type SendCtx = {
+  event_type: string;
+  related_project_id?: string | null;
+  related_user_id?: string | null;
+};
+
+async function logSend(row: {
+  to_email: string;
+  event_type: string;
+  subject: string;
+  status: "sent" | "failed" | "skipped";
+  error?: string | null;
+  resend_id?: string | null;
+  related_project_id?: string | null;
+  related_user_id?: string | null;
+}) {
+  try {
+    await supabase.from("email_send_log").insert({ ...row, function_name: FUNCTION_NAME });
+  } catch (e) {
+    console.error("[cpa-notify] email_send_log insert failed", e);
+  }
+}
+
+async function sendEmail(to: string, subject: string, html: string, ctx: SendCtx = { event_type: "unknown" }) {
+  if (!RESEND_API_KEY) {
+    console.log("[cpa-notify] email skipped — missing RESEND_API_KEY", { to, subject });
+    await logSend({ to_email: to, event_type: ctx.event_type, subject, status: "skipped", error: "RESEND_API_KEY missing", related_project_id: ctx.related_project_id, related_user_id: ctx.related_user_id });
     return;
   }
   try {
-    const res = await fetch("https://connector-gateway.lovable.dev/resend/emails", {
+    const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "X-Connection-Api-Key": RESEND_API_KEY,
+        Authorization: `Bearer ${RESEND_API_KEY}`,
       },
       body: JSON.stringify({ from: FROM, to: [to], subject, html }),
     });
-    if (!res.ok) console.error("[cpa-notify] resend error", await res.text());
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      console.error("[cpa-notify] resend error", res.status, body);
+      await logSend({ to_email: to, event_type: ctx.event_type, subject, status: "failed", error: `HTTP ${res.status}: ${JSON.stringify(body)}`, related_project_id: ctx.related_project_id, related_user_id: ctx.related_user_id });
+      return;
+    }
+    await logSend({ to_email: to, event_type: ctx.event_type, subject, status: "sent", resend_id: body?.id ?? null, related_project_id: ctx.related_project_id, related_user_id: ctx.related_user_id });
   } catch (e) {
     console.error("[cpa-notify] resend exception", e);
+    await logSend({ to_email: to, event_type: ctx.event_type, subject, status: "failed", error: String(e), related_project_id: ctx.related_project_id, related_user_id: ctx.related_user_id });
   }
 }
 
