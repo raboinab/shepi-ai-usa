@@ -33,7 +33,7 @@ const whatYouGet = [
 
 const whatWeAsk = [
   "Active, unrestricted CPA license in any US state",
-  "You carry your own professional liability (E&O) coverage as required by your state board or employer",
+  
   "If you have a day job at a CPA firm: you've checked that side work is permitted (or you're independent)",
   "You disclose independence conflicts before accepting any engagement",
   "You meet our response time and quality standards (we'll show you what those are at onboarding)",
