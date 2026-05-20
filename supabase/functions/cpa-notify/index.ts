@@ -139,6 +139,7 @@ async function handleDfyProjectPosted(p: any) {
           <p>${project.client_name ? `Client: ${project.client_name}<br/>` : ""}Transaction: ${project.transaction_type || "n/a"}</p>
           <p><a href="${APP_URL}${link}">Open the queue</a> to claim it.</p>
         </div>`,
+        { event_type: "dfy_project_posted", related_project_id: project.id, related_user_id: r.user_id },
       );
     }
   }
