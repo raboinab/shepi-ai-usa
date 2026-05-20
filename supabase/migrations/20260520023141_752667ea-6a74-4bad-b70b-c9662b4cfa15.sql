@@ -1,0 +1,1 @@
+UPDATE projects SET service_tier = 'done_for_you' WHERE id = '17ba0cb7-abe3-463d-810d-95178429481b';
