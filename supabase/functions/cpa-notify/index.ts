@@ -298,6 +298,7 @@ async function handleSlaCheck() {
           <p>Your engagement <strong>${project?.target_company || project?.name}</strong> has been in progress for ${ageDays} days. If you've completed your review, please mark it complete.</p>
           <p><a href="${APP_URL}/cpa/engagements">Open engagements</a></p>
         </div>`,
+        { event_type: "sla_warning", related_project_id: claim.project_id, related_user_id: claim.cpa_user_id },
       );
     }
   }
@@ -309,6 +310,7 @@ async function handleSlaCheck() {
       <h2>Engagements over SLA</h2>
       <ul>${lines.join("")}</ul>
     </div>`,
+    { event_type: "sla_report_admin" },
   );
 
   return { stale: stale.length };
