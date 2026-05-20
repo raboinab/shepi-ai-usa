@@ -1,41 +1,36 @@
-## Scope
-Remove three things from the CPA flow entirely: LinkedIn URL, states served, and liability-insurance requirement. This is a product-level decision, so it propagates beyond the onboarding screen.
+## Goal
 
-## Files to change
+Make project `17ba0cb7-abe3-463d-810d-95178429481b` ("Landscaping Biz") visible and claimable by every CPA in the CPA queue.
 
-### 1. `src/pages/cpa/CpaOnboarding.tsx`
-- Remove the **States served** card (entire section + `US_STATES` constant + `statesServed` state + the `states_served` field in the save patch and stub-create insert).
-- Remove the **LinkedIn URL** input + `linkedin` state + `linkedin_url` in save patch.
-- Remove **liability insurance** from `DOC_TYPES`, from the `Documents` card description ("Liability insurance certificate is required to claim engagements"), from the upload side-effect that sets `liability_covered`, and from the checklist.
-- Update checklist to: Confirm contact info, Add at least one industry, Short professional bio, W-9 on file. (4 items → percentages recalc automatically.)
+## How CPA access works (for context)
 
-### 2. `src/components/cpa/CpaApplicationForm.tsx`
-- Remove the **LinkedIn URL** field, its zod entry, default value, and the rendered `<Field>`.
-- Keep `state_of_licensure` — that's the CPA's actual license state, different from "states served".
+- CPA queue (`src/pages/cpa/CpaQueue.tsx`) lists every project where `projects.service_tier = 'done_for_you'`.
+- Any user with the `cpa` role can claim a listed project; claiming inserts a `cpa_claims` row, which grants full project access via `has_project_access()`.
+- There is no per-CPA grant — it's gated entirely by `service_tier`.
 
-### 3. `src/pages/admin/AdminCpaApplications.tsx`
-- Remove `linkedin_url` from the `CpaApplication` type and the `<Detail label="LinkedIn" …>` row.
+## Change
 
-### 4. Marketing pages
-- `src/pages/ForCpas.tsx`: remove the FAQ entry about liability insurance, drop "proof of liability coverage" from the onboarding-steps copy, and remove the trailing "your own professional liability coverage" line.
-- `src/pages/CpaPartners.tsx`: remove the "You carry your own professional liability (E&O) coverage…" bullet.
+Single data update (no schema change, no code change):
 
-### 5. `src/components/cpa/ProviderAgreementContent.tsx`
-- Audit and remove the liability-insurance / E&O clauses (will read the file during implementation; remove only the insurance-specific paragraphs, keep the rest of the agreement intact).
+```sql
+UPDATE projects
+SET service_tier = 'done_for_you'
+WHERE id = '17ba0cb7-abe3-463d-810d-95178429481b';
+```
 
-## Database — no schema changes
-Leave the existing columns (`states_served`, `linkedin_url`, `liability_covered`, `liability_expires_at` on `cpa_profiles`; `linkedin_url` on `cpa_applications`) in place. They become dormant — no UI reads or writes them. This avoids data loss for the 4 existing CPAs and keeps the migration small. We can drop the columns later if you want a cleanup pass.
+## Side-effects to expect
 
-## Memory update
-Project memory currently states: *"Marketing and legal docs MUST NOT claim shepi carries E&O… Each party carries its own."* That sentence assumes CPAs carry their own insurance. I'll soften it to: *"Marketing and legal docs MUST NOT claim shepi carries E&O, umbrella, cyber, or any other insurance, nor require CPAs to carry insurance. Revisit only when a policy is actually bound."*
+- The project will appear for all CPAs at `/cpa/queue` immediately.
+- The project owner's view at `/project/17ba0cb7…` will start rendering the `DocumentIntakePanel` (DFY document checklist) and `DfyStatusBanner`.
+- No billing is triggered by this flip — this manually grants DFY benefits without a DFY purchase. Confirm that's intended (e.g., comp, internal test).
+
+## Out of scope
+
+- No changes to RLS, roles, or `cpa_claims`.
+- No way to limit visibility to a specific CPA — that would be a new feature.
 
 ## Verification
-- Load `/cpa/onboarding` as Alex → no States, no LinkedIn, no liability mention; checklist has 4 items; saving works.
-- Load `/cpa/apply` (public application) → no LinkedIn field; submit still succeeds.
-- Load admin CPA applications → no LinkedIn row.
-- Visit `/for-cpas` and `/cpa-partners` → no liability-insurance copy remaining (`rg -i "liability|E&O|insurance" src/pages` should come back clean for the CPA-facing pages).
 
-## Out of scope (confirm if you want it)
-- Dropping the DB columns.
-- Touching CPA roles/permissions logic (`/cpa` queue, claim flow) — unaffected.
-- Public `/scope` page wording about insurance — leaving alone unless you flag it.
+1. Re-run `SELECT id, service_tier FROM projects WHERE id = '17ba0cb7…'` and confirm `done_for_you`.
+2. Log in as a CPA (or check as admin) and confirm the project shows up in `/cpa/queue` as unclaimed.
+3. Load `/project/17ba0cb7…` as the owner and confirm the Document Intake panel appears.
