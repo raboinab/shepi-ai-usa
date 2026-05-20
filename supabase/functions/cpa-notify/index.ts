@@ -14,34 +14,64 @@ const cors = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
 const ADMIN_EMAIL = Deno.env.get("CPA_ADMIN_EMAIL") || "team@shepi.ai";
 const APP_URL = Deno.env.get("APP_URL") || "https://shepi.ai";
 const FROM = "Shepi <notifications@shepi.ai>";
+const FUNCTION_NAME = "cpa-notify";
 
 const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
 
 type Recipient = { user_id: string; email: string | null };
 
-async function sendEmail(to: string, subject: string, html: string) {
-  if (!RESEND_API_KEY || !LOVABLE_API_KEY) {
-    console.log("[cpa-notify] email skipped — missing keys", { to, subject });
+type SendCtx = {
+  event_type: string;
+  related_project_id?: string | null;
+  related_user_id?: string | null;
+};
+
+async function logSend(row: {
+  to_email: string;
+  event_type: string;
+  subject: string;
+  status: "sent" | "failed" | "skipped";
+  error?: string | null;
+  resend_id?: string | null;
+  related_project_id?: string | null;
+  related_user_id?: string | null;
+}) {
+  try {
+    await supabase.from("email_send_log").insert({ ...row, function_name: FUNCTION_NAME });
+  } catch (e) {
+    console.error("[cpa-notify] email_send_log insert failed", e);
+  }
+}
+
+async function sendEmail(to: string, subject: string, html: string, ctx: SendCtx = { event_type: "unknown" }) {
+  if (!RESEND_API_KEY) {
+    console.log("[cpa-notify] email skipped — missing RESEND_API_KEY", { to, subject });
+    await logSend({ to_email: to, event_type: ctx.event_type, subject, status: "skipped", error: "RESEND_API_KEY missing", related_project_id: ctx.related_project_id, related_user_id: ctx.related_user_id });
     return;
   }
   try {
-    const res = await fetch("https://connector-gateway.lovable.dev/resend/emails", {
+    const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "X-Connection-Api-Key": RESEND_API_KEY,
+        Authorization: `Bearer ${RESEND_API_KEY}`,
       },
       body: JSON.stringify({ from: FROM, to: [to], subject, html }),
     });
-    if (!res.ok) console.error("[cpa-notify] resend error", await res.text());
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      console.error("[cpa-notify] resend error", res.status, body);
+      await logSend({ to_email: to, event_type: ctx.event_type, subject, status: "failed", error: `HTTP ${res.status}: ${JSON.stringify(body)}`, related_project_id: ctx.related_project_id, related_user_id: ctx.related_user_id });
+      return;
+    }
+    await logSend({ to_email: to, event_type: ctx.event_type, subject, status: "sent", resend_id: body?.id ?? null, related_project_id: ctx.related_project_id, related_user_id: ctx.related_user_id });
   } catch (e) {
     console.error("[cpa-notify] resend exception", e);
+    await logSend({ to_email: to, event_type: ctx.event_type, subject, status: "failed", error: String(e), related_project_id: ctx.related_project_id, related_user_id: ctx.related_user_id });
   }
 }
 
@@ -109,6 +139,7 @@ async function handleDfyProjectPosted(p: any) {
           <p>${project.client_name ? `Client: ${project.client_name}<br/>` : ""}Transaction: ${project.transaction_type || "n/a"}</p>
           <p><a href="${APP_URL}${link}">Open the queue</a> to claim it.</p>
         </div>`,
+        { event_type: "dfy_project_posted", related_project_id: project.id, related_user_id: r.user_id },
       );
     }
   }
@@ -150,6 +181,7 @@ async function handleClaimEvent(p: any, status: "created" | "changed") {
           <p>${body}</p>
           <p><a href="${APP_URL}${link}">Open project</a></p>
         </div>`,
+        { event_type: `claim_${status}`, related_project_id: project.id, related_user_id: project.user_id },
       );
     }
   }
@@ -163,6 +195,7 @@ async function handleClaimEvent(p: any, status: "created" | "changed") {
       <p><strong>Project:</strong> ${project.target_company || project.name}</p>
       <p><strong>Status:</strong> ${p.previous_status ? `${p.previous_status} → ` : ""}${p.status}</p>
     </div>`,
+    { event_type: `admin_claim_${status}`, related_project_id: project.id },
   );
 }
 
@@ -217,6 +250,7 @@ async function handleChatMessage(p: any) {
       <p><a href="${APP_URL}${link}">Reply in Shepi</a></p>
       <p style="color:#888;font-size:12px">You'll receive at most one email per hour per project.</p>
     </div>`,
+    { event_type: "chat_message", related_project_id: project.id, related_user_id: recipient_user_id },
   );
   await supabase.from("nudge_log").insert({
     user_id: recipient_user_id, nudge_type: nudgeType,
@@ -264,6 +298,7 @@ async function handleSlaCheck() {
           <p>Your engagement <strong>${project?.target_company || project?.name}</strong> has been in progress for ${ageDays} days. If you've completed your review, please mark it complete.</p>
           <p><a href="${APP_URL}/cpa/engagements">Open engagements</a></p>
         </div>`,
+        { event_type: "sla_warning", related_project_id: claim.project_id, related_user_id: claim.cpa_user_id },
       );
     }
   }
@@ -275,6 +310,7 @@ async function handleSlaCheck() {
       <h2>Engagements over SLA</h2>
       <ul>${lines.join("")}</ul>
     </div>`,
+    { event_type: "sla_report_admin" },
   );
 
   return { stale: stale.length };

@@ -1440,6 +1440,51 @@ export type Database = {
           },
         ]
       }
+      email_send_log: {
+        Row: {
+          created_at: string
+          error: string | null
+          event_type: string
+          function_name: string | null
+          id: string
+          payload: Json
+          related_project_id: string | null
+          related_user_id: string | null
+          resend_id: string | null
+          status: string
+          subject: string | null
+          to_email: string
+        }
+        Insert: {
+          created_at?: string
+          error?: string | null
+          event_type: string
+          function_name?: string | null
+          id?: string
+          payload?: Json
+          related_project_id?: string | null
+          related_user_id?: string | null
+          resend_id?: string | null
+          status: string
+          subject?: string | null
+          to_email: string
+        }
+        Update: {
+          created_at?: string
+          error?: string | null
+          event_type?: string
+          function_name?: string | null
+          id?: string
+          payload?: Json
+          related_project_id?: string | null
+          related_user_id?: string | null
+          resend_id?: string | null
+          status?: string
+          subject?: string | null
+          to_email?: string
+        }
+        Relationships: []
+      }
       entity_nodes: {
         Row: {
           aliases: string[] | null
