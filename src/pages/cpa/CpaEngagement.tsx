@@ -180,6 +180,8 @@ export default function CpaEngagement() {
         </div>
       </div>
 
+      <DocumentIntakePanel projectId={projectId!} viewerRole="cpa" />
+
       <Card>
         <CardHeader>
           <CardTitle>Adjustment review</CardTitle>
