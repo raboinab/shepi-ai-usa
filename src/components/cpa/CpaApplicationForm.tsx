@@ -41,7 +41,7 @@ const initial: FormState = {
   side_work_permitted: false,
   qoe_background: "",
   conflicts_disclosure: "",
-  linkedin_url: "",
+  
   referral_source: "",
 };
 
