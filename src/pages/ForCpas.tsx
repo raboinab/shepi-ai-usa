@@ -31,11 +31,6 @@ const faqItems = [
       "You sign your professional judgment on each adjustment — confirm, modify, or reject with reasoning — and that signed reviewer record is part of the DFY deliverable the buyer receives. What you are NOT doing is issuing a formal attestation, audit opinion, review report under SSARS, or any other CPA-firm-branded attest report. Shepi is analytical software, not a CPA firm, and does not produce attest deliverables through the platform.",
   },
   {
-    question: "Do I need malpractice / E&O coverage?",
-    answer:
-      "Yes. You must carry your own professional liability insurance and provide proof during onboarding. Shepi does not extend its coverage to reviewers — each party carries its own.",
-  },
-  {
     question: "Can I work on Shepi alongside my firm job?",
     answer:
       "Only if your primary employer's policy permits outside engagements. You'll disclose this during application and it's your responsibility to keep it accurate.",
