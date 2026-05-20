@@ -250,6 +250,7 @@ async function handleChatMessage(p: any) {
       <p><a href="${APP_URL}${link}">Reply in Shepi</a></p>
       <p style="color:#888;font-size:12px">You'll receive at most one email per hour per project.</p>
     </div>`,
+    { event_type: "chat_message", related_project_id: project.id, related_user_id: recipient_user_id },
   );
   await supabase.from("nudge_log").insert({
     user_id: recipient_user_id, nudge_type: nudgeType,
