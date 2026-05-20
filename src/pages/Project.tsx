@@ -23,6 +23,7 @@ import { AIChatPanel } from "@/components/wizard/AIChatPanel";
 import { InsightsView } from "@/components/insights/InsightsView";
 import { QuickBooksButton } from "@/components/QuickBooksButton";
 import { DfyStatusBanner } from "@/components/DfyStatusBanner";
+import { DocumentIntakePanel } from "@/components/dfy/DocumentIntakePanel";
 import {
   DropdownMenu,
   DropdownMenuContent,
