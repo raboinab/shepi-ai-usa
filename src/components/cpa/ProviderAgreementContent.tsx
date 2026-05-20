@@ -121,7 +121,7 @@ export function ProviderAgreementContent() {
 
       <section>
         <h3 className="font-semibold text-base mb-2">16. Insurance</h3>
-        <p>Each party is responsible for maintaining the insurance coverage it deems appropriate for its own business and professional activities. Provider is responsible for maintaining any professional liability (Errors &amp; Omissions) coverage required by Provider's state board, employer, or professional judgment.</p>
+        <p>Each party is responsible for maintaining the insurance coverage it deems appropriate for its own business and professional activities. shepi does not require Provider to carry any specific insurance as a condition of using the platform; Provider remains responsible for complying with any coverage requirements imposed by Provider's state board, employer, or professional judgment.</p>
       </section>
 
       <section>

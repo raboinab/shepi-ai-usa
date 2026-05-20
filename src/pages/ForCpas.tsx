@@ -31,11 +31,6 @@ const faqItems = [
       "You sign your professional judgment on each adjustment — confirm, modify, or reject with reasoning — and that signed reviewer record is part of the DFY deliverable the buyer receives. What you are NOT doing is issuing a formal attestation, audit opinion, review report under SSARS, or any other CPA-firm-branded attest report. Shepi is analytical software, not a CPA firm, and does not produce attest deliverables through the platform.",
   },
   {
-    question: "Do I need malpractice / E&O coverage?",
-    answer:
-      "Yes. You must carry your own professional liability insurance and provide proof during onboarding. Shepi does not extend its coverage to reviewers — each party carries its own.",
-  },
-  {
     question: "Can I work on Shepi alongside my firm job?",
     answer:
       "Only if your primary employer's policy permits outside engagements. You'll disclose this during application and it's your responsibility to keep it accurate.",
@@ -153,7 +148,7 @@ export default function ForCpas() {
           {
             title: "Onboard",
             description:
-              "Upload your license, proof of liability coverage, and a W-9. Acknowledge the provider agreement.",
+              "Upload your license verification and a W-9. Acknowledge the provider agreement.",
           },
           {
             title: "Claim an engagement",
@@ -211,8 +206,7 @@ export default function ForCpas() {
       </ul>
       <p>
         This keeps the work inside the scope defined by Shepi's terms of service
-        and your own professional liability coverage, and keeps you clear of
-        unauthorized-practice and scope-creep risk.
+        and keeps you clear of unauthorized-practice and scope-creep risk.
       </p>
 
       <h2 id="compensation">Compensation</h2>

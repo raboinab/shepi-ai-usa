@@ -1,48 +1,41 @@
-## What's already in place
-`grant-cpa-role` already sends a Resend welcome email at the moment the role is granted (lines 106-140 of the edge function). So new grants are technically covered — but there's no record of whether the welcome was actually delivered, so we can't backfill safely.
+## Scope
+Remove three things from the CPA flow entirely: LinkedIn URL, states served, and liability-insurance requirement. This is a product-level decision, so it propagates beyond the onboarding screen.
 
-## Gap to close
-1. **Track delivery** — we don't know which existing CPAs received the welcome. Without a marker we'd either skip everyone or risk double-sending.
-2. **Backfill** — 4 existing CPAs in `user_roles`:
-   - Kacy Ora (kacy.ora@gmail.com) — granted 2026-04-12
-   - Mike Feeley (feeley_mike@outlook.com) — granted 2026-05-19
-   - Alex (raboinab@gmail.com) — granted 2026-05-19
-   - Chris LeBlanc (cpleblanc14@gmail.com) — granted 2026-05-20 *(also missing a `cpa_profiles` row)*
+## Files to change
 
-   None have `cpa_profiles.onboarding_completed_at` set, so we can't infer from that.
+### 1. `src/pages/cpa/CpaOnboarding.tsx`
+- Remove the **States served** card (entire section + `US_STATES` constant + `statesServed` state + the `states_served` field in the save patch and stub-create insert).
+- Remove the **LinkedIn URL** input + `linkedin` state + `linkedin_url` in save patch.
+- Remove **liability insurance** from `DOC_TYPES`, from the `Documents` card description ("Liability insurance certificate is required to claim engagements"), from the upload side-effect that sets `liability_covered`, and from the checklist.
+- Update checklist to: Confirm contact info, Add at least one industry, Short professional bio, W-9 on file. (4 items → percentages recalc automatically.)
 
-## Plan
+### 2. `src/components/cpa/CpaApplicationForm.tsx`
+- Remove the **LinkedIn URL** field, its zod entry, default value, and the rendered `<Field>`.
+- Keep `state_of_licensure` — that's the CPA's actual license state, different from "states served".
 
-### 1. Migration: add a delivery marker
-Add `welcomed_at timestamptz` to `cpa_profiles`. NULL = never welcomed. Set at the moment we send.
+### 3. `src/pages/admin/AdminCpaApplications.tsx`
+- Remove `linkedin_url` from the `CpaApplication` type and the `<Detail label="LinkedIn" …>` row.
 
-### 2. Update `grant-cpa-role`
-- After a successful Resend send, set `cpa_profiles.welcomed_at = now()` for that user.
-- If Resend fails, leave NULL so backfill will retry it later.
-- Also: ensure a `cpa_profiles` row exists even if the row was already there (Chris's case is unusual but defensive — re-check after upsert).
+### 4. Marketing pages
+- `src/pages/ForCpas.tsx`: remove the FAQ entry about liability insurance, drop "proof of liability coverage" from the onboarding-steps copy, and remove the trailing "your own professional liability coverage" line.
+- `src/pages/CpaPartners.tsx`: remove the "You carry your own professional liability (E&O) coverage…" bullet.
 
-### 3. New edge function: `notify-existing-cpas` (admin-only, one-shot/idempotent)
-- Verifies caller is admin.
-- Finds every user with `cpa` role whose `cpa_profiles.welcomed_at IS NULL` (or no profile row).
-- For each: ensures cpa_profile exists, then sends the same welcome email used by `grant-cpa-role` (shared helper), sets `welcomed_at = now()` on success.
-- Returns `{ sent: [emails], skipped: [reason], failed: [errors] }`.
-- Safe to re-run — anyone already welcomed is skipped.
+### 5. `src/components/cpa/ProviderAgreementContent.tsx`
+- Audit and remove the liability-insurance / E&O clauses (will read the file during implementation; remove only the insurance-specific paragraphs, keep the rest of the agreement intact).
 
-### 4. Shared helper
-Extract the welcome email HTML + send into `supabase/functions/_shared/cpa-welcome.ts` so `grant-cpa-role` and `notify-existing-cpas` use identical copy.
+## Database — no schema changes
+Leave the existing columns (`states_served`, `linkedin_url`, `liability_covered`, `liability_expires_at` on `cpa_profiles`; `linkedin_url` on `cpa_applications`) in place. They become dormant — no UI reads or writes them. This avoids data loss for the 4 existing CPAs and keeps the migration small. We can drop the columns later if you want a cleanup pass.
 
-### 5. Run the backfill once
-After deploy, call `notify-existing-cpas` against the 4 CPAs above. Report exactly who was emailed.
+## Memory update
+Project memory currently states: *"Marketing and legal docs MUST NOT claim shepi carries E&O… Each party carries its own."* That sentence assumes CPAs carry their own insurance. I'll soften it to: *"Marketing and legal docs MUST NOT claim shepi carries E&O, umbrella, cyber, or any other insurance, nor require CPAs to carry insurance. Revisit only when a policy is actually bound."*
 
 ## Verification
-- DB: query `cpa_profiles.welcomed_at` for all 4 users after run — all should be set.
-- Resend: confirm 200 response per send in function logs.
-- Idempotence: invoke `notify-existing-cpas` a second time → should return `sent: []` with all 4 in `skipped: "already welcomed"`.
-- Future grants: granting a new test CPA still sets `welcomed_at` and sends exactly one email.
+- Load `/cpa/onboarding` as Alex → no States, no LinkedIn, no liability mention; checklist has 4 items; saving works.
+- Load `/cpa/apply` (public application) → no LinkedIn field; submit still succeeds.
+- Load admin CPA applications → no LinkedIn row.
+- Visit `/for-cpas` and `/cpa-partners` → no liability-insurance copy remaining (`rg -i "liability|E&O|insurance" src/pages` should come back clean for the CPA-facing pages).
 
-## Out of scope (ask before doing)
-- Re-sending to CPAs who already received the welcome (e.g., resend if they lost it). Add a `force=true` flag later if needed.
-- Changing email copy — using the existing template verbatim.
-
-## Email copy
-Identical to current `grant-cpa-role` email. From `shepi <hello@shepi.ai>`, subject "Welcome to the shepi Network", links to `/cpa/onboarding` and `/cpa`. If you want different copy for the backfill ("Quick note — we never confirmed your CPA invite, here's the link…"), say so and I'll branch it.
+## Out of scope (confirm if you want it)
+- Dropping the DB columns.
+- Touching CPA roles/permissions logic (`/cpa` queue, claim flow) — unaffected.
+- Public `/scope` page wording about insurance — leaving alone unless you flag it.
