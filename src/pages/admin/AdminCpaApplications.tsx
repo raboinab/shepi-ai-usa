@@ -261,7 +261,7 @@ export default function AdminCpaApplications() {
                       : "No"
                   }
                 />
-                <Detail label="LinkedIn" value={selected.linkedin_url} link />
+                
                 <Detail label="Referral source" value={selected.referral_source} />
                 <Detail label="QoE background" value={selected.qoe_background} multiline />
                 <Detail
