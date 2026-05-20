@@ -23,6 +23,7 @@ import { AIChatPanel } from "@/components/wizard/AIChatPanel";
 import { InsightsView } from "@/components/insights/InsightsView";
 import { QuickBooksButton } from "@/components/QuickBooksButton";
 import { DfyStatusBanner } from "@/components/DfyStatusBanner";
+import { DocumentIntakePanel } from "@/components/dfy/DocumentIntakePanel";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -484,6 +485,11 @@ const Project = () => {
       </header>
 
       <DfyStatusBanner projectId={project.id} serviceTier={project.service_tier || 'diy'} />
+      {project.service_tier === 'done_for_you' && (
+        <div className="px-4 pb-4">
+          <DocumentIntakePanel projectId={project.id} viewerRole="client" />
+        </div>
+      )}
       <div className="flex flex-1 overflow-hidden">
         {viewMode === "wizard" && (
           <>
