@@ -24,7 +24,7 @@ const schema = z.object({
   side_work_permitted: z.boolean().optional(),
   qoe_background: z.string().trim().max(4000).optional().or(z.literal("")),
   conflicts_disclosure: z.string().trim().max(4000).optional().or(z.literal("")),
-  linkedin_url: z.string().trim().max(500).optional().or(z.literal("")),
+  
   referral_source: z.string().trim().max(500).optional().or(z.literal("")),
 });
 
