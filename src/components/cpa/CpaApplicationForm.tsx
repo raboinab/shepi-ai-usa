@@ -138,9 +138,6 @@ export function CpaApplicationForm() {
         <Field label="Current firm (if any)" error={errors.firm_affiliation}>
           <Input value={form.firm_affiliation ?? ""} onChange={(e) => set("firm_affiliation", e.target.value)} maxLength={200} />
         </Field>
-        <Field label="LinkedIn URL" error={errors.linkedin_url}>
-          <Input placeholder="https://linkedin.com/in/…" value={form.linkedin_url ?? ""} onChange={(e) => set("linkedin_url", e.target.value)} maxLength={500} />
-        </Field>
       </div>
 
       <Field label="Short note on your QoE / transaction-services background" error={errors.qoe_background}>
