@@ -181,6 +181,7 @@ async function handleClaimEvent(p: any, status: "created" | "changed") {
           <p>${body}</p>
           <p><a href="${APP_URL}${link}">Open project</a></p>
         </div>`,
+        { event_type: `claim_${status}`, related_project_id: project.id, related_user_id: project.user_id },
       );
     }
   }
@@ -194,6 +195,7 @@ async function handleClaimEvent(p: any, status: "created" | "changed") {
       <p><strong>Project:</strong> ${project.target_company || project.name}</p>
       <p><strong>Status:</strong> ${p.previous_status ? `${p.previous_status} → ` : ""}${p.status}</p>
     </div>`,
+    { event_type: `admin_claim_${status}`, related_project_id: project.id },
   );
 }
 
