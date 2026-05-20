@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
 import { ArrowLeft, CheckCircle2, Pencil, XCircle, Send, AlertCircle } from 'lucide-react';
+import { DocumentIntakePanel } from '@/components/dfy/DocumentIntakePanel';
 
 type Decision = 'confirmed' | 'modified' | 'rejected';
 
