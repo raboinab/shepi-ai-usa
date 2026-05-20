@@ -206,8 +206,7 @@ export default function ForCpas() {
       </ul>
       <p>
         This keeps the work inside the scope defined by Shepi's terms of service
-        and your own professional liability coverage, and keeps you clear of
-        unauthorized-practice and scope-creep risk.
+        and keeps you clear of unauthorized-practice and scope-creep risk.
       </p>
 
       <h2 id="compensation">Compensation</h2>
