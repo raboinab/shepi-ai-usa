@@ -48,6 +48,10 @@ export interface ProjectData {
   current_phase: number;
   current_section: number;
   service_tier?: string;
+  firm_name?: string | null;
+  firm_logo_path?: string | null;
+  prepared_by_line?: string | null;
+  professional_use_acknowledged_at?: string | null;
 }
 
 const Project = () => {
