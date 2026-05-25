@@ -2327,6 +2327,8 @@ export type Database = {
           credit_expires_at: string | null
           current_phase: number | null
           current_section: number | null
+          firm_logo_path: string | null
+          firm_name: string | null
           fiscal_year_end: string | null
           funded_by_credit: boolean
           google_sheet_id: string | null
@@ -2335,6 +2337,8 @@ export type Database = {
           industry: string | null
           name: string
           periods: Json | null
+          prepared_by_line: string | null
+          professional_use_acknowledged_at: string | null
           service_tier: string
           status: string | null
           target_company: string | null
@@ -2349,6 +2353,8 @@ export type Database = {
           credit_expires_at?: string | null
           current_phase?: number | null
           current_section?: number | null
+          firm_logo_path?: string | null
+          firm_name?: string | null
           fiscal_year_end?: string | null
           funded_by_credit?: boolean
           google_sheet_id?: string | null
@@ -2357,6 +2363,8 @@ export type Database = {
           industry?: string | null
           name: string
           periods?: Json | null
+          prepared_by_line?: string | null
+          professional_use_acknowledged_at?: string | null
           service_tier?: string
           status?: string | null
           target_company?: string | null
@@ -2371,6 +2379,8 @@ export type Database = {
           credit_expires_at?: string | null
           current_phase?: number | null
           current_section?: number | null
+          firm_logo_path?: string | null
+          firm_name?: string | null
           fiscal_year_end?: string | null
           funded_by_credit?: boolean
           google_sheet_id?: string | null
@@ -2379,6 +2389,8 @@ export type Database = {
           industry?: string | null
           name?: string
           periods?: Json | null
+          prepared_by_line?: string | null
+          professional_use_acknowledged_at?: string | null
           service_tier?: string
           status?: string | null
           target_company?: string | null
