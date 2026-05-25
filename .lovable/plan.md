@@ -1,50 +1,68 @@
-# Per-CPA copies of the "Landscaping Biz" sandbox, owned by Annabelle Winterberry
+# CPAs on DIY — Readiness Plan
 
-## Goal
+Goal: A licensed CPA can buy DIY, run a QoE for their own client, and deliver a deliverable branded by their firm — with clean legal posture and clear marketing.
 
-Create one independent copy of project `17ba0cb7-abe3-463d-810d-95178429481b` for **each active CPA**, so they can each claim/work/message without colliding. The **client** on every copy is Annabelle Winterberry (`annabellewinterberry@gmail.com` / `894774d8-2d8a-40de-b5ad-a5c8ec6a9d93`) — i.e. the project is **owned** by her account so client↔CPA messaging actually works end-to-end.
+Sequenced lowest-risk → highest-touch. Each step ships independently.
 
-## Identities
+---
 
-- **Client (project owner) for every copy:** Annabelle Winterberry — `894774d8-2d8a-40de-b5ad-a5c8ec6a9d93`
-- **Active CPAs (one copy each):**
-  - Kacy Ora — `411badcb-ea7f-4e0f-95d8-059a3dca0ddb`
-  - Mike Feeley — `d57b7352-6189-4f57-982c-6ef70ee17dd0`
-  - Chris LeBlanc — `3209cbbf-ca5a-434f-800a-419df42b8828`
-  - Alex Raboin — `1cc25ae2-1f2f-43d1-af6a-2b61ef8976a3` (currently owns the source project)
+## 1. Professional Use addendum in Terms
 
-That's 4 final projects, one per CPA, all owned by Annabelle.
+Add a short section to `src/pages/Terms.tsx` titled **"Professional Use by Licensed Practitioners"** covering:
 
-## Approach
+- When a CPA, accountant, or advisor uses shepi to perform work for a third-party client, the practitioner is the service provider to that client. Shepi has no engagement with, and no privity to, the end client.
+- The practitioner is solely responsible for any professional judgment, attestation language, or firm-branded report layered on top of shepi output.
+- Shepi remains analytical software. Shepi output is not an audit, review, attestation, or other CPA-firm work product, and the practitioner must not represent it as such.
+- The practitioner indemnifies shepi against claims brought by their clients arising from the practitioner's use or re-delivery of shepi output.
 
-Do this as a single `supabase--migration` (atomic, reversible via rollback if needed). For each CPA:
+Reinforces the existing core "not a CPA firm" rule without claiming insurance.
 
-1. **Insert a new `projects` row**
-   - new `id`, `user_id = Annabelle`, `client_name = 'Annabelle Winterberry'`
-   - copy: `name`, `target_company`, `transaction_type`, `industry`, `status`, `fiscal_year_end`, `periods`, `wizard_data`, `current_phase`, `current_section`, `service_tier`
-   - Suffix `name` with the CPA's name (e.g. "Landscaping Biz — Kacy Ora") so they're distinguishable in the admin/CPA UI.
+## 2. Restructure `/for-cpas` into two paths
 
-2. **Auto-assign the CPA** via `cpa_claims` (`project_id = new`, `cpa_user_id = CPA`, `status = 'accepted'`, `accepted_at = now()`) so the CPA sees it in their queue already claimed by them and Annabelle has a counter-party for messaging.
+Today the page only sells the DFY reviewer marketplace. Restructure into a top-level chooser:
 
-3. **Deep-clone child data**, remapping `project_id → new`, `user_id → Annabelle`:
-   - `documents` (file_path shared — see Storage note)
-   - `processed_data`
-   - `canonical_transactions` (~25,720 rows × 4 ≈ 103k inserts, single `INSERT … SELECT` each)
-   - `analysis_jobs` → then via job_id remap: `adjustment_proposals`, `findings`, `project_narratives`, `detector_runs`, `business_profiles`, `entity_nodes`, `claim_ledger`, `observations`, `tensions`, `hypotheses`
-   - `chat_messages` is **not cloned** — each copy starts with an empty thread so you can actually test messaging.
+- **Path A — Use shepi for your clients (DIY).** $2K/project or Monthly. Run the analysis yourself, deliver under your firm's brand. Links to `/pricing` and signup.
+- **Path B — Join the reviewer network (DFY).** Existing content. Links to `/cpa-partners` application.
 
-4. **What we don't touch:** the original project `17ba0cb7…` stays as-is (Alex still owns it as his personal sandbox). His per-CPA copy (#4 above) is the new Annabelle-owned one he should use for messaging tests.
+Keep all existing non-attestation language. Add a "How CPAs use shepi as a tool" mini-section: ingest GL → AI surfaces adjustments → CPA applies judgment → export deliverable with firm branding.
 
-## Storage / files note
+## 3. Firm branding on PDF + XLSX deliverables
 
-`documents.file_path` will be copied verbatim — the new rows reference the same physical objects in Supabase Storage. Storage RLS on the `documents` bucket needs to allow Annabelle (and any CPA with project access) to read them. **I'll verify the storage policy as the first step of implementation and flag if a follow-up is needed** (either widen the policy for these paths, or physically copy the files into Annabelle's folder).
+Add three optional project-level fields (new columns on `projects`): `firm_name`, `firm_logo_path`, `prepared_by_line`.
 
-## Skipped tables
+- **PDF cover page** (`src/lib/pdf/`): if `firm_name` is set, render "Prepared by {firm_name}" under the target company name and optionally place firm logo top-right. Shepi attribution moves to a small "Powered by shepi" footer.
+- **XLSX Executive Summary tab**: same "Prepared by" line in header rows.
+- **Demo files regenerated** via existing scripts (`generate-demo-pdf.ts`, `generate-demo-workbook.ts`) — show a sample firm name so CPAs see the branded version in the demo center.
 
-`cpa_adjustment_reviews`, `project_shares`, `project_payments`, `verification_attempts`, `upload_errors`, `qb_sync_requests`, `reclassification_jobs`, `flagged_transactions`, `adjustment_proofs`, `docuclipper_jobs`, `company_info`, `project_data_chunks`, `workflows`, `cpa_nudges`, `project_document_requirements`, `project_document_reviews` — start clean so per-CPA state isn't polluted.
+## 4. "Running this for a client" mode in project setup
 
-## Confirm before I implement
+In `ProjectSetupSection.tsx`, replace the current vague "Key Contacts" switch with a clearer toggle: **"I'm a professional running this engagement for a client."**
 
-- OK to **not** clone chat history (so messaging is a clean test)?
-- OK to **leave the original** `17ba0cb7…` untouched (Alex still has his old copy + a fresh Annabelle-owned one)?
-- Name suffix "— {CPA name}" OK, or prefer just "Landscaping Biz" on all 4 (and disambiguate only in admin)?
+When on:
+- Auto-expand Key Contacts.
+- Show new Firm Branding card (firm name, logo upload, prepared-by line) wired to step 3 fields.
+- Show a one-time inline acknowledgement: "I have read the Professional Use section of the Terms and accept it for this engagement." Record acceptance on `projects` (`professional_use_acknowledged_at`).
+
+When off: hide all of the above, keep today's behavior.
+
+## 5. Pricing page firm-volume callout
+
+On `/pricing`, add a small callout under the Monthly card: **"Running 4+ client engagements a year? Monthly works out cheaper than per-project."** Math: $5K/mo × 12 = $60K for 36 projects vs. $2K × 36 = $72K. Link to `/for-cpas` Path A.
+
+No new pricing tier yet — defer multi-seat / white-label / consolidated billing until there's demand signal.
+
+---
+
+## Out of scope (defer)
+
+- True multi-seat firm accounts and consolidated billing.
+- Switching between "my client projects" and DFY review queue in one sidebar — current dual-dashboard works.
+- White-label removal of all shepi attribution (keep "Powered by shepi" footer; full white-label is a future Firm tier feature).
+- Any insurance/E&O claims in marketing or ToS (per core memory).
+
+## Technical notes
+
+- Migration: `ALTER TABLE projects ADD COLUMN firm_name TEXT, firm_logo_path TEXT, prepared_by_line TEXT, professional_use_acknowledged_at TIMESTAMPTZ`. No RLS changes (covered by existing project policies).
+- Firm logo storage: reuse existing `documents` bucket with a `firm-logos/{user_id}/` prefix, or add a new public `firm-logos` bucket. Recommend the latter so logos can render in PDFs without signed URLs.
+- PDF builder change is the riskiest piece — `buildPDFReport` in `src/lib/pdf/pdfWorker.ts` needs a conditional cover-page variant. Demo PDF must be regenerated to prove the branded path works end-to-end.
+- ToS addendum is a content-only edit; no schema or routing change.
