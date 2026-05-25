@@ -248,7 +248,11 @@ function drawFooter(page: PDFPage, font: PDFFont, meta: ReportMeta, pageNum: num
   const tierStamp = meta.serviceTier === 'done_for_you'
     ? "Professional Analysis · Not an Audit or Attestation"
     : "AI-Assisted Analysis · Not an Audit or Attestation";
-  page.drawText(safeText(`${meta.companyName} - Quality of Earnings Report   |   ${tierStamp}`), {
+  const branded = !!meta.firmName;
+  const leftText = branded
+    ? `${meta.companyName} — Quality of Earnings Report   |   Prepared by ${meta.firmName}   |   ${tierStamp}   |   Powered by shepi`
+    : `${meta.companyName} - Quality of Earnings Report   |   ${tierStamp}`;
+  page.drawText(safeText(leftText), {
     x: PAD, y: PAD + 10, size: 7, font, color: C.midGray,
   });
   const pageStr = `${pageNum} / ${totalPages}`;
@@ -260,11 +264,28 @@ function drawFooter(page: PDFPage, font: PDFFont, meta: ReportMeta, pageNum: num
 
 // ── Slide Builders ──────────────────────────────────────────────────────
 
-function addCoverPage(doc: PDFDocument, font: PDFFont, boldFont: PDFFont, meta: ReportMeta): PDFPage {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function addCoverPage(doc: PDFDocument, font: PDFFont, boldFont: PDFFont, meta: ReportMeta, firmLogo?: any): PDFPage {
   const page = doc.addPage([PW, PH]);
   page.drawRectangle({ x: 0, y: 0, width: PW, height: PH, color: C.darkBlue });
   page.drawRectangle({ x: 0, y: PH * 0.48, width: PW, height: 4, color: C.teal });
   page.drawRectangle({ x: 0, y: PH - 6, width: 120, height: 6, color: C.gold });
+
+  // Firm logo top-right (if provided)
+  if (firmLogo) {
+    const maxW = 120;
+    const maxH = 60;
+    const dims = firmLogo.scale(1);
+    const ratio = Math.min(maxW / dims.width, maxH / dims.height);
+    const w = dims.width * ratio;
+    const h = dims.height * ratio;
+    page.drawImage(firmLogo, {
+      x: PW - PAD - w,
+      y: PH - PAD - h,
+      width: w,
+      height: h,
+    });
+  }
 
   page.drawText("Quality of Earnings", {
     x: PAD + 20, y: PH * 0.62, size: 32, font: boldFont, color: C.white,
@@ -276,7 +297,18 @@ function addCoverPage(doc: PDFDocument, font: PDFFont, boldFont: PDFFont, meta: 
     x: PAD + 20, y: PH * 0.48 - 30, size: 18, font: boldFont, color: C.gold,
   });
 
-  const infoY = PH * 0.32;
+  // "Prepared by" line directly under target name when firm branding is set
+  let infoYTop = PH * 0.32;
+  if (meta.firmName) {
+    const preparedBy = meta.preparedByLine
+      ? `Prepared by ${meta.firmName} — ${meta.preparedByLine}`
+      : `Prepared by ${meta.firmName}`;
+    page.drawText(safeText(preparedBy), {
+      x: PAD + 20, y: PH * 0.48 - 56, size: 12, font: boldFont, color: C.offWhite,
+    });
+    infoYTop = PH * 0.32 - 8;
+  }
+
   const isDiy = meta.serviceTier !== 'done_for_you';
   const infoItems = [
     `Prepared for: ${meta.clientName || meta.companyName}`,
@@ -284,10 +316,11 @@ function addCoverPage(doc: PDFDocument, font: PDFFont, boldFont: PDFFont, meta: 
     `Industry: ${meta.industry || "N/A"}`,
     `Transaction: ${meta.transactionType || "N/A"}`,
     `Fiscal Year End: ${meta.fiscalYearEnd || "N/A"}`,
-    ...(isDiy ? ["Generated using shepi — an AI-assisted analysis platform"] : []),
+    ...(isDiy && !meta.firmName ? ["Generated using shepi — an AI-assisted analysis platform"] : []),
+    ...(isDiy && meta.firmName ? ["Analysis performed on shepi — an AI-assisted analysis platform"] : []),
   ];
   infoItems.forEach((item, i) => {
-    page.drawText(safeText(item), { x: PAD + 20, y: infoY - i * 18, size: 10, font, color: C.offWhite });
+    page.drawText(safeText(item), { x: PAD + 20, y: infoYTop - i * 18, size: 10, font, color: C.offWhite });
   });
 
   page.drawText("CONFIDENTIAL", {
