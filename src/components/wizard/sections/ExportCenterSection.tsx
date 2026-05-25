@@ -266,13 +266,34 @@ export const ExportCenterSection = ({ data, updateData, wizardData, projectId, p
       const reportDate = `${String(now.getMonth() + 1).padStart(2, "0")}.${String(now.getDate()).padStart(2, "0")}.${now.getFullYear()}`;
       const resolvedProjectId = projectId || dealData?.deal?.projectId;
 
-      // Fetch firm logo bytes if a path is set on the project
+      // Fetch firm branding fields from the project row
+      let firmName: string | undefined;
+      let preparedByLine: string | undefined;
+      let firmLogoPath: string | null = null;
+      if (resolvedProjectId) {
+        try {
+          const { data: projRow } = await supabase
+            .from("projects")
+            .select("firm_name, prepared_by_line, firm_logo_path")
+            .eq("id", resolvedProjectId)
+            .maybeSingle();
+          if (projRow) {
+            const r = projRow as { firm_name?: string | null; prepared_by_line?: string | null; firm_logo_path?: string | null };
+            firmName = r.firm_name || undefined;
+            preparedByLine = r.prepared_by_line || undefined;
+            firmLogoPath = r.firm_logo_path || null;
+          }
+        } catch (err) {
+          console.warn("[ExportCenter] firm branding fetch failed:", err);
+        }
+      }
+
+      // Fetch firm logo bytes if a path is set
       let firmLogoBytes: Uint8Array | undefined;
       let firmLogoMime: "image/png" | "image/jpeg" | undefined;
-      const projectFirmLogoPath = (project as { firm_logo_path?: string | null })?.firm_logo_path || null;
-      if (projectFirmLogoPath) {
+      if (firmLogoPath) {
         try {
-          const { data: pub } = supabase.storage.from("firm-logos").getPublicUrl(projectFirmLogoPath);
+          const { data: pub } = supabase.storage.from("firm-logos").getPublicUrl(firmLogoPath);
           if (pub?.publicUrl) {
             const resp = await fetch(pub.publicUrl);
             if (resp.ok) {
@@ -295,8 +316,8 @@ export const ExportCenterSection = ({ data, updateData, wizardData, projectId, p
         transactionType: (wizardData?.projectSetup as Record<string, unknown>)?.transactionType as string || "",
         reportDate,
         fiscalYearEnd: (wizardData?.projectSetup as Record<string, unknown>)?.fiscalYearEnd as string || "December",
-        firmName: (project as { firm_name?: string | null })?.firm_name || undefined,
-        preparedByLine: (project as { prepared_by_line?: string | null })?.prepared_by_line || undefined,
+        firmName,
+        preparedByLine,
         firmLogoBytes,
         firmLogoMime,
       };
