@@ -21,6 +21,11 @@ export interface ReportMeta {
   reportDate: string;
   fiscalYearEnd: string;
   serviceTier?: 'diy' | 'done_for_you';
+  /** Firm branding when a CPA/practitioner runs the engagement for a client */
+  firmName?: string;
+  preparedByLine?: string;
+  firmLogoBytes?: Uint8Array;
+  firmLogoMime?: "image/png" | "image/jpeg";
 }
 
 export interface AttentionItem {
