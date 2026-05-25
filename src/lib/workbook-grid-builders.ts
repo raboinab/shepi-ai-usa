@@ -43,6 +43,14 @@ export function buildSetupGrid(dealData: DealData): GridData {
     { id: "r6", type: "data", cells: { label: "Periods", value: periodLabel } },
     { id: "r7", type: "data", cells: { label: "Period Range", value: info.periods.length > 0 ? `${info.periods[0].label} – ${info.periods[info.periods.length - 1].label}` : "None" } },
     { id: "r8", type: "data", cells: { label: "Review Period", value: reviewPeriod } },
+    ...(info.firmName
+      ? [
+          { id: "r9", type: "data" as const, cells: { label: "Prepared By", value: info.firmName } },
+          ...(info.preparedByLine
+            ? [{ id: "r10", type: "data" as const, cells: { label: "Engagement Note", value: info.preparedByLine } }]
+            : []),
+        ]
+      : []),
   ];
 
   return {
