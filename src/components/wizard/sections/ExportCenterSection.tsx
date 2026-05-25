@@ -266,6 +266,27 @@ export const ExportCenterSection = ({ data, updateData, wizardData, projectId, p
       const reportDate = `${String(now.getMonth() + 1).padStart(2, "0")}.${String(now.getDate()).padStart(2, "0")}.${now.getFullYear()}`;
       const resolvedProjectId = projectId || dealData?.deal?.projectId;
 
+      // Fetch firm logo bytes if a path is set on the project
+      let firmLogoBytes: Uint8Array | undefined;
+      let firmLogoMime: "image/png" | "image/jpeg" | undefined;
+      const projectFirmLogoPath = (project as { firm_logo_path?: string | null })?.firm_logo_path || null;
+      if (projectFirmLogoPath) {
+        try {
+          const { data: pub } = supabase.storage.from("firm-logos").getPublicUrl(projectFirmLogoPath);
+          if (pub?.publicUrl) {
+            const resp = await fetch(pub.publicUrl);
+            if (resp.ok) {
+              const buf = await resp.arrayBuffer();
+              firmLogoBytes = new Uint8Array(buf);
+              const ct = resp.headers.get("content-type") || "";
+              firmLogoMime = ct.includes("jpeg") || ct.includes("jpg") ? "image/jpeg" : "image/png";
+            }
+          }
+        } catch (err) {
+          console.warn("[ExportCenter] firm logo fetch failed:", err);
+        }
+      }
+
       const metadata: ReportMeta = {
         companyName: projectName || "Company",
         projectName: projectName || "Project",
@@ -274,6 +295,10 @@ export const ExportCenterSection = ({ data, updateData, wizardData, projectId, p
         transactionType: (wizardData?.projectSetup as Record<string, unknown>)?.transactionType as string || "",
         reportDate,
         fiscalYearEnd: (wizardData?.projectSetup as Record<string, unknown>)?.fiscalYearEnd as string || "December",
+        firmName: (project as { firm_name?: string | null })?.firm_name || undefined,
+        preparedByLine: (project as { prepared_by_line?: string | null })?.prepared_by_line || undefined,
+        firmLogoBytes,
+        firmLogoMime,
       };
 
       toast.info("Generating PDF report...", { description: "Building in the background — you can keep working." });
