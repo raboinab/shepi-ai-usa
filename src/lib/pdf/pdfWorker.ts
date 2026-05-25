@@ -1591,11 +1591,24 @@ export async function buildPDFReport(data: PDFReportData): Promise<Uint8Array> {
   const boldFont = await doc.embedFont(StandardFonts.HelveticaBold);
   const meta = data.metadata;
 
+  // Embed firm logo once if provided
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let firmLogo: any = undefined;
+  if (meta.firmLogoBytes && meta.firmLogoBytes.byteLength > 0) {
+    try {
+      firmLogo = meta.firmLogoMime === "image/jpeg"
+        ? await doc.embedJpg(meta.firmLogoBytes)
+        : await doc.embedPng(meta.firmLogoBytes);
+    } catch (e) {
+      console.warn("[pdfWorker] Failed to embed firm logo, continuing without:", e);
+    }
+  }
+
   type PageFn = (pageNum: number, totalPages: number) => PDFPage;
   const pageFns: Array<{ fn: PageFn; section?: string }> = [];
 
   // Cover
-  pageFns.push({ fn: () => addCoverPage(doc, font, boldFont, meta) });
+  pageFns.push({ fn: () => addCoverPage(doc, font, boldFont, meta, firmLogo) });
 
   // TOC placeholder — we'll come back and fill the page number after we know totals
   const tocIndex = pageFns.length;
