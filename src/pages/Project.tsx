@@ -48,6 +48,10 @@ export interface ProjectData {
   current_phase: number;
   current_section: number;
   service_tier?: string;
+  firm_name?: string | null;
+  firm_logo_path?: string | null;
+  prepared_by_line?: string | null;
+  professional_use_acknowledged_at?: string | null;
 }
 
 const Project = () => {
@@ -151,6 +155,10 @@ const Project = () => {
       fiscal_year_end: dataToSave.fiscal_year_end,
       periods: dataToSave.periods as Json,
       status: dataToSave.current_phase > 1 ? "in-progress" : "draft",
+      firm_name: dataToSave.firm_name ?? null,
+      firm_logo_path: dataToSave.firm_logo_path ?? null,
+      prepared_by_line: dataToSave.prepared_by_line ?? null,
+      professional_use_acknowledged_at: dataToSave.professional_use_acknowledged_at ?? null,
     }).eq("id", project.id);
 
     // If a newer save started while we were awaiting, discard this result

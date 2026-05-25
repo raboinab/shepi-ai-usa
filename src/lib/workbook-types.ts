@@ -94,6 +94,10 @@ export interface DealInfo {
   priorPeriodId?: string;
   /** Derived ending balances for the prior period, keyed by accountId. Computed as TB[first] − GL activity[first]. */
   priorBalances?: Record<string, number>;
+  /** Professional/CPA firm branding for deliverables when set on the project */
+  firmName?: string;
+  firmLogoUrl?: string;
+  preparedByLine?: string;
 }
 
 // ============================================

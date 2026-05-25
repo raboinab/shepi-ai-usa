@@ -266,6 +266,48 @@ export const ExportCenterSection = ({ data, updateData, wizardData, projectId, p
       const reportDate = `${String(now.getMonth() + 1).padStart(2, "0")}.${String(now.getDate()).padStart(2, "0")}.${now.getFullYear()}`;
       const resolvedProjectId = projectId || dealData?.deal?.projectId;
 
+      // Fetch firm branding fields from the project row
+      let firmName: string | undefined;
+      let preparedByLine: string | undefined;
+      let firmLogoPath: string | null = null;
+      if (resolvedProjectId) {
+        try {
+          const { data: projRow } = await supabase
+            .from("projects")
+            .select("firm_name, prepared_by_line, firm_logo_path")
+            .eq("id", resolvedProjectId)
+            .maybeSingle();
+          if (projRow) {
+            const r = projRow as { firm_name?: string | null; prepared_by_line?: string | null; firm_logo_path?: string | null };
+            firmName = r.firm_name || undefined;
+            preparedByLine = r.prepared_by_line || undefined;
+            firmLogoPath = r.firm_logo_path || null;
+          }
+        } catch (err) {
+          console.warn("[ExportCenter] firm branding fetch failed:", err);
+        }
+      }
+
+      // Fetch firm logo bytes if a path is set
+      let firmLogoBytes: Uint8Array | undefined;
+      let firmLogoMime: "image/png" | "image/jpeg" | undefined;
+      if (firmLogoPath) {
+        try {
+          const { data: pub } = supabase.storage.from("firm-logos").getPublicUrl(firmLogoPath);
+          if (pub?.publicUrl) {
+            const resp = await fetch(pub.publicUrl);
+            if (resp.ok) {
+              const buf = await resp.arrayBuffer();
+              firmLogoBytes = new Uint8Array(buf);
+              const ct = resp.headers.get("content-type") || "";
+              firmLogoMime = ct.includes("jpeg") || ct.includes("jpg") ? "image/jpeg" : "image/png";
+            }
+          }
+        } catch (err) {
+          console.warn("[ExportCenter] firm logo fetch failed:", err);
+        }
+      }
+
       const metadata: ReportMeta = {
         companyName: projectName || "Company",
         projectName: projectName || "Project",
@@ -274,6 +316,10 @@ export const ExportCenterSection = ({ data, updateData, wizardData, projectId, p
         transactionType: (wizardData?.projectSetup as Record<string, unknown>)?.transactionType as string || "",
         reportDate,
         fiscalYearEnd: (wizardData?.projectSetup as Record<string, unknown>)?.fiscalYearEnd as string || "December",
+        firmName,
+        preparedByLine,
+        firmLogoBytes,
+        firmLogoMime,
       };
 
       toast.info("Generating PDF report...", { description: "Building in the background — you can keep working." });
