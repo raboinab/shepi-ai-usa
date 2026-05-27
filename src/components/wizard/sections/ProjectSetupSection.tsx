@@ -50,6 +50,7 @@ import { toast } from "sonner";
 import { CIMInsightsCard, type CIMInsights } from "./CIMInsightsCard";
 import { FinancialCategoryLabelsCard } from "./FinancialCategoryLabelsCard";
 import { WIPAccountMappingCard } from "./WIPAccountMappingCard";
+import { FirmBrandingCard } from "./FirmBrandingCard";
 import type { ProjectData } from "@/pages/Project";
 import { QuickBooksSyncBadge } from "../shared/QuickBooksSyncBadge";
 
