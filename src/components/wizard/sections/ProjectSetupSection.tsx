@@ -957,69 +957,89 @@ const ProjectSetupSectionInner = ({
         </CardContent>
       </Card>
 
-      {/* Key Contacts - Optional Section */}
+      {/* Professional Engagement Mode (CPAs / advisors running for a client) */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-4">
             <div>
-              <CardTitle>Key Contacts</CardTitle>
-              <CardDescription>For accounting firms managing client engagements</CardDescription>
+              <CardTitle>Running this for a client?</CardTitle>
+              <CardDescription>
+                Turn on if you're a CPA, advisor, broker, or other professional delivering
+                this analysis to a third party. Reveals client contacts and optional firm
+                branding for PDF + XLSX deliverables.
+              </CardDescription>
             </div>
-            <div className="flex items-center gap-2">
-              <Label htmlFor="showContacts" className="text-sm text-muted-foreground">
-                {Boolean(settings.showKeyContacts) ? "Enabled" : "Disabled"}
+            <div className="flex items-center gap-2 shrink-0">
+              <Label htmlFor="professionalMode" className="text-sm text-muted-foreground">
+                {Boolean(settings.professionalMode || settings.showKeyContacts) ? "On" : "Off"}
               </Label>
               <Switch
-                id="showContacts"
-                checked={Boolean(settings.showKeyContacts)}
-                onCheckedChange={(checked) => updateSettings({ showKeyContacts: checked })}
+                id="professionalMode"
+                checked={Boolean(settings.professionalMode || settings.showKeyContacts)}
+                onCheckedChange={(checked) =>
+                  updateSettings({ professionalMode: checked, showKeyContacts: checked })
+                }
               />
             </div>
           </div>
         </CardHeader>
-        {Boolean(settings.showKeyContacts) && (
-          <CardContent className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="clientContact">Client Contact</Label>
-              <Input
-                id="clientContact"
-                placeholder="Name"
-                value={(dueDiligenceData.clientContact as string) || ""}
-                onChange={(e) => updateDueDiligenceData({ ...dueDiligenceData, clientContact: e.target.value })}
-              />
+        {Boolean(settings.professionalMode || settings.showKeyContacts) && (
+          <CardContent className="space-y-8">
+            {/* Key Contacts */}
+            <div>
+              <h3 className="text-sm font-semibold text-foreground mb-3">Key Contacts</h3>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="clientContact">Client Contact</Label>
+                  <Input
+                    id="clientContact"
+                    placeholder="Name"
+                    value={(dueDiligenceData.clientContact as string) || ""}
+                    onChange={(e) => updateDueDiligenceData({ ...dueDiligenceData, clientContact: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="clientEmail">Client Email</Label>
+                  <Input
+                    id="clientEmail"
+                    type="email"
+                    placeholder="email@example.com"
+                    value={(dueDiligenceData.clientEmail as string) || ""}
+                    onChange={(e) => updateDueDiligenceData({ ...dueDiligenceData, clientEmail: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="targetContact">Target Company Contact</Label>
+                  <Input
+                    id="targetContact"
+                    placeholder="Name"
+                    value={(dueDiligenceData.targetContact as string) || ""}
+                    onChange={(e) => updateDueDiligenceData({ ...dueDiligenceData, targetContact: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="targetEmail">Target Email</Label>
+                  <Input
+                    id="targetEmail"
+                    type="email"
+                    placeholder="email@example.com"
+                    value={(dueDiligenceData.targetEmail as string) || ""}
+                    onChange={(e) => updateDueDiligenceData({ ...dueDiligenceData, targetEmail: e.target.value })}
+                  />
+                </div>
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="clientEmail">Client Email</Label>
-              <Input
-                id="clientEmail"
-                type="email"
-                placeholder="email@example.com"
-                value={(dueDiligenceData.clientEmail as string) || ""}
-                onChange={(e) => updateDueDiligenceData({ ...dueDiligenceData, clientEmail: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="targetContact">Target Company Contact</Label>
-              <Input
-                id="targetContact"
-                placeholder="Name"
-                value={(dueDiligenceData.targetContact as string) || ""}
-                onChange={(e) => updateDueDiligenceData({ ...dueDiligenceData, targetContact: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="targetEmail">Target Email</Label>
-              <Input
-                id="targetEmail"
-                type="email"
-                placeholder="email@example.com"
-                value={(dueDiligenceData.targetEmail as string) || ""}
-                onChange={(e) => updateDueDiligenceData({ ...dueDiligenceData, targetEmail: e.target.value })}
-              />
-            </div>
+
+            {/* Firm Branding */}
+            <FirmBrandingCard
+              project={project}
+              updateProject={updateProject}
+              onSave={onSave}
+            />
           </CardContent>
         )}
       </Card>
+
 
       {/* Financial Category Labels - Gated by COA */}
       <FinancialCategoryLabelsCard
