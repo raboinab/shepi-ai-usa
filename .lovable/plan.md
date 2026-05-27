@@ -1,59 +1,81 @@
-# Full sweep: "AI-Assisted" → "Intelligent"
+## Goal
 
-Found 17 occurrences across 11 files. They split into two buckets. I recommend rewriting bucket A and leaving bucket B intact — replacing them would break meaning or weaken the legal posture.
+Give Alice (Shepi's autonomous CEO operating system) a read-only MCP server she can call to inspect everything the admin portal shows — users, projects, subscriptions, contacts, CPA pipeline, demo views, promo state, diagnostics — so she can reason about the business in real time.
 
-## Bucket A — Rewrite (marketing/positioning copy)
+## Architecture
 
-These are headline/value-prop uses where "Intelligent Quality of Earnings Analysis" reads cleanly.
+Single Supabase edge function `alice-mcp` implementing the MCP Streamable HTTP transport via `mcp-lite` + Hono.
 
-- `src/pages/Index.tsx` (2) — homepage hero H1 + secondary CTA section
-- `src/pages/ForAiAgents.tsx` (1)
-- `src/pages/Pricing.tsx` (1)
-- `src/pages/Auth.tsx` (1)
-- `src/pages/NotFound.tsx` (1)
-- `src/pages/features/AIDueDiligence.tsx` (3) — title, meta, body
-- `src/pages/use-cases/PEFirms.tsx` (1)
-- `src/pages/use-cases/Lenders.tsx` (1)
-- `src/pages/use-cases/DealAdvisors.tsx` (1)
-- `src/pages/use-cases/IndependentSearchers.tsx` (2)
-- `src/pages/use-cases/AccountantsCPA.tsx` (1)
-- `src/pages/guides/DueDiligenceChecklist.tsx` (1)
-- `src/pages/guides/SellSideVsBuySideQoE.tsx` (1)
-- `src/pages/guides/GeneralLedgerReview.tsx` (1)
-- `src/pages/guides/QualityOfEarnings.tsx` (1)
-- `src/pages/guides/QoEReportTemplate.tsx` (1)
-- `src/pages/compare/ShepiVsExcel.tsx` (1)
-- `src/lib/workbook-grid-builders/buildDisclaimerGrid.ts` (1) — workbook disclaimer body prose
-- `src/components/pdf-slides/DisclaimerSlide.tsx` (1) — disclaimer body prose
-- `src/components/pdf-slides/CoverSlide.tsx` (1) — cover subtitle
-- `src/components/cpa/ProviderAgreementContent.tsx` (1)
-- `src/components/wizard/sections/PlaceholderSection.tsx` (1)
-- `public/og-image.svg` (1) — social share image text
-- `public/llms.txt`, `public/llms-full.txt` — LLM discovery files
+```text
+Alice (LLM agent) ──HTTPS──▶ /functions/v1/alice-mcp
+                              │  header: Authorization: Bearer <ALICE_API_KEY>
+                              ▼
+                         alice-mcp (Deno)
+                          ├─ auth: constant-time compare to ALICE_API_KEY secret
+                          ├─ McpServer with read-only tools
+                          └─ Supabase client (service role) — read queries only
+```
 
-## Bucket B — Keep "AI-Assisted" (term-of-art / legal)
+- `verify_jwt = false` in `supabase/config.toml` (auth is the bearer key, not a Supabase JWT).
+- Service role key is used server-side only, never returned to the caller.
+- All handlers are SELECT/count queries — no inserts, updates, deletes, or RPCs that mutate.
 
-Swapping these to "Intelligent" loses meaning or weakens the non-attestation posture.
+## Auth
 
-- `src/pages/guides/AIWontDoYourQoE.tsx` (3) — the entire section is titled **"AI-Assisted vs AI-Generated"**; this is the definitional contrast
-- `src/pages/guides/CanAIReplaceQoE.tsx` (1) — comparison table header `["Capability", "AI-Assisted", "Traditional CPA"]`
-- `src/pages/Resources.tsx` (1) — link label pointing at the AI-QoE-vs-Traditional comparison page
-- `src/components/terms/TermsContent.tsx` (1) — ToS section heading "AI-Assisted Workflows" (legal language)
-- `src/components/pdf-slides/SlideLayout.tsx` + `src/lib/pdf/pdfWorker.ts` — PDF footer/watermark **"AI-Assisted Analysis · Not an Audit or Attestation"**. This is the legal disclaimer line that protects against UPL/attestation claims; "Intelligent Analysis · Not an Audit" reads like marketing fluff next to a legal warning.
+- New secret `ALICE_API_KEY` (added via `add_secret` — Alice gets the value out-of-band).
+- Edge function rejects any request missing `Authorization: Bearer <ALICE_API_KEY>` with 401.
+- Constant-time comparison to prevent timing attacks.
 
-## Rewrite pattern
+## MCP tools exposed
 
-- "AI-Assisted Quality of Earnings Analysis" → "Intelligent Quality of Earnings Analysis"
-- "AI-Assisted QoE" → "Intelligent QoE"
-- "AI-Assisted due diligence" → "Intelligent due diligence"
-- Standalone "AI-Assisted" used as an adjective for the product → "Intelligent"
+Mirrors the admin portal pages, all read-only:
 
-I will regenerate `og-image.svg` text in place (no image regeneration needed — it's SVG text).
+| Tool | Returns |
+|---|---|
+| `get_overview_stats` | Totals: users, projects, active subscriptions, contact submissions, current early-adopter spots |
+| `list_users` | Paginated list from `get_user_engagement_stats()` (email, name, signup date, last sign-in, project/doc counts, QB connected, onboarding done) |
+| `get_user_detail` | One user by id: profile + their projects + subscription |
+| `list_projects` | Paginated projects with owner, tier, phase, status, industry, created_at |
+| `get_project_detail` | One project: wizard state, document counts, processed_data summary, CPA claim if any |
+| `list_subscriptions` | Active/past subscriptions with plan, status, stripe ids, user email |
+| `list_contact_submissions` | Contact form entries, newest first |
+| `list_cpa_applications` | Pending + reviewed CPA onboarding apps |
+| `list_dfy_engagements` | DFY projects with claim status and assigned CPA |
+| `get_demo_views` | Last 30/60/90 days of demo page views, grouped by page, with unique users |
+| `get_promo_config` | Current early-adopter spot count and any other promo keys |
+| `get_diagnostics` | Edge function health snapshot (latest rows from diagnostics tables already surfaced in `AdminDiagnostics`) |
+| `run_sql_read` | (optional, gated) Executes a whitelisted SELECT against a small set of approved views. Off by default — only enable if Alice needs ad-hoc shape we didn't predict. |
 
-## Out of scope
+Each tool accepts a small Zod-validated input schema (pagination, filters, date ranges) and returns JSON.
 
-- No demo PDF/XLSX regeneration (cover/disclaimer copy changes but the watermark line is bucket B and unchanged; the demo files keep working)
-- No changes to routes, slugs, or the `/compare/ai-qoe-vs-traditional` URL
-- No changes to memory/index.md (positioning concept unchanged)
+## Audit
 
-Confirm and I'll execute, or tell me to also flip bucket B.
+Edge function logs only (per Alice's choice). Every tool call logs:
+`{ ts, tool, params (redacted), result_rows, latency_ms }`
+Viewable via Supabase function logs.
+
+## Files
+
+- `supabase/functions/alice-mcp/index.ts` — Hono + mcp-lite server, tool definitions, auth middleware, Supabase service-role client.
+- `supabase/config.toml` — add `[functions.alice-mcp] verify_jwt = false`.
+- Secret: `ALICE_API_KEY` (added via secrets tool).
+- No database migrations. No frontend changes.
+
+## How Alice connects
+
+After deploy, Alice's MCP client points at:
+```
+https://mdgmessqbfebrbvjtndz.supabase.co/functions/v1/alice-mcp
+Header: Authorization: Bearer <ALICE_API_KEY>
+```
+She'll see all tools via the standard MCP `tools/list` call.
+
+## Out of scope (deliberately)
+
+- No writes (per "Read-only" scope choice). When Alice needs to flip promo spots or approve a CPA, we'll add a separate write-capable tool with its own confirmation pattern.
+- No DB audit table (per "edge function logs only").
+- No multi-tenant scoping — single key, single agent.
+
+## Open question before build
+
+Want `run_sql_read` included from day one (Alice gets escape-hatch flexibility but more surface area), or hold it back and only add named tools as gaps surface?
