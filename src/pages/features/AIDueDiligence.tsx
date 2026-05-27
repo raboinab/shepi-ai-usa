@@ -12,7 +12,7 @@ import { PRICING } from "@/lib/pricing";
 const toc = [
   { id: "overview", label: "Overview" },
   { id: "what-ai-automates", label: "What AI Automates" },
-  { id: "workflow", label: "AI-Assisted Workflow" },
+  { id: "workflow", label: "Intelligent Workflow" },
   { id: "gl-analysis", label: "GL-Level Analysis" },
   { id: "vs-traditional", label: "AI vs Traditional" },
   { id: "when-to-use", label: "When to Use AI" },
@@ -73,7 +73,7 @@ export default function AIDueDiligence() {
         { title: "Proof of cash reconciliation", description: "Matches GL activity to bank statement data to identify unrecorded transactions" },
       ]} />
 
-      <h2 id="workflow">AI-Assisted Due Diligence Workflow</h2>
+      <h2 id="workflow">Intelligent Due Diligence Workflow</h2>
       <StepList steps={[
         { title: "Connect data sources", description: "Upload financial statements, connect QuickBooks, or import trial balance data" },
         { title: "AI processes & maps", description: "Automatic account classification, period alignment, and data normalization" },
