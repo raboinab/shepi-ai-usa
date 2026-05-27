@@ -523,6 +523,16 @@ const Pricing = () => {
                 <p className="text-xs text-muted-foreground text-center italic">
                   Additional deals: $1,000 per project
                 </p>
+                <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs text-foreground">
+                  <span className="font-medium">CPAs &amp; advisory firms:</span>{" "}
+                  Running 3+ client engagements in the same month? One Monthly subscription
+                  ($5,000) covers all three — vs. $6,000 buying them individually. Firm branding
+                  on PDF + XLSX deliverables is included on every tier.{" "}
+                  <Link to="/for-cpas" className="text-primary hover:underline">
+                    See how CPAs use shepi →
+                  </Link>
+                </div>
+
               </div>
             </CardContent>
           </Card>
