@@ -200,6 +200,9 @@ async function handleClaimEvent(p: any, status: "created" | "changed") {
 }
 
 async function handleChatMessage(p: any) {
+  // Skip AI assistant turns — not a real human message, no one needs to be notified
+  if (p.role === "assistant") return;
+
   // Find the CPA claim for this project
   const { data: claim } = await supabase
     .from("cpa_claims")
