@@ -428,6 +428,7 @@ export const WizardContent = ({
               const tbData = (project.wizard_data.trialBalance as Record<string, unknown>) || {};
               updateWizardData("trialBalance", { ...tbData, accounts });
             }}
+            dealData={dealData}
           />
         );
       case "3-9":
