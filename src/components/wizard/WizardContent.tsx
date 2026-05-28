@@ -410,11 +410,11 @@ export const WizardContent = ({
       case "3-3":
         return <JournalEntriesSection projectId={project.id} data={(project.wizard_data.journalEntries as any) || { entries: [], totalCount: 0 }} onUpdate={(data) => updateWizardData("journalEntries", data as unknown as Record<string, unknown>)} onGuideContextChange={onGuideContextChange} />;
       case "3-4":
-        return <ARAgingSection projectId={project.id} data={(project.wizard_data.arAging as any) || {}} updateData={(data) => updateWizardData("arAging", data as unknown as Record<string, unknown>)} periods={periods} />;
+        return <ARAgingSection projectId={project.id} data={(project.wizard_data.arAging as any) || {}} updateData={(data) => updateWizardData("arAging", data as unknown as Record<string, unknown>)} periods={periods} dealData={dealData} />;
       case "3-5":
-        return <APAgingSection projectId={project.id} data={(project.wizard_data.apAging as any) || {}} updateData={(data) => updateWizardData("apAging", data as unknown as Record<string, unknown>)} periods={periods} />;
+        return <APAgingSection projectId={project.id} data={(project.wizard_data.apAging as any) || {}} updateData={(data) => updateWizardData("apAging", data as unknown as Record<string, unknown>)} periods={periods} dealData={dealData} />;
       case "3-6":
-        return <FixedAssetsSection data={(project.wizard_data.fixedAssets as any) || {}} updateData={(data) => updateWizardData("fixedAssets", data as unknown as Record<string, unknown>)} projectId={project.id} />;
+        return <FixedAssetsSection data={(project.wizard_data.fixedAssets as any) || {}} updateData={(data) => updateWizardData("fixedAssets", data as unknown as Record<string, unknown>)} projectId={project.id} dealData={dealData} />;
       case "3-7":
         return <InventorySection data={(project.wizard_data.inventory as any) || {}} updateData={(data) => updateWizardData("inventory", data as unknown as Record<string, unknown>)} />;
       case "3-8":
@@ -433,7 +433,7 @@ export const WizardContent = ({
           />
         );
       case "3-9":
-        return <SupplementarySection data={(project.wizard_data.supplementary as any) || {}} updateData={(data) => updateWizardData("supplementary", data as unknown as Record<string, unknown>)} projectId={project.id} />;
+        return <SupplementarySection data={(project.wizard_data.supplementary as any) || {}} updateData={(data) => updateWizardData("supplementary", data as unknown as Record<string, unknown>)} projectId={project.id} dealData={dealData} />;
       case "3-10":
         return <MaterialContractsSection data={(project.wizard_data.materialContracts as any) || {}} updateData={(data) => updateWizardData("materialContracts", data as unknown as Record<string, unknown>)} projectId={project.id} />;
       case "3-11":
