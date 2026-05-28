@@ -272,8 +272,9 @@ export const WizardContent = ({
 
   const { periods, fiscalYearEnd } = getPeriodData(project);
 
-  // Only compute DealData and wizard reports for phases that need them (5+)
-  const needsReports = (project.current_phase ?? 1) >= 5;
+  // DealData powers both Phase 5 reports AND any earlier section that renders
+  // a WorkbookTabView (e.g. Payroll in 3-8). Always compute.
+  const needsReports = true;
   
   const { dealData: baseDealData, wizardReports } = useMemo(() => {
     if (!needsReports) {
