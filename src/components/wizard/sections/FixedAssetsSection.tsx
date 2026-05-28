@@ -325,6 +325,11 @@ export const FixedAssetsSection = ({
         </CardContent>
       </Card>
 
+      <section className="space-y-3">
+        <h3 className="text-lg font-serif font-semibold">Workbook view — Fixed Assets</h3>
+        <WorkbookTabView tabId="fixed-assets" dealData={dealData ?? null} />
+      </section>
+
       <FixedAssetsImportDialog
         open={importDialogOpen}
         onOpenChange={setImportDialogOpen}
