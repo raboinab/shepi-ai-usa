@@ -542,7 +542,7 @@ export const WizardContent = ({
       case "6-2":
         return <FinancialReportsSection dealData={dealData} />;
       case "6-3":
-        return <AnalysisReportsSection dealData={dealData} nwcReportData={getReportData("nwcAnalysis")} />;
+        return <AnalysisReportsSection dealData={dealData} />;
       case "6-4":
         return <ExportCenterSection data={(project.wizard_data.exportCenter as any) || {}} updateData={(data) => updateWizardData("exportCenter", data as unknown as Record<string, unknown>)} wizardData={project.wizard_data} projectId={project.id} projectName={project.name} computedReports={wizardReports as any} dealData={dealData} onNavigateToInsights={onSwitchToInsights} isDemo={isDemo} />;
 
