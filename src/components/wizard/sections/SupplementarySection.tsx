@@ -74,7 +74,8 @@ export const SupplementarySection = ({
   updateData, 
   projectId,
   balanceSheetData,
-  materialContracts = []
+  materialContracts = [],
+  dealData,
 }: SupplementarySectionProps) => {
   const [showDebtImport, setShowDebtImport] = useState(false);
   const [showLeaseImport, setShowLeaseImport] = useState(false);
