@@ -732,6 +732,52 @@ function AgreementsPanel({ cpaUserId }: { cpaUserId: string }) {
     },
   });
 
+  const { data: profile } = useQuery({
+    queryKey: ["admin-cpa-profile-min", cpaUserId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("cpa_profiles")
+        .select("full_name, email")
+        .eq("user_id", cpaUserId)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const downloadAgreement = async (a: Agreement) => {
+    const [{ renderToStaticMarkup }, { ProviderAgreementContent }] = await Promise.all([
+      import("react-dom/server"),
+      import("@/components/cpa/ProviderAgreementContent"),
+    ]);
+    const body = renderToStaticMarkup(<ProviderAgreementContent />);
+    const html = `<!doctype html><html><head><meta charset="utf-8"/><title>DFY Provider Agreement — ${profile?.full_name ?? ""}</title>
+<style>
+  body { font-family: Georgia, serif; max-width: 780px; margin: 40px auto; padding: 0 24px; color: #111; line-height: 1.55; }
+  h1,h2,h3 { font-family: Georgia, serif; }
+  .meta { border:1px solid #ddd; padding:16px; margin-bottom:24px; background:#fafafa; font-family: -apple-system, sans-serif; font-size: 13px; }
+  .meta div { margin: 2px 0; }
+  hr { margin: 32px 0; border: none; border-top: 1px solid #ddd; }
+</style></head><body>
+<div class="meta">
+  <div><strong>Signed by:</strong> ${profile?.full_name ?? "—"} (${profile?.email ?? "—"})</div>
+  <div><strong>Agreement version:</strong> ${a.agreement_version}</div>
+  <div><strong>Accepted at:</strong> ${new Date(a.accepted_at).toLocaleString()}</div>
+  ${a.ip_address ? `<div><strong>IP address:</strong> ${a.ip_address}</div>` : ""}
+  <div><strong>Record ID:</strong> ${a.id}</div>
+</div>
+<hr/>
+${body}
+</body></html>`;
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `provider-agreement-${profile?.full_name?.replace(/\s+/g, "-") ?? "cpa"}-${a.agreement_version}.html`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   if (isLoading) return <div className="py-6 flex justify-center"><Spinner /></div>;
   if (!data || data.length === 0) {
     return (
@@ -745,11 +791,16 @@ function AgreementsPanel({ cpaUserId }: { cpaUserId: string }) {
     <div className="space-y-2 mt-4">
       {data.map((a) => (
         <div key={a.id} className="border rounded-md p-3">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <Badge variant="outline">{a.agreement_version}</Badge>
-            <span className="text-xs text-muted-foreground">
-              {format(new Date(a.accepted_at), "MMM d, yyyy 'at' h:mm a")}
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-muted-foreground">
+                {format(new Date(a.accepted_at), "MMM d, yyyy 'at' h:mm a")}
+              </span>
+              <Button size="sm" variant="outline" onClick={() => downloadAgreement(a)}>
+                <Download className="h-3.5 w-3.5 mr-1" /> Download
+              </Button>
+            </div>
           </div>
           {a.ip_address && (
             <div className="text-xs text-muted-foreground mt-1">
