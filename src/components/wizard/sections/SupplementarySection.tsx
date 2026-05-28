@@ -508,6 +508,12 @@ export const SupplementarySection = ({
         </TabsContent>
       </Tabs>
 
+      <section className="space-y-3">
+        <h3 className="text-lg font-serif font-semibold">Workbook view — Supplementary</h3>
+        <WorkbookTabView tabId="supplementary" dealData={dealData ?? null} />
+      </section>
+
+
       <DebtScheduleImportDialog
         open={showDebtImport}
         onOpenChange={setShowDebtImport}
