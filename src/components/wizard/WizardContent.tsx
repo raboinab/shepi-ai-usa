@@ -405,6 +405,7 @@ export const WizardContent = ({
               onOpenGuide={openGuide}
                isDemo={isDemo}
                mockProposals={isDemo ? (project.wizard_data.discoveryProposals as any) : undefined}
+               dealData={dealData}
             />
          );
       case "3-3":
