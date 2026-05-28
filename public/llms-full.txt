@@ -2,7 +2,7 @@
 
 > Long-form companion to llms.txt. Contains the full homepage FAQ (single source of truth — see src/data/homepageFaq.ts), the complete public content surface, and capability/limitation statements suitable for agent reasoning.
 
-Generated: 2026-05-19
+Generated: 2026-05-28
 
 ## Identity
 
