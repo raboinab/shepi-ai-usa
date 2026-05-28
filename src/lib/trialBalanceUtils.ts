@@ -39,6 +39,58 @@ export function createEmptyAccount(): TrialBalanceAccount {
   };
 }
 
+/**
+ * Convert IS account values from cumulative YTD (QuickBooks Trial Balance
+ * convention) to monthly activity. BS accounts are passed through unchanged
+ * (ending balances are correct as-is). Returns new account objects; inputs
+ * are not mutated.
+ *
+ * Mirrors the conversion in projectToDealAdapter.ts so the wizard's TB view
+ * matches the workbook's TB tab. Pass already-monthly data through this and
+ * IS rows will be unaffected as long as no two consecutive months of the
+ * same FY are both populated with cumulative-style values.
+ */
+export function convertIsYtdToMonthly(
+  accounts: TrialBalanceAccount[],
+  periods: Period[],
+  fiscalYearEnd: number
+): TrialBalanceAccount[] {
+  const sortedPeriodIds = [...periods]
+    .filter(p => !p.isStub)
+    .sort((a, b) => {
+      const ay = a.year ?? 0, by = b.year ?? 0;
+      if (ay !== by) return ay - by;
+      return (a.month ?? 0) - (b.month ?? 0);
+    })
+    .map(p => p.id);
+  if (sortedPeriodIds.length === 0) return accounts;
+
+  const fyStartMonth = (fiscalYearEnd % 12) + 1;
+  const fyOf = (year: number, month: number) =>
+    month >= fyStartMonth ? year : year - 1;
+  const periodMeta = new Map<string, { year: number; month: number }>();
+  for (const p of periods) {
+    if (p.year != null && p.month != null) {
+      periodMeta.set(p.id, { year: p.year, month: p.month });
+    }
+  }
+
+  return accounts.map(acc => {
+    if (acc.fsType !== 'IS') return acc;
+    const monthly: Record<string, number> = { ...acc.monthlyValues };
+    const orderedIds = sortedPeriodIds.filter(id => id in monthly);
+    for (let i = orderedIds.length - 1; i > 0; i--) {
+      const cur = periodMeta.get(orderedIds[i]);
+      const prev = periodMeta.get(orderedIds[i - 1]);
+      if (!cur || !prev) continue;
+      if (fyOf(cur.year, cur.month) !== fyOf(prev.year, prev.month)) continue;
+      monthly[orderedIds[i]] =
+        (monthly[orderedIds[i]] || 0) - (monthly[orderedIds[i - 1]] || 0);
+    }
+    return { ...acc, monthlyValues: monthly };
+  });
+}
+
 export function calculateFYTotal(
   account: TrialBalanceAccount,
   periods: Period[],
