@@ -1,61 +1,40 @@
-# Admin CPA Roster
+## Problem
 
-A new admin page at `/admin/cpas` that gives you a single place to see and manage every CPA on the platform — not just incoming applications.
+On `/project/fa0768ca-96f9-4ded-b498-f64ca5be3ede`, the DFY banner shows **"Awaiting CPA"** even though the database has an `accepted` `cpa_claims` row assigned to Chris LeBlanc (claimed 2026-05-20). The client sees the wrong status and no reviewer card.
 
-## What you'll see
+## Root cause
 
-**List view** — table of all `cpa_profiles` rows with:
-- Name, email, state · license #
-- Status chips: ✅ License verified / ⚠️ Unverified · ✅ W-9 on file / ⚠️ Missing · ✅ Agreement signed / ⚠️ Missing · Active / Inactive
-- Engagement count (claims) and "last active"
-- Filter: All / Needs attention (anything missing or PENDING) / Active / Inactive
-- A row clearly highlighted as "Needs attention" if `state_of_licensure = 'PENDING'`, `license_number = 'PENDING'`, no W-9, or no signed agreement — which will catch Chris immediately.
+`cpa_claims` SELECT policy only allows `cpa` or `admin` roles:
 
-**Detail drawer** (click row) — three sections:
+```sql
+USING (has_role(auth.uid(),'cpa') OR has_role(auth.uid(),'admin'))
+```
 
-1. **Identity & License**
-   - Editable: full_name, phone, state_of_licensure, license_number, years_experience, bio, industries
-   - "Verify license" button → stamps `license_verified_at = now()`
-   - "Deactivate / Reactivate" toggle (`active` flag)
-   - Shows `onboarding_completed_at`, `created_at`
+The project owner (Alex) is neither, so `DfyStatusBanner`'s `select … from cpa_claims where project_id = …` returns `null` and the component falls back to `status = 'unclaimed'`. The reviewer-profile read also fails downstream because the `cpa_profiles` policy uses an `EXISTS` against `cpa_claims` that gets filtered by the same RLS.
 
-2. **Onboarding Documents** (from `cpa_onboarding_documents`)
-   - List of every uploaded doc with type (W-9 etc.), filename, upload date, current status (pending/approved/rejected)
-   - "Download" button → generates a signed URL from the private `cpa-onboarding` storage bucket
-   - "Approve / Reject" buttons → updates `status`, `reviewer_user_id = auth.uid()`, `reviewed_at`
-   - "Mark W-9 on file" toggle on the profile (`w9_on_file` flag) once W-9 doc is approved
+## Fix
 
-3. **Provider Agreements** (from `dfy_provider_agreements`)
-   - Chronological list: agreement_version, accepted_at, ip_address
-   - Read-only — these are immutable consent records
+Add one SELECT policy on `cpa_claims` so project members (owner + shared editors/viewers) can read claims tied to their project:
 
-## Navigation
+```sql
+CREATE POLICY "Project members can view cpa_claims"
+ON public.cpa_claims
+FOR SELECT
+TO authenticated
+USING (has_project_access(auth.uid(), project_id));
+```
 
-Add "CPAs" item to `AdminSidebar.tsx` next to "CPA Applications". Add route `/admin/cpas` in `App.tsx`.
+No code changes needed — `DfyStatusBanner` already renders the correct UI ("CPA Confirmed", reviewer card, Message Reviewer button) as soon as the claim row is readable.
 
-Also add a small **"View CPA profile →"** link on rows in `AdminCpaApplications.tsx` where `status = 'approved'`, deep-linking to that CPA's row in the new roster.
+## Verification
 
-## Technical notes
+After the migration, reload the project page. Expected:
+- Header changes from "Awaiting CPA" → **"CPA Confirmed"**
+- Reviewer card appears with Chris LeBlanc's name/state
+- "Message Reviewer" button enabled
 
-- New page: `src/pages/admin/AdminCpaRoster.tsx`
-- All queries scoped via admin role (existing `has_role(auth.uid(), 'admin')` policies already cover `cpa_profiles`, `cpa_onboarding_documents`, `dfy_provider_agreements`)
-- Signed URLs for onboarding docs: `supabase.storage.from('cpa-onboarding').createSignedUrl(path, 60)` — admin-side only, never exposed to clients
-- Edit mutations go through the table's existing admin RLS (no new policies needed)
-- One small policy gap to fix: admins currently can't SELECT from `dfy_provider_agreements`. Add policy:
-  ```sql
-  CREATE POLICY "Admins view all provider agreements"
-  ON public.dfy_provider_agreements FOR SELECT TO authenticated
-  USING (has_role(auth.uid(), 'admin'));
-  ```
+## Security notes
 
-## Out of scope (call out if you want them)
-
-- Bulk actions (mass deactivate, mass invite)
-- Editing/revoking signed agreements (compliance-sensitive — keep immutable)
-- Background-check upload UI (the `background_check_status` field exists; can wire up later if you actually run BG checks)
-- Performance / quality metrics per CPA (avg turnaround, client satisfaction) — separate dashboard
-
-## What this immediately fixes
-
-- Chris's "Licensed in PENDING" → you can open his profile, type in his real state + license #, click "Verify license", and the client-facing banner will read correctly within seconds.
-- You'll see at a glance which other admin-granted CPAs (if any) have stub data.
+- Read-only; doesn't expose claims to anyone outside the project.
+- Doesn't grant INSERT/UPDATE — only CPAs and admins can still create/modify claims.
+- `has_project_access` is the same security-definer helper used by `documents`, `analysis_jobs`, etc.
