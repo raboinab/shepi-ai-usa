@@ -26,6 +26,7 @@ const menuItems = [
   { title: 'Data Export', url: '/admin/data-export', icon: DatabaseBackup },
   { title: 'DFY Engagements', url: '/admin/dfy-engagements', icon: Briefcase },
   { title: 'CPA Applications', url: '/admin/cpa-applications', icon: UserPlus },
+  { title: 'CPA Roster', url: '/admin/cpas', icon: BadgeCheck },
   { title: 'Migration', url: '/admin/migration', icon: CloudUpload },
 ];
 
