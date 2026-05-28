@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FinancialTable } from "../shared/FinancialTable";
 import { SummaryCard } from "../shared/SummaryCard";
+import { WorkbookTabView } from "@/components/workbook/WorkbookTabView";
 import { Clock, AlertTriangle, Users, Percent } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { Period } from "@/lib/periodUtils";
@@ -8,6 +9,7 @@ import { AR_AGING_CONTRACT, AGING_BUCKETS } from "@/lib/workbookContract";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState, useEffect, useMemo } from "react";
 import { useAutoLoadArAging } from "@/hooks/useAutoLoadProcessedData";
+import type { DealData } from "@/lib/workbook-types";
 
 interface ARAgingEntry {
   id: number;
@@ -35,6 +37,7 @@ interface ARAgingSectionProps {
   data: ARAgingData;
   updateData: (data: ARAgingData) => void;
   periods?: Period[];
+  dealData?: DealData | null;
 }
 
 const createDefaultEntry = (id: number): ARAgingEntry => ({
@@ -68,7 +71,7 @@ const formatAsOfPeriod = (periodId: string): string => {
   return periodId;
 };
 
-export const ARAgingSection = ({ projectId, data, updateData, periods = [] }: ARAgingSectionProps) => {
+export const ARAgingSection = ({ projectId, data, updateData, periods = [], dealData }: ARAgingSectionProps) => {
   const arData = { ...defaultData, ...data };
 
   // Auto-load from processed_data if wizard_data is empty
@@ -361,6 +364,11 @@ export const ARAgingSection = ({ projectId, data, updateData, periods = [] }: AR
           </div>
         </CardContent>
       </Card>
+
+      <section className="space-y-3">
+        <h3 className="text-lg font-serif font-semibold">Workbook view — AR Aging</h3>
+        <WorkbookTabView tabId="ar-aging" dealData={dealData ?? null} />
+      </section>
     </div>
   );
 };
