@@ -272,8 +272,9 @@ export const WizardContent = ({
 
   const { periods, fiscalYearEnd } = getPeriodData(project);
 
-  // Only compute DealData and wizard reports for phases that need them (5+)
-  const needsReports = (project.current_phase ?? 1) >= 5;
+  // DealData powers both Phase 5 reports AND any earlier section that renders
+  // a WorkbookTabView (e.g. Payroll in 3-8). Always compute.
+  const needsReports = true;
   
   const { dealData: baseDealData, wizardReports } = useMemo(() => {
     if (!needsReports) {
@@ -404,16 +405,17 @@ export const WizardContent = ({
               onOpenGuide={openGuide}
                isDemo={isDemo}
                mockProposals={isDemo ? (project.wizard_data.discoveryProposals as any) : undefined}
+               dealData={dealData}
             />
          );
       case "3-3":
         return <JournalEntriesSection projectId={project.id} data={(project.wizard_data.journalEntries as any) || { entries: [], totalCount: 0 }} onUpdate={(data) => updateWizardData("journalEntries", data as unknown as Record<string, unknown>)} onGuideContextChange={onGuideContextChange} />;
       case "3-4":
-        return <ARAgingSection projectId={project.id} data={(project.wizard_data.arAging as any) || {}} updateData={(data) => updateWizardData("arAging", data as unknown as Record<string, unknown>)} periods={periods} />;
+        return <ARAgingSection projectId={project.id} data={(project.wizard_data.arAging as any) || {}} updateData={(data) => updateWizardData("arAging", data as unknown as Record<string, unknown>)} periods={periods} dealData={dealData} />;
       case "3-5":
-        return <APAgingSection projectId={project.id} data={(project.wizard_data.apAging as any) || {}} updateData={(data) => updateWizardData("apAging", data as unknown as Record<string, unknown>)} periods={periods} />;
+        return <APAgingSection projectId={project.id} data={(project.wizard_data.apAging as any) || {}} updateData={(data) => updateWizardData("apAging", data as unknown as Record<string, unknown>)} periods={periods} dealData={dealData} />;
       case "3-6":
-        return <FixedAssetsSection data={(project.wizard_data.fixedAssets as any) || {}} updateData={(data) => updateWizardData("fixedAssets", data as unknown as Record<string, unknown>)} projectId={project.id} />;
+        return <FixedAssetsSection data={(project.wizard_data.fixedAssets as any) || {}} updateData={(data) => updateWizardData("fixedAssets", data as unknown as Record<string, unknown>)} projectId={project.id} dealData={dealData} />;
       case "3-7":
         return <InventorySection data={(project.wizard_data.inventory as any) || {}} updateData={(data) => updateWizardData("inventory", data as unknown as Record<string, unknown>)} />;
       case "3-8":
@@ -428,10 +430,11 @@ export const WizardContent = ({
               const tbData = (project.wizard_data.trialBalance as Record<string, unknown>) || {};
               updateWizardData("trialBalance", { ...tbData, accounts });
             }}
+            dealData={dealData}
           />
         );
       case "3-9":
-        return <SupplementarySection data={(project.wizard_data.supplementary as any) || {}} updateData={(data) => updateWizardData("supplementary", data as unknown as Record<string, unknown>)} projectId={project.id} />;
+        return <SupplementarySection data={(project.wizard_data.supplementary as any) || {}} updateData={(data) => updateWizardData("supplementary", data as unknown as Record<string, unknown>)} projectId={project.id} dealData={dealData} />;
       case "3-10":
         return <MaterialContractsSection data={(project.wizard_data.materialContracts as any) || {}} updateData={(data) => updateWizardData("materialContracts", data as unknown as Record<string, unknown>)} projectId={project.id} />;
       case "3-11":
@@ -439,9 +442,9 @@ export const WizardContent = ({
 
       // Phase 4: Customer & Vendor
       case "4-1":
-        return <TopCustomersSection projectId={project.id} data={(project.wizard_data.topCustomers as any) || {}} updateData={(data) => updateWizardData("topCustomers", data as unknown as Record<string, unknown>)} />;
+        return <TopCustomersSection projectId={project.id} data={(project.wizard_data.topCustomers as any) || {}} updateData={(data) => updateWizardData("topCustomers", data as unknown as Record<string, unknown>)} dealData={dealData} />;
       case "4-2":
-        return <TopVendorsSection projectId={project.id} data={(project.wizard_data.topVendors as any) || {}} updateData={(data) => updateWizardData("topVendors", data as unknown as Record<string, unknown>)} />;
+        return <TopVendorsSection projectId={project.id} data={(project.wizard_data.topVendors as any) || {}} updateData={(data) => updateWizardData("topVendors", data as unknown as Record<string, unknown>)} dealData={dealData} />;
 
       // Phase 5: Reports (expanded with all spreadsheet tabs)
       case "5-1":

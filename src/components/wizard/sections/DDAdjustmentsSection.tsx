@@ -21,6 +21,7 @@ import { AttachProofDialog } from "../shared/AttachProofDialog";
 import { VerifyAdjustmentDialog } from "../shared/VerifyAdjustmentDialog";
 import { useAdjustmentProofs, PROOF_QUERY_KEY } from "@/hooks/useAdjustmentProofs";
 import { FlaggedTransactionsSection } from "./FlaggedTransactionsSection";
+import { WorkbookTabView } from "@/components/workbook/WorkbookTabView";
 import { DiscoveryProposalsSection } from "./DiscoveryProposalsSection";
 import { useDiscoveryProposals } from "@/hooks/useDiscoveryProposals";
 import { 
@@ -140,6 +141,7 @@ interface DDAdjustmentsSectionProps {
   onOpenGuide?: () => void;
   isDemo?: boolean;
   mockProposals?: import("@/hooks/useDiscoveryProposals").AdjustmentProposal[];
+  dealData?: import("@/lib/workbook-types").DealData | null;
 }
 
 // Map AI flag types to adjustment categories
@@ -178,6 +180,7 @@ export const DDAdjustmentsSection = ({
   onOpenGuide,
   isDemo,
   mockProposals,
+  dealData,
 }: DDAdjustmentsSectionProps) => {
   // Runtime filter: strip any legacy ITDA adjustments that slipped through
   const rawAdjustments = data.adjustments || [];
@@ -950,6 +953,20 @@ export const DDAdjustmentsSection = ({
           />
         </>
       )}
+
+      {/* Workbook-equivalent grids — single source of truth */}
+      <section className="space-y-3 mt-6">
+        <h3 className="text-lg font-serif font-semibold">Workbook view — DD Adjustments (Detail)</h3>
+        <WorkbookTabView tabId="dd-adjustments-1" dealData={dealData ?? null} />
+      </section>
+      <section className="space-y-3">
+        <h3 className="text-lg font-serif font-semibold">Workbook view — DD Adjustments (By Period)</h3>
+        <WorkbookTabView tabId="dd-adjustments-2" dealData={dealData ?? null} />
+      </section>
+      <section className="space-y-3">
+        <h3 className="text-lg font-serif font-semibold">Workbook view — QoE Analysis</h3>
+        <WorkbookTabView tabId="qoe-analysis" dealData={dealData ?? null} />
+      </section>
     </div>
   );
 };

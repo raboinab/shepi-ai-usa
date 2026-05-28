@@ -1,26 +1,26 @@
-import { useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { SummaryCard } from "../shared/SummaryCard";
-import { GenericReportSection } from "./GenericReportSection";
 import { DealParametersCard } from "../shared/DealParametersCard";
-import { TrendingUp, DollarSign, Calculator } from "lucide-react";
+import { WorkbookTabView } from "@/components/workbook/WorkbookTabView";
+import { TrendingUp, DollarSign, Calculator, FileSpreadsheet } from "lucide-react";
 import { Period } from "@/lib/periodUtils";
-import * as calc from "@/lib/calculations";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  extractNWCMetrics,
+  extractFCFMetrics,
+  DealParameters,
+  NWCExtractedMetrics,
+} from "@/lib/nwcDataUtils";
 import type { DealData } from "@/lib/workbook-types";
-import type { DealParameters, NWCExtractedMetrics } from "@/lib/nwcDataUtils";
 
 interface NWCFCFSectionProps {
-  nwcAnalysisData: {
-    rawData?: string[][];
-    syncedAt?: string;
-  };
-  fcfData: {
-    rawData?: string[][];
-    syncedAt?: string;
-  };
+  /** Legacy raw NWC analysis cache — kept only for the summary cards. */
+  nwcAnalysisData?: { rawData?: string[][]; syncedAt?: string };
+  /** Legacy raw FCF cache — kept only for the summary cards. */
+  fcfData?: { rawData?: string[][] };
   periods?: Period[];
   fiscalYearEnd?: number;
-  dealData?: DealData;
+  dealData?: DealData | null;
   dealParameters?: DealParameters;
   onUpdateDealParameters?: (params: DealParameters) => void;
 }
@@ -31,11 +31,10 @@ const defaultDealParameters: DealParameters = {
   estimatedNWCAtClose: null,
 };
 
-export const NWCFCFSection = ({ 
-  nwcAnalysisData, 
+export const NWCFCFSection = ({
+  nwcAnalysisData,
   fcfData,
   periods = [],
-  fiscalYearEnd = 12,
   dealData,
   dealParameters = defaultDealParameters,
   onUpdateDealParameters,
@@ -43,60 +42,15 @@ export const NWCFCFSection = ({
   const regularPeriods = periods.filter(p => !p.isStub);
   const hasPeriods = regularPeriods.length > 0;
 
-  // Compute metrics live from DealData (matching WorkingCapitalSection & FreeCashFlowTab)
-  const metrics = useMemo((): NWCExtractedMetrics => {
-    const defaults: NWCExtractedMetrics = {
-      currentNWC: 0, t3mAvg: 0, t6mAvg: 0, t12mAvg: 0,
-      ltmEBITDA: 0, ltmCapEx: 0, ltmFCF: 0,
-    };
-
-    if (!dealData || regularPeriods.length === 0) return defaults;
-
-    const tb = dealData.trialBalance;
-    const adj = dealData.adjustments;
-    const ab = dealData.addbacks;
-    const activePeriods = dealData.deal.periods.filter(p => !p.isStub);
-
-    if (activePeriods.length === 0) return defaults;
-
-    // NWC values per period
-    const nwcValues = activePeriods.map(p => calc.calcNWCExCash(tb, p.id));
-    const avg = (arr: number[]) => arr.length === 0 ? 0 : arr.reduce((a, b) => a + b, 0) / arr.length;
-
-    const currentNWC = nwcValues[nwcValues.length - 1] ?? 0;
-    const t3mAvg = avg(nwcValues.slice(-3));
-    const t6mAvg = avg(nwcValues.slice(-6));
-    const t12mAvg = avg(nwcValues.slice(-12));
-
-    // LTM periods (last 12)
-    const ltmPeriods = activePeriods.slice(-12);
-
-    // LTM Adjusted EBITDA — stored negative in TB when profitable, negate for display
-    const ltmEBITDA = -ltmPeriods.reduce(
-      (sum, p) => sum + calc.calcAdjustedEBITDA(tb, adj, p.id, ab), 0
-    );
-
-    // LTM CapEx — no TB-derived CapEx exists (manual/editable), matches FreeCashFlowTab
-    const ltmCapEx = 0;
-
-    // LTM FCF = Adj EBITDA - ΔNWC - Taxes (matching FreeCashFlowTab formula)
-    const ltmFCF = ltmPeriods.reduce((sum, p, i) => {
-      const pIdx = activePeriods.indexOf(p);
-      const nwcChange = pIdx > 0
-        ? calc.calcNWCExCash(tb, p.id) - calc.calcNWCExCash(tb, activePeriods[pIdx - 1].id)
-        : 0;
-      const adjEbitda = -calc.calcAdjustedEBITDA(tb, adj, p.id, ab);
-      const taxes = calc.calcIncomeTaxExpense(tb, p.id, ab.taxes);
-      return sum + adjEbitda - nwcChange - taxes;
-    }, 0);
-
-    return { currentNWC, t3mAvg, t6mAvg, t12mAvg, ltmEBITDA, ltmCapEx, ltmFCF };
-  }, [dealData, regularPeriods]);
-
-  const handleUpdateDealParameters = (params: DealParameters) => {
-    if (onUpdateDealParameters) {
-      onUpdateDealParameters(params);
-    }
+  // Summary cards: derive from legacy caches if present (cheap visual hint);
+  // the authoritative grids below come from the workbook builders.
+  const nwcMetrics = extractNWCMetrics(nwcAnalysisData?.rawData);
+  const fcfMetrics = extractFCFMetrics(fcfData?.rawData);
+  const metrics: NWCExtractedMetrics = {
+    ...nwcMetrics,
+    ltmEBITDA: fcfMetrics.ltmEBITDA || nwcMetrics.ltmEBITDA,
+    ltmCapEx: fcfMetrics.ltmCapEx || nwcMetrics.ltmCapEx,
+    ltmFCF: fcfMetrics.ltmFCF || nwcMetrics.ltmFCF,
   };
 
   if (!hasPeriods) {
@@ -122,51 +76,42 @@ export const NWCFCFSection = ({
         <p className="text-muted-foreground">Net working capital trends and free cash flow analysis</p>
       </div>
 
-      {/* Summary Cards with live-computed data */}
+      <Alert>
+        <FileSpreadsheet className="h-4 w-4" />
+        <AlertDescription>
+          Grids below render the exact same workbook tabs (Working Capital, NWC Analysis, Free Cash Flow). Edits to Trial Balance or Due Diligence Adjustments flow through automatically.
+        </AlertDescription>
+      </Alert>
+
+      {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <SummaryCard 
-          title="Current NWC" 
-          value={metrics.currentNWC} 
-          icon={DollarSign}
-        />
-        <SummaryCard 
-          title="LTM EBITDA" 
-          value={metrics.ltmEBITDA} 
-          icon={TrendingUp}
-        />
-        <SummaryCard 
-          title="LTM CapEx" 
-          value={metrics.ltmCapEx} 
-          icon={Calculator}
-          subtitle="Manual entry in workbook"
-        />
-        <SummaryCard 
-          title="LTM Free Cash Flow" 
-          value={metrics.ltmFCF} 
-          icon={DollarSign}
-        />
+        <SummaryCard title="Current NWC" value={metrics.currentNWC} icon={DollarSign} subtitle={metrics.currentNWC === 0 ? "Sync to populate" : undefined} />
+        <SummaryCard title="LTM EBITDA" value={metrics.ltmEBITDA} icon={TrendingUp} subtitle={metrics.ltmEBITDA === 0 ? "Sync to populate" : undefined} />
+        <SummaryCard title="LTM CapEx" value={metrics.ltmCapEx} icon={Calculator} subtitle={metrics.ltmCapEx === 0 ? "Sync to populate" : undefined} />
+        <SummaryCard title="LTM Free Cash Flow" value={metrics.ltmFCF} icon={DollarSign} subtitle={metrics.ltmFCF === 0 ? "Sync to populate" : undefined} />
       </div>
 
-      {/* Deal Parameters Card */}
       <DealParametersCard
         metrics={metrics}
         dealParameters={dealParameters}
-        onUpdateDealParameters={handleUpdateDealParameters}
+        onUpdateDealParameters={(params) => onUpdateDealParameters?.(params)}
       />
 
-      {/* Reports — rendered via the same workbook tabs so wizard matches workbook */}
-      <GenericReportSection
-        title="Net Working Capital Analysis"
-        description="NWC trends and trailing averages across periods"
-        dealData={dealData}
-        reportType="nwcAnalysis"
-      />
-      <GenericReportSection
-        title="Free Cash Flow Analysis"
-        description="Adjusted EBITDA less changes in NWC, CapEx, and taxes"
-        dealData={dealData}
-        reportType="freeCashFlow"
-      />
+      {/* Workbook-equivalent grids — single source of truth */}
+      <section className="space-y-3">
+        <h3 className="text-lg font-serif font-semibold">Working Capital</h3>
+        <WorkbookTabView tabId="working-capital" dealData={dealData ?? null} />
+      </section>
+
+      <section className="space-y-3">
+        <h3 className="text-lg font-serif font-semibold">NWC Analysis</h3>
+        <WorkbookTabView tabId="nwc-analysis" dealData={dealData ?? null} />
+      </section>
+
+      <section className="space-y-3">
+        <h3 className="text-lg font-serif font-semibold">Free Cash Flow</h3>
+        <WorkbookTabView tabId="free-cash-flow" dealData={dealData ?? null} />
+      </section>
     </div>
   );
 };

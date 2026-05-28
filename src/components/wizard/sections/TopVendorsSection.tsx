@@ -1,10 +1,12 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FinancialTable } from "../shared/FinancialTable";
 import { SummaryCard } from "../shared/SummaryCard";
+import { WorkbookTabView } from "@/components/workbook/WorkbookTabView";
 import { Badge } from "@/components/ui/badge";
 import { Building2, TrendingUp, AlertTriangle, Percent } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { useAutoLoadVendors } from "@/hooks/useAutoLoadProcessedData";
+import type { DealData } from "@/lib/workbook-types";
 
 interface TopVendorsData {
   vendors: Record<string, unknown>[];
@@ -25,6 +27,7 @@ interface TopVendorsSectionProps {
   projectId: string;
   data: TopVendorsData;
   updateData: (data: TopVendorsData) => void;
+  dealData?: DealData | null;
 }
 
 // Normalize vendor data from yearlySpend format to currentYear/priorYear format
@@ -95,7 +98,7 @@ function normalizeVendorData(rawData: TopVendorsData): { vendors: NormalizedVend
   };
 }
 
-export const TopVendorsSection = ({ projectId, data, updateData }: TopVendorsSectionProps) => {
+export const TopVendorsSection = ({ projectId, data, updateData, dealData }: TopVendorsSectionProps) => {
   // Auto-load from processed_data if wizard_data is empty
   useAutoLoadVendors({
     projectId,
@@ -217,6 +220,11 @@ export const TopVendorsSection = ({ projectId, data, updateData }: TopVendorsSec
           </CardContent>
         </Card>
       </div>
+
+      <section className="space-y-3">
+        <h3 className="text-lg font-serif font-semibold">Workbook view — Top Vendors</h3>
+        <WorkbookTabView tabId="top-vendors" dealData={dealData ?? null} />
+      </section>
     </div>
   );
 };

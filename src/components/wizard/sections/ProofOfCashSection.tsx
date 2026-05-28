@@ -15,6 +15,7 @@ import { useProofOfCashData } from "@/hooks/useProofOfCashData";
 import { useTransferClassification } from "@/hooks/useTransferClassification";
 import { TransferReviewDialog } from "@/components/workbook/shared/TransferReviewDialog";
 import { DeltaWaterfallCard } from "@/components/wizard/shared/DeltaWaterfallCard";
+import { WorkbookTabView } from "@/components/workbook/WorkbookTabView";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -1301,6 +1302,11 @@ export const ProofOfCashSection = ({
           </Card>
         </TabsContent>
       </Tabs>
+
+      <section className="space-y-3 mt-6">
+        <h3 className="text-lg font-serif font-semibold">Workbook view — Proof of Cash</h3>
+        <WorkbookTabView tabId="proof-of-cash" dealData={dealData ?? null} />
+      </section>
     </div>
   );
 };

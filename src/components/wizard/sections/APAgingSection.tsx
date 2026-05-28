@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FinancialTable } from "../shared/FinancialTable";
 import { SummaryCard } from "../shared/SummaryCard";
+import { WorkbookTabView } from "@/components/workbook/WorkbookTabView";
 import { Clock, AlertTriangle, Building2, Percent } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { Period } from "@/lib/periodUtils";
@@ -8,6 +9,7 @@ import { AP_AGING_CONTRACT, AGING_BUCKETS } from "@/lib/workbookContract";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState, useEffect, useMemo } from "react";
 import { useAutoLoadApAging } from "@/hooks/useAutoLoadProcessedData";
+import type { DealData } from "@/lib/workbook-types";
 
 interface APAgingEntry {
   id: number;
@@ -39,6 +41,7 @@ interface APAgingSectionProps {
   data: APAgingData;
   updateData: (data: APAgingData) => void;
   periods?: Period[];
+  dealData?: DealData | null;
 }
 
 const createDefaultEntry = (id: number): APAgingEntry => ({
@@ -76,7 +79,7 @@ const formatAsOfPeriod = (periodId: string): string => {
   return periodId;
 };
 
-export const APAgingSection = ({ projectId, data, updateData, periods = [] }: APAgingSectionProps) => {
+export const APAgingSection = ({ projectId, data, updateData, periods = [], dealData }: APAgingSectionProps) => {
   const apData = { ...defaultData, ...data };
 
   // Auto-load from processed_data if wizard_data is empty
@@ -341,6 +344,11 @@ export const APAgingSection = ({ projectId, data, updateData, periods = [] }: AP
           )}
         </CardContent>
       </Card>
+
+      <section className="space-y-3">
+        <h3 className="text-lg font-serif font-semibold">Workbook view — AP Aging</h3>
+        <WorkbookTabView tabId="ap-aging" dealData={dealData ?? null} />
+      </section>
     </div>
   );
 };
