@@ -98,25 +98,12 @@ export const TrialBalanceSection = ({
   }, [accounts, coaAccounts]);
 
   const handleAccountsChange = (newAccounts: TrialBalanceAccount[]) => {
-    // The wizard renders IS rows converted YTD→monthly to match the
-    // workbook. Convert edits back to cumulative YTD before persisting so
-    // the cached shape stays consistent with the workbook adapter.
-    const persisted = convertIsMonthlyToYtd(newAccounts, periods, fiscalYearEnd);
-    updateData({ ...data, accounts: persisted });
+    updateData({ ...data, accounts: newAccounts });
   };
 
-  // Display-time view: IS accounts converted from cumulative YTD (the QB
-  // Trial Balance convention) to monthly activity, matching TrialBalanceTab.
-  const displayAccounts = useMemo(
-    () => convertIsYtdToMonthly(accounts, periods, fiscalYearEnd),
-    [accounts, periods, fiscalYearEnd]
-  );
-
   const handleAddAccount = () => {
-    // MultiPeriodTable operates on the display (monthly-for-IS) shape, so
-    // we append into displayAccounts and let handleAccountsChange invert.
     const newAccount = createEmptyAccount();
-    handleAccountsChange([...displayAccounts, newAccount]);
+    handleAccountsChange([...accounts, newAccount]);
   };
 
   // Extracted loader so it can be called from both auto-import and manual button
