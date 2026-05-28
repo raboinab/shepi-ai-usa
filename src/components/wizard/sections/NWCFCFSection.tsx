@@ -154,16 +154,18 @@ export const NWCFCFSection = ({
         onUpdateDealParameters={handleUpdateDealParameters}
       />
 
-      {/* Reports via GenericReportSection */}
+      {/* Reports — rendered via the same workbook tabs so wizard matches workbook */}
       <GenericReportSection
         title="Net Working Capital Analysis"
         description="NWC trends and trailing averages across periods"
-        data={nwcAnalysisData}
+        dealData={dealData}
+        reportType="nwcAnalysis"
       />
       <GenericReportSection
         title="Free Cash Flow Analysis"
         description="Adjusted EBITDA less changes in NWC, CapEx, and taxes"
-        data={fcfData}
+        dealData={dealData}
+        reportType="freeCashFlow"
       />
     </div>
   );
