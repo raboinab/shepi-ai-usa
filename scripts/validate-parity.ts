@@ -25,9 +25,10 @@ const mem = new Map<string, string>();
 (globalThis as any).window = globalThis;
 
 import { createClient } from "@supabase/supabase-js";
-import { loadDealDataWithPriorBalances, type ProjectRecord } from "../src/lib/projectToDealAdapter";
-import { TAB_GRID_BUILDERS } from "../src/lib/workbook-grid-builders";
-import { gridToMatrix, diffMatrices, formatDiffs } from "../src/lib/gridDiff";
+const { loadDealDataWithPriorBalances } = (await import("../src/lib/projectToDealAdapter")) as typeof import("../src/lib/projectToDealAdapter");
+type ProjectRecord = import("../src/lib/projectToDealAdapter").ProjectRecord;
+const { TAB_GRID_BUILDERS } = (await import("../src/lib/workbook-grid-builders")) as typeof import("../src/lib/workbook-grid-builders");
+const { gridToMatrix, diffMatrices, formatDiffs } = (await import("../src/lib/gridDiff")) as typeof import("../src/lib/gridDiff");
 
 const args = new Map<string, string>();
 for (let i = 2; i < process.argv.length; i++) {
