@@ -1,23 +1,13 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TrendingUp, FileSpreadsheet, Wallet } from "lucide-react";
-import { SpreadsheetReportViewer } from "../shared/SpreadsheetReportViewer";
-
-interface RawDataReport {
-  rawData?: string[][];
-  syncedAt?: string;
-}
+import type { DealData } from "@/lib/workbook-types";
+import { WorkbookTabView } from "@/components/workbook/WorkbookTabView";
 
 interface FinancialReportsSectionProps {
-  incomeStatementData: RawDataReport;
-  balanceSheetData: RawDataReport;
-  cashFlowData: RawDataReport;
+  dealData: DealData | null;
 }
 
-export const FinancialReportsSection = ({
-  incomeStatementData,
-  balanceSheetData,
-  cashFlowData,
-}: FinancialReportsSectionProps) => {
+export const FinancialReportsSection = ({ dealData }: FinancialReportsSectionProps) => {
   return (
     <div className="space-y-6">
       <div>
@@ -42,30 +32,15 @@ export const FinancialReportsSection = ({
         </TabsList>
 
         <TabsContent value="pl" className="mt-6">
-          <SpreadsheetReportViewer
-            rawData={incomeStatementData?.rawData || []}
-            title="Income Statement"
-            syncedAt={incomeStatementData?.syncedAt}
-            skipEmptyRows
-          />
+          <WorkbookTabView tabId="income-statement" dealData={dealData} />
         </TabsContent>
 
         <TabsContent value="bs" className="mt-6">
-          <SpreadsheetReportViewer
-            rawData={balanceSheetData?.rawData || []}
-            title="Balance Sheet"
-            syncedAt={balanceSheetData?.syncedAt}
-            skipEmptyRows
-          />
+          <WorkbookTabView tabId="balance-sheet" dealData={dealData} />
         </TabsContent>
 
         <TabsContent value="cf" className="mt-6">
-          <SpreadsheetReportViewer
-            rawData={cashFlowData?.rawData || []}
-            title="Free Cash Flow"
-            syncedAt={cashFlowData?.syncedAt}
-            skipEmptyRows
-          />
+          <WorkbookTabView tabId="free-cash-flow" dealData={dealData} />
         </TabsContent>
       </Tabs>
     </div>
