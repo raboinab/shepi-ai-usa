@@ -91,6 +91,48 @@ export function convertIsYtdToMonthly(
   });
 }
 
+/** Inverse of {@link convertIsYtdToMonthly}: re-accumulates IS monthly
+ *  activity into cumulative YTD within each fiscal year. BS untouched. */
+export function convertIsMonthlyToYtd(
+  accounts: TrialBalanceAccount[],
+  periods: Period[],
+  fiscalYearEnd: number
+): TrialBalanceAccount[] {
+  const sortedPeriodIds = [...periods]
+    .filter(p => !p.isStub)
+    .sort((a, b) => {
+      const ay = a.year ?? 0, by = b.year ?? 0;
+      if (ay !== by) return ay - by;
+      return (a.month ?? 0) - (b.month ?? 0);
+    })
+    .map(p => p.id);
+  if (sortedPeriodIds.length === 0) return accounts;
+
+  const fyStartMonth = (fiscalYearEnd % 12) + 1;
+  const fyOf = (year: number, month: number) =>
+    month >= fyStartMonth ? year : year - 1;
+  const periodMeta = new Map<string, { year: number; month: number }>();
+  for (const p of periods) {
+    if (p.year != null && p.month != null) {
+      periodMeta.set(p.id, { year: p.year, month: p.month });
+    }
+  }
+
+  return accounts.map(acc => {
+    if (acc.fsType !== 'IS') return acc;
+    const ytd: Record<string, number> = { ...acc.monthlyValues };
+    const orderedIds = sortedPeriodIds.filter(id => id in ytd);
+    for (let i = 1; i < orderedIds.length; i++) {
+      const cur = periodMeta.get(orderedIds[i]);
+      const prev = periodMeta.get(orderedIds[i - 1]);
+      if (!cur || !prev) continue;
+      if (fyOf(cur.year, cur.month) !== fyOf(prev.year, prev.month)) continue;
+      ytd[orderedIds[i]] = (ytd[orderedIds[i]] || 0) + (ytd[orderedIds[i - 1]] || 0);
+    }
+    return { ...acc, monthlyValues: ytd };
+  });
+}
+
 export function calculateFYTotal(
   account: TrialBalanceAccount,
   periods: Period[],
