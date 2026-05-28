@@ -8,7 +8,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
 import { MultiPeriodTable } from "@/components/wizard/shared/MultiPeriodTable";
-import { TrialBalanceAccount, createEmptyAccount, transformQbTrialBalanceData, mergeAccounts, crossReferenceWithCOA } from "@/lib/trialBalanceUtils";
+import { TrialBalanceAccount, createEmptyAccount, transformQbTrialBalanceData, mergeAccounts, crossReferenceWithCOA, convertIsYtdToMonthly, convertIsMonthlyToYtd } from "@/lib/trialBalanceUtils";
 import { Period } from "@/lib/periodUtils";
 import { supabase } from "@/integrations/supabase/client";
 import { isTBCacheIncomplete } from "@/lib/loadTrialBalanceFromProcessedData";
