@@ -1,51 +1,34 @@
-# Automated wizard ↔ workbook parity validation
+# Suppress notifications for AI assistant chat turns
 
-## Goal
-A repeatable check that, for every tab the wizard and workbook both render, diffs the two outputs cell-by-cell and reports exact mismatches (`tab`, `row`, `col`, `wizardValue`, `workbookValue`). Runs in CI via `vitest`, and as a one-off script against any real project in the database.
+## Problem
+Every message in `chat_messages` on a CPA-claimed project fires the `notify_cpa_chat_message` trigger → `cpa-notify` edge function, which sends both an email (via Resend) and an in-app `cpa_notifications` row. This fires for AI assistant turns too, so a CPA using the AI assistant generates emails to the client (for the CPA's prompt) and to the CPA (for the AI's reply). Neither is a real human message.
 
-## Two complementary layers
+## Fix
+Skip both email and in-app notification when the chat message is an AI turn — i.e. `role = 'assistant'`. Real human↔human chat (client ↔ CPA) is unaffected.
 
-### 1. Builder-level parity (fast, deterministic) — `src/lib/wizard-workbook-parity.test.ts`
+Apply the filter at the **trigger** level so the edge function isn't even invoked for assistant rows (cheaper, and removes the bypass risk entirely).
 
-For a fixture `DealData` (reuse the one in `workbook-grid-builders.test.ts`), assert that the grid produced by `TAB_GRID_BUILDERS[tabId]` equals the grid the wizard section would render for that same id. Since every migrated wizard section now goes through `WorkbookTabView`, the comparison is the identity check at the builder boundary plus a guard against future regressions where a section forks its own renderer.
+## Changes
 
-Implementation:
-- Enumerate `tabId` literals by scanning `src/components/wizard/**/*.tsx` (same regex used in the wiring check).
-- For each id, call `TAB_GRID_BUILDERS[id](fixture)` twice — once via the wizard's `WorkbookTabView` import path, once directly — and `expect.toEqual` the resulting `cells` matrices.
-- Fail with a readable diff: `tab=<id> row=<r> col=<c> wizard=<a> workbook=<b>`.
-- Also assert every wired tabId exists in `TAB_GRID_BUILDERS` (catches typos at test time, not runtime).
+1. **Migration** — update the `notify_cpa_chat_message` trigger function in `supabase/migrations/`:
+   - Add `IF NEW.role = 'assistant' THEN RETURN NEW; END IF;` near the top of the function body, before it builds the payload / calls `net.http_post` to `cpa-notify`.
+   - No schema changes, no policy changes, no grants needed.
 
-### 2. Live-project parity script — `scripts/validate-parity.ts`
+2. **Defense in depth** — in `supabase/functions/cpa-notify/index.ts`, `handleChatMessage`:
+   - After loading the message row, early-return (200, `skipped: 'assistant_message'`) if `message.role === 'assistant'`. This protects against any other future caller of the function and makes the intent obvious in logs.
+   - No changes to debounce logic, recipient routing, Resend call, or `nudge_log`.
 
-CLI tool that runs against a real project from Supabase and prints a per-tab mismatch report. Intended for ad-hoc verification ("does project X actually match?") without needing a browser session.
+3. **No frontend changes.** `NotificationBell` and `useChatHistory` are unaffected.
 
-Implementation:
-- Args: `--project <uuid>` (required), `--tabs <csv>` (optional filter).
-- Service-role client (reads `SUPABASE_SERVICE_ROLE_KEY` from env; refuses to run without it; never bundled).
-- Hydrate via `loadDealDataWithPriorBalances(projectRecord)` — same path the UI uses.
-- For each tabId in `TAB_GRID_BUILDERS`, build the grid; if the project's `wizard_data` carries legacy `rawData` (e.g. `incomeStatement.rawData`), diff it against the freshly built grid and emit drift rows. Drift = "this project's cached wizard output disagrees with the current builder".
-- Output: table with `tab | mismatches | sample (first 5)` and a non-zero exit code if any drift is found.
+## Out of scope (not changing now)
+- Per-project vs per-recipient debounce window
+- Moving `cpa-notify` onto the managed email queue / adding unsubscribe footer
+- `From:` domain (apex vs `notify.` subdomain)
+- Whether real human chat should email at all
 
-### Diff helper — `src/lib/gridDiff.ts`
+Happy to do any of those in a follow-up if you want.
 
-Shared by both layers. Pure function:
-```
-diffGrids(a: string[][], b: string[][]): Array<{ row: number; col: number; a: string; b: string }>
-```
-Normalises whitespace and currency formatting (`$1,234` ≡ `1234.00`) before comparing so cosmetic differences don't fire.
-
-## Files to add
-- `src/lib/gridDiff.ts` — diff util + 4–5 unit tests in `gridDiff.test.ts`.
-- `src/lib/wizard-workbook-parity.test.ts` — vitest, runs in the existing suite.
-- `scripts/validate-parity.ts` — bun-runnable CLI.
-
-## Files to touch
-None. No production code changes; this is pure verification scaffolding.
-
-## Out of scope
-- Visual/DOM rendering parity (React Testing Library mount of both sides). The builder-level check is sufficient because every migrated section now delegates to `WorkbookTabView` — adding a DOM check would mostly test React, not parity.
-- CI wiring. The new test runs automatically as part of `vitest run`.
-
-## Acceptance
-- `bunx vitest run src/lib/wizard-workbook-parity.test.ts` passes with the existing fixture.
-- `bun run scripts/validate-parity.ts --project fa0768ca-96f9-4ded-b498-f64ca5be3ede` prints a per-tab report and exits 0 when there is no drift, non-zero with cell-level details when there is.
+## Verification
+- Locate trigger function definition: `rg -n "notify_cpa_chat_message" supabase/migrations`
+- After migration: insert an `assistant` row in `chat_messages` on a CPA-claimed project → no row in `nudge_log`, no row in `cpa_notifications`, no Resend log entry in `cpa-notify` function logs.
+- Insert a `user` row (real client message) → notification + email still fire as today.
