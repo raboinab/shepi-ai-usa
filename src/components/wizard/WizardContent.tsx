@@ -10,10 +10,11 @@ import type { ProjectData } from "@/pages/Project";
 import { Period } from "@/lib/periodUtils";
 import type { QoeLedgerAdjustment } from "@/types/qoeLedger";
 import { computeSign } from "@/lib/qoeAdjustmentTaxonomy";
-import { projectToDealData } from "@/lib/projectToDealAdapter";
+import { projectToDealData, loadDealDataWithPriorBalances } from "@/lib/projectToDealAdapter";
 import { buildWizardReports } from "@/lib/wizardReportBuilder";
 import * as calc from "@/lib/calculations";
 import { Spinner } from "@/components/ui/spinner";
+import type { DealData } from "@/lib/workbook-types";
 
 // Lazy-loaded section components
 const ProjectSetupSection = lazy(() => import("./sections/ProjectSetupSection").then(m => ({ default: m.ProjectSetupSection })));
@@ -274,9 +275,9 @@ export const WizardContent = ({
   // Only compute DealData and wizard reports for phases that need them (5+)
   const needsReports = (project.current_phase ?? 1) >= 5;
   
-  const { dealData, wizardReports } = useMemo(() => {
+  const { dealData: baseDealData, wizardReports } = useMemo(() => {
     if (!needsReports) {
-      return { dealData: null, wizardReports: {} };
+      return { dealData: null as DealData | null, wizardReports: {} as Record<string, unknown> };
     }
     try {
       const dd = projectToDealData({
@@ -290,12 +291,35 @@ export const WizardContent = ({
         periods: (project.periods as unknown as Period[]) ?? null,
         wizard_data: project.wizard_data as Record<string, unknown> | null,
       });
-      return { dealData: dd, wizardReports: buildWizardReports(dd) };
+      return { dealData: dd as DealData | null, wizardReports: buildWizardReports(dd) };
     } catch (e) {
       console.warn("Failed to build wizard reports:", e);
-      return { dealData: null, wizardReports: {} };
+      return { dealData: null as DealData | null, wizardReports: {} as Record<string, unknown> };
     }
   }, [needsReports, project.id, project.wizard_data, project.periods]);
+
+  // Async prior-balance enrichment — mirrors what Workbook page does so the
+  // wizard's Phase-5 sections render identical numbers to the workbook tabs.
+  const [dealData, setDealData] = useState<DealData | null>(baseDealData);
+  useEffect(() => {
+    setDealData(baseDealData);
+    if (!needsReports || !baseDealData) return;
+    let cancelled = false;
+    loadDealDataWithPriorBalances({
+      id: project.id,
+      name: project.name,
+      client_name: project.client_name ?? null,
+      target_company: project.target_company ?? null,
+      industry: project.industry ?? null,
+      transaction_type: project.transaction_type ?? null,
+      fiscal_year_end: project.fiscal_year_end ?? null,
+      periods: (project.periods as unknown as Period[]) ?? null,
+      wizard_data: project.wizard_data as Record<string, unknown> | null,
+    })
+      .then((enriched) => { if (!cancelled) setDealData(enriched); })
+      .catch((e) => console.warn("Prior-balance enrichment failed:", e));
+    return () => { cancelled = true; };
+  }, [baseDealData, needsReports, project.id]);
 
   // Always use freshly computed reports — never serve stale wizard_data cache
   const getReportData = (key: string) => {
