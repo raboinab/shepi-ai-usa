@@ -100,9 +100,9 @@ export default function Terms() {
           target="_blank"
           className="text-primary hover:underline"
         >
-          click here
+          view the terms of service
         </a>{" "}
-        to view the policy.
+        directly.
       </div>
 
     </LegalPageLayout>
