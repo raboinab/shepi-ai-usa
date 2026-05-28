@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { FinancialTable } from "../shared/FinancialTable";
 import { SummaryCard } from "../shared/SummaryCard";
+import { WorkbookTabView } from "@/components/workbook/WorkbookTabView";
 import { CreditCard, FileText, AlertCircle, Upload, PenLine, ChevronDown, Info, ArrowDownToLine, Home, Scale } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DebtScheduleImportDialog } from "../shared/DebtScheduleImportDialog";
@@ -16,6 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { type ContractItem } from "../shared/MaterialContractsImportDialog";
+import type { DealData } from "@/lib/workbook-types";
 
 interface SupplementaryData {
   debtSchedule: Record<string, unknown>[];
@@ -29,6 +31,7 @@ interface SupplementarySectionProps {
   projectId: string;
   balanceSheetData?: Record<string, unknown>[];
   materialContracts?: ContractItem[];
+  dealData?: DealData | null;
 }
 
 const defaultData: SupplementaryData = {
