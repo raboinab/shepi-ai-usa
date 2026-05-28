@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, FolderKanban, CreditCard, Mail, ArrowLeft, BookOpen, ShieldCheck, Activity, FileDown, DatabaseBackup, Briefcase, CloudUpload, UserPlus } from 'lucide-react';
+import { LayoutDashboard, Users, FolderKanban, CreditCard, Mail, ArrowLeft, BookOpen, ShieldCheck, Activity, FileDown, DatabaseBackup, Briefcase, CloudUpload, UserPlus, BadgeCheck } from 'lucide-react';
 import { NavLink } from '@/components/NavLink';
 import { useLocation } from 'react-router-dom';
 import {
