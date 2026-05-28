@@ -21,10 +21,10 @@ describe("normalizeCell", () => {
 
 const makeGrid = (cells: Array<Record<string, string | number>>): GridData => ({
   columns: [
-    { id: "jan", label: "Jan" },
-    { id: "feb", label: "Feb" },
-  ] as GridData["columns"],
-  rows: cells.map((c, i) => ({ id: `r${i}`, label: `Row ${i}`, cells: c })),
+    { key: "jan", label: "Jan" },
+    { key: "feb", label: "Feb" },
+  ],
+  rows: cells.map((c, i) => ({ id: `r${i}`, type: "data", label: `Row ${i}`, cells: c })),
 });
 
 describe("diffGrids", () => {
