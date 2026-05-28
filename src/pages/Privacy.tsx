@@ -38,9 +38,9 @@ export default function Privacy() {
           target="_blank"
           className="text-primary hover:underline"
         >
-          click here
+          view the privacy policy
         </a>{" "}
-        to view the policy.
+        directly.
       </div>
     </LegalPageLayout>
   );

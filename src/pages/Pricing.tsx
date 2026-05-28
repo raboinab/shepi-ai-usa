@@ -342,7 +342,7 @@ const Pricing = () => {
           {/* Per Project */}
           <Card className="border border-border flex flex-col">
             <CardHeader>
-              <CardTitle>Per Project</CardTitle>
+              <CardTitle as="h2">Per Project</CardTitle>
               <CardDescription>For targeted engagements</CardDescription>
               <div className="mt-4">
                 <span className="text-4xl font-bold text-primary">{PRICING.perProject.display}</span>
@@ -411,7 +411,7 @@ const Pricing = () => {
               </span>
             </div>
             <CardHeader>
-              <CardTitle>Done-For-You</CardTitle>
+              <CardTitle as="h2">Done-For-You</CardTitle>
               <CardDescription>A licensed CPA on your deal — without the four-week wait.</CardDescription>
               <div className="mt-4">
                 <span className="text-4xl font-bold text-primary">{PRICING.doneForYou.display}</span>
@@ -473,7 +473,7 @@ const Pricing = () => {
               </span>
             </div>
             <CardHeader>
-              <CardTitle>Monthly</CardTitle>
+              <CardTitle as="h2">Monthly</CardTitle>
               <CardDescription>For active deal professionals</CardDescription>
               <div className="mt-4">
                 <span className="text-4xl font-bold text-primary">{PRICING.monthly.display}</span>
@@ -540,7 +540,7 @@ const Pricing = () => {
           {/* Firm Edition */}
           <Card className="border border-border flex flex-col">
             <CardHeader>
-              <CardTitle>Firm Edition</CardTitle>
+              <CardTitle as="h2">Firm Edition</CardTitle>
               <CardDescription>For advisory firms delivering QoE and deal diligence</CardDescription>
               <div className="mt-4">
                 <span className="text-2xl font-semibold text-foreground">Custom pricing</span>
