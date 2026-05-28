@@ -134,7 +134,10 @@ export function MultiPeriodTable({
     onAccountsChange(updatedAccounts);
   }, [accounts, onAccountsChange]);
 
-  const getBalanceCheck = (periodId: string) => calculateBalanceCheck(displayAccounts, periodId);
+  // Balance check uses the raw (cumulative-YTD for IS) accounts so that
+  // BS_ending + IS_YTD = 0 per period — matching the workbook's TB tab.
+  // displayAccounts (monthly-IS) would yield a wrong, non-zero check.
+  const getBalanceCheck = (periodId: string) => calculateBalanceCheck(accounts, periodId);
 
   return (
     <div className="border border-border rounded-lg overflow-hidden relative">
