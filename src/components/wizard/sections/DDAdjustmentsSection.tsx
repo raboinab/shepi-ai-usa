@@ -21,6 +21,7 @@ import { AttachProofDialog } from "../shared/AttachProofDialog";
 import { VerifyAdjustmentDialog } from "../shared/VerifyAdjustmentDialog";
 import { useAdjustmentProofs, PROOF_QUERY_KEY } from "@/hooks/useAdjustmentProofs";
 import { FlaggedTransactionsSection } from "./FlaggedTransactionsSection";
+import { WorkbookTabView } from "@/components/workbook/WorkbookTabView";
 import { DiscoveryProposalsSection } from "./DiscoveryProposalsSection";
 import { useDiscoveryProposals } from "@/hooks/useDiscoveryProposals";
 import { 
