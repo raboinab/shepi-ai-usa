@@ -741,7 +741,7 @@ export const TrialBalanceSection = ({
           </div>
         ) : (
           <MultiPeriodTable
-            accounts={displayAccounts}
+            accounts={accounts}
             periods={periods}
             fiscalYearEnd={fiscalYearEnd}
             onAccountsChange={handleAccountsChange}
