@@ -563,6 +563,7 @@ function DocsPanel({
   onUpdated: () => void;
   toast: ReturnType<typeof useToast>["toast"];
 }) {
+  const queryClient = useQueryClient();
   const { data: docs, isLoading } = useQuery({
     queryKey: ["admin-cpa-docs", cpaUserId],
     queryFn: async () => {
@@ -591,7 +592,15 @@ function DocsPanel({
     },
     onSuccess: () => {
       toast({ title: "Document updated" });
+      queryClient.invalidateQueries({ queryKey: ["admin-cpa-docs", cpaUserId] });
       onUpdated();
+    },
+    onError: (e: any) => {
+      toast({
+        title: "Update failed",
+        description: e?.message ?? "Unknown error",
+        variant: "destructive",
+      });
     },
   });
 
@@ -606,6 +615,13 @@ function DocsPanel({
     onSuccess: () => {
       toast({ title: "W-9 status updated" });
       onUpdated();
+    },
+    onError: (e: any) => {
+      toast({
+        title: "Update failed",
+        description: e?.message ?? "Unknown error",
+        variant: "destructive",
+      });
     },
   });
 
