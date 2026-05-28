@@ -66,7 +66,8 @@ export const FixedAssetsSection = ({
   updateData, 
   projectId, 
   periods = [],
-  balanceSheetData 
+  balanceSheetData,
+  dealData,
 }: FixedAssetsSectionProps) => {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [showGuidance, setShowGuidance] = useState(false);
