@@ -41,8 +41,8 @@ export function normalizeCell(v: unknown): string {
 
 /** Flatten a GridData to a 2D string matrix in column order. */
 export function gridToMatrix(g: GridData): string[][] {
-  const colIds = g.columns.map((c) => c.id);
-  const header = g.columns.map((c) => c.label ?? c.id);
+  const colIds = g.columns.map((c) => c.key);
+  const header = g.columns.map((c) => c.label ?? c.key);
   const body = g.rows.map((row) => {
     const labelCol = row.label ?? "";
     return [labelCol, ...colIds.map((id) => String(row.cells[id] ?? ""))];
@@ -52,8 +52,8 @@ export function gridToMatrix(g: GridData): string[][] {
 
 /** Diff two GridData by cell. Returns one entry per mismatched cell. */
 export function diffGrids(a: GridData, b: GridData): CellDiff[] {
-  const colsA = a.columns.map((c) => c.id);
-  const colsB = b.columns.map((c) => c.id);
+  const colsA = a.columns.map((c) => c.key);
+  const colsB = b.columns.map((c) => c.key);
   const diffs: CellDiff[] = [];
 
   // Column mismatch is itself a diff
