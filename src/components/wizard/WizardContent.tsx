@@ -442,9 +442,9 @@ export const WizardContent = ({
 
       // Phase 4: Customer & Vendor
       case "4-1":
-        return <TopCustomersSection projectId={project.id} data={(project.wizard_data.topCustomers as any) || {}} updateData={(data) => updateWizardData("topCustomers", data as unknown as Record<string, unknown>)} />;
+        return <TopCustomersSection projectId={project.id} data={(project.wizard_data.topCustomers as any) || {}} updateData={(data) => updateWizardData("topCustomers", data as unknown as Record<string, unknown>)} dealData={dealData} />;
       case "4-2":
-        return <TopVendorsSection projectId={project.id} data={(project.wizard_data.topVendors as any) || {}} updateData={(data) => updateWizardData("topVendors", data as unknown as Record<string, unknown>)} />;
+        return <TopVendorsSection projectId={project.id} data={(project.wizard_data.topVendors as any) || {}} updateData={(data) => updateWizardData("topVendors", data as unknown as Record<string, unknown>)} dealData={dealData} />;
 
       // Phase 5: Reports (expanded with all spreadsheet tabs)
       case "5-1":
