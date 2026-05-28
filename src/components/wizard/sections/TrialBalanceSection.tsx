@@ -8,7 +8,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
 import { MultiPeriodTable } from "@/components/wizard/shared/MultiPeriodTable";
-import { TrialBalanceAccount, createEmptyAccount, transformQbTrialBalanceData, mergeAccounts, crossReferenceWithCOA, convertIsYtdToMonthly, convertIsMonthlyToYtd } from "@/lib/trialBalanceUtils";
+import { TrialBalanceAccount, createEmptyAccount, transformQbTrialBalanceData, mergeAccounts, crossReferenceWithCOA } from "@/lib/trialBalanceUtils";
 import { Period } from "@/lib/periodUtils";
 import { supabase } from "@/integrations/supabase/client";
 import { isTBCacheIncomplete } from "@/lib/loadTrialBalanceFromProcessedData";
@@ -98,25 +98,12 @@ export const TrialBalanceSection = ({
   }, [accounts, coaAccounts]);
 
   const handleAccountsChange = (newAccounts: TrialBalanceAccount[]) => {
-    // The wizard renders IS rows converted YTD→monthly to match the
-    // workbook. Convert edits back to cumulative YTD before persisting so
-    // the cached shape stays consistent with the workbook adapter.
-    const persisted = convertIsMonthlyToYtd(newAccounts, periods, fiscalYearEnd);
-    updateData({ ...data, accounts: persisted });
+    updateData({ ...data, accounts: newAccounts });
   };
 
-  // Display-time view: IS accounts converted from cumulative YTD (the QB
-  // Trial Balance convention) to monthly activity, matching TrialBalanceTab.
-  const displayAccounts = useMemo(
-    () => convertIsYtdToMonthly(accounts, periods, fiscalYearEnd),
-    [accounts, periods, fiscalYearEnd]
-  );
-
   const handleAddAccount = () => {
-    // MultiPeriodTable operates on the display (monthly-for-IS) shape, so
-    // we append into displayAccounts and let handleAccountsChange invert.
     const newAccount = createEmptyAccount();
-    handleAccountsChange([...displayAccounts, newAccount]);
+    handleAccountsChange([...accounts, newAccount]);
   };
 
   // Extracted loader so it can be called from both auto-import and manual button
@@ -754,7 +741,7 @@ export const TrialBalanceSection = ({
           </div>
         ) : (
           <MultiPeriodTable
-            accounts={displayAccounts}
+            accounts={accounts}
             periods={periods}
             fiscalYearEnd={fiscalYearEnd}
             onAccountsChange={handleAccountsChange}
