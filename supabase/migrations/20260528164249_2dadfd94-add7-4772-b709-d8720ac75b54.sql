@@ -1,0 +1,1 @@
+INSERT INTO public.user_credits (user_id, credits_remaining, total_credits_purchased) VALUES ('50a89ae8-3890-496b-a929-62e2d59f9d64', 1, 1) ON CONFLICT DO NOTHING;
