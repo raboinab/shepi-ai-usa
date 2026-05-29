@@ -2198,8 +2198,29 @@ export const DocumentUploadSection = ({
                   </>
                 )}
 
-                <div className="space-y-2">
-                  <Label>Files</Label>
+                {/* COA-first gate: block Trial Balance uploads without a Chart of Accounts */}
+                {type.value === "trial_balance" && !coaReadiness.ready && !coaReadiness.loading && (
+                  <Alert variant="destructive" className="bg-muted/40 border-border text-foreground">
+                    <Lock className="h-4 w-4" />
+                    <AlertDescription className="flex flex-col gap-2">
+                      <span className="font-medium">Chart of Accounts required</span>
+                      <span className="text-sm text-muted-foreground">
+                        Upload or sync your Chart of Accounts first so Trial Balance accounts can be classified with the correct FS Type and Category.
+                      </span>
+                      {onNavigate && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-2 self-start"
+                          onClick={() => onNavigate(2, 1)}
+                        >
+                          Go to Chart of Accounts <ArrowRight className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </AlertDescription>
+                  </Alert>
+                )}
+
                   <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
                     <input
                       id="file-upload"
