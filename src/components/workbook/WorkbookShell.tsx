@@ -132,26 +132,31 @@ export function WorkbookShell({ dealData, onDataChange, saving, onExport, mockBa
   const ActiveComponent = TAB_COMPONENTS[activeTab];
 
   return (
-    <div className="flex flex-col h-full bg-card">
-      {/* Toolbar */}
-      <div className="flex items-center justify-between px-3 py-1.5 border-b border-border bg-card">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-foreground">
+    <div className="flex flex-col h-full bg-[hsl(var(--workbook-cream))]">
+      {/* Premium toolbar */}
+      <div className="flex items-center justify-between px-6 py-3 bg-[hsl(var(--workbook-navy))] text-[hsl(var(--workbook-navy-fg))] border-b-2 border-[hsl(var(--workbook-gold))]">
+        <div className="flex items-baseline gap-4 min-w-0">
+          <span className="text-[10px] font-medium uppercase tracking-[0.22em] text-[hsl(var(--workbook-gold))]">
+            Quality of Earnings Workbook
+          </span>
+          <span className="font-serif text-lg font-semibold truncate">
             {dealData.deal.targetCompany || dealData.deal.projectName}
           </span>
-          <span className="text-xs text-muted-foreground">
-            QoE Workbook
-          </span>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-3">
           {saving !== undefined && (
-            <span className="text-xs text-muted-foreground mr-2">
-              {saving ? "Saving..." : "Saved"}
+            <span className="text-[11px] tracking-wide text-[hsl(var(--workbook-navy-fg))]/60">
+              {saving ? "Saving…" : "Saved"}
             </span>
           )}
           {onExport && (
-            <Button variant="outline" size="sm" onClick={onExport} className="gap-1 h-7 text-xs">
-              <Download className="w-3 h-3" />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onExport}
+              className="gap-1.5 h-8 text-xs bg-transparent border-[hsl(var(--workbook-gold))] text-[hsl(var(--workbook-gold))] hover:bg-[hsl(var(--workbook-gold))] hover:text-[hsl(var(--workbook-navy))]"
+            >
+              <Download className="w-3.5 h-3.5" />
               Export XLSX
             </Button>
           )}
@@ -159,7 +164,7 @@ export function WorkbookShell({ dealData, onDataChange, saving, onExport, mockBa
       </div>
 
       {/* Tab content */}
-      <div className="flex-1 overflow-auto p-3">
+      <div className="flex-1 overflow-auto p-5 bg-[hsl(var(--workbook-cream))]">
         <Suspense fallback={<TabFallback />}>
           {ActiveComponent ? (
             activeTab === "proof-of-cash" ? (
@@ -182,15 +187,15 @@ export function WorkbookShell({ dealData, onDataChange, saving, onExport, mockBa
         </Suspense>
       </div>
 
-      {/* Bottom tab strip */}
-      <div className="flex items-center border-t border-border bg-[hsl(var(--excel-header-bg,220_14%_96%))]">
+      {/* Premium tab strip */}
+      <div className="flex items-center border-t border-[hsl(var(--workbook-rule-soft))] bg-[hsl(var(--workbook-paper))]">
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 shrink-0"
+          className="h-9 w-8 shrink-0 rounded-none text-[hsl(var(--workbook-mid))] hover:bg-[hsl(var(--workbook-cream))]"
           onClick={() => scrollTabs("left")}
         >
-          <ChevronLeft className="w-3 h-3" />
+          <ChevronLeft className="w-3.5 h-3.5" />
         </Button>
 
         <div
@@ -203,13 +208,16 @@ export function WorkbookShell({ dealData, onDataChange, saving, onExport, mockBa
               key={tab.id}
               onClick={() => handleTabChange(tab.id)}
               className={cn(
-                "excel-tab px-3 py-1.5 text-xs whitespace-nowrap border-r border-[hsl(var(--excel-grid,220_13%_91%))] transition-colors",
+                "px-4 py-2.5 text-[11px] whitespace-nowrap transition-all relative",
                 activeTab === tab.id
-                  ? "excel-tab-active bg-card font-semibold text-foreground border-t-2 border-t-primary"
-                  : "text-muted-foreground hover:bg-card/50 hover:text-foreground"
+                  ? "font-serif font-semibold text-[hsl(var(--workbook-navy))] bg-[hsl(var(--workbook-cream))]"
+                  : "text-[hsl(var(--workbook-mid))]/70 hover:text-[hsl(var(--workbook-navy))] hover:bg-[hsl(var(--workbook-cream))]/60"
               )}
             >
               {tab.label}
+              {activeTab === tab.id && (
+                <span className="absolute bottom-0 left-2 right-2 h-[2px] bg-[hsl(var(--workbook-gold))]" />
+              )}
             </button>
           ))}
         </div>
@@ -217,10 +225,10 @@ export function WorkbookShell({ dealData, onDataChange, saving, onExport, mockBa
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 shrink-0"
+          className="h-9 w-8 shrink-0 rounded-none text-[hsl(var(--workbook-mid))] hover:bg-[hsl(var(--workbook-cream))]"
           onClick={() => scrollTabs("right")}
         >
-          <ChevronRight className="w-3 h-3" />
+          <ChevronRight className="w-3.5 h-3.5" />
         </Button>
       </div>
     </div>
