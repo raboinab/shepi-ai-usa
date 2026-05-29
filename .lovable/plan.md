@@ -1,65 +1,92 @@
+# Premium redesign: Workbook + Export
 
-## Problem
+Goal: make the in-app Workbook, the PDF deck, and the XLSX download feel like a $$$ deliverable — one shared visual language built on a refined Navy Trust palette (`#0F1B3D` navy, `#264A66` mid-blue, `#4A7FA3` accent, `#E2D4BE` warm sand, `#C9A84C` gold reserved for emphasis).
 
-When a user uploads the wrong document (e.g. Chart of Accounts) and deletes it, the document row gets removed from `documents`, but **derived state persists** — so the UI still shows the doc as "provided" and re-upload is awkward.
+## 1. Shared design tokens
 
-Today's `handleDelete` (in `DocumentUploadSection.tsx`) only:
-1. Deletes `processed_data` rows where `source_document_id = docId`
-2. Deletes `canonical_transactions` where `source_document_id = docId`
-3. Removes the storage file
-4. Deletes the `documents` row
+**New file:** `src/lib/pdf/theme.ts` and `src/index.css` updated together so screen and PDF use the same numbers.
 
-What it does **not** clean up:
-- **`projects.wizard_data.chartOfAccounts.accounts`** — the parsed COA is cached on the project row and survives doc deletion. Same risk for `trialBalance`, and any other wizard_data section hydrated from a doc.
-- **`processed_data` rows that don't have `source_document_id` set** (older rows / aggregated parses keyed only by `project_id` + `data_type`).
-- **`docuclipper_jobs`** rows tied to the document.
-- **`adjustment_proofs` / `flagged_transactions`** that referenced this document as evidence.
+- Promote palette to true Navy Trust: deepen `darkBlue` to `#0F1B3D`, keep `#264A66` as section header, introduce a single gold accent (`#C9A84C`) used sparingly for KPI emphasis and dividers.
+- Typography pair (loaded via `index.html` link tags, no render-block change):
+  - **Display / headings:** `Fraunces` (variable serif, optical-sized) — gives the editorial / FT feel without going stuffy.
+  - **Body / UI:** `Inter Tight` — tighter than Inter, more refined at small sizes.
+  - **Tabular:** `JetBrains Mono` (already loaded) for grid numbers.
+- New semantic tokens in `index.css`: `--surface-elevated`, `--rule-strong`, `--rule-soft`, `--kpi-positive`, `--kpi-negative`, `--zebra-row` so both screen + PDF tables key off the same values.
 
-The CIM re-upload path (`handleCimReupload`) already does a deeper clean for that one type. We need the same discipline for every document type, exposed as a "Delete & reset" action.
+## 2. In-app Workbook UI (`/workbook`)
 
-## Goal
+Files: `WorkbookShell.tsx`, `SpreadsheetGrid.tsx`, `pages/Workbook.tsx`, plus a new `WorkbookToolbar.tsx`.
 
-A user who deletes a document gets back to a clean slate for that document type, can re-upload immediately, and downstream tabs (Chart of Accounts, Trial Balance, etc.) reflect the change.
+- **Header bar:** replace the thin grey strip with a navy bar — company name in Fraunces, eyebrow label "QUALITY OF EARNINGS WORKBOOK" in tracked uppercase Inter Tight, right side carries save indicator + Export menu (dropdown: PDF / XLSX) instead of one tiny button.
+- **Tab strip:** taller (32px), no more Excel grey — cream `#F5F2EC` rail, active tab with a 2px gold underline + serif label, inactive tabs in `--muted-foreground`. Add visual grouping pills ("Financials", "Adjustments", "Working Capital", "Diligence") so 30+ tabs feel navigable.
+- **Grid polish:**
+  - Row height 28px (from 24), padding `px-3 py-1` for breathing room.
+  - Zebra striping using `--zebra-row` (very subtle warm tint).
+  - Sticky header: navy bg, white text, gold 2px bottom border (mirrors PDF table).
+  - Frozen-column shadow on horizontal scroll (right edge soft shadow) so it reads as a layered surface.
+  - Section-header rows: full-width navy tinted band + serif label, no all-caps.
+  - Total / subtotal rows: top hairline rule + bold tabular numerals; remove the double bottom border.
+  - Negative numbers in `--kpi-negative` parentheses (already partially there); positives stay foreground.
+  - Cell editing: yellow input replaced with a focused gold ring (`ring-2 ring-[--accent-gold]`).
+- **Empty / loading states:** centered serif headline + thin gold rule instead of plain spinners.
 
-## Approach
+## 3. PDF deck (`src/components/pdf-slides/*`)
 
-1. **Introduce a single `resetDocumentArtifacts(doc)` helper** in `src/lib/documentReset.ts` that, given a document, knows how to scrub every place its artifacts live:
-   - Storage file
-   - `documents` row
-   - `processed_data` rows by `source_document_id` AND by `(project_id, data_type)` matching the doc's `account_type` (e.g. `chart_of_accounts` → `data_type IN ('chart_of_accounts','coa_classification')`)
-   - `canonical_transactions` by `source_document_id`
-   - `docuclipper_jobs` by `document_id`
-   - `adjustment_proofs` where `document_id = doc.id` (just null the link; don't delete the proof — keep audit trail)
-   - The matching slice of `projects.wizard_data` (e.g. clear `wizard_data.chartOfAccounts.accounts` when an `account_type='chart_of_accounts'` doc is deleted; clear `wizard_data.trialBalance.accounts` when TB is deleted)
+- **Cover slide:** kill the dual circles + teal bar mash-up. New cover:
+  - Full-bleed deep navy with a subtle noise/grain texture (SVG data URL) for depth.
+  - Top-left: small gold square + "SHEPI · QoE" wordmark in Inter Tight tracked.
+  - Center-left aligned (not centered): eyebrow label, company name in Fraunces 96pt with `font-optical-sizing: auto`, prepared-for line, then a 1px gold horizontal rule, then report date + preparer in Inter Tight.
+  - Bottom-right: confidential stamp + page count chip.
+- **Section dividers:** new `SectionDividerSlide` look — half navy / half cream split, large serif numeral ("01", "02") in gold outline, section title in Fraunces, 2-line intro paragraph.
+- **Content slides (`SlideLayout.tsx`):**
+  - Header bar shrinks to 56px, navy with a 2px gold accent (was teal).
+  - Section title in Fraunces; "CONFIDENTIAL" label in mono caps.
+  - Page footer: company · report title left, gold rule + page chip right.
+- **Tables (`SlideTable.tsx`):**
+  - Header row: navy bg, gold 2px under-rule, Inter Tight semibold (not all caps unless > 8 cols).
+  - Zebra rows alternate white / `#FAF7F1`.
+  - Highlight / total rows: warm sand bg `#E2D4BE` + serif numerals.
+  - First column left-aligned with proper indent scale (12 / 24 / 36 px).
+  - Numeric cells: tabular-nums, right-aligned, monospace turned off in favor of `Inter Tight` with `font-variant-numeric: tabular-nums`.
+- **KPI / stat callouts:** add a shared `StatCallout` component used on Executive Summary / QoE slides — 84pt serif number in gold, label below in tracked uppercase. Replaces the current generic value cards.
 
-   Mapping table lives in the helper, keyed by `account_type`.
+## 4. XLSX export (`exportWorkbookXlsx.ts`)
 
-2. **Wire `handleDelete` in `DocumentUploadSection.tsx` to call the helper** instead of doing inline deletes. Toast: "Document deleted — you can re-upload."
+SheetJS community edition cannot style cells, which is why the current export looks like raw data. Swap to **ExcelJS** (`bun add exceljs`) for real formatting:
 
-3. **Add a confirm dialog** before delete that explicitly states what will be wiped:
-   - "Deleting this Chart of Accounts will also clear the parsed accounts and any classifications derived from it. Adjustments referencing this document will keep their record but lose the source link. Continue?"
-   
-   This is the "annoying to reset" problem the user raised — solved by making one click do the full reset honestly, instead of leaving stale state.
+- Workbook properties: company, title, "Quality of Earnings — <Company>".
+- Per-sheet theming:
+  - Frozen header row: navy fill `FF0F1B3D`, white bold Calibri 11, gold bottom border.
+  - Section-header rows: warm sand fill `FFE2D4BE`, navy bold.
+  - Total / subtotal rows: top double border, bold.
+  - Zebra striping every other data row (`FFFAF7F1`).
+  - Number formats per column: currency `_($* #,##0_);_($* (#,##0);_($* "-"_)`, percent `0.0%`, multiples `0.00"x"`.
+  - Negative numbers in red via format string (no need for conditional fmt).
+  - Column widths derived from `col.width` (already there) + auto-fit pass per column based on max content length.
+- **Cover sheet:** new first sheet "Cover" rendered programmatically (merged cells, navy fill, Fraunces unavailable → fall back to "Cambria" 36pt for cover title, Calibri body) with company / report date / preparer / confidential notice.
+- **TOC sheet:** generated from `WORKBOOK_TABS` with hyperlinks (`HYPERLINK` formula) to each sheet's A1.
+- **Tab colors:** color-code tab strip by section (Financials = navy, Adjustments = gold, Working Capital = sand, Diligence = mid-blue).
+- **Print setup:** landscape, fit to 1 page wide, repeat header row, footer with page numbers + "Confidential — Shepi QoE".
 
-4. **Add a "Replace" affordance** next to each uploaded document (small icon button). Replace = `resetDocumentArtifacts(doc)` then immediately open the file picker for the same slot. This is the wrong-upload recovery flow.
+## 5. Demo previews
 
-5. **Keep adjustments intact.** If a downstream `adjustment_proposals` row referenced the deleted doc's parsed data, we don't auto-delete — the user can re-run discovery from the workbook. Surface this in the confirm copy: "Existing adjustments are not deleted; re-run discovery if you want them refreshed against the new document."
+Per project memory, the demo PDF and XLSX in `/public/demo/` are generated by `scripts/generate-demo-pdf.ts` and `scripts/generate-demo-workbook.ts` from the real builders. After (3) and (4) land, re-run both scripts so the marketing preview reflects the new look.
+
+## Technical notes
+
+- ExcelJS adds ~250KB gz. Acceptable given the export is a deliberate user action; keep dynamic-imported in `exportWorkbookXlsx`.
+- Fraunces + Inter Tight loaded via Google Fonts `<link>` in `index.html`, `font-display: swap`. PDF renderer (`pdfWorker.ts` + html-to-image) must wait for `document.fonts.ready` before snapshotting — confirm `slideRenderer.ts` already does, add if not.
+- All new colors enter `index.css` and `tailwind.config.ts` as HSL semantic tokens — no raw hex in components per project rules.
+- No business logic changes; this is presentation-only.
 
 ## Out of scope
 
-- No soft-delete / versioning. The user wants a clean reset, not an audit trail of every wrong upload. (Adjustment proofs are the one place we preserve history by nulling the link rather than cascading the delete.)
-- No bulk "reset project" — single-document scope only.
-- No changes to `cpa_onboarding_documents` (different flow).
+- Restructuring tab list / removing tabs.
+- New report sections, narratives, or calculations.
+- Dark mode for the workbook (keep current).
+- Mobile workbook (already a desktop-only surface).
 
-## Files to touch
+## Validation
 
-- `src/lib/documentReset.ts` (new) — the helper + account_type → wizard_data slice mapping
-- `src/components/wizard/sections/DocumentUploadSection.tsx` — replace inline delete; add Replace button; add confirm dialog
-- `src/components/wizard/sections/DocumentUploadSection.tsx` — refactor `handleCimReupload` to call the same helper (removes duplication)
-
-## Verification
-
-- Upload a Chart of Accounts → confirm `wizard_data.chartOfAccounts.accounts` populates and the COA tab shows accounts
-- Delete it → confirm: storage file gone, `documents` row gone, `processed_data` for that doc gone, `wizard_data.chartOfAccounts.accounts` cleared, COA tab empty, Data Sources checklist flips back to "not_provided"
-- Upload a different COA → confirm clean re-parse, no merge with prior data
-- Repeat for Trial Balance and one bank statement
+- Visual: re-run `generate-demo-pdf.ts` and `generate-demo-workbook.ts`, open both files, eyeball every page/sheet for overflow, contrast, alignment per the QA checklist.
+- Functional: `bun run test` (existing parity + format tests must still pass), manual export of an existing project to confirm numbers unchanged.
