@@ -32,7 +32,9 @@ const defaultDealParameters: DealParameters = {
   pegMethod: 't12m',
   customPegAmount: null,
   estimatedNWCAtClose: null,
+  nwcMethod: DEFAULT_NWC_METHOD,
 };
+
 
 export const NWCFCFSection = ({
   nwcAnalysisData,
