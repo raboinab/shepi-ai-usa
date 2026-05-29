@@ -164,7 +164,8 @@ function writeGridToSheet(ws: ExcelJS.Worksheet, gridData: GridData): void {
     });
 
     excelRowIdx++;
-  });
+  }
+
 
   // ---- Freeze panes (header + frozen cols) ----
   ws.views = [
