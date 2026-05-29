@@ -1,54 +1,35 @@
-## Goal
+## Plan
 
-Enforce "Chart of Accounts must exist before Trial Balance" as a real invariant, not a single-screen nudge. Today the gate only lives on the TB wizard section; the Documents tab and the QB sync path both bypass it.
+Fix the Chart of Accounts screen so the project you linked loads the full COA and stops warning that required categories are missing when the data is actually mapped.
 
-## Changes
+### What I found
+- The latest processed COA for project `fa0768ca-96f9-4ded-b498-f64ca5be3ede` has **89 accounts** in `processed_data`.
+- The project’s saved `wizard_data.chartOfAccounts.accounts` currently has **0 accounts**, so the screen is auto-loading from `processed_data`.
+- The UI shows **79 accounts** because the frontend merge logic is collapsing some QuickBooks accounts when no account numbers exist, despite QuickBooks account IDs being available.
+- The “Missing: COGS, Operating Expenses...” warning is a UI label mismatch: backend mappings use workbook line items like `Cost of Goods Sold` and `Operating expenses`, while the COA review badge expects `COGS` and `Operating Expenses`.
 
-### 1. Frontend — close the UI gaps
+### Changes to make
+1. **Preserve QuickBooks account IDs during COA transformation**
+   - Update `src/lib/chartOfAccountsUtils.ts` so `transformCoaData()` reads lowercase QuickBooks fields too: `id`, `acctNum`, `fullyQualifiedName`, `parentRef`, `name`.
+   - This should prevent account merge collisions and keep all 89 accounts.
 
-**`src/components/wizard/sections/DocumentUploadSection.tsx`**
-- When the selected `docType === "trial_balance"`, check the same condition used by TrialBalanceSection: `coaAccounts.length > 0 || qbSyncCompleted`.
-- If COA is missing, disable the file picker for that doc type and show the same "Chart of Accounts Required" panel with a "Go to Chart of Accounts" button (reuse the visual treatment from `TrialBalanceSection.tsx:578-596`).
-- Same treatment for any other TB-dependent doc types if they exist (audit only `trial_balance` for now).
+2. **Normalize COA category validation**
+   - Update `ChartOfAccountsSection.tsx` so missing-category detection treats these as equivalent:
+     - `COGS` = `Cost of Goods Sold`
+     - `Operating Expenses` = `Operating expenses`
+     - `Current Assets` = `Cash and cash equivalents`, `Accounts receivable`, `Other current assets`
+     - `Current Liabilities` = `Current liabilities`, `Other current liabilities`
+     - `Long-Term Liabilities` = `Long term liabilities`
+   - Keep display text user-friendly while validating against the real workbook taxonomy.
 
-**`src/components/wizard/sections/TrialBalanceSection.tsx`**
-- Stop trusting `syncSource === "quickbooks"` alone. Replace `isQBUser` bypass in `coaLocked` with a stricter check: COA is "ready" only if `coaAccounts.length > 0` OR a completed QB COA sync record exists (`qb_sync_status` for `chart_of_accounts` = `complete`).
-- This prevents the case where a stale `syncSource` flag from a prior partial sync removes the lock even though no COA rows landed.
+3. **Avoid stale “reviewed” state after a new COA import**
+   - When a new/changed COA is loaded, keep or reset the review prompt appropriately so the user is prompted to review the latest mapping state, not a stale one.
 
-**Shared helper** — extract `useCoaReadiness(projectId, wizardData)` hook so the DocumentUpload and TrialBalance sections cannot drift again. Returns `{ ready, reason, hasRows, qbSyncComplete }`.
+4. **Add regression coverage**
+   - Extend `chartOfAccountsUtils.test.ts` to verify lowercase QuickBooks account IDs are preserved and same leaf-name accounts no longer merge incorrectly.
+   - Add/adjust tests for category readiness normalization if the existing test setup supports it.
 
-### 2. Backend — enforce the invariant server-side
-
-**`supabase/functions/process-quickbooks-file/index.ts`**
-- Before processing a `trial_balance` upload, query `chart_of_accounts` (or the project's COA rows table) for the project. If zero rows AND no in-flight COA sync, return `409 Conflict` with `{ error: "coa_required", message: "Upload Chart of Accounts before Trial Balance" }`.
-- Log the rejection so we can see if it ever fires in production.
-
-**`supabase/functions/complete-qb-sync/index.ts` and `qb-sync-complete/index.ts`**
-- When aggregating TB rows, if the project has zero COA rows, short-circuit with a clear error status on the sync job rather than silently writing TB rows that will all fail to link.
-- Do NOT block the QB COA sync itself; only block TB aggregation that would otherwise mis-link.
-
-**Frontend error handling**
-- In whatever calls `process-quickbooks-file` for TB uploads, surface the new `coa_required` error as a toast pointing the user back to COA.
-
-### 3. Tests
-
-- Unit test for `useCoaReadiness`: returns `ready:false` when `coaAccounts=[]` and `syncSource="quickbooks"` but no completed COA sync row; returns `ready:true` when COA rows exist; returns `ready:true` when QB COA sync is complete.
-- Edge function test in `process-quickbooks-file`: TB upload with zero COA rows → 409.
-- Edge function test in `complete-qb-sync`: TB aggregation skipped when COA empty, sync job marked with explicit error.
-
-## Out of scope
-
-- No changes to COA processing order or the 154-row mapping.
-- No retroactive cleanup of existing projects that already have orphan TB rows; that would need a separate one-off script.
-- No change to AR/AP/Fixed Assets ordering — only the COA → TB dependency, which is the one that causes silent mis-linking.
-
-## Files touched
-
-- `src/components/wizard/sections/DocumentUploadSection.tsx` (edit)
-- `src/components/wizard/sections/TrialBalanceSection.tsx` (edit)
-- `src/hooks/useCoaReadiness.ts` (new)
-- `src/hooks/useCoaReadiness.test.ts` (new)
-- `supabase/functions/process-quickbooks-file/index.ts` (edit)
-- `supabase/functions/complete-qb-sync/index.ts` (edit)
-- `supabase/functions/qb-sync-complete/index.ts` (edit)
-- relevant `*_test.ts` files in each edge function dir (new/edit)
+### Expected result
+- Re-opening that project’s COA section should load **89 accounts**, not 79.
+- The missing category badge should stop flagging COGS / Operating Expenses when mapped accounts exist.
+- The Trial Balance step can then use the complete COA for account matching.
