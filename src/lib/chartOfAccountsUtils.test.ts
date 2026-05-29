@@ -167,4 +167,33 @@ describe("findMatchingAccount priority", () => {
     };
     expect(findMatchingAccount(candidate, existing)).toBeUndefined();
   });
+
+  it("does NOT merge same leaf name with different fullyQualifiedName (root vs sub-account)", () => {
+    // Real-world bug: QuickBooks may have "Equipment Rental" at the root AND
+    // "Job Expenses:Equipment Rental" as a sub-account. They are distinct
+    // accounts even though leaf + subtype + classification all agree.
+    const incoming = transformCoaData([
+      {
+        id: "247",
+        name: "Equipment Rental",
+        fullyQualifiedName: "Equipment Rental",
+        accountType: "EXPENSE",
+        accountSubType: "EquipmentRental",
+        classification: "EXPENSE",
+      },
+      {
+        id: "254",
+        name: "Equipment Rental",
+        fullyQualifiedName: "Job Expenses:Equipment Rental",
+        accountType: "EXPENSE",
+        accountSubType: "EquipmentRental",
+        classification: "EXPENSE",
+      },
+    ]);
+    expect(incoming).toHaveLength(2);
+    const merged = mergeCoaAccounts([], incoming);
+    expect(merged.accounts).toHaveLength(2);
+    expect(merged.stats.added).toBe(2);
+    expect(merged.stats.merged).toBe(0);
+  });
 });
