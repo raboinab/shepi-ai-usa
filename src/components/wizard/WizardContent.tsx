@@ -384,6 +384,7 @@ export const WizardContent = ({
             updateData={(data) => updateWizardData("documentUpload", data)}
             fullWizardData={project.wizard_data as Record<string, unknown>}
             initialDocType={pendingDocType}
+            onNavigate={onNavigate}
           />
         );
       }
