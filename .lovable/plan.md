@@ -1,68 +1,51 @@
-# Fix upload verification and balance sheet validation
+# Fix COA ingest: stop collapsing accounts by leaf name
 
-## What is actually happening
+## Diagnosis (confirmed in code)
 
-This is not just a CSV-vs-PDF issue. The live project shows two separate problems:
+The 89 → 79 loss is on our side, in `src/lib/chartOfAccountsUtils.ts`:
 
-1. **Document-type verification fails open for CSV/Excel.**
-   The `validate-document-type` logs show CSV files are being sent to the AI gateway as an unsupported file part, then the function returns a permissive “proceeding with upload” result. That means CSV/XLSX uploads are effectively not being checked before upload.
+- `findMatchingAccount` matches incoming accounts to existing ones by:
+  1. `accountNumber` (only if both sides have one)
+  2. **normalized leaf `accountName`** ← collapses Income/Expense pairs that share a leaf name (Job Materials, Decks and Patios, Plants and Soil, Installation, etc. — 8 pairs in the QB sample)
+  3. `originalName`
+- Because the QB sample COA leaves `AcctNum` empty on most leaf accounts, step 1 doesn't fire and step 2 wins → 16 distinct accounts collapse to 8. That's the 89 → 81 step.
+- `transformCoaData` reads `Name` / `fullyQualifiedName` but throws away the parent path and the QB `Id`, so by the time merge runs there's no way to disambiguate two "Job Materials" rows.
+- `transformQBChartOfAccounts` in `complete-qb-sync` and `qb-sync-complete` already captures `accountId`, `accountType`, `accountSubtype`, `classification` — but the wizard-side `CoaAccount` type drops `accountId`, so the discriminator is lost the moment we hit `mergeCoaAccounts`.
 
-2. **Balance Sheet validation is deriving the comparison totals incorrectly.**
-   For project `fa0768ca-96f9-4ded-b498-f64ca5be3ede`, the uploaded balance sheet extracts correctly:
-   - Assets: `$2,893,672`
-   - Liabilities: `$114,589`
-   - Equity: `$2,779,084`
+The 81 → 79 step (Unapplied Cash Payment Income, Unapplied Cash Bill Payment Expense) is **not** a dedup collision — those names are distinct. It's a separate filter somewhere in the ingest pipeline that I still need to pin down (candidates: `process-quickbooks-file`, `processed-data-create`, or an `active`/classification filter). I'll trace it during implementation and either remove the filter or whitelist the Unapplied accounts.
 
-   But the Trial Balance-derived side is wrong because the edge function currently buckets accounts using brittle text matching and keeps equity signed negative. It is also classifying some obviously wrong accounts into BS buckets, e.g. `Landscaping Services:Job Materials` marked as `Equity`, `Billable Expense Income` marked as `Current liabilities`, and `Accounts Payable` marked as asset-like due substring matching.
+## Changes
 
-3. **Balance Sheet coverage is misleading.**
-   Optional balance sheet verification is being treated like monthly coverage, so a single point-in-time Balance Sheet with no period dates displays `0% coverage`. For a Balance Sheet verification document, that should be a point-in-time/as-of check, not full monthly coverage.
+### 1. `src/lib/chartOfAccountsUtils.ts`
+- Add `accountId?: string`, `fullyQualifiedName?: string`, `parentRef?: string` to `CoaAccount`.
+- Rewrite `findMatchingAccount` matching priority:
+  1. `accountId` exact match (when both sides have one) — primary key
+  2. `accountNumber` exact match (when both have one)
+  3. `fullyQualifiedName` normalized match (preserves parent path: "Landscaping Services:Job Materials" ≠ "Job Expenses:Job Materials")
+  4. Leaf-name match **only if** `classification` AND `accountSubtype` also match (prevents Income vs Expense collapse)
+- Drop the bare leaf-name match.
+- `transformCoaData`: pull `Id`/`id` → `accountId`, `FullyQualifiedName`/`fullyQualifiedName` → `fullyQualifiedName`, `ParentRef.value` → `parentRef`. Preserve them through pre-processed (edge-function) path too.
+- Keep the auto-account-number assignment, but stop using it as a match key for accounts that came in without one — track which numbers were synthesized so we don't accidentally collide synthesized numbers across imports.
 
-## Implementation plan
+### 2. `supabase/functions/complete-qb-sync/index.ts` + `qb-sync-complete/index.ts`
+- In `transformQBChartOfAccounts`, also emit `fullyQualifiedName` and `parentRef` (already reads `Id`/`AccountSubType`/`Classification` — just need to surface FQN/parent for the wizard-side matcher).
 
-### 1. Make document-type verification read CSV/XLSX directly
-Update `supabase/functions/validate-document-type/index.ts`:
-- For CSV/TXT: decode base64 to text and classify using the first rows.
-- For XLS/XLSX: parse with `xlsx`, convert the first sheet rows to text, then classify.
-- Keep image validation for image uploads.
-- Stop treating unsupported/failed validation as a successful validation.
-- Add a hard COA guardrail: if the user selected `chart_of_accounts` and the content looks like `trial_balance`, `balance_sheet`, `income_statement`, or `general_ledger`, return `isValid: false`.
+### 3. Unapplied Cash drop (81 → 79)
+- Trace where it happens: grep ingest pipeline for `active`, `Unapplied`, classification filters, and any "skip if balance is zero" logic in `process-quickbooks-file`, `processed-data-create`, `complete-qb-sync` and the wizard transform.
+- Fix it in place — either remove the filter or explicitly retain Unapplied accounts (they're meaningful for proof-of-cash).
+- Add a debug log of input-vs-output account count in `transformQBChartOfAccounts` and `transformCoaData` so any future shrinkage is visible in logs.
 
-### 2. Make the upload UI respect failed validation
-Update `src/components/wizard/sections/ChartOfAccountsSection.tsx` and `src/components/wizard/sections/DocumentUploadSection.tsx`:
-- Show the mismatch dialog whenever `isValid === false`, even if no `suggestedType` is returned.
-- Remove the silent “change type then still upload as the wrong type” behavior.
-- Keep an explicit “upload anyway” override, but make it clearly intentional rather than the default path.
+### 4. Guardrail
+- Add a one-line warning log in `mergeCoaAccounts` whenever a match falls through to the leaf-name path, with both account names — so any future collisions surface immediately instead of silently collapsing.
 
-### 3. Fix Balance Sheet derived totals
-Update `supabase/functions/validate-financial-statement/index.ts`:
-- For Balance Sheet validation, derive totals from the latest Trial Balance period using normalized accounting signs:
-  - Assets = positive asset balances.
-  - Liabilities = absolute value of liability balances.
-  - Equity = absolute value of equity balances.
-- Prefer structured account classification fields where available, and avoid substring traps like `Accounts Payable` being counted as receivable/asset because it contains “payable” or `Billable Expense Income` being treated as a liability.
-- Add sanity metadata to the result when TB-derived totals are not internally balanced so the UI can explain that the issue is in the source TB/COA mapping, not necessarily the uploaded Balance Sheet.
+### 5. Tests
+- Add unit tests in `src/lib/chartOfAccountsUtils.test.ts`:
+  - Two accounts with same leaf "Job Materials" but different `accountId` / FQN / classification → kept separate.
+  - Two imports of the same QB account (same `accountId`) → merged.
+  - Two accounts with same `accountNumber` → merged.
+  - User-edited account is preserved when re-importing.
 
-### 4. Fix Balance Sheet verification coverage
-Update `src/components/wizard/sections/DocumentUploadSection.tsx`:
-- Change `balance_sheet` coverage from monthly to point-in-time.
-- If a balance sheet upload has no explicit `period_start`/`period_end`, treat it as a verification snapshot instead of showing `0% coverage` across Jan-23 to Dec-25.
-
-### 5. Improve the validation card wording
-Update `src/components/wizard/shared/FinancialStatementValidationCard.tsx`:
-- When uploaded Balance Sheet is balanced but TB-derived totals are not, show a clearer message: “Uploaded file appears balanced; Trial Balance/COA mapping needs review.”
-- Keep the variance table, but make it clear whether the variance is caused by source mapping/sign normalization versus a true seller balance sheet mismatch.
-
-## Files to touch
-
-- `supabase/functions/validate-document-type/index.ts`
-- `supabase/functions/validate-financial-statement/index.ts`
-- `src/components/wizard/sections/ChartOfAccountsSection.tsx`
-- `src/components/wizard/sections/DocumentUploadSection.tsx`
-- `src/components/wizard/shared/FinancialStatementValidationCard.tsx`
-
-## Validation after implementation
-
-- Re-run the validation for document `498a13c9-872c-4c8d-b4b8-eb09657e600c`.
-- Confirm the Balance Sheet verification no longer reports misleading `0% coverage`.
-- Confirm CSV/XLSX wrong-slot uploads now produce a mismatch warning instead of silently passing.
+## Out of scope
+- No changes to qbToJson (it's correct — returns 89).
+- No changes to the COA mapping table.
+- No UI changes; the existing COA grid will just show all 89 rows.
