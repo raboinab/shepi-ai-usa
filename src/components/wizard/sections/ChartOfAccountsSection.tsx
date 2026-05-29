@@ -90,9 +90,36 @@ export const ChartOfAccountsSection = ({ projectId, data, updateData, onAutoImpo
 
   const categories = [...new Set(coaData.accounts.map((a) => a.category))];
 
-  // Check for missing required categories
-  const requiredCategories = ["Revenue", "COGS", "Operating Expenses", "Current Assets", "Current Liabilities", "Equity"];
-  const missingCategories = requiredCategories.filter((cat) => !categories.includes(cat));
+  // Check for missing required category buckets.
+  // QuickBooks-enriched COA uses workbook line-item labels ("Cost of Goods Sold",
+  // "Operating expenses", "Cash and cash equivalents", ...) while manually-edited
+  // COAs may use the short labels in CATEGORY_OPTIONS ("COGS", "Operating Expenses",
+  // "Current Assets", ...). Treat both as satisfying the same bucket.
+  const REQUIRED_CATEGORY_SYNONYMS: { label: string; matches: string[] }[] = [
+    { label: "Revenue", matches: ["revenue", "income"] },
+    { label: "COGS", matches: ["cogs", "cost of goods sold", "cost of sales"] },
+    { label: "Operating Expenses", matches: ["operating expenses", "operating expense"] },
+    {
+      label: "Current Assets",
+      matches: [
+        "current assets",
+        "cash and cash equivalents",
+        "accounts receivable",
+        "other current assets",
+      ],
+    },
+    {
+      label: "Current Liabilities",
+      matches: ["current liabilities", "other current liabilities"],
+    },
+    { label: "Equity", matches: ["equity"] },
+  ];
+  const presentCats = new Set(
+    categories.map((c) => (c || "").toString().trim().toLowerCase()).filter(Boolean),
+  );
+  const missingCategories = REQUIRED_CATEGORY_SYNONYMS
+    .filter((r) => !r.matches.some((m) => presentCats.has(m)))
+    .map((r) => r.label);
 
   // Subscribe to processed_data changes for realtime updates (internal uploads)
   useEffect(() => {
