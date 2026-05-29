@@ -123,7 +123,7 @@ export async function resetDocumentArtifacts(doc: DocumentLike): Promise<void> {
     if (mutated) {
       await supabase
         .from("projects")
-        .update({ wizard_data: wizardData })
+        .update({ wizard_data: wizardData as never })
         .eq("id", doc.project_id);
     }
   }
