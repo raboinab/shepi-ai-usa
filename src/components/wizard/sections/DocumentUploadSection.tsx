@@ -2422,6 +2422,39 @@ export const DocumentUploadSection = ({
           onCancel={handleCancelValidation}
         />
       )}
+
+      <AlertDialog open={!!pendingDelete} onOpenChange={(open) => !open && !isDeleting && setPendingDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this document?</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <span className="block">
+                {pendingDelete?.name ? <strong>{pendingDelete.name}</strong> : "This document"} will be removed.
+              </span>
+              <span className="block">
+                {pendingDelete ? describeReset({ id: pendingDelete.id, account_type: pendingDelete.account_type }) : ""}
+              </span>
+              <span className="block text-xs text-muted-foreground">
+                Existing adjustments are not deleted; re-run discovery if you want them refreshed against a new document.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                if (pendingDelete) handleDelete(pendingDelete);
+              }}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting ? "Deleting…" : "Delete & reset"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
+
   );
 };
