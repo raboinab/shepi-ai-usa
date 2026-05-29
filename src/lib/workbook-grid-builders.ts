@@ -597,6 +597,8 @@ function buildPayrollFallbackGrid(dealData: DealData, fb: import("./workbook-typ
 export function buildWorkingCapitalGrid(dealData: DealData): GridData {
   const tb = dealData.trialBalance;
   const rc = dealData.reclassifications ?? [];
+  const cfg = dealData.deal.nwcConfig;
+  const methodLabel = calc.nwcMethodLabel(cfg?.method);
   const s = (li: string, p: string) => calc.sumByLineItemWithReclass(tb, rc, li, p);
   const bc = (fn: (p: string) => number) => bsEndingBalanceCells(dealData, fn);
   const nbc = (fn: (p: string) => number) => negatedBsEndingBalanceCells(dealData, fn);
@@ -617,8 +619,7 @@ export function buildWorkingCapitalGrid(dealData: DealData): GridData {
     { id: "ocl", type: "data", indent: 1, cells: { label: "Other Current Liabilities", ...nbc(p => s("Other current liabilities", p)) } },
     { id: "total-cl", type: "subtotal", cells: { label: "Total Current Liabilities", ...nbc(p => totalCL(p)) } },
     { id: "s2", type: "spacer", cells: {} },
-    { id: "nwc", type: "total", cells: { label: "Net Working Capital", ...bc(p => totalCA(p) + totalCL(p)) } },
-    { id: "nwc-ex", type: "subtotal", cells: { label: "NWC ex. Cash", ...bc(p => s("Accounts receivable", p) + s("Other current assets", p) + totalCL(p)) } },
+    { id: "nwc", type: "total", cells: { label: `Net Working Capital (${methodLabel})`, ...bc(p => calc.calcNWCByMethod(tb, p, cfg)) } },
   ];
 
   return { columns, rows, frozenColumns: 1 };
@@ -628,6 +629,10 @@ export function buildWorkingCapitalGrid(dealData: DealData): GridData {
 export function buildNWCAnalysisGrid(dealData: DealData): GridData {
   const tb = dealData.trialBalance;
   const rc = dealData.reclassifications ?? [];
+  const cfg = dealData.deal.nwcConfig;
+  const method = cfg?.method ?? "operating";
+  const methodLabel = calc.nwcMethodLabel(method);
+  const overlays = cfg?.normalizationAdjustments ?? [];
   const s = (li: string, p: string) => calc.sumByLineItemWithReclass(tb, rc, li, p);
   const bc = (fn: (p: string) => number) => bsEndingBalanceCells(dealData, fn);
   const nbc = (fn: (p: string) => number) => negatedBsEndingBalanceCells(dealData, fn);
@@ -635,11 +640,10 @@ export function buildNWCAnalysisGrid(dealData: DealData): GridData {
 
   const totalCA = (p: string) => s("Cash and cash equivalents", p) + s("Accounts receivable", p) + s("Other current assets", p);
   const totalCL = (p: string) => s("Current liabilities", p) + s("Other current liabilities", p);
-  const nwc = (p: string) => totalCA(p) + totalCL(p);
-  const nwcExCash = (p: string) => s("Accounts receivable", p) + s("Other current assets", p) + totalCL(p);
+  const nwcOf = (p: string) => calc.calcNWCByMethod(tb, p, cfg);
 
   const rows: GridRow[] = [
-    { id: "hdr-nwc", type: "section-header", label: "Net working capital - reported to adjusted", cells: { label: "Net working capital - reported to adjusted" } },
+    { id: "hdr-nwc", type: "section-header", label: "Reported balance sheet", cells: { label: "Reported balance sheet" } },
     { id: "cash", type: "data", indent: 1, cells: { label: "Cash and cash equivalents", ...bc(p => s("Cash and cash equivalents", p)) } },
     { id: "ar", type: "data", indent: 1, cells: { label: "Accounts receivable", ...bc(p => s("Accounts receivable", p)) } },
     { id: "oca", type: "data", indent: 1, cells: { label: "Other current assets", ...bc(p => s("Other current assets", p)) } },
@@ -649,15 +653,31 @@ export function buildNWCAnalysisGrid(dealData: DealData): GridData {
     { id: "ocl", type: "data", indent: 1, cells: { label: "Other current liabilities", ...nbc(p => s("Other current liabilities", p)) } },
     { id: "total-cl", type: "subtotal", cells: { label: "Current liabilities total", ...nbc(p => totalCL(p)) } },
     { id: "s2", type: "spacer", cells: {} },
-    { id: "nwc-reported", type: "total", cells: { label: "Net working capital", ...bc(p => nwc(p)) } },
+    { id: "nwc-reported", type: "total", cells: { label: "Net working capital, reported", ...bc(p => totalCA(p) + totalCL(p)) } },
     { id: "s3", type: "spacer", cells: {} },
-    { id: "hdr-adj", type: "section-header", label: "Normal NWC adjustments", cells: { label: "Normal NWC adjustments" } },
-    { id: "adj-cash", type: "data", indent: 1, cells: { label: "Remove: Cash and cash equivalents", ...bc(p => -s("Cash and cash equivalents", p)) } },
-    { id: "s4", type: "spacer", cells: {} },
-    { id: "nwc-ex-cash", type: "total", cells: { label: "Net working capital, reported (ex. cash)", ...bc(p => nwcExCash(p)) } },
-    { id: "s5", type: "spacer", cells: {} },
-    { id: "nwc-adjusted", type: "total", cells: { label: "Net working capital, adjusted", ...bc(p => nwcExCash(p)) } },
+    { id: "hdr-adj", type: "section-header", label: `Bridge to ${methodLabel} NWC`, cells: { label: `Bridge to ${methodLabel} NWC` } },
   ];
+
+  if (method !== "reported") {
+    rows.push({ id: "adj-cash", type: "data", indent: 1, cells: { label: "Less: Cash and cash equivalents", ...bc(p => -s("Cash and cash equivalents", p)) } });
+  }
+  if (method === "normalized") {
+    overlays.forEach((row, i) => {
+      rows.push({
+        id: `adj-norm-${row.id || i}`,
+        type: "data",
+        indent: 1,
+        cells: {
+          label: `Normalization: ${row.label || `Adjustment ${i + 1}`}`,
+          ...bc(p => row.periodValues?.[p] ?? 0),
+        },
+      });
+    });
+  }
+  rows.push(
+    { id: "s4", type: "spacer", cells: {} },
+    { id: "nwc-active", type: "total", cells: { label: `Net working capital (${methodLabel})`, ...bc(p => nwcOf(p)) } },
+  );
 
   // WIP Adjustments section (when WIP data exists)
   const wipAgg = dealData.wipSchedule?.jobs?.length
@@ -691,6 +711,7 @@ export function buildNWCAnalysisGrid(dealData: DealData): GridData {
 
   return { columns, rows, frozenColumns: 1 };
 }
+
 
 // ── Cash ────────────────────────────────────────────────────────────────
 export function buildCashGrid(dealData: DealData): GridData {
