@@ -487,8 +487,8 @@ export const ChartOfAccountsSection = ({ projectId, data, updateData, onAutoImpo
     const firstFile = fileArray[0];
     const validation = await validateDocumentType(firstFile, selectedUploadType);
     
-    if (validation && !validation.isValid && validation.suggestedType) {
-      // Show mismatch dialog
+    if (validation && !validation.isValid) {
+      // Block the upload — user must explicitly confirm or cancel
       setValidationResult(validation);
       setShowValidationDialog(true);
     } else {
