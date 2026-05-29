@@ -736,68 +736,75 @@ function aggregateTrialBalanceRecords(
   coaData?: { accounts: unknown[] }
 ): Record<string, unknown> {
   const accountMap = new Map<string, Record<string, unknown>>();
-  
-  // Build COA lookup maps (by accountNumber AND accountName for flexible matching)
-  const coaByNumber = new Map<string, Record<string, unknown>>();
-  const coaByName = new Map<string, Record<string, unknown>>();
-  
-  if (coaData?.accounts) {
-    for (const acct of coaData.accounts as Array<Record<string, unknown>>) {
-      const num = String(acct.accountNumber || acct.accountId || "");
-      const name = String(acct.accountName || "").toLowerCase().trim();
-      if (num) coaByNumber.set(num, acct);
-      if (name) coaByName.set(name, acct);
-    }
-  }
-  
-  console.log(`[aggregateTrialBalance] Processing ${records.length} records, COA has ${coaByNumber.size} accounts by number, ${coaByName.size} by name`);
-  
+  const coaMaps = buildCoaLookupMaps(
+    (coaData?.accounts as Array<Record<string, unknown>>) ?? []
+  );
+  const counts = emptyMatchCounts();
+
+  console.log(
+    `[aggregateTrialBalance] Processing ${records.length} records, COA has ` +
+      `${coaMaps.byId.size} by id, ${coaMaps.byRealNumber.size} by real#, ` +
+      `${coaMaps.byFqn.size} by fqn, ${coaMaps.byName.size} by name`,
+  );
+
   for (const record of records) {
-    // Generate period ID matching frontend format (YYYY-MM-DD for end of period)
-    // Use period_end if available, otherwise period_start
     const periodDate = record.period_end || record.period_start || "";
-    // Use YYYY-MM format to match frontend Period.id from periodUtils.ts
     const periodId = periodDate ? periodDate.substring(0, 7) : "unknown";
-    
+
     const data = record.data as Record<string, unknown>;
-    
+
     // FIRST: Try Java-enriched format: { accounts: [...] } with pre-computed fields
     const enrichedAccounts = (data.accounts || []) as Array<Record<string, unknown>>;
     if (enrichedAccounts.length > 0) {
       console.log(`[aggregateTrialBalance] Processing ${enrichedAccounts.length} Java-enriched accounts for period ${periodId}`);
-      
+
       for (const acct of enrichedAccounts) {
-        const accountNumber = String(acct.accountNumber || acct.accountId || acct.Id || "");
+        const accountId = String(acct.accountId || acct.Id || "");
+        const accountNumber = String(acct.accountNumber || "");
         const accountName = String(acct.accountName || acct.Name || "");
-        if (!accountNumber && !accountName) continue;
-        
-        const key = accountName || accountNumber;
+        const fullyQualifiedName = String(acct.fullyQualifiedName || acct.FullyQualifiedName || "");
+        if (!accountId && !accountNumber && !accountName && !fullyQualifiedName) continue;
+
+        const rowAccountType = String(acct.accountType || "");
+        const rowAccountSubtype = String(acct.accountSubtype || "");
+        const rowKeys: RowKeys = {
+          accountId,
+          accountNumber,
+          fullyQualifiedName,
+          accountName,
+          accountType: rowAccountType,
+          accountSubtype: rowAccountSubtype,
+        };
+
+        const key = buildAccountKey(rowKeys);
         const balance = Number(acct.balance ?? acct.currentBalance ?? acct.Amount ?? 0);
-        
+
         if (accountMap.has(key)) {
           const existing = accountMap.get(key)!;
           (existing.monthlyValues as Record<string, number>)[periodId] = balance;
         } else {
-          // COA cross-reference for enrichment
-          const coaMatch = coaByNumber.get(accountNumber) || 
-                          (accountName ? coaByName.get(accountName.toLowerCase().trim()) : undefined);
-          
-          // Determine account type and subtype - prefer Java-provided, fall back to COA
-          const accountType = String(acct.accountType || coaMatch?.accountType || coaMatch?.category || "");
-          const accountSubtype = String(acct.accountSubtype || coaMatch?.accountSubtype || "");
-          
-          // Use QB-provided enrichment fields directly, with mapping table as fallback
+          const resolved = resolveCoaMatch(rowKeys, coaMaps);
+          tallyMatch(counts, resolved);
+          if (resolved.ambiguous) {
+            console.log(`[TB] ambiguous leaf-name "${accountName}" — multiple COA candidates`);
+          }
+          const coaMatch = resolved.match;
+
+          const accountType = rowAccountType || String(coaMatch?.accountType || coaMatch?.category || "");
+          const accountSubtype = rowAccountSubtype || String(coaMatch?.accountSubtype || "");
+
           const qbFsLineItem = String(acct.fsLineItem || "");
           const qbSubAccount1 = String(acct.subAccount1 || "");
           const qbSubAccount2 = String(acct.subAccount2 || "");
           const qbSubAccount3 = String(acct.subAccount3 || "");
-          
-          // Only fall back to mapping table if QB didn't provide values
+
           const mapped = (!qbFsLineItem) ? mapAccountToFields(accountType, accountSubtype) : null;
-          
+
           accountMap.set(key, {
+            accountId,
             accountNumber,
             accountName,
+            fullyQualifiedName,
             fsType: String(acct.fsType || "") || coaMatch?.fsType || mapAccountTypeToFsType(accountType),
             accountType,
             accountSubtype,
@@ -806,71 +813,82 @@ function aggregateTrialBalanceRecords(
             subAccount2: qbSubAccount2 || mapped?.subAccount2 || "",
             subAccount3: qbSubAccount3 || mapped?.subAccount3 || "",
             _matchedFromCOA: !!coaMatch,
+            _matchSource: resolved.source,
             monthlyValues: { [periodId]: balance },
           });
         }
       }
       continue;
     }
-    
+
     // FALLBACK: Raw QB report format with Rows/Row/ColData structure
     const rows = (data.Rows as Record<string, unknown>)?.Row ||
                  (data.rows as Record<string, unknown>)?.row || [];
-    
+
     if (!Array.isArray(rows)) continue;
-    
+
     console.log(`[aggregateTrialBalance] Processing ${rows.length} raw QB rows for period ${periodId}`);
-    
+
     for (const row of rows) {
       const r = row as Record<string, unknown>;
       if (r.type === "Section") continue;
-      
+
       const colData = (r.ColData || r.colData || []) as Array<Record<string, unknown>>;
       if (colData.length < 2) continue;
-      
+
       const accountName = (colData[0]?.value || "") as string;
       if (!accountName || accountName.toLowerCase().includes("total")) continue;
-      
-      const accountNumber = ((colData[0] as Record<string, unknown>)?.id || "") as string;
-      
-      // FIXED: Read both Debit (col 1) and Credit (col 2) columns
+
+      // QB raw report: colData[0].id IS the QB account id, not an account number.
+      const accountId = ((colData[0] as Record<string, unknown>)?.id || "") as string;
+      const accountNumber = String(r.accountNumber || "");
+      const fullyQualifiedName = String(r.fullyQualifiedName || r.FullyQualifiedName || "");
+
       // Net balance = Debit - Credit (standard accounting convention)
-      // Assets/Expenses have normal debit balances (positive)
-      // Liabilities/Equity/Revenue have normal credit balances (negative after this calc)
       const debit = parseFloat((colData[1]?.value || "0") as string) || 0;
       const credit = parseFloat((colData[2]?.value || "0") as string) || 0;
       const amount = debit - credit;
-      
-      const key = accountName || accountNumber;
-      
+
+      const rowAccountType = String(r.accountType || "");
+      const rowAccountSubtype = String(r.accountSubtype || r.accountSubType || "");
+      const rowKeys: RowKeys = {
+        accountId,
+        accountNumber,
+        fullyQualifiedName,
+        accountName,
+        accountType: rowAccountType,
+        accountSubtype: rowAccountSubtype,
+      };
+
+      const key = buildAccountKey(rowKeys);
+
       if (accountMap.has(key)) {
         const existing = accountMap.get(key)!;
         const monthlyValues = existing.monthlyValues as Record<string, number>;
         monthlyValues[periodId] = amount;
       } else {
-        // Extract row-level data
-        const rowAccountType = String(r.accountType || "");
-        const rowAccountSubtype = String(r.accountSubtype || r.accountSubType || "");
-        
-        // COA cross-reference
-        const coaMatch = coaByNumber.get(accountNumber) || 
-                        coaByName.get(accountName.toLowerCase().trim());
-        
-        // Determine final account type and subtype
+        const resolved = resolveCoaMatch(rowKeys, coaMaps);
+        tallyMatch(counts, resolved);
+        if (resolved.ambiguous) {
+          console.log(`[TB] ambiguous leaf-name "${accountName}" — multiple COA candidates`);
+        }
+        const coaMatch = resolved.match;
+
         const accountType = rowAccountType || String(coaMatch?.accountType || coaMatch?.category || "");
         const accountSubtype = rowAccountSubtype || String(coaMatch?.accountSubtype || "");
-        
-        // Use QB-provided enrichment fields directly, with mapping table as fallback
+
         const qbFsLineItem = String(r.fsLineItem || "");
         const qbSubAccount1 = String(r.subAccount1 || "");
         const qbSubAccount2 = String(r.subAccount2 || "");
         const qbSubAccount3 = String(r.subAccount3 || "");
-        
+
         const mapped = (!qbFsLineItem) ? mapAccountToFields(accountType, accountSubtype) : null;
-        
+
         accountMap.set(key, {
+          accountId,
           accountName,
           accountNumber,
+          fullyQualifiedName,
           fsType: String(r.fsType || "") || coaMatch?.fsType || mapAccountTypeToFsType(accountType),
           accountType,
           accountSubtype,
@@ -879,22 +897,27 @@ function aggregateTrialBalanceRecords(
           subAccount2: qbSubAccount2 || mapped?.subAccount2 || "",
           subAccount3: qbSubAccount3 || mapped?.subAccount3 || "",
           _matchedFromCOA: !!coaMatch,
+          _matchSource: resolved.source,
           monthlyValues: { [periodId]: amount },
         });
       }
     }
   }
-  
+
   const accounts = Array.from(accountMap.values());
-  const matchedCount = accounts.filter(a => a._matchedFromCOA).length;
-  console.log(`[aggregateTrialBalance] Aggregated ${accounts.length} accounts, ${matchedCount} matched from COA`);
-  
+  console.log(
+    `[TB] out=${accounts.length} matched={id:${counts.id}, number:${counts.number}, ` +
+      `fqn:${counts.fqn}, name:${counts.name}, unmatched:${counts.unmatched}} ` +
+      `ambiguous=${counts.ambiguous}`,
+  );
+
   return {
     accounts,
     periodCount: records.length,
     syncSource: "quickbooks",
   };
 }
+
 
 // ============================================
 // Account Type to FS Line Item Mapping
