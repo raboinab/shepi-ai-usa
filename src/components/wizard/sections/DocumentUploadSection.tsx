@@ -1547,38 +1547,26 @@ export const DocumentUploadSection = ({
     setPendingValidation(null);
   };
 
-  const handleDelete = async (docId: string, filePath: string) => {
+  const handleDelete = async (doc: Document) => {
+    setIsDeleting(true);
     try {
-      // 1. Delete derived processed_data (analysis results, parsed data)
-      await supabase
-        .from("processed_data")
-        .delete()
-        .eq("source_document_id", docId);
-
-      // 2. Delete canonical_transactions linked to this document
-      await supabase
-        .from("canonical_transactions")
-        .delete()
-        .eq("source_document_id", docId);
-
-      // 3. Delete file from storage
-      await supabase.storage.from("documents").remove([filePath]);
-
-      // 4. Delete document record
-      const { error } = await supabase
-        .from("documents")
-        .delete()
-        .eq("id", docId);
-
-      if (error) throw error;
-
-      toast.success("Document deleted");
+      await resetDocumentArtifacts({
+        id: doc.id,
+        file_path: doc.file_path,
+        project_id: projectId,
+        account_type: doc.account_type,
+      });
+      toast.success("Document deleted — you can re-upload");
+      setPendingDelete(null);
       fetchDocuments();
     } catch (error) {
       console.error("Delete error:", error);
       toast.error("Failed to delete document");
+    } finally {
+      setIsDeleting(false);
     }
   };
+
 
   const handleRefresh = async (docId: string) => {
     toast.info("Refreshing document status...");
