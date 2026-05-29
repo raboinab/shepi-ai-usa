@@ -514,9 +514,12 @@ export function mergeAccounts(
 ): TrialBalanceAccount[] {
   const accountMap = new Map<string, TrialBalanceAccount>();
   
+  const keyOf = (a: TrialBalanceAccount) =>
+    a.qbAccountId || a.accountName || a.accountNumber;
+  
   // Add existing accounts to map
   for (const account of existing) {
-    const key = account.accountName || account.accountNumber;
+    const key = keyOf(account);
     if (key) {
       accountMap.set(key, { ...account, monthlyValues: { ...account.monthlyValues } });
     }
@@ -524,7 +527,7 @@ export function mergeAccounts(
   
   // Merge incoming accounts
   for (const account of incoming) {
-    const key = account.accountName || account.accountNumber;
+    const key = keyOf(account);
     if (!key) continue;
     
     const existingAccount = accountMap.get(key);
