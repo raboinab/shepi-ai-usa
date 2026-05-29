@@ -15,6 +15,7 @@ import { isTBCacheIncomplete } from "@/lib/loadTrialBalanceFromProcessedData";
 import { CoaAccount } from "@/lib/chartOfAccountsUtils";
 import { CoreDataGuideBanner } from "@/components/wizard/shared/CoreDataGuideBanner";
 import { DocumentChecklistReference } from "@/components/wizard/shared/DocumentChecklistReference";
+import { useCoaReadiness } from "@/hooks/useCoaReadiness";
 
 interface TrialBalanceSectionProps {
   projectId: string;
