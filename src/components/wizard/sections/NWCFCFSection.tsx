@@ -1,6 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { SummaryCard } from "../shared/SummaryCard";
 import { DealParametersCard } from "../shared/DealParametersCard";
+import { NWCMethodSelector } from "../shared/NWCMethodSelector";
 import { WorkbookTabView } from "@/components/workbook/WorkbookTabView";
 import { TrendingUp, DollarSign, Calculator, FileSpreadsheet } from "lucide-react";
 import { Period } from "@/lib/periodUtils";
@@ -10,8 +11,10 @@ import {
   extractFCFMetrics,
   DealParameters,
   NWCExtractedMetrics,
+  DEFAULT_NWC_METHOD,
 } from "@/lib/nwcDataUtils";
-import type { DealData } from "@/lib/workbook-types";
+import type { DealData, NWCMethod } from "@/lib/workbook-types";
+
 
 interface NWCFCFSectionProps {
   /** Legacy raw NWC analysis cache — kept only for the summary cards. */
