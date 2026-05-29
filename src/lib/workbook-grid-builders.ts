@@ -965,25 +965,29 @@ export function buildFreeCashFlowGrid(dealData: DealData): GridData {
   const tb = dealData.trialBalance;
   const adj = dealData.adjustments;
   const ab = dealData.addbacks;
+  const cfg = dealData.deal.nwcConfig;
+  const methodLabel = calc.nwcMethodLabel(cfg?.method);
   const pc = (fn: (p: string) => number) => periodCells(dealData, fn);
   const npc = (fn: (p: string) => number) => negatedPeriodCells(dealData, fn);
   const columns = buildStandardColumns(dealData, "Free Cash Flow", { labelWidth: 280 });
 
+  const nwcOf = (p: string) => calc.calcNWCByMethod(tb, p, cfg);
   const calcNWCChange = (p: string): number => {
     const { periods } = dealData.deal;
     const idx = periods.findIndex(pp => pp.id === p);
     if (idx <= 0) return 0;
-    return calc.calcNWCExCash(tb, p) - calc.calcNWCExCash(tb, periods[idx - 1].id);
+    return nwcOf(p) - nwcOf(periods[idx - 1].id);
   };
 
   const rows: GridRow[] = [
     { id: "adj-ebitda", type: "data", cells: { label: "Adjusted EBITDA", ...npc(p => calc.calcAdjustedEBITDA(tb, adj, p, ab)) } },
-    { id: "nwc-change", type: "data", cells: { label: "Change in NWC", ...pc(p => -calcNWCChange(p)) } },
+    { id: "nwc-change", type: "data", cells: { label: `Change in NWC (${methodLabel})`, ...pc(p => -calcNWCChange(p)) } },
     { id: "capex", type: "data", cells: { label: "Capital Expenditures", ...pc(_ => 0) } },
     { id: "taxes", type: "data", cells: { label: "Estimated Taxes", ...pc(p => -calc.calcIncomeTaxExpense(tb, p, ab.taxes)) } },
     { id: "s1", type: "spacer", cells: {} },
     { id: "fcf", type: "total", cells: { label: "Free Cash Flow", ...pc(p => -calc.calcAdjustedEBITDA(tb, adj, p, ab) - calcNWCChange(p) - calc.calcIncomeTaxExpense(tb, p, ab.taxes)) } },
   ];
+
 
   return { columns, rows, frozenColumns: 1 };
 }
