@@ -487,14 +487,23 @@ function transformQBChartOfAccounts(qbData: unknown): Record<string, unknown> {
       );
       
       const accountType = String(a.AccountType || a.accountType || "");
+      const fullyQualifiedName = String(a.FullyQualifiedName || a.fullyQualifiedName || "");
+      const parentRef = String(
+        ((a.ParentRef as Record<string, unknown> | undefined)?.value) ||
+        ((a.parentRef as Record<string, unknown> | undefined)?.value) ||
+        a.parentRef || a.parentId || ""
+      );
       accounts.push({
         accountNumber: acctNum || qbId,  // Fallback to QB ID if no account number
         accountName,
         accountId: qbId,
+        fullyQualifiedName,
+        parentRef,
         fsType: mapAccountTypeToFsType(accountType),
         category: mapAccountTypeToCategory(accountType),
         accountType,
         accountSubtype: a.AccountSubType || a.accountSubType || "",
+        classification: String(a.Classification || a.classification || ""),
         balance: a.CurrentBalance || a.currentBalance || 0,
         active: a.Active !== false && a.active !== false,
       });
