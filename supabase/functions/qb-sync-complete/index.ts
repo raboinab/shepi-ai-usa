@@ -256,15 +256,24 @@ Deno.serve(async (req) => {
       latestByType.delete("chart_of_accounts");
     }
 
-    // Aggregate trial_balance records
+    // Aggregate trial_balance records — only when COA exists.
     if (trialBalanceRecords.length > 0) {
-      console.log(`[qb-sync-complete] Aggregating ${trialBalanceRecords.length} trial_balance periods...`);
-      const aggregatedTB = aggregateTrialBalanceRecords(
-        trialBalanceRecords,
-        wizardData.chartOfAccounts as { accounts: unknown[] } | undefined
-      );
-      wizardData.trialBalance = withSyncMetadata(aggregatedTB as Record<string, unknown>);
+      const coaForTb = wizardData.chartOfAccounts as { accounts?: unknown[] } | undefined;
+      const coaAccountCount = Array.isArray(coaForTb?.accounts) ? coaForTb.accounts.length : 0;
+      if (coaAccountCount === 0) {
+        console.warn(
+          `[qb-sync-complete] SKIPPING trial_balance aggregation: ${trialBalanceRecords.length} TB period(s) present but COA is empty for project ${project_id}. Sync COA first.`
+        );
+      } else {
+        console.log(`[qb-sync-complete] Aggregating ${trialBalanceRecords.length} trial_balance periods against ${coaAccountCount} COA accounts...`);
+        const aggregatedTB = aggregateTrialBalanceRecords(
+          trialBalanceRecords,
+          coaForTb
+        );
+        wizardData.trialBalance = withSyncMetadata(aggregatedTB as Record<string, unknown>);
+      }
     }
+
 
     // Process other data types
     for (const [dataType, record] of latestByType) {

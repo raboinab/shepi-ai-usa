@@ -1,82 +1,54 @@
-## TB Importer Follow-up — Fix Leaf-Name Collisions
+## Goal
 
-### Problem
+Enforce "Chart of Accounts must exist before Trial Balance" as a real invariant, not a single-screen nudge. Today the gate only lives on the TB wizard section; the Documents tab and the QB sync path both bypass it.
 
-`aggregateTrialBalanceRecords` in both `complete-qb-sync` and `qb-sync-complete` uses leaf account name (or a synthesized number) as both the **dedup key** and the **COA lookup key**. When two real accounts share a leaf name (e.g. `Job Materials` under Income vs. Expense, or the two `Unapplied Cash` accounts), the TB importer:
+## Changes
 
-1. **Merges their balances** into a single `accountMap` entry — silently summing/overwriting period values.
-2. **Mis-links to COA** — picks whichever entry won the `coaByName` map race.
+### 1. Frontend — close the UI gaps
 
-This is the same bug class we just fixed on the COA side. The COA now carries `accountId`, `accountNumber` (real vs. `_autoNumbered`), `fullyQualifiedName`, `parentRef`, `classification`, and `accountSubtype` — the TB side just needs to use them.
+**`src/components/wizard/sections/DocumentUploadSection.tsx`**
+- When the selected `docType === "trial_balance"`, check the same condition used by TrialBalanceSection: `coaAccounts.length > 0 || qbSyncCompleted`.
+- If COA is missing, disable the file picker for that doc type and show the same "Chart of Accounts Required" panel with a "Go to Chart of Accounts" button (reuse the visual treatment from `TrialBalanceSection.tsx:578-596`).
+- Same treatment for any other TB-dependent doc types if they exist (audit only `trial_balance` for now).
 
-### Scope
+**`src/components/wizard/sections/TrialBalanceSection.tsx`**
+- Stop trusting `syncSource === "quickbooks"` alone. Replace `isQBUser` bypass in `coaLocked` with a stricter check: COA is "ready" only if `coaAccounts.length > 0` OR a completed QB COA sync record exists (`qb_sync_status` for `chart_of_accounts` = `complete`).
+- This prevents the case where a stale `syncSource` flag from a prior partial sync removes the lock even though no COA rows landed.
 
-Two edge functions, one shared helper extracted for testability:
+**Shared helper** — extract `useCoaReadiness(projectId, wizardData)` hook so the DocumentUpload and TrialBalance sections cannot drift again. Returns `{ ready, reason, hasRows, qbSyncComplete }`.
 
-- `supabase/functions/complete-qb-sync/index.ts` — `aggregateTrialBalanceRecords` (lines 726–889)
-- `supabase/functions/qb-sync-complete/index.ts` — `aggregateTrialBalanceRecords` (lines 657–780)
+### 2. Backend — enforce the invariant server-side
 
-Both raw QB rows (`Rows.Row`) and the Java-enriched `{ accounts: [...] }` path are affected.
+**`supabase/functions/process-quickbooks-file/index.ts`**
+- Before processing a `trial_balance` upload, query `chart_of_accounts` (or the project's COA rows table) for the project. If zero rows AND no in-flight COA sync, return `409 Conflict` with `{ error: "coa_required", message: "Upload Chart of Accounts before Trial Balance" }`.
+- Log the rejection so we can see if it ever fires in production.
 
-### Approach
+**`supabase/functions/complete-qb-sync/index.ts` and `qb-sync-complete/index.ts`**
+- When aggregating TB rows, if the project has zero COA rows, short-circuit with a clear error status on the sync job rather than silently writing TB rows that will all fail to link.
+- Do NOT block the QB COA sync itself; only block TB aggregation that would otherwise mis-link.
 
-Mirror the COA-side priority on TB ingest:
+**Frontend error handling**
+- In whatever calls `process-quickbooks-file` for TB uploads, surface the new `coa_required` error as a toast pointing the user back to COA.
 
-**1. Build richer COA lookup maps**
+### 3. Tests
 
-```ts
-const coaById      = new Map<string, CoaAccount>();   // accountId
-const coaByRealNum = new Map<string, CoaAccount>();   // accountNumber AND !_autoNumbered
-const coaByFqn     = new Map<string, CoaAccount>();   // normalized FQN
-const coaByName    = new Map<string, CoaAccount[]>(); // leaf name → list (for type+subtype tiebreak)
-```
+- Unit test for `useCoaReadiness`: returns `ready:false` when `coaAccounts=[]` and `syncSource="quickbooks"` but no completed COA sync row; returns `ready:true` when COA rows exist; returns `ready:true` when QB COA sync is complete.
+- Edge function test in `process-quickbooks-file`: TB upload with zero COA rows → 409.
+- Edge function test in `complete-qb-sync`: TB aggregation skipped when COA empty, sync job marked with explicit error.
 
-Normalize FQN with the same helper the COA side uses (lowercase, collapse `:` spacing, trim).
+## Out of scope
 
-**2. New `resolveCoaMatch(row, coaMaps)` helper** — strict priority:
+- No changes to COA processing order or the 154-row mapping.
+- No retroactive cleanup of existing projects that already have orphan TB rows; that would need a separate one-off script.
+- No change to AR/AP/Fixed Assets ordering — only the COA → TB dependency, which is the one that causes silent mis-linking.
 
-1. `accountId` exact match
-2. Real (non-synthesized) `accountNumber` exact match
-3. Normalized `fullyQualifiedName` exact match
-4. Leaf-name match **only if** exactly one COA candidate matches **or** the row's `accountType`/`classification` + `accountSubtype` disambiguates to exactly one
-5. Otherwise → unmatched (log `[TB] ambiguous leaf-name "<n>" — N candidates`)
+## Files touched
 
-**3. New `buildAccountKey(row, coaMatch)` for the dedup map** — same priority, falling back to a composite `${name}__${type}__${subtype}__${fqn}` only when no id/real#/FQN exists. Never collapse on bare leaf name.
-
-**4. Read FQN from QB rows where available**
-
-- Java-enriched path: pull `acct.fullyQualifiedName`, `acct.accountId`, `acct.parentRef`, `acct.classification`.
-- Raw QB rows: `colData[0]?.id` is the QB account id — promote it to `accountId` (separate field from the synthesized accountNumber fallback).
-
-**5. Persist the resolution info on the aggregated row**
-
-Add `accountId`, `fullyQualifiedName`, `_matchSource: "id" | "number" | "fqn" | "name+type" | "unmatched"` so downstream (and logs) can see how each account was linked.
-
-**6. Diagnostic counters**
-
-At the end of aggregation, log:
-```
-[TB] in=<rawCount> out=<uniqueAccounts> matched={id:X, number:Y, fqn:Z, name:W, unmatched:U} ambiguous=<count>
-```
-Mirrors the COA-side counters so a future regression is easy to spot.
-
-### Tests
-
-New `supabase/functions/_shared/tbAggregation.test.ts` (or co-located test in each function). Cases:
-
-1. Two TB rows with same leaf name (`Job Materials`) but different `accountType` → 2 distinct accountMap entries, both COA-matched.
-2. Two `Unapplied Cash` rows with distinct `accountId` → 2 entries.
-3. Same `accountId` across two periods → 1 entry with both period values.
-4. Row with no id/#/FQN, COA has 2 leaf-name candidates → unmatched + ambiguous log.
-5. Row matched by real account number wins over name-only collision.
-6. `_autoNumbered` COA account is **not** matched by row's synthesized number.
-
-### Out of scope
-
-- No changes to the COA side (already fixed last turn).
-- No schema changes — `accountId` and `fullyQualifiedName` are added to the aggregated JSON blob, which is `jsonb` and tolerates new fields.
-- No frontend changes; the `_matchSource` field is internal diagnostics only.
-
-### Risk
-
-Low. The aggregated TB output keeps the same shape; we're only adding optional fields and changing how the key is built. Existing TB consumers that look up by `accountName` continue to work, and the new id/FQN fields are additive. The only behavior change a user will see is **more accounts** in the TB (no longer silently merged) — which is the intended outcome and matches the COA count.
+- `src/components/wizard/sections/DocumentUploadSection.tsx` (edit)
+- `src/components/wizard/sections/TrialBalanceSection.tsx` (edit)
+- `src/hooks/useCoaReadiness.ts` (new)
+- `src/hooks/useCoaReadiness.test.ts` (new)
+- `supabase/functions/process-quickbooks-file/index.ts` (edit)
+- `supabase/functions/complete-qb-sync/index.ts` (edit)
+- `supabase/functions/qb-sync-complete/index.ts` (edit)
+- relevant `*_test.ts` files in each edge function dir (new/edit)
