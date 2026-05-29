@@ -2376,7 +2376,7 @@ export const DocumentUploadSection = ({
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                onClick={() => handleDelete(doc.id, doc.file_path as string)}
+                                onClick={() => setPendingDelete(doc)}
                               >
                                 <Trash2 className="w-4 h-4 text-destructive" />
                               </Button>
