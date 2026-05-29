@@ -17,6 +17,7 @@ export interface TrialBalanceAccount {
   fsLineItem?: string; // Standardized FS classification
   subAccount1?: string; // Sub-account hierarchy level 1
   subAccount2?: string; // Sub-account hierarchy level 2
+  qbAccountId?: string; // QuickBooks internal account Id (primary discriminator)
   monthlyValues: Record<string, number>; // periodId -> value
 }
 
@@ -282,6 +283,7 @@ interface QbTrialBalanceRow {
   accountName?: string;
   accountType?: string;
   subAccountType?: string;
+  qbAccountId?: string; // QuickBooks internal Id from colData[0].id
   debit?: number;
   credit?: number;
   balance?: number;
@@ -346,7 +348,7 @@ function parseColDataRow(rawRow: QbRawRow): QbTrialBalanceRow | null {
   if (!colData || colData.length < 3) return null;
   
   const accountName = colData[0]?.value || '';
-  const accountId = colData[0]?.id ? String(colData[0].id) : ''; // Extract QB internal account ID for COA matching
+  const qbAccountId = colData[0]?.id ? String(colData[0].id) : ''; // QB internal Id - primary discriminator
   const debitStr = colData[1]?.value || '0';
   const creditStr = colData[2]?.value || '0';
   
@@ -357,8 +359,9 @@ function parseColDataRow(rawRow: QbRawRow): QbTrialBalanceRow | null {
   const credit = parseFloat(creditStr.replace(/[^0-9.-]/g, '')) || 0;
   
   return {
-    accountNumber: accountId,
+    accountNumber: '',          // Real COA number gets populated during crossReferenceWithCOA
     accountName: accountName,
+    qbAccountId: qbAccountId,
     debit: debit,
     credit: credit,
     balance: debit - credit
@@ -456,7 +459,10 @@ function processRows(
   accountMap: Map<string, TrialBalanceAccount>
 ): void {
   for (const row of rows) {
-    const accountKey = row.accountName || row.accountNumber || '';
+    // Key priority: QB internal Id > accountName > accountNumber.
+    // QB Id is unique per account; accountName alone collides for distinct
+    // accounts sharing a leaf (e.g. "Equipment Rental" root vs sub-account).
+    const accountKey = row.qbAccountId || row.accountName || row.accountNumber || '';
     if (!accountKey) continue;
     
     let account = accountMap.get(accountKey);
@@ -474,6 +480,7 @@ function processRows(
         accountSubtype: accountSubtype,
         // Use backend-provided fsLineItem only - empty = bug visible
         fsLineItem: row.fsLineItem || '',
+        qbAccountId: row.qbAccountId || undefined,
         monthlyValues: {},
         // Preserve match flag if present
         ...(row._matchedFromCOA !== undefined && { _matchedFromCOA: row._matchedFromCOA }),
@@ -507,9 +514,12 @@ export function mergeAccounts(
 ): TrialBalanceAccount[] {
   const accountMap = new Map<string, TrialBalanceAccount>();
   
+  const keyOf = (a: TrialBalanceAccount) =>
+    a.qbAccountId || a.accountName || a.accountNumber;
+  
   // Add existing accounts to map
   for (const account of existing) {
-    const key = account.accountName || account.accountNumber;
+    const key = keyOf(account);
     if (key) {
       accountMap.set(key, { ...account, monthlyValues: { ...account.monthlyValues } });
     }
@@ -517,7 +527,7 @@ export function mergeAccounts(
   
   // Merge incoming accounts
   for (const account of incoming) {
-    const key = account.accountName || account.accountNumber;
+    const key = keyOf(account);
     if (!key) continue;
     
     const existingAccount = accountMap.get(key);
@@ -594,28 +604,45 @@ export function crossReferenceWithCOA(
   tbAccounts: TrialBalanceAccount[],
   coaAccounts: CoaAccount[]
 ): { accounts: TrialBalanceAccount[]; matchStats: CrossReferenceStats } {
-  // Build lookup maps by accountNumber and accountName (case-insensitive)
+  // Build lookup maps. Priority for matching: QB account Id → real account
+  // number → leaf name (with ambiguity handling).
+  const coaByQbId = new Map<string, CoaAccount>();
   const coaByNumber = new Map<string, CoaAccount>();
-  const coaByName = new Map<string, CoaAccount>();
-  
+  const coaByName = new Map<string, CoaAccount>();         // unique leaf names only
+  const coaByNameAll = new Map<string, CoaAccount[]>();    // includes ambiguous leaves
+
   coaAccounts.forEach(coa => {
-    if (coa.accountNumber) coaByNumber.set(coa.accountNumber, coa);
-    if (coa.id) coaByNumber.set(String(coa.id), coa); // Also index by QB internal ID
-    if (coa.accountName) coaByName.set(coa.accountName.toLowerCase(), coa);
+    if (coa.accountId) coaByQbId.set(String(coa.accountId), coa);
+    if (coa.accountNumber && !coa._autoNumbered) {
+      coaByNumber.set(coa.accountNumber, coa);
+    }
+    if (coa.accountName) {
+      const key = coa.accountName.toLowerCase();
+      const list = coaByNameAll.get(key) || [];
+      list.push(coa);
+      coaByNameAll.set(key, list);
+    }
   });
-  
+  // Only populate coaByName for names that resolve unambiguously to a single COA entry.
+  for (const [key, list] of coaByNameAll) {
+    if (list.length === 1) coaByName.set(key, list[0]);
+  }
+
   let matched = 0;
   let unmatched = 0;
   
   const enrichedAccounts = tbAccounts.map(tb => {
-    // Try to find matching COA account by number first, then by name
-    const coaMatch = 
+    // 1. QB account Id (unique discriminator from raw QB feed)
+    // 2. Real COA account number (only if non-synthesized)
+    // 3. Exact leaf name (only if unambiguous)
+    // 4. Parent/child name fallbacks for "Parent:Child" leaves
+    const coaMatch =
+      (tb.qbAccountId && coaByQbId.get(tb.qbAccountId)) ||
       (tb.accountNumber && coaByNumber.get(tb.accountNumber)) ||
       (tb.accountName && coaByName.get(tb.accountName.toLowerCase())) ||
-      // Parent-name fallback for sub-accounts (e.g., "Cost of Sales:Equipment Rental" -> "Cost of Sales")
       (tb.accountName?.includes(':') && coaByName.get(tb.accountName.split(':')[0].trim().toLowerCase())) ||
-      // Child-name fallback (e.g., "Payroll Expenses:Payroll Taxes" -> "Payroll Taxes")
       (tb.accountName?.includes(':') && coaByName.get(tb.accountName.split(':').pop()!.trim().toLowerCase()));
+
     
     if (coaMatch) {
       matched++;
