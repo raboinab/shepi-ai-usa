@@ -44,6 +44,17 @@ import { DocumentChecklistReference } from "../shared/DocumentChecklistReference
 import { FinancialStatementValidationCard, type FinancialStatementValidationResult } from "../shared/FinancialStatementValidationCard";
 import { Spinner } from "@/components/ui/spinner";
 import { getUploadErrorMessage, logUploadError } from "@/lib/uploadErrorLogger";
+import { resetDocumentArtifacts, describeReset } from "@/lib/documentReset";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface DocumentUploadSectionProps {
   projectId: string;
