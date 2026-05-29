@@ -1,62 +1,66 @@
-# Fix: Trial Balance showing 83 of 89 accounts
+## Goal
 
-## Root cause
+Introduce a single **NWC Method** toggle in Shepi. The user picks one of five methods, and every downstream calculation (Working Capital tab, NWC Analysis tab, Deal Parameters peg, Free Cash Flow change-in-NWC, PDF Working Capital slide, and workbook XLSX export) uses that method.
 
-The COA has 89 accounts; 6 leaf names appear twice under different parents (e.g. `Equipment Rental` as a root expense and `Job Expenses:Equipment Rental` as a sub-account; `Job Materials`, `Cost of Labor`, etc.). The QuickBooks trial-balance feed reports each row using only the **leaf name** in `colData[0].value`, with the unique QB account Id in `colData[0].id`.
+The five methods follow the taxonomy you laid out:
 
-`src/lib/trialBalanceUtils.ts` currently:
+1. **Reported** — Total Current Assets − Total Current Liabilities (book)
+2. **Operating** — excludes cash, short-term debt, income taxes payable
+3. **Transaction** — Operating with configurable inclusions/exclusions per LOI
+4. **Normalized** — Transaction + user-entered normalization adjustments (seasonality, one-time items)
+5. **Component** — AR + Inventory + Prepaids − AP − Accrued Expenses − Deferred Revenue
 
-1. `parseColDataRow` puts the QB Id into `accountNumber` and the leaf name into `accountName`.
-2. `processRows` builds its account map with `key = accountName || accountNumber` — so the leaf-name collision merges the 6 duplicate-leaf pairs into single rows. 89 → 83.
-3. `mergeAccounts` uses the same leaf-only key, perpetuating the collapse.
-4. `crossReferenceWithCOA` indexes COA by `coa.accountNumber` and by sequential `coa.id` (1..89), neither of which is the real QB account Id, so the collapsed TB rows match the wrong COA entry (or only one of the pair).
+## Scope
 
-We already fixed the same class of bug on the COA side by prioritizing `accountId` > real `accountNumber` > `fullyQualifiedName` > leaf+classification+subtype. The TB side was missed.
+### 1. Data model
 
-## Fix
+- Add `nwcMethod: 'reported' | 'operating' | 'transaction' | 'normalized' | 'component'` to `DealParameters` in `src/lib/nwcDataUtils.ts`. Default `'operating'`.
+- Add `transactionInclusions` (record of line-item keys → boolean) for the Transaction method's exclude toggles (cash, short-term debt, income taxes payable, owner-related balances).
+- Add `normalizationAdjustments: Array<{ id, label, periodValues: Record<periodId, number> }>` for Normalized method.
+- Persist via existing `dealParameters` save path (no schema migration — these live in the same `dealParameters` JSON column already used).
 
-### 1. `src/lib/trialBalanceUtils.ts` — preserve the QB account Id
+### 2. Calculation layer (`src/lib/calculations.ts`)
 
-- Add `qbAccountId?: string` to `TrialBalanceAccount` (or piggy-back on a new field — do **not** overload `accountNumber`, which the rest of the app treats as the human-readable COA number).
-- In `parseColDataRow`, stop writing the QB Id into `accountNumber`. Return both:
-  - `qbAccountId` = `colData[0].id`
-  - `accountName` = leaf
-  - leave `accountNumber` empty (the real number comes from COA cross-reference).
-- In `processRows`, build the map key as `qbAccountId || accountName || accountNumber` so distinct QB accounts with identical leaf names stay separate.
-- In `mergeAccounts`, key on `qbAccountId || accountName || accountNumber` for the same reason.
+Add one entry point: `calcNWCByMethod(entries, periodId, method, params) → number`. Internally it composes the existing primitives:
 
-### 2. `src/lib/trialBalanceUtils.ts` — match COA by QB Id first
+- `reported` → `calcNetWorkingCapital`
+- `operating` → `calcNWCExCash` minus short-term debt and income taxes payable buckets (read from `Other current liabilities` sub-rows when tagged; fall back to `calcNWCExCash` if not tagged)
+- `transaction` → operating with user `transactionInclusions` applied
+- `normalized` → transaction + sum of `normalizationAdjustments[period]`
+- `component` → AR + Inventory + Prepaids − AP − Accrued − Deferred Revenue, using COA sub-line-item tags
 
-In `crossReferenceWithCOA`:
+Component requires sub-tags that the current 5-bucket COA does not expose individually. **Decision needed (see Open Questions):** introduce sub-line-item tags or treat `component` as currently equivalent to `operating` until sub-tags exist.
 
-- Build a third lookup `coaByQbId = new Map<string, CoaAccount>()` populated from `coa.accountId` (the real QB Id stored by `transformCoaData`).
-- Match order: `qbAccountId` → `accountNumber` (real, not the QB Id we used to stuff in here) → `accountName` (leaf) with a tie-break on classification when multiple COA entries share the leaf → existing parent/child fallbacks.
-- When a leaf-name lookup is ambiguous (more than one COA entry shares that leaf), prefer the COA entry whose `fullyQualifiedName` matches the TB row's parent chain if available, otherwise leave it unmatched rather than silently picking the first.
+### 3. UI — Method selector
 
-### 3. Regression test
+New component `src/components/wizard/shared/NWCMethodSelector.tsx`: segmented control with the 5 options, short description tooltip per method, and a "Configure" affordance that opens:
 
-Add a case to `src/lib/trialBalanceUtils.test.ts` (create if missing) that feeds two TB rows with identical `accountName` but distinct `colData[0].id` (e.g. ids `247` and `254`, both named `Equipment Rental`) across two periods, and asserts:
+- **Transaction method:** checkbox list of items to exclude (Cash, Short-term debt, Income taxes payable, Owner loans).
+- **Normalized method:** editable table of adjustment rows × periods (replaces the current free-text "Additional NWC adjustments" row in the NWC Analysis grid).
 
-- `transformQbTrialBalanceData` returns **2** accounts, not 1.
-- `crossReferenceWithCOA` matches each to its respective COA entry by `accountId` (one root `Equipment Rental`, one sub `Job Expenses:Equipment Rental`).
+Place the selector at the top of `NWCFCFSection.tsx`, above the summary cards.
 
-### 4. Rehydrate the affected project
+### 4. Downstream wiring
 
-After the fix ships, the cached `wizard_data.trialBalance` on project `fa0768ca-…` is still the collapsed 83-row snapshot. Either:
+- **Summary cards** in `NWCFCFSection.tsx`: "Current NWC" reflects the active method; add a small method badge.
+- **WorkingCapitalTab.tsx**: replace the hardcoded "Net Working Capital" / "NWC ex. Cash" rows with a single "Net Working Capital ({method})" row and the % of Revenue ratio using that value.
+- **NWCAnalysisTab.tsx**: re-label the "reported → adjusted" flow to match the selected method, and route the "Normal NWC adjustments" block to the Normalized adjustments store.
+- **DealParametersCard.tsx**: peg averages (T3M / T6M / T12M) are recomputed against the selected NWC method via `calcNWCByMethod`, not from the legacy `extractNWCMetrics` scraper.
+- **FreeCashFlowTab.tsx**: "Change in NWC" line uses the selected method.
+- **PDF (`src/lib/pdf/pdfWorker.ts`) + workbook XLSX builders**: Working Capital slide / tab header shows the method name and uses its values; narratives reference the chosen definition.
 
-- Clear `wizard_data.trialBalance` for that project so `loadTrialBalanceFromProcessedData` rebuilds it from `processed_data`, **or**
-- Bump a small version constant the loader checks and force a one-time rebuild.
+### 5. Tests
 
-I'll go with clearing the cached field for just this project (smaller blast radius) and note it in the response.
+Add unit tests in `src/lib/nwcDataUtils.test.ts` and `calculations.test.ts` covering each method against a fixed mock trial balance, plus a regression test that switching method does not mutate trial balance data.
 
-## Files touched
+## Open questions
 
-- `src/lib/trialBalanceUtils.ts` — parse, process, merge, cross-reference
-- `src/lib/trialBalanceUtils.test.ts` — new regression test (create if absent)
-- one-shot SQL to clear the stale `wizard_data.trialBalance` on the affected project
+1. **Component method line items.** The current Chart of Accounts only has `Cash / AR / Other current assets / Current liabilities / Other current liabilities`. Component requires AR / Inventory / Prepaids / AP / Accrued / Deferred Revenue separately. Two options: (a) add sub-line-item tags to the COA so users classify accounts at a finer grain (bigger change, touches Trial Balance import / COA mapping UI); or (b) ship Component as "equivalent to Operating" with a "Requires sub-classification — coming soon" badge until the COA is expanded.
+2. **Method scope.** Should the chosen method also drive the **homepage / marketing copy and guides** (e.g. `/guides/WorkingCapitalAnalysis`), or only the in-app calculations? I'd recommend in-app only for this pass; we can update the guide separately.
+3. **Demo PDF/XLSX.** After this change the demo assets in `/public/demo/` will be out of date — should I regenerate them as part of this work (per the project memory note about `scripts/generate-demo-pdf.ts` / `generate-demo-workbook.ts`)?
 
 ## Out of scope
 
-- COA logic (already fixed).
-- UI changes — the "X accounts / Y matched from COA" counters will update automatically once the underlying array has 89 entries.
-- Edge-function-side TB processing — the bug is purely in the client-side transform.
+- No changes to CPA review workflow, DFY messaging, or marketing claims.
+- No new database tables; reuses existing `dealParameters` JSON.
+- No CPA-attestation-style language added to the report.
