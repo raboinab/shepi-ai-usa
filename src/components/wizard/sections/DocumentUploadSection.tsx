@@ -64,6 +64,7 @@ interface DocumentUploadSectionProps {
   updateData: (data: Record<string, unknown>) => void;
   fullWizardData?: Record<string, unknown>;
   initialDocType?: string | null;
+  onNavigate?: (phase: number, section: number) => void;
 }
 
 interface Document {
