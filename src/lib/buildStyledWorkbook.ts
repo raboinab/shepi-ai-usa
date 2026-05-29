@@ -404,19 +404,11 @@ export async function buildStyledWorkbook(opts: BuildOptions): Promise<ExcelJS.W
     }
   }
 
-  // --- Table of contents (inserted as 2nd sheet) ---
+  // --- Table of contents (appended at end; ExcelJS preserves insertion order) ---
   const toc = wb.addWorksheet("Contents", {
     properties: { tabColor: { argb: GOLD } },
   });
   buildTOCSheet(toc, sheetsBuilt);
-  // Move Contents to position 2 (right after Cover)
-  // ExcelJS doesn't have a direct reorder API; rebuild orderNo:
-  toc.orderNo = 1;
-  cover.orderNo = 0;
-  sheetsBuilt.forEach((s, i) => {
-    const w = wb.getWorksheet(s.sheetName);
-    if (w) w.orderNo = 2 + i;
-  });
 
   return wb;
 }
