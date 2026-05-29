@@ -123,8 +123,8 @@ export default {
           'sans-serif'
         ],
         serif: [
-          'Fraunces',
           'Lora',
+          'Fraunces',
           'ui-serif',
           'Georgia',
           'Cambria',
