@@ -296,7 +296,7 @@ Deno.serve(async (req) => {
       const coaAccountCount = Array.isArray(coaForTb?.accounts) ? coaForTb.accounts.length : 0;
       if (coaAccountCount === 0) {
         console.warn(
-          `[complete-qb-sync] SKIPPING trial_balance aggregation: ${trialBalanceRecords.length} TB period(s) present but COA is empty for project ${projectId}. Sync COA first.`
+          `[complete-qb-sync] SKIPPING trial_balance aggregation: ${trialBalanceRecords.length} TB period(s) present but COA is empty for project ${project_id}. Sync COA first.`
         );
       } else {
         console.log(`[complete-qb-sync] Aggregating ${trialBalanceRecords.length} trial_balance periods against ${coaAccountCount} COA accounts...`);
