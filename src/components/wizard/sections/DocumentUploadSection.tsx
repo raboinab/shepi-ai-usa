@@ -394,7 +394,9 @@ export const DocumentUploadSection = ({
   updateData,
   fullWizardData = {},
   initialDocType,
+  onNavigate,
 }: DocumentUploadSectionProps) => {
+  const coaReadiness = useCoaReadiness(projectId, fullWizardData);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
