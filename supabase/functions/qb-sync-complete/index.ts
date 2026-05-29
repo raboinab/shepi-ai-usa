@@ -1,5 +1,13 @@
 import { createClient } from "npm:@supabase/supabase-js@2.87.1";
 import { mapAccountTypeToFsType, mapAccountTypeToCategory, mapAccountToFields, mapAccountTypeToFSLineItem } from "../_shared/qbAccountMappings.ts";
+import {
+  buildAccountKey,
+  buildCoaLookupMaps,
+  emptyMatchCounts,
+  resolveCoaMatch,
+  tallyMatch,
+  type RowKeys,
+} from "../_shared/tbAggregation.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
