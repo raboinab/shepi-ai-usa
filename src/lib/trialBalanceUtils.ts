@@ -459,7 +459,10 @@ function processRows(
   accountMap: Map<string, TrialBalanceAccount>
 ): void {
   for (const row of rows) {
-    const accountKey = row.accountName || row.accountNumber || '';
+    // Key priority: QB internal Id > accountName > accountNumber.
+    // QB Id is unique per account; accountName alone collides for distinct
+    // accounts sharing a leaf (e.g. "Equipment Rental" root vs sub-account).
+    const accountKey = row.qbAccountId || row.accountName || row.accountNumber || '';
     if (!accountKey) continue;
     
     let account = accountMap.get(accountKey);
@@ -477,6 +480,7 @@ function processRows(
         accountSubtype: accountSubtype,
         // Use backend-provided fsLineItem only - empty = bug visible
         fsLineItem: row.fsLineItem || '',
+        qbAccountId: row.qbAccountId || undefined,
         monthlyValues: {},
         // Preserve match flag if present
         ...(row._matchedFromCOA !== undefined && { _matchedFromCOA: row._matchedFromCOA }),
