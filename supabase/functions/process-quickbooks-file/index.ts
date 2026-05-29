@@ -200,7 +200,8 @@ function enrichCoaAccounts(data: unknown): unknown {
     };
   });
 
-  console.log(`[enrichCoaAccounts] Enriched ${enriched.length} accounts (${correctionCount} subtype-corrected)`);
+  const unapplied = enriched.filter((a: any) => /unapplied/i.test(a.name || a.Name || a.accountName || ''));
+  console.log(`[enrichCoaAccounts] Enriched ${enriched.length} accounts (in=${accounts.length}, ${correctionCount} subtype-corrected, unapplied=${unapplied.length})`);
 
   if (Array.isArray(data)) {
     return enriched;
