@@ -348,7 +348,7 @@ function parseColDataRow(rawRow: QbRawRow): QbTrialBalanceRow | null {
   if (!colData || colData.length < 3) return null;
   
   const accountName = colData[0]?.value || '';
-  const accountId = colData[0]?.id ? String(colData[0].id) : ''; // Extract QB internal account ID for COA matching
+  const qbAccountId = colData[0]?.id ? String(colData[0].id) : ''; // QB internal Id - primary discriminator
   const debitStr = colData[1]?.value || '0';
   const creditStr = colData[2]?.value || '0';
   
@@ -359,8 +359,9 @@ function parseColDataRow(rawRow: QbRawRow): QbTrialBalanceRow | null {
   const credit = parseFloat(creditStr.replace(/[^0-9.-]/g, '')) || 0;
   
   return {
-    accountNumber: accountId,
+    accountNumber: '',          // Real COA number gets populated during crossReferenceWithCOA
     accountName: accountName,
+    qbAccountId: qbAccountId,
     debit: debit,
     credit: credit,
     balance: debit - credit
