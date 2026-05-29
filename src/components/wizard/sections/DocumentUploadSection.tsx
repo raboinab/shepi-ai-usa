@@ -44,6 +44,17 @@ import { DocumentChecklistReference } from "../shared/DocumentChecklistReference
 import { FinancialStatementValidationCard, type FinancialStatementValidationResult } from "../shared/FinancialStatementValidationCard";
 import { Spinner } from "@/components/ui/spinner";
 import { getUploadErrorMessage, logUploadError } from "@/lib/uploadErrorLogger";
+import { resetDocumentArtifacts, describeReset } from "@/lib/documentReset";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface DocumentUploadSectionProps {
   projectId: string;
@@ -408,6 +419,8 @@ export const DocumentUploadSection = ({
     result: ValidationResult;
     selectedType: string;
   } | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Document | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   
   // Financial statement validation state
   const [financialValidationResults, setFinancialValidationResults] = useState<Record<string, FinancialStatementValidationResult | null>>({});
@@ -1534,38 +1547,26 @@ export const DocumentUploadSection = ({
     setPendingValidation(null);
   };
 
-  const handleDelete = async (docId: string, filePath: string) => {
+  const handleDelete = async (doc: Document) => {
+    setIsDeleting(true);
     try {
-      // 1. Delete derived processed_data (analysis results, parsed data)
-      await supabase
-        .from("processed_data")
-        .delete()
-        .eq("source_document_id", docId);
-
-      // 2. Delete canonical_transactions linked to this document
-      await supabase
-        .from("canonical_transactions")
-        .delete()
-        .eq("source_document_id", docId);
-
-      // 3. Delete file from storage
-      await supabase.storage.from("documents").remove([filePath]);
-
-      // 4. Delete document record
-      const { error } = await supabase
-        .from("documents")
-        .delete()
-        .eq("id", docId);
-
-      if (error) throw error;
-
-      toast.success("Document deleted");
+      await resetDocumentArtifacts({
+        id: doc.id,
+        file_path: doc.file_path,
+        project_id: projectId,
+        account_type: doc.account_type,
+      });
+      toast.success("Document deleted — you can re-upload");
+      setPendingDelete(null);
       fetchDocuments();
     } catch (error) {
       console.error("Delete error:", error);
       toast.error("Failed to delete document");
+    } finally {
+      setIsDeleting(false);
     }
   };
+
 
   const handleRefresh = async (docId: string) => {
     toast.info("Refreshing document status...");
@@ -2375,7 +2376,7 @@ export const DocumentUploadSection = ({
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                onClick={() => handleDelete(doc.id, doc.file_path as string)}
+                                onClick={() => setPendingDelete(doc)}
                               >
                                 <Trash2 className="w-4 h-4 text-destructive" />
                               </Button>
@@ -2421,6 +2422,39 @@ export const DocumentUploadSection = ({
           onCancel={handleCancelValidation}
         />
       )}
+
+      <AlertDialog open={!!pendingDelete} onOpenChange={(open) => !open && !isDeleting && setPendingDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this document?</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <span className="block">
+                {pendingDelete?.name ? <strong>{pendingDelete.name}</strong> : "This document"} will be removed.
+              </span>
+              <span className="block">
+                {pendingDelete ? describeReset({ id: pendingDelete.id, account_type: pendingDelete.account_type }) : ""}
+              </span>
+              <span className="block text-xs text-muted-foreground">
+                Existing adjustments are not deleted; re-run discovery if you want them refreshed against a new document.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                if (pendingDelete) handleDelete(pendingDelete);
+              }}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting ? "Deleting…" : "Delete & reset"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
+
   );
 };
