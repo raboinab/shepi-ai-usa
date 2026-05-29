@@ -6,8 +6,12 @@ export interface CoaAccount {
   category: string;
   accountSubtype?: string;   // From qbToJson accountSubType field
   classification?: string;   // QuickBooks classification (REVENUE, EXPENSE, ASSET, etc.)
+  accountId?: string;        // QuickBooks Id - primary discriminator
+  fullyQualifiedName?: string; // e.g. "Landscaping Services:Job Materials" - parent-aware
+  parentRef?: string;        // QuickBooks ParentRef.value
   isUserEdited?: boolean;    // Track if user has modified this account
   originalName?: string;     // Store original name for matching
+  _autoNumbered?: boolean;   // Marks accounts whose accountNumber was synthesized
 }
 
 export interface MergeResult {
@@ -18,15 +22,6 @@ export interface MergeResult {
     preserved: number;  // User-edited accounts that weren't overwritten
   };
 }
-
-// Balance Sheet account types from QuickBooks
-const BS_TYPES = [
-  'asset', 'bank', 'accounts receivable', 'other current asset', 
-  'fixed asset', 'other asset',
-  'liability', 'accounts payable', 'credit card', 'other current liability', 
-  'long term liability', 'other liability',
-  'equity'
-];
 
 // Common accounting abbreviation mappings
 const ABBREVIATION_MAP: Record<string, string[]> = {
@@ -53,53 +48,82 @@ const ABBREVIATION_MAP: Record<string, string[]> = {
 // Normalize account name for comparison
 export function normalizeAccountName(name: string): string {
   const lower = (name || '').toLowerCase().trim();
-  
+
   // Check if this matches any known abbreviation
   for (const [canonical, variations] of Object.entries(ABBREVIATION_MAP)) {
     if (variations.includes(lower) || lower === canonical) {
       return canonical;
     }
   }
-  
+
   // Remove common noise words and punctuation for comparison
   return lower
-    .replace(/[^\w\s]/g, '')  // Remove punctuation
-    .replace(/\s+/g, ' ')      // Normalize whitespace
+    .replace(/[^\w\s:]/g, '')  // Remove punctuation EXCEPT ':' (preserves FQN parent path)
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
-// Find a matching account using multiple criteria
+// Find a matching account using prioritized discriminators.
+// Priority: accountId > real accountNumber > fullyQualifiedName > leaf-name + classification + subtype.
+// CRITICAL: bare leaf-name matching is no longer allowed — it incorrectly merged
+// distinct QB sub-accounts that share a leaf (e.g. "Job Materials" under both
+// Landscaping Services [income] and Job Expenses [expense]).
 export function findMatchingAccount(
-  account: CoaAccount, 
+  account: CoaAccount,
   existingAccounts: CoaAccount[]
 ): CoaAccount | undefined {
-  const normalizedName = normalizeAccountName(account.accountName);
-  const accountNum = (account.accountNumber || '').trim();
-  
-  return existingAccounts.find(existing => {
-    const existingNum = (existing.accountNumber || '').trim();
-    
-    // Match by account number (exact match, if both have numbers)
-    if (accountNum && existingNum && accountNum === existingNum) {
-      return true;
-    }
-    
-    // Match by normalized name
-    const existingNormalized = normalizeAccountName(existing.accountName);
-    if (normalizedName && existingNormalized && normalizedName === existingNormalized) {
-      return true;
-    }
-    
-    // Match by original name (if stored)
-    if (existing.originalName) {
-      const originalNormalized = normalizeAccountName(existing.originalName);
-      if (normalizedName && originalNormalized && normalizedName === originalNormalized) {
-        return true;
-      }
-    }
-    
-    return false;
-  });
+  const acctId = (account.accountId || '').trim();
+  const acctNumRaw = (account.accountNumber || '').trim();
+  const isAutoNum = !!account._autoNumbered;
+  const acctNum = isAutoNum ? '' : acctNumRaw;
+  const fqn = normalizeAccountName(account.fullyQualifiedName || '');
+  const leaf = normalizeAccountName(account.accountName);
+  const classification = (account.classification || '').toLowerCase().trim();
+  const subtype = (account.accountSubtype || '').toLowerCase().trim();
+
+  // 1. accountId exact match
+  if (acctId) {
+    const m = existingAccounts.find(e => (e.accountId || '').trim() === acctId);
+    if (m) return m;
+  }
+
+  // 2. Real (non-synthesized) accountNumber exact match
+  if (acctNum) {
+    const m = existingAccounts.find(e => {
+      if (e._autoNumbered) return false;
+      return (e.accountNumber || '').trim() === acctNum;
+    });
+    if (m) return m;
+  }
+
+  // 3. fullyQualifiedName match (preserves parent path)
+  if (fqn) {
+    const m = existingAccounts.find(e => {
+      const eFqn = normalizeAccountName(e.fullyQualifiedName || '');
+      return eFqn && eFqn === fqn;
+    });
+    if (m) return m;
+  }
+
+  // 4. Leaf-name match ONLY if classification AND subtype also match.
+  //    This prevents merging an income "Job Materials" with an expense "Job Materials".
+  if (leaf) {
+    const m = existingAccounts.find(e => {
+      const eLeaf = normalizeAccountName(e.accountName);
+      const eOrig = normalizeAccountName(e.originalName || '');
+      const nameHit = eLeaf === leaf || (eOrig && eOrig === leaf);
+      if (!nameHit) return false;
+      const eClass = (e.classification || '').toLowerCase().trim();
+      const eSub = (e.accountSubtype || '').toLowerCase().trim();
+      // Require BOTH classification and subtype to agree (or both sides empty).
+      const classOk = classification === eClass;
+      const subOk = subtype === eSub;
+      return classOk && subOk;
+    });
+    if (m) return m;
+  }
+
+  return undefined;
 }
 
 // Transform qbToJson COA data to our Account format
@@ -108,67 +132,77 @@ export function transformCoaData(data: any): CoaAccount[] {
   // 1. Direct array: [...accounts...] (qbtojson format)
   // 2. Wrapped object: { accounts: [...] } or { Accounts: [...] }
   let accounts: any[];
-  
+
   if (Array.isArray(data)) {
-    // Data is already an array (qbtojson format)
     accounts = data;
   } else {
-    // Data is wrapped in an object
     accounts = data?.accounts || data?.Accounts || [];
   }
-  
+
   if (!Array.isArray(accounts)) return [];
-  
-  const result = accounts.map((acc: any, index: number) => {
-    const accountName = acc.Name || acc.name || acc.accountName || acc.fullyQualifiedName || '';
-    const accountNumber = acc.AcctNum || acc.acctNum || acc.accountNumber || acc.number || acc.id?.toString() || '';
-    
-    // Extract accountSubtype from qbToJson (accountSubType) or other formats
-    const accountSubtype = acc.accountSubType || acc.accountSubtype || acc.subtype || '';
-    
-    // Extract classification (QB uses uppercase: REVENUE, EXPENSE, ASSET, etc.)
+
+  const result: CoaAccount[] = accounts.map((acc: any, index: number) => {
+    const accountName = acc.Name || acc.name || acc.accountName || '';
+    const fullyQualifiedName = acc.FullyQualifiedName || acc.fullyQualifiedName || '';
+    const displayName = accountName || fullyQualifiedName || '';
+    const accountNumber = acc.AcctNum || acc.acctNum || acc.accountNumber || acc.number || '';
+    const accountId = String(acc.Id || acc.id || acc.accountId || '');
+    const parentRef = String(
+      acc?.ParentRef?.value || acc?.parentRef?.value || acc?.parentRef || acc?.parentId || ''
+    );
+
+    const accountSubtype = acc.accountSubType || acc.accountSubtype || acc.subtype || acc.AccountSubType || '';
     const classification = acc.classification || acc.Classification || '';
-    
-    // Check if fsType and category are already provided (pre-processed data from edge function)
+
     const hasPreprocessedData = acc.fsType && acc.category;
-    
+
     if (hasPreprocessedData) {
-      // Data is already in our format from the edge function - use it directly
       return {
         id: index + 1,
         accountNumber,
-        accountName,
+        accountName: displayName,
         fsType: acc.fsType as "BS" | "IS",
         category: acc.category,
         accountSubtype,
         classification,
-        originalName: accountName,
+        accountId,
+        fullyQualifiedName,
+        parentRef,
+        originalName: displayName,
       };
     }
-    
-    // Raw data without backend enrichment - use simple defaults, empty = bug visible
+
     return {
       id: index + 1,
       accountNumber,
-      accountName,
-      fsType: acc.fsType || 'BS',  // Simple default, not derived
-      category: acc.category || '',  // Empty = bug visible
+      accountName: displayName,
+      fsType: acc.fsType || 'BS',
+      category: acc.category || '',
       accountSubtype,
       classification,
-      originalName: accountName,  // Store for future matching
+      accountId,
+      fullyQualifiedName,
+      parentRef,
+      originalName: displayName,
     };
   });
 
-  // Auto-assign account numbers to accounts missing them (belt-and-suspenders)
-  let nextAutoNum = 10000;
+  // Auto-assign account numbers to accounts missing them, but mark them as
+  // synthesized so the matcher won't collide on them.
+  let nextAutoNum = 90000;
   const usedNumbers = new Set(result.map(a => a.accountNumber).filter(Boolean));
   for (const acc of result) {
     if (!acc.accountNumber) {
       while (usedNumbers.has(String(nextAutoNum))) nextAutoNum++;
       acc.accountNumber = String(nextAutoNum);
+      acc._autoNumbered = true;
       usedNumbers.add(acc.accountNumber);
       nextAutoNum++;
     }
+  }
+
+  if (typeof console !== 'undefined') {
+    console.log(`[transformCoaData] in=${accounts.length} out=${result.length}`);
   }
 
   return result;
@@ -176,38 +210,33 @@ export function transformCoaData(data: any): CoaAccount[] {
 
 // Merge accounts with smart matching, preserving user edits
 export function mergeCoaAccounts(
-  existing: CoaAccount[], 
+  existing: CoaAccount[],
   incoming: CoaAccount[]
 ): MergeResult {
   const result: CoaAccount[] = [...existing];
   const stats = { added: 0, merged: 0, preserved: 0 };
-  
+
   for (const incomingAcc of incoming) {
     const match = findMatchingAccount(incomingAcc, result);
-    
+
     if (match) {
-      // Found a match - decide whether to update
       const matchIndex = result.findIndex(a => a.id === match.id);
-      
+
       if (match.isUserEdited) {
-        // User has edited this account - preserve their changes
         stats.preserved++;
-        // Optionally update the original name for future matching
         result[matchIndex] = {
           ...match,
           originalName: match.originalName || incomingAcc.accountName,
         };
       } else {
-        // No user edits - update with incoming data
         stats.merged++;
         result[matchIndex] = {
           ...incomingAcc,
-          id: match.id,  // Keep the original ID
-          originalName: match.accountName,  // Store for future matching
+          id: match.id,
+          originalName: match.accountName,
         };
       }
     } else {
-      // No match - add as new account
       stats.added++;
       result.push({
         ...incomingAcc,
@@ -216,12 +245,19 @@ export function mergeCoaAccounts(
       });
     }
   }
-  
+
   // Reassign sequential IDs
   const finalAccounts = result.map((acc, index) => ({
     ...acc,
     id: index + 1,
   }));
-  
+
+  if (typeof console !== 'undefined') {
+    console.log(
+      `[mergeCoaAccounts] existing=${existing.length} incoming=${incoming.length} ` +
+      `result=${finalAccounts.length} (+${stats.added} new, ${stats.merged} updated, ${stats.preserved} preserved)`
+    );
+  }
+
   return { accounts: finalAccounts, stats };
 }
