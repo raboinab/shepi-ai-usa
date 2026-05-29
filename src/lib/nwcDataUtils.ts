@@ -12,11 +12,34 @@ export interface NWCExtractedMetrics {
   ltmFCF: number;
 }
 
+import type { NWCConfig, NWCMethod } from "./workbook-types";
+
+export type { NWCMethod, NWCConfig };
+
 export interface DealParameters {
   pegMethod: 't3m' | 't6m' | 't12m' | 'custom';
   customPegAmount: number | null;
   estimatedNWCAtClose: number | null;
+  /** Which NWC definition drives the Working Capital / NWC Analysis / FCF section. */
+  nwcMethod?: NWCMethod;
+  /** Configuration for the Transaction method (per-bucket excludes). */
+  transactionInclusions?: NWCConfig['transactionInclusions'];
+  /** User-entered normalization adjustment rows for the Normalized method. */
+  normalizationAdjustments?: NWCConfig['normalizationAdjustments'];
 }
+
+/** Default NWC method when a deal is first opened. */
+export const DEFAULT_NWC_METHOD: NWCMethod = 'operating';
+
+/** Build an NWCConfig from persisted DealParameters. */
+export function dealParametersToNWCConfig(p: DealParameters | undefined | null): NWCConfig {
+  return {
+    method: p?.nwcMethod ?? DEFAULT_NWC_METHOD,
+    transactionInclusions: p?.transactionInclusions,
+    normalizationAdjustments: p?.normalizationAdjustments,
+  };
+}
+
 
 /**
  * Parse a currency string to a number
