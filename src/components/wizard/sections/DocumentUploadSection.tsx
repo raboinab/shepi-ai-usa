@@ -2221,6 +2221,8 @@ export const DocumentUploadSection = ({
                   </Alert>
                 )}
 
+                <div className="space-y-2">
+                  <Label>Files</Label>
                   <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
                     <input
                       id="file-upload"
