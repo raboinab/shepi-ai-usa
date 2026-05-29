@@ -1471,6 +1471,14 @@ export const DocumentUploadSection = ({
       return;
     }
 
+    // COA-first invariant: block Trial Balance uploads when COA isn't ready.
+    // Mirrors the gate in TrialBalanceSection so the Documents tab can't bypass it.
+    if (selectedType === "trial_balance" && !coaReadiness.ready) {
+      toast.error("Upload your Chart of Accounts first — Trial Balance accounts can't be classified without it.");
+      return;
+    }
+
+
     const requiresInstitution = REQUIRES_INSTITUTION.includes(selectedType);
     
     if (requiresInstitution && !selectedInstitution) {
