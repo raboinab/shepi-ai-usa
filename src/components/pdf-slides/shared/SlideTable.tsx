@@ -70,10 +70,12 @@ export function SlideTable({ columns, rows, title, compact }: SlideTableProps) {
       {title && (
         <div
           style={{
-            fontSize: 20,
-            fontWeight: 700,
+            fontSize: 24,
+            fontWeight: 500,
             color: PDF_COLORS.darkBlue,
-            marginBottom: 12,
+            marginBottom: 14,
+            fontFamily: PDF_FONTS.heading,
+            letterSpacing: "-0.01em",
           }}
         >
           {title}
@@ -85,6 +87,7 @@ export function SlideTable({ columns, rows, title, compact }: SlideTableProps) {
           borderCollapse: "collapse",
           fontSize,
           tableLayout: colCount > 8 ? "fixed" : "auto",
+          fontVariantNumeric: "tabular-nums",
         }}
       >
         <thead>
@@ -99,11 +102,11 @@ export function SlideTable({ columns, rows, title, compact }: SlideTableProps) {
                   textAlign: (col.align || (col.key === columns[0]?.key ? "left" : "right")) as React.CSSProperties["textAlign"],
                   fontWeight: 600,
                   fontSize: headerFontSize,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.3px",
+                  textTransform: colCount > 8 ? "uppercase" : "none",
+                  letterSpacing: colCount > 8 ? "0.08em" : "0.02em",
                   whiteSpace: "nowrap",
                   width: col.width,
-                  borderBottom: `2px solid ${PDF_COLORS.teal}`,
+                  borderBottom: `2px solid ${PDF_COLORS.gold}`,
                   overflow: "hidden",
                   textOverflow: "ellipsis",
                 }}
@@ -121,8 +124,8 @@ export function SlideTable({ columns, rows, title, compact }: SlideTableProps) {
                   <td
                     colSpan={colCount}
                     style={{
-                      height: 4,
-                      backgroundColor: PDF_COLORS.teal,
+                      height: 3,
+                      backgroundColor: PDF_COLORS.gold,
                       padding: 0,
                     }}
                   />
@@ -132,15 +135,17 @@ export function SlideTable({ columns, rows, title, compact }: SlideTableProps) {
 
             const isHighlightRow = row.highlight || row.bold;
             const bgColor = isHighlightRow
-              ? "#EDE5D8"
+              ? PDF_COLORS.sand
               : idx % 2 === 0
                 ? PDF_COLORS.white
-                : "#F5F2EC";
+                : PDF_COLORS.offWhite;
 
             return (
               <tr key={idx}>
                 {columns.map((col) => {
                   const isFirstCol = col.key === columns[0]?.key;
+                  const cellValue = row.cells[col.key];
+                  const isNegative = typeof cellValue === "number" && cellValue < 0;
                   return (
                     <td
                       key={col.key}
@@ -148,10 +153,17 @@ export function SlideTable({ columns, rows, title, compact }: SlideTableProps) {
                         padding: cellPadding,
                         height: rowHeight,
                         textAlign: (col.align || (isFirstCol ? "left" : "right")) as React.CSSProperties["textAlign"],
-                        fontWeight: row.bold ? 700 : 400,
+                        fontWeight: row.bold ? 600 : 400,
                         backgroundColor: bgColor,
-                        color: row.bold ? PDF_COLORS.darkBlue : PDF_COLORS.darkGray,
-                        borderBottom: `1px solid ${PDF_COLORS.lightGray}`,
+                        color: row.bold
+                          ? PDF_COLORS.darkBlue
+                          : isNegative
+                            ? PDF_COLORS.red
+                            : PDF_COLORS.darkGray,
+                        borderBottom: row.bold
+                          ? `1px solid ${PDF_COLORS.darkBlue}`
+                          : `1px solid ${PDF_COLORS.lightGray}`,
+                        borderTop: row.bold && idx > 0 ? `1px solid ${PDF_COLORS.darkBlue}` : undefined,
                         paddingLeft: isFirstCol && row.indent
                           ? `${(colCount > 8 ? 6 : 12) + row.indent * (colCount > 8 ? 12 : 20)}px`
                           : undefined,
@@ -159,9 +171,10 @@ export function SlideTable({ columns, rows, title, compact }: SlideTableProps) {
                         overflow: "hidden",
                         textOverflow: "ellipsis",
                         maxWidth: colCount > 8 ? 0 : undefined,
+                        fontFamily: isFirstCol && row.bold ? PDF_FONTS.heading : PDF_FONTS.body,
                       }}
                     >
-                      {formatCell(row.cells[col.key])}
+                      {formatCell(cellValue)}
                     </td>
                   );
                 })}

@@ -16,7 +16,7 @@ interface SpreadsheetGridProps {
   className?: string;
 }
 
-const ROW_HEIGHT = 24;
+const ROW_HEIGHT = 30;
 
 export function SpreadsheetGrid({ data, onCellChange, onRowClick, className }: SpreadsheetGridProps) {
   const [editingCell, setEditingCell] = useState<{ rowId: string; colKey: string } | null>(null);
@@ -57,19 +57,19 @@ export function SpreadsheetGrid({ data, onCellChange, onRowClick, className }: S
   const getRowClasses = (type: RowType): string => {
     switch (type) {
       case "header":
-        return "bg-[hsl(var(--excel-header-bg,220_14%_96%))] font-semibold text-xs uppercase tracking-wide";
+        return "bg-[hsl(var(--workbook-navy))] text-[hsl(var(--workbook-navy-fg))] font-semibold text-[10px] uppercase tracking-[0.12em]";
       case "section-header":
-        return "bg-[hsl(var(--excel-header-bg,220_14%_96%))] font-semibold text-sm";
+        return "bg-[hsl(var(--workbook-sand))]/60 text-[hsl(var(--workbook-navy))] font-serif font-semibold text-[13px]";
       case "subtotal":
-        return "font-semibold border-t border-[hsl(var(--excel-grid,220_13%_91%))]";
+        return "font-semibold border-t border-[hsl(var(--workbook-navy))]/30 bg-[hsl(var(--workbook-cream))]";
       case "total":
-        return "font-bold border-t-2 border-b-2 border-[hsl(var(--excel-grid,220_13%_91%))]";
+        return "font-bold border-t-2 border-[hsl(var(--workbook-navy))] bg-[hsl(var(--workbook-sand))]/40 text-[hsl(var(--workbook-navy))]";
       case "check":
-        return "text-xs italic";
+        return "text-xs italic text-[hsl(var(--workbook-mid))]";
       case "spacer":
         return "h-4";
       default:
-        return "";
+        return "text-[hsl(var(--workbook-navy))]";
     }
   };
 
@@ -81,7 +81,7 @@ export function SpreadsheetGrid({ data, onCellChange, onRowClick, className }: S
       return (
         <input
           type="text"
-          className="w-full h-full px-1 bg-[hsl(50_100%_90%)] border-2 border-primary outline-none text-right font-mono text-[11px]"
+          className="w-full h-full px-1 bg-white border-2 border-[hsl(var(--workbook-gold))] outline-none text-right font-mono text-[11px] ring-2 ring-[hsl(var(--workbook-gold))]/30"
           value={editValue}
           onChange={e => setEditValue(e.target.value)}
           onBlur={commitEdit}
@@ -96,11 +96,11 @@ export function SpreadsheetGrid({ data, onCellChange, onRowClick, className }: S
 
     return (
       <span className={cn(
-        "truncate",
+        "truncate tabular-nums",
         row.editable && col.format !== "text" && "cursor-cell",
-        isCheckRow && row.checkPassed === true && "text-[hsl(var(--check-pass,142_76%_36%))]",
-        isCheckRow && row.checkPassed === false && "text-[hsl(var(--check-fail,0_84%_60%))]",
-        value !== null && typeof value === "number" && value < 0 && "text-[hsl(var(--check-fail,0_84%_60%))]",
+        isCheckRow && row.checkPassed === true && "text-[hsl(var(--check-pass))]",
+        isCheckRow && row.checkPassed === false && "text-[hsl(var(--check-fail))]",
+        value !== null && typeof value === "number" && value < 0 && "text-[hsl(var(--check-fail))]",
       )}>
         {formatted}
       </span>
@@ -129,16 +129,16 @@ export function SpreadsheetGrid({ data, onCellChange, onRowClick, className }: S
   return (
     <div
       ref={parentRef}
-      className={cn("financial-grid overflow-auto border border-[hsl(var(--excel-grid,220_13%_91%))] rounded-sm", className)}
+      className={cn("financial-grid overflow-auto border border-[hsl(var(--workbook-rule-soft))] rounded-md shadow-sm bg-[hsl(var(--workbook-paper))]", className)}
       style={{ maxHeight: "80vh" }}
     >
-      <table className="border-collapse text-[11px] w-max">
+      <table className="border-collapse text-[12px] w-max">
         <thead className="sticky top-0 z-30">
-          <tr className="bg-[hsl(var(--excel-header-bg,220_14%_96%))]">
+          <tr className="bg-[hsl(var(--workbook-navy))] text-[hsl(var(--workbook-navy-fg))]">
             {frozenCols.map((col, i) => (
               <th
                 key={col.key}
-                className="px-2 py-1 text-left font-semibold border-b border-[hsl(var(--excel-grid,220_13%_91%))] whitespace-nowrap sticky bg-[hsl(var(--excel-header-bg,220_14%_96%))] z-30"
+                className="px-3 py-2 text-left font-semibold text-[10px] uppercase tracking-[0.12em] border-b-2 border-[hsl(var(--workbook-gold))] whitespace-nowrap sticky bg-[hsl(var(--workbook-navy))] text-[hsl(var(--workbook-navy-fg))] z-30"
                 style={{ width: col.width || 120, minWidth: col.width || 120, left: frozenLeftOffsets[i] }}
               >
                 {col.label}
@@ -147,7 +147,7 @@ export function SpreadsheetGrid({ data, onCellChange, onRowClick, className }: S
             {scrollCols.map(col => (
               <th
                 key={col.key}
-                className="px-2 py-1 text-right font-semibold border-b border-[hsl(var(--excel-grid,220_13%_91%))] whitespace-nowrap bg-[hsl(var(--excel-header-bg,220_14%_96%))]"
+                className="px-3 py-2 text-right font-semibold text-[10px] uppercase tracking-[0.12em] border-b-2 border-[hsl(var(--workbook-gold))] whitespace-nowrap bg-[hsl(var(--workbook-navy))] text-[hsl(var(--workbook-navy-fg))]"
                 style={{ minWidth: col.width || 90 }}
               >
                 {col.label}
@@ -156,7 +156,6 @@ export function SpreadsheetGrid({ data, onCellChange, onRowClick, className }: S
           </tr>
         </thead>
         <tbody style={{ height: totalHeight, position: "relative" }}>
-          {/* Top spacer */}
           {virtualRows.length > 0 && virtualRows[0].start > 0 && (
             <tr style={{ height: virtualRows[0].start }} aria-hidden>
               <td colSpan={frozenCols.length + scrollCols.length} />
@@ -165,12 +164,14 @@ export function SpreadsheetGrid({ data, onCellChange, onRowClick, className }: S
           {virtualRows.map(virtualRow => {
             const row = data.rows[virtualRow.index];
             const isClickable = !!onRowClick && row.type === "data" && row.id !== "empty";
+            const isZebra = row.type === "data" && virtualRow.index % 2 === 1;
             return (
               <tr
                 key={row.id}
                 className={cn(
                   getRowClasses(row.type),
-                  isClickable && "cursor-pointer hover:bg-[hsl(var(--excel-header-bg,220_14%_96%))]/60"
+                  isZebra && "bg-[hsl(var(--workbook-zebra))]",
+                  isClickable && "cursor-pointer hover:bg-[hsl(var(--workbook-sand))]/30"
                 )}
                 onClick={isClickable && !editingCell ? () => onRowClick!(row.id) : undefined}
               >
@@ -182,15 +183,18 @@ export function SpreadsheetGrid({ data, onCellChange, onRowClick, className }: S
                       <td
                         key={col.key}
                         className={cn(
-                          "px-2 py-0.5 border-b border-[hsl(var(--excel-grid,220_13%_91%))] whitespace-nowrap sticky bg-card z-10",
-                          row.type === "section-header" && "bg-[hsl(var(--excel-header-bg,220_14%_96%))]",
-                          row.type === "header" && "bg-[hsl(var(--excel-header-bg,220_14%_96%))]",
-                          (row.type === "total" || row.type === "subtotal") && "bg-card",
+                          "px-3 py-1 border-b border-[hsl(var(--workbook-rule-soft))] whitespace-nowrap sticky z-10 bg-[hsl(var(--workbook-paper))]",
+                          isZebra && "bg-[hsl(var(--workbook-zebra))]",
+                          row.type === "section-header" && "bg-[hsl(var(--workbook-sand))]/60",
+                          row.type === "header" && "bg-[hsl(var(--workbook-navy))] text-[hsl(var(--workbook-navy-fg))]",
+                          row.type === "total" && "bg-[hsl(var(--workbook-sand))]/40",
+                          row.type === "subtotal" && "bg-[hsl(var(--workbook-cream))]",
+                          i === frozenCols.length - 1 && "shadow-[2px_0_4px_-2px_rgba(15,27,61,0.15)]",
                         )}
                         style={{
                           left: frozenLeftOffsets[i],
                           paddingLeft: col.key === frozenCols[0]?.key && row.indent
-                            ? `${8 + (row.indent || 0) * 12}px`
+                            ? `${12 + (row.indent || 0) * 14}px`
                             : undefined,
                         }}
                       >
@@ -204,7 +208,7 @@ export function SpreadsheetGrid({ data, onCellChange, onRowClick, className }: S
                       <td
                         key={col.key}
                         className={cn(
-                          "px-2 py-0.5 border-b border-[hsl(var(--excel-grid,220_13%_91%))] text-right whitespace-nowrap font-mono",
+                          "px-3 py-1 border-b border-[hsl(var(--workbook-rule-soft))] text-right whitespace-nowrap tabular-nums",
                           row.editable && "cell-editable",
                         )}
                         onDoubleClick={() => handleDoubleClick(row, col)}
@@ -217,7 +221,6 @@ export function SpreadsheetGrid({ data, onCellChange, onRowClick, className }: S
               </tr>
             );
           })}
-          {/* Bottom spacer */}
           {virtualRows.length > 0 && (
             <tr style={{ height: totalHeight - (virtualRows[virtualRows.length - 1].end) }} aria-hidden>
               <td colSpan={frozenCols.length + scrollCols.length} />

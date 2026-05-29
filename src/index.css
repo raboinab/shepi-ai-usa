@@ -62,15 +62,28 @@
 
     --sidebar: 0 0% 98%;
 
-    /* Workbook/Excel-like tokens */
-    --excel-header-bg: 220 14% 96%;
-    --excel-grid: 220 13% 91%;
-    --check-pass: 142 76% 36%;
-    --check-fail: 0 84% 60%;
+    /* Workbook / Excel-like tokens — Navy Trust */
+    --workbook-navy: 222 60% 15%;          /* #0F1B3D */
+    --workbook-navy-fg: 0 0% 100%;
+    --workbook-mid: 207 45% 28%;           /* #264A66 */
+    --workbook-accent: 207 38% 47%;        /* #4A7FA3 */
+    --workbook-gold: 43 49% 54%;           /* #C9A84C */
+    --workbook-sand: 37 38% 82%;           /* #E2D4BE */
+    --workbook-cream: 38 32% 94%;          /* #F5F2EC */
+    --workbook-paper: 0 0% 100%;
+    --workbook-zebra: 38 38% 96%;          /* #FAF7F1 */
+    --workbook-rule-soft: 38 25% 88%;
+    --workbook-rule-strong: 222 60% 15%;
 
-    --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
-    --font-serif: 'Lora', ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
-    --font-mono: 'Space Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+    /* Legacy excel tokens — keep for backward compat */
+    --excel-header-bg: 222 60% 15%;
+    --excel-grid: 38 25% 88%;
+    --check-pass: 148 60% 30%;
+    --check-fail: 0 52% 46%;
+
+    --font-sans: 'Inter Tight', 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+    --font-serif: 'Fraunces', 'Lora', ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
+    --font-mono: 'JetBrains Mono', 'Space Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
 
     --shadow-2xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
     --shadow-xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);

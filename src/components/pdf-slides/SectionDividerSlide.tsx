@@ -1,6 +1,5 @@
 /**
- * Section divider slide — gradient background with section title.
- * Reusable for IS Analysis, BS Analysis, etc.
+ * Section divider — half navy / half cream split with outlined numeral.
  */
 import { PDF_COLORS, PDF_FONTS, SLIDE_DIMENSIONS } from "@/lib/pdf/theme";
 import type { SlideProps } from "@/lib/pdf/reportTypes";
@@ -17,77 +16,100 @@ export function SectionDividerSlide({ metadata, pageNumber, totalPages, data }: 
         style={{
           width: SLIDE_DIMENSIONS.width,
           height: SLIDE_DIMENSIONS.height,
-          background: `linear-gradient(135deg, ${PDF_COLORS.darkBlue} 0%, ${PDF_COLORS.midBlue} 100%)`,
           display: "flex",
-          alignItems: "center",
-          padding: `0 120px`,
           position: "relative",
-          fontFamily: PDF_FONTS.heading,
+          fontFamily: PDF_FONTS.body,
         }}
       >
-        {/* Large watermark number */}
-        {sectionNumber && (
+        {/* Left half — navy */}
+        <div
+          style={{
+            width: "44%",
+            height: "100%",
+            backgroundColor: PDF_COLORS.darkBlue,
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "center",
+            alignItems: "center",
+            padding: 80,
+            position: "relative",
+          }}
+        >
+          {/* Gold corner mark */}
           <div
             style={{
               position: "absolute",
-              right: 80,
-              top: "50%",
-              transform: "translateY(-50%)",
-              fontSize: 320,
-              fontWeight: 900,
-              color: "rgba(255,255,255,0.06)",
-              lineHeight: 1,
-              fontFamily: PDF_FONTS.heading,
+              top: 60,
+              left: 60,
+              fontSize: 11,
+              fontWeight: 600,
+              color: PDF_COLORS.gold,
+              letterSpacing: "0.32em",
+              textTransform: "uppercase",
             }}
           >
-            {sectionNumber}
+            Shepi · QoE
           </div>
-        )}
-        {/* Accent shapes */}
-        <div
-          style={{
-            position: "absolute",
-            right: 100,
-            top: "50%",
-            transform: "translateY(-50%)",
-            width: 400,
-            height: 400,
-            borderRadius: "50%",
-            border: `2px solid rgba(44, 165, 165, 0.12)`,
-          }}
-        />
 
-        <div>
+          {/* Massive outlined numeral */}
           {sectionNumber && (
             <div
               style={{
-                fontSize: 16,
-                fontWeight: 600,
-                color: PDF_COLORS.teal,
-                letterSpacing: "3px",
-                textTransform: "uppercase",
-                marginBottom: 16,
+                fontSize: 520,
+                fontWeight: 500,
+                color: "transparent",
+                WebkitTextStroke: `2px ${PDF_COLORS.gold}`,
+                lineHeight: 0.85,
+                fontFamily: PDF_FONTS.heading,
+                fontStyle: "italic",
               }}
             >
-              Section {sectionNumber}
+              {sectionNumber}
             </div>
           )}
+        </div>
+
+        {/* Right half — cream */}
+        <div
+          style={{
+            flex: 1,
+            backgroundColor: PDF_COLORS.cream,
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "center",
+            padding: "0 120px",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 600,
+              color: PDF_COLORS.midBlue,
+              letterSpacing: "0.36em",
+              textTransform: "uppercase",
+              marginBottom: 24,
+            }}
+          >
+            {sectionNumber ? `Section ${sectionNumber}` : "Section"}
+          </div>
 
           <div
             style={{
-              width: 60,
-              height: 4,
-              backgroundColor: PDF_COLORS.teal,
-              marginBottom: 24,
+              width: 80,
+              height: 2,
+              backgroundColor: PDF_COLORS.gold,
+              marginBottom: 36,
             }}
           />
 
           <div
             style={{
-              fontSize: 52,
-              fontWeight: 800,
-              color: PDF_COLORS.white,
-              lineHeight: 1.15,
+              fontSize: 78,
+              fontWeight: 500,
+              color: PDF_COLORS.darkBlue,
+              lineHeight: 1.05,
+              letterSpacing: "-0.02em",
+              fontFamily: PDF_FONTS.heading,
               maxWidth: 900,
             }}
           >
@@ -98,8 +120,12 @@ export function SectionDividerSlide({ metadata, pageNumber, totalPages, data }: 
             <div
               style={{
                 fontSize: 22,
-                color: "rgba(255,255,255,0.6)",
-                marginTop: 16,
+                color: PDF_COLORS.midGray,
+                marginTop: 28,
+                maxWidth: 720,
+                lineHeight: 1.45,
+                fontStyle: "italic",
+                fontFamily: PDF_FONTS.heading,
               }}
             >
               {sectionSubtitle}
@@ -107,15 +133,15 @@ export function SectionDividerSlide({ metadata, pageNumber, totalPages, data }: 
           )}
         </div>
 
-        {/* Bottom accent */}
+        {/* Bottom gold rule */}
         <div
           style={{
             position: "absolute",
             bottom: 0,
             left: 0,
             right: 0,
-            height: 6,
-            backgroundColor: PDF_COLORS.teal,
+            height: 3,
+            backgroundColor: PDF_COLORS.gold,
           }}
         />
       </div>
