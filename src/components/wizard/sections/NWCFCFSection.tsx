@@ -88,6 +88,12 @@ export const NWCFCFSection = ({
         </AlertDescription>
       </Alert>
 
+      <NWCMethodSelector
+        method={(dealParameters.nwcMethod ?? DEFAULT_NWC_METHOD) as NWCMethod}
+        onChange={(m) => onUpdateDealParameters?.({ ...dealParameters, nwcMethod: m })}
+      />
+
+
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <SummaryCard title="Current NWC" value={metrics.currentNWC} icon={DollarSign} subtitle={metrics.currentNWC === 0 ? "Sync to populate" : undefined} />
