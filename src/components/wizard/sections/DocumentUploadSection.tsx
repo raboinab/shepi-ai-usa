@@ -301,7 +301,7 @@ const DOCUMENT_COVERAGE_CONFIG: Record<string, DocumentCoverageConfig> = {
   
   // Monthly/Quarterly (financials)
   trial_balance: { type: 'monthly', label: 'Period Coverage', description: 'Trial balance for each reporting period' },
-  balance_sheet: { type: 'monthly', label: 'Period Coverage', description: 'Balance sheet for each reporting period' },
+  balance_sheet: { type: 'point-in-time', label: 'As-of Date', description: 'Balance sheet snapshot as of the reporting date' },
   income_statement: { type: 'monthly', label: 'Period Coverage', description: 'P&L for each reporting period' },
   cash_flow: { type: 'monthly', label: 'Period Coverage', description: 'Cash flow for each reporting period' },
   
@@ -1502,8 +1502,8 @@ export const DocumentUploadSection = ({
       
       setIsValidating(false);
       
-      // If validation returned a mismatch, show dialog
-      if (result && !result.isValid && result.suggestedType) {
+      // If validation returned invalid, show dialog so user must confirm or change
+      if (result && !result.isValid) {
         setPendingValidation({
           file,
           result,
@@ -1512,9 +1512,11 @@ export const DocumentUploadSection = ({
         setValidationDialogOpen(true);
         return;
       }
-      
+
       // Validation passed or was skipped - proceed
-      toast.success("Document validated", { icon: <ShieldCheck className="h-4 w-4 text-green-500" /> });
+      if (result?.isValid) {
+        toast.success("Document validated", { icon: <ShieldCheck className="h-4 w-4 text-green-500" /> });
+      }
     }
     
     // Proceed with upload
