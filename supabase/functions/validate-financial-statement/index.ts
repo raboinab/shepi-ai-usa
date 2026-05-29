@@ -72,6 +72,41 @@ function getPeriodKeysInRange(
 
 // --- Trial Balance derivation logic ---
 
+/**
+ * Classify a BS account. Account-name overrides catch common GL-derivation errors
+ * (e.g. "Accounts Payable" mis-typed as "Other current assets" by upstream parsers).
+ */
+function classifyBSAccount(accountName: string, accountType: string): 'asset' | 'liability' | 'equity' | null {
+  const name = (accountName || '').toLowerCase();
+  const type = (accountType || '').toLowerCase();
+
+  // Name-based hard overrides
+  if (name.includes('accounts payable') || /\ba\/p\b/.test(name) || name.includes('(a/p)')) return 'liability';
+  if (name.includes('credit card') || name.includes('mastercard') || name.includes(' visa') || name.startsWith('visa') || name.includes('amex') || name.includes('american express')) return 'liability';
+  if (name.includes('notes payable') || name.includes('loan payable') || name.includes('line of credit')) return 'liability';
+  if (name.includes('accounts receivable') || /\ba\/r\b/.test(name) || name.includes('(a/r)')) return 'asset';
+  if (name.includes('retained earnings') || name.includes('opening balance equity') || name.includes("owner's equity") || name.includes('owners equity') || name.includes('common stock') || name.includes('contributed capital') || name.includes('paid-in capital') || name.includes('paid in capital') || name.includes('distributions') || name.includes('owner draw')) return 'equity';
+
+  // Type-based classification (more specific patterns first)
+  if (type.includes('equity')) return 'equity';
+  if (type.includes('liabilit') || type.includes('payable') || type.includes('credit card') || type.includes('loan') || type.includes('debt') || type.includes('accrued') || type.includes('deferred revenue') || type.includes('notes payable')) return 'liability';
+  if (type.includes('asset') || type.includes('bank') || type.includes('cash') || type.includes('receivable') || type.includes('inventory') || type.includes('prepaid') || type.includes('fixed') || type.includes('intangible')) return 'asset';
+
+  return null;
+}
+
+function classifyISAccount(accountName: string, accountType: string): 'revenue' | 'cogs' | 'expense' | null {
+  const name = (accountName || '').toLowerCase();
+  const type = (accountType || '').toLowerCase();
+
+  if (type.includes('cost of goods') || type.includes('cogs') || type.includes('cost of sales') || name.includes('cost of goods') || name.includes('cost of sales')) return 'cogs';
+  if (type.includes('income') || type.includes('revenue') || type.includes('sales')) return 'revenue';
+  if (type.includes('expense') || type.includes('other expense')) return 'expense';
+  if (type.includes('other income')) return 'revenue';
+
+  return 'expense';
+}
+
 function deriveTotalsFromTrialBalance(
   accounts: TrialBalanceAccount[],
   documentType: string,
@@ -83,14 +118,11 @@ function deriveTotalsFromTrialBalance(
 
   for (const account of accounts) {
     let value = 0;
-    const accountType = (account.accountType || '').toLowerCase();
 
     if (account.fsType === 'BS' && (documentType === 'balance_sheet' || documentType === 'cash_flow')) {
-      // Balance Sheet accounts are point-in-time: use the LATEST period's ending balance
-      // If periodEnd is specified, use that period; otherwise use the latest available
+      // Point-in-time: latest period ≤ periodEnd, or latest overall
       if (periodEnd) {
-        const targetKey = periodEnd.slice(0, 7); // "2024-12"
-        // Find the closest period key <= targetKey
+        const targetKey = periodEnd.slice(0, 7);
         const keys = Object.keys(account.monthlyValues).sort();
         const match = keys.filter(k => k <= targetKey).pop();
         value = match ? (account.monthlyValues[match] || 0) : 0;
@@ -99,11 +131,9 @@ function deriveTotalsFromTrialBalance(
         value = latestKey ? (account.monthlyValues[latestKey] || 0) : 0;
       }
     } else if (account.fsType === 'IS') {
-      // Income Statement accounts are activity-based: sum only the matching period range
       const filteredKeys = getPeriodKeysInRange(account.monthlyValues, periodStart, periodEnd);
       value = filteredKeys.reduce((sum, k) => sum + (account.monthlyValues[k] || 0), 0);
     } else {
-      // Fallback: use latest for BS, sum for IS
       if (account.fsType === 'BS') {
         const latestKey = getLatestPeriodKey(account.monthlyValues);
         value = latestKey ? (account.monthlyValues[latestKey] || 0) : 0;
@@ -113,23 +143,19 @@ function deriveTotalsFromTrialBalance(
     }
 
     if (account.fsType === 'BS') {
-      if (accountType.includes('asset') || accountType.includes('bank') || accountType.includes('receivable')) {
-        totalAssets += value;
-      } else if (accountType.includes('liability') || accountType.includes('payable') || accountType.includes('credit card')) {
-        totalLiabilities += value;
-      } else if (accountType.includes('equity')) {
-        totalEquity += value;
-      } else {
-        if (value > 0) totalAssets += value; else totalLiabilities += Math.abs(value);
-      }
+      const bucket = classifyBSAccount(account.accountName, account.accountType);
+      if (!bucket) continue;
+      // TB convention: assets carry their natural (positive) sign, liabilities & equity
+      // carry credit balances (negative). Flip to reporting (positive) sign for L & E.
+      if (bucket === 'asset') totalAssets += value;
+      else if (bucket === 'liability') totalLiabilities += -value;
+      else totalEquity += -value;
     } else if (account.fsType === 'IS') {
-      if (accountType.includes('income') || accountType.includes('revenue') || accountType.includes('sales')) {
-        totalRevenue += value;
-      } else if (accountType.includes('cost of goods') || accountType.includes('cogs')) {
-        totalCogs += value;
-      } else {
-        totalExpenses += value;
-      }
+      const bucket = classifyISAccount(account.accountName, account.accountType);
+      // Revenue stored as credit (negative) in many TBs → report positive
+      if (bucket === 'revenue') totalRevenue += -value;
+      else if (bucket === 'cogs') totalCogs += Math.abs(value);
+      else if (bucket === 'expense') totalExpenses += Math.abs(value);
     }
   }
 
