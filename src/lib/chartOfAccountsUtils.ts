@@ -105,8 +105,11 @@ export function findMatchingAccount(
     if (m) return m;
   }
 
-  // 4. Leaf-name match ONLY if classification AND subtype also match.
-  //    This prevents merging an income "Job Materials" with an expense "Job Materials".
+  // 4. Leaf-name match ONLY if classification AND subtype also match,
+  //    AND neither side has a non-empty fullyQualifiedName that disagrees.
+  //    This prevents merging "Equipment Rental" (root) with
+  //    "Job Expenses:Equipment Rental" (sub-account) — they are distinct
+  //    QuickBooks accounts even though leaf + subtype + classification all match.
   if (leaf) {
     const m = existingAccounts.find(e => {
       const eLeaf = normalizeAccountName(e.accountName);
@@ -115,10 +118,13 @@ export function findMatchingAccount(
       if (!nameHit) return false;
       const eClass = (e.classification || '').toLowerCase().trim();
       const eSub = (e.accountSubtype || '').toLowerCase().trim();
-      // Require BOTH classification and subtype to agree (or both sides empty).
       const classOk = classification === eClass;
       const subOk = subtype === eSub;
-      return classOk && subOk;
+      if (!classOk || !subOk) return false;
+      // If either side carries a fullyQualifiedName, require it to match.
+      const eFqn = normalizeAccountName(e.fullyQualifiedName || '');
+      if (fqn || eFqn) return fqn === eFqn;
+      return true;
     });
     if (m) return m;
   }
