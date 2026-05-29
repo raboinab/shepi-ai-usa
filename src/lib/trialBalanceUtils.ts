@@ -17,6 +17,7 @@ export interface TrialBalanceAccount {
   fsLineItem?: string; // Standardized FS classification
   subAccount1?: string; // Sub-account hierarchy level 1
   subAccount2?: string; // Sub-account hierarchy level 2
+  qbAccountId?: string; // QuickBooks internal account Id (primary discriminator)
   monthlyValues: Record<string, number>; // periodId -> value
 }
 
