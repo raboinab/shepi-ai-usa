@@ -419,6 +419,8 @@ export const DocumentUploadSection = ({
     result: ValidationResult;
     selectedType: string;
   } | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Document | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   
   // Financial statement validation state
   const [financialValidationResults, setFinancialValidationResults] = useState<Record<string, FinancialStatementValidationResult | null>>({});
