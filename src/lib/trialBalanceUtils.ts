@@ -283,6 +283,7 @@ interface QbTrialBalanceRow {
   accountName?: string;
   accountType?: string;
   subAccountType?: string;
+  qbAccountId?: string; // QuickBooks internal Id from colData[0].id
   debit?: number;
   credit?: number;
   balance?: number;
