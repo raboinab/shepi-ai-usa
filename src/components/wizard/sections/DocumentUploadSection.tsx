@@ -2269,7 +2269,7 @@ export const DocumentUploadSection = ({
 
                 <Button
                   onClick={handleUpload}
-                  disabled={uploading || isValidating || !selectedFiles || (type.value === "cim" && parsingCim) || (type.value === "tax_return" && !selectedTaxYear)}
+                  disabled={uploading || isValidating || !selectedFiles || (type.value === "cim" && parsingCim) || (type.value === "tax_return" && !selectedTaxYear) || (type.value === "trial_balance" && !coaReadiness.ready)}
                   className="w-full"
                 >
                   {isValidating ? (
