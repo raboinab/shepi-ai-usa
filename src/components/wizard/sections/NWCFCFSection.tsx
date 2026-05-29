@@ -1,6 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { SummaryCard } from "../shared/SummaryCard";
 import { DealParametersCard } from "../shared/DealParametersCard";
+import { NWCMethodSelector } from "../shared/NWCMethodSelector";
 import { WorkbookTabView } from "@/components/workbook/WorkbookTabView";
 import { TrendingUp, DollarSign, Calculator, FileSpreadsheet } from "lucide-react";
 import { Period } from "@/lib/periodUtils";
@@ -10,8 +11,10 @@ import {
   extractFCFMetrics,
   DealParameters,
   NWCExtractedMetrics,
+  DEFAULT_NWC_METHOD,
 } from "@/lib/nwcDataUtils";
-import type { DealData } from "@/lib/workbook-types";
+import type { DealData, NWCMethod } from "@/lib/workbook-types";
+
 
 interface NWCFCFSectionProps {
   /** Legacy raw NWC analysis cache — kept only for the summary cards. */
@@ -29,7 +32,9 @@ const defaultDealParameters: DealParameters = {
   pegMethod: 't12m',
   customPegAmount: null,
   estimatedNWCAtClose: null,
+  nwcMethod: DEFAULT_NWC_METHOD,
 };
+
 
 export const NWCFCFSection = ({
   nwcAnalysisData,
@@ -82,6 +87,12 @@ export const NWCFCFSection = ({
           Grids below render the exact same workbook tabs (Working Capital, NWC Analysis, Free Cash Flow). Edits to Trial Balance or Due Diligence Adjustments flow through automatically.
         </AlertDescription>
       </Alert>
+
+      <NWCMethodSelector
+        method={(dealParameters.nwcMethod ?? DEFAULT_NWC_METHOD) as NWCMethod}
+        onChange={(m) => onUpdateDealParameters?.({ ...dealParameters, nwcMethod: m })}
+      />
+
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

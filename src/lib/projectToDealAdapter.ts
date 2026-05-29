@@ -130,7 +130,15 @@ export function projectToDealData(project: ProjectRecord): DealData {
   // WIP account mapping from due diligence wizard data
   const dd = (wd.dueDiligence as Record<string, unknown> | undefined) || {};
   const wipAccountMapping = (dd.wipAccountMapping as DealData["wipAccountMapping"]) || undefined;
-  
+
+  // NWC method config from wizard dealParameters
+  const dp = (wd.dealParameters as Record<string, unknown> | undefined) || {};
+  const nwcConfig: DealData["deal"]["nwcConfig"] = {
+    method: (dp.nwcMethod as DealData["deal"]["nwcConfig"]["method"]) || "operating",
+    transactionInclusions: dp.transactionInclusions as DealData["deal"]["nwcConfig"]["transactionInclusions"],
+    normalizationAdjustments: dp.normalizationAdjustments as DealData["deal"]["nwcConfig"]["normalizationAdjustments"],
+  };
+
   return {
     deal: {
       projectId: project.id,
@@ -147,7 +155,9 @@ export function projectToDealData(project: ProjectRecord): DealData {
       firmName: (project as { firm_name?: string | null }).firm_name || undefined,
       preparedByLine: (project as { prepared_by_line?: string | null }).prepared_by_line || undefined,
       firmLogoUrl: (project as { firm_logo_path?: string | null }).firm_logo_path || undefined,
+      nwcConfig,
     },
+
     accounts,
     trialBalance,
     adjustments,
