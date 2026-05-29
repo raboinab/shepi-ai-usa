@@ -1,34 +1,37 @@
-# Suppress notifications for AI assistant chat turns
 
-## Problem
-Every message in `chat_messages` on a CPA-claimed project fires the `notify_cpa_chat_message` trigger → `cpa-notify` edge function, which sends both an email (via Resend) and an in-app `cpa_notifications` row. This fires for AI assistant turns too, so a CPA using the AI assistant generates emails to the client (for the CPA's prompt) and to the CPA (for the AI's reply). Neither is a real human message.
+# Fix: only notify on engagement chat, not AI assistant chat
 
-## Fix
-Skip both email and in-app notification when the chat message is an AI turn — i.e. `role = 'assistant'`. Real human↔human chat (client ↔ CPA) is unaffected.
+## What's wrong
+The previous fix skipped `role='assistant'` rows, but a CPA prompting the AI inserts a `role='user'` row in `chat_messages` with `context_type='wizard'`. The trigger still fires and emails get sent.
 
-Apply the filter at the **trigger** level so the edge function isn't even invoked for assistant rows (cheaper, and removes the bypass risk entirely).
+Verified in logs: after the fix was deployed, 3 more `cpa_notifications` rows + nudge_log entries were created (03:10–03:13 UTC May 29) — all from `context_type='wizard'` AI chat by the CPA.
 
-## Changes
+The real client↔CPA channel is `context_type='engagement'` (see `src/components/EngagementChat.tsx`). That's the only context where notifications should fire.
 
-1. **Migration** — update the `notify_cpa_chat_message` trigger function in `supabase/migrations/`:
-   - Add `IF NEW.role = 'assistant' THEN RETURN NEW; END IF;` near the top of the function body, before it builds the payload / calls `net.http_post` to `cpa-notify`.
-   - No schema changes, no policy changes, no grants needed.
+## Change
 
-2. **Defense in depth** — in `supabase/functions/cpa-notify/index.ts`, `handleChatMessage`:
-   - After loading the message row, early-return (200, `skipped: 'assistant_message'`) if `message.role === 'assistant'`. This protects against any other future caller of the function and makes the intent obvious in logs.
-   - No changes to debounce logic, recipient routing, Resend call, or `nudge_log`.
+**Migration** — update `notify_cpa_chat_message` trigger function:
 
-3. **No frontend changes.** `NotificationBell` and `useChatHistory` are unaffected.
+Replace the current early-return:
+```sql
+IF NEW.role = 'assistant' THEN RETURN NEW; END IF;
+```
+with:
+```sql
+IF NEW.context_type IS DISTINCT FROM 'engagement' THEN RETURN NEW; END IF;
+```
 
-## Out of scope (not changing now)
-- Per-project vs per-recipient debounce window
-- Moving `cpa-notify` onto the managed email queue / adding unsubscribe footer
-- `From:` domain (apex vs `notify.` subdomain)
-- Whether real human chat should email at all
+This covers both directions in one check: AI assistant turns (`wizard`/other contexts) and the CPA's own AI prompts (also `wizard`) are both skipped. Only `engagement` rows — the real human↔human channel — proceed to email + in-app notification.
 
-Happy to do any of those in a follow-up if you want.
+**Edge function defense-in-depth** — `supabase/functions/cpa-notify/index.ts`, `handleChatMessage`:
+After loading the message row, early-return if `message.context_type !== 'engagement'` (replace the current `role === 'assistant'` check). Same intent, correct dimension.
+
+No schema, policy, grant, or frontend changes. `EngagementChat` continues to insert with `context_type: 'engagement'`, so real chat still notifies.
 
 ## Verification
-- Locate trigger function definition: `rg -n "notify_cpa_chat_message" supabase/migrations`
-- After migration: insert an `assistant` row in `chat_messages` on a CPA-claimed project → no row in `nudge_log`, no row in `cpa_notifications`, no Resend log entry in `cpa-notify` function logs.
-- Insert a `user` row (real client message) → notification + email still fire as today.
+- Insert a `chat_messages` row with `context_type='wizard'` on the CPA-claimed project → no `nudge_log`, no `cpa_notifications`, no Resend send.
+- Insert a row with `context_type='engagement'` (or send a message via `EngagementChat`) → notification + email fire as today.
+- Inspect `cpa_notifications` after a fresh AI chat turn — count should not increase.
+
+## Out of scope
+Per-recipient debounce, moving to managed email queue, whether engagement chat should email at all — unchanged.
