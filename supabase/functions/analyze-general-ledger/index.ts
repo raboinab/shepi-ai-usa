@@ -490,7 +490,8 @@ serve(async (req) => {
 
     const analysisResult = {
       accountCount: accounts.length,
-      txnCount: txns.length,
+      txnCount: txnCountTotal,
+      glDetailSource,
       accountTypeBreakdown,
       identityCheck: {
         assets: sumAssets,
