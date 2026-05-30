@@ -267,11 +267,17 @@ serve(async (req) => {
 
       if (tb) {
         matchedTbKeys.add(tb.name.toLowerCase());
+        // Sign convention can differ between GL (debit-positive) and TB (credit-balance)
+        // especially for revenue/liability/equity accounts. Compare magnitudes for the
+        // match decision; preserve signed variance for display.
         const variance = acct.glBalance - tb.balance;
-        const absVar = Math.abs(variance);
+        const absDiffSigned = Math.abs(variance);
+        const absDiffMag = Math.abs(Math.abs(acct.glBalance) - Math.abs(tb.balance));
+        const absDiff = Math.min(absDiffSigned, absDiffMag);
         const denom = Math.max(Math.abs(acct.glBalance), Math.abs(tb.balance), 1);
-        const variancePct = absVar / denom;
-        const isMatch = absVar < 1 || variancePct < 0.005;
+        const variancePct = absDiff / denom;
+        // Treat <$50 absolute or <0.5% relative as match; <$500 absolute as immaterial
+        const isMatch = absDiff < 50 || variancePct < 0.005;
         const cmp: TBComparison = {
           accountName: acct.name,
           glBalance: acct.glBalance,
@@ -283,7 +289,7 @@ serve(async (req) => {
         if (isMatch) matchCount++;
         else {
           varianceCount++;
-          if (absVar > 1000 || variancePct > 0.05) materialVariances.push(cmp);
+          if (absDiff > 1000 && variancePct > 0.05) materialVariances.push(cmp);
         }
       } else if (tbHas) {
         missingInTB++;
