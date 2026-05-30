@@ -26,6 +26,9 @@ interface DerivedTotals {
   totalCogs?: number;
   grossProfit?: number;
   totalExpenses?: number;
+  netOperatingIncome?: number;
+  totalOtherIncome?: number;
+  totalOtherExpense?: number;
   netIncome?: number;
   operatingCashFlow?: number;
   investingCashFlow?: number;
@@ -104,9 +107,15 @@ function classifyISAccount(accountName: string, accountType: string): 'revenue' 
   const type = (accountType || '').toLowerCase();
 
   if (type.includes('cost of goods') || type.includes('cogs') || type.includes('cost of sales') || name.includes('cost of goods') || name.includes('cost of sales')) return 'cogs';
-  // Other Income / Other Expense — non-operating, reported below the operating block on QB P&Ls
-  if (type.includes('other income') || name.includes('interest income') || name.includes('gain on') || name.includes('dividend income')) return 'other_income';
-  if (type.includes('other expense') || name.includes('interest expense') || name.includes('loss on')) return 'other_expense';
+
+  // Name-based hard overrides for below-the-line items (catches QB's combined "Other expense (income)" type)
+  if (name.includes('interest income') || name.includes('interest earned') || name.includes('dividend income') || name.includes('gain on') || name.includes('portfolio income')) return 'other_income';
+  if (name.includes('interest expense') || name.includes('loss on') || name.includes('penalt') || name.includes('settlement')) return 'other_expense';
+
+  // Type-based: "Other income"
+  if (type.includes('other income')) return 'other_income';
+  // "Other expense (income)" or "Other expense" — default to other_expense unless name implied income above
+  if (type.includes('other expense')) return 'other_expense';
   if (type.includes('income') || type.includes('revenue') || type.includes('sales')) return 'revenue';
   if (type.includes('expense')) return 'expense';
 
@@ -332,7 +341,11 @@ function deriveTotalsFromTrialBalance(
 
   return {
     totalAssets, totalLiabilities, totalEquity: totalEquityAdjusted,
-    totalRevenue, totalCogs, grossProfit, totalExpenses, netIncome,
+    totalRevenue, totalCogs, grossProfit, totalExpenses,
+    netOperatingIncome: operatingIncome,
+    totalOtherIncome: otherIncome,
+    totalOtherExpense: otherExpense,
+    netIncome,
     operatingCashFlow: netIncome, investingCashFlow: 0, financingCashFlow: 0,
     netChangeInCash: netIncome,
   };
@@ -361,6 +374,9 @@ const LINE_ITEM_DEFS: Record<string, { key: string; label: string }[]> = {
     { key: 'totalCogs', label: 'Cost of Goods Sold' },
     { key: 'grossProfit', label: 'Gross Profit' },
     { key: 'totalExpenses', label: 'Total Operating Expenses' },
+    { key: 'netOperatingIncome', label: 'Net Operating Income' },
+    { key: 'totalOtherIncome', label: 'Other Income' },
+    { key: 'totalOtherExpense', label: 'Other Expense' },
     { key: 'netIncome', label: 'Net Income' },
   ],
   cash_flow: [
@@ -377,18 +393,24 @@ function buildLineItems(
   uploadedTotals: DerivedTotals | undefined | null
 ): ValidationLineItem[] {
   const defs = LINE_ITEM_DEFS[documentType] || [];
-  return defs.map(({ key, label }) => {
+  const OPTIONAL_KEYS = new Set(['totalOtherIncome', 'totalOtherExpense']);
+
+  return defs.flatMap(({ key, label }) => {
     const tbValue = (derivedTotals as Record<string, number>)[key] || 0;
     const rawUploaded = uploadedTotals?.[key as keyof DerivedTotals];
-    
+
+    if (OPTIONAL_KEYS.has(key) && Math.abs(tbValue) < 1 && (rawUploaded == null || Math.abs(rawUploaded as number) < 1)) {
+      return [];
+    }
+
     if (rawUploaded === null || rawUploaded === undefined) {
-      return { lineItem: label, uploadedValue: null, trialBalanceValue: tbValue, variance: null, variancePercent: null, status: 'extraction_failed' as const };
+      return [{ lineItem: label, uploadedValue: null, trialBalanceValue: tbValue, variance: null, variancePercent: null, status: 'extraction_failed' as const }];
     }
 
     const uploadedValue = rawUploaded as number;
     const variance = uploadedValue - tbValue;
     const variancePercent = tbValue !== 0 ? (variance / Math.abs(tbValue)) * 100 : 0;
-    return { lineItem: label, uploadedValue, trialBalanceValue: tbValue, variance, variancePercent, status: getVarianceStatus(variance, tbValue) };
+    return [{ lineItem: label, uploadedValue, trialBalanceValue: tbValue, variance, variancePercent, status: getVarianceStatus(variance, tbValue) }];
   });
 }
 
@@ -416,8 +438,8 @@ async function parseXlsxFromStorage(
     for (const sheetName of workbook.SheetNames.slice(0, 3)) { // max 3 sheets
       const sheet = workbook.Sheets[sheetName];
       const json = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' }) as unknown[][];
-      // Limit to 200 rows
-      const rows = json.slice(0, 200);
+      // Limit to 600 rows (QB P&L exports can have many detail lines + section subtotals)
+      const rows = json.slice(0, 600);
       if (rows.length > 0) {
         sheets.push(`Sheet: ${sheetName}\n` + rows.map(r => (r as unknown[]).join('\t')).join('\n'));
       }
@@ -450,7 +472,7 @@ ALSO extract the "as-of date" of the balance sheet. Look for phrases like "As of
 Return ONLY valid JSON:
       { "totalAssets": number or null, "totalLiabilities": number or null, "totalEquity": number or null, "asOfDate": "YYYY-MM-DD" or null }
 
-      Spreadsheet data:\n${textContent.slice(0, 12000)}`;
+      Spreadsheet data:\n${textContent.slice(0, 32000)}`;
 
   } else if (documentType === 'income_statement') {
     prompt = `Extract totals from this Income Statement / Profit & Loss spreadsheet (often a QuickBooks "Profit and Loss by Month" export).
@@ -463,23 +485,26 @@ STRUCTURE NOTES
 
 EXTRACTION RULES
 - totalRevenue: the printed "Total Income" or "Total Revenue" row from the operating Income section. If no such subtotal exists, SUM every detail row inside the Income section (stop at "Cost of Goods Sold" / "Gross Profit").
-- totalCogs: "Total Cost of Goods Sold" / "Total COGS" / "Cost of Sales". 0 if the section is empty.
+- totalCogs: "Total Cost of Goods Sold" / "Total COGS" / "Cost of Sales" subtotal, or sum of all detail rows in that section. 0 if the section is empty. Do NOT include Job Expenses / Job Materials / Cost of Labor here unless they are explicitly inside a "Cost of Goods Sold" section header.
 - grossProfit: the printed "Gross Profit" row, or totalRevenue − totalCogs.
-- totalExpenses: the printed "Total Expenses" / "Total Operating Expenses" row from the operating Expenses section. If ambiguous or missing, SUM every detail row in the Expenses section (between Gross Profit and Net Operating Income).
-- netIncome: the printed "Net Income" row (the very last bottom-line, AFTER Other Income/Expense). If only "Net Operating Income" exists, return that. If neither is printed, compute grossProfit − totalExpenses.
+- totalExpenses: the printed "Total Expenses" / "Total Operating Expenses" row from the operating Expenses section. If ambiguous, SUM every detail row in the Expenses section (between Gross Profit and Net Operating Income). Include Job Expenses if QuickBooks places them in this section.
+- netOperatingIncome: the printed "Net Operating Income" row, or grossProfit − totalExpenses.
+- totalOtherIncome: SUM of rows in the "Other Income" section (below Net Operating Income). 0 if no such section.
+- totalOtherExpense: SUM of rows in the "Other Expense" section. 0 if no such section.
+- netIncome: the printed "Net Income" row (true bottom-line, AFTER Other Income/Expense). If not printed, compute netOperatingIncome + totalOtherIncome − totalOtherExpense.
 - periodStart: first day of earliest reporting month (YYYY-MM-DD) from the earliest monthly column header.
 - periodEnd: last day of latest reporting month (YYYY-MM-DD) from the latest monthly column header.
 - If only a month/year is shown, snap to first/last day of that month. Return null only if truly unknown.
 
 Return ONLY valid JSON (no markdown):
-{ "totalRevenue": number or null, "totalCogs": number or null, "grossProfit": number or null, "totalExpenses": number or null, "netIncome": number or null, "periodStart": "YYYY-MM-DD" or null, "periodEnd": "YYYY-MM-DD" or null }
+{ "totalRevenue": number or null, "totalCogs": number or null, "grossProfit": number or null, "totalExpenses": number or null, "netOperatingIncome": number or null, "totalOtherIncome": number or null, "totalOtherExpense": number or null, "netIncome": number or null, "periodStart": "YYYY-MM-DD" or null, "periodEnd": "YYYY-MM-DD" or null }
 
-Spreadsheet data:\n${textContent.slice(0, 12000)}`;
+Spreadsheet data:\n${textContent.slice(0, 32000)}`;
   } else if (documentType === 'cash_flow') {
     prompt = `Extract the following totals from this Cash Flow Statement spreadsheet data. If there are monthly columns, use the "Total" column or sum all months. Return ONLY valid JSON:
       { "operatingCashFlow": number or null, "investingCashFlow": number or null, "financingCashFlow": number or null, "netChangeInCash": number or null }
       
-      Spreadsheet data:\n${textContent.slice(0, 12000)}`;
+      Spreadsheet data:\n${textContent.slice(0, 32000)}`;
   }
 
   if (!prompt) return null;
