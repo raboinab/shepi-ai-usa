@@ -555,10 +555,7 @@ serve(async (req) => {
       }
 
       if (tb) {
-        matchedTbIds.add(tb.id);
-        // Pick TB axis by classification: BS uses end-of-period snapshot, P&L sums each
-        // year's YTD-final because monthly TBs reset every January.
-        const tbBalance = isPL ? tb.yearSumBalance : tb.snapshotBalance;
+        matchedTbKeys.add(tb.fullPath);
         const variance = acct.glBalance - tbBalance;
         const absDiffSigned = Math.abs(variance);
         const absDiffMag = Math.abs(Math.abs(acct.glBalance) - Math.abs(tbBalance));
@@ -591,14 +588,14 @@ serve(async (req) => {
         });
       }
     }
-    console.log(`[ANALYZE-GL] Match attempts: id=${matchById}, fullPath=${matchByFullPath}, leaf=${matchByLeaf}, ambiguous-leaf=${ambiguousLeaf}, missingInTB=${missingInTB}`);
+    console.log(`[ANALYZE-GL] Match attempts: fullPath=${matchByFullPath}, leaf=${matchByLeaf}, ambiguous-leaf=${ambiguousLeaf}, missingInTB=${missingInTB}`);
     console.log(`[ANALYZE-GL] Reconciliation: matched=${matchCount}/${accounts.length} (BS=${matchBS}, P&L=${matchPL}), variances=${varianceCount}, missingInTB=${missingInTB}`);
 
-    // Accounts in TB but not matched to any GL row (by stable id).
+    // TB accounts not matched to any GL row.
     const missingInGL: { name: string; balance: number }[] = [];
     if (tbHas) {
       for (const [, t] of tbById) {
-        if (matchedTbIds.has(t.id)) continue;
+        if (matchedTbKeys.has(t.fullPath)) continue;
         const bal = Math.abs(t.snapshotBalance) > 0.01 ? t.snapshotBalance : t.yearSumBalance;
         if (Math.abs(bal) > 0.01) missingInGL.push({ name: t.fullPath, balance: bal });
       }
