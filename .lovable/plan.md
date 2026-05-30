@@ -1,46 +1,73 @@
-# Fix: Parent accounts with direct postings dropped from TB totals
-
 ## The bug
 
-In this project's Trial Balance, `Maintenance and Repair` is a parent row that has **both** direct postings (~$19,172 of YTD-converted activity over 2023-2025) **and** three child accounts (`:Building Repairs`, `:Computer Repairs`, `:Equipment Repairs`).
+For Cash Flow Statement validation, the TB-derived "Operating Cash Flow / Investing Cash Flow / Financing Cash Flow / Net Change in Cash" values are stubs:
 
-- The uploaded QuickBooks P&L correctly includes the parent's direct postings as a separate line ($19,171.98).
-- The TB-derived calculation drops them, producing the $19,172 Operating Expenses gap and the false "missing account" callout.
+```ts
+// supabase/functions/validate-financial-statement/index.ts:423
+operatingCashFlow: netIncome, investingCashFlow: 0, financingCashFlow: 0,
+netChangeInCash: netIncome,
+```
 
-The parent row is present in the TB CSV — so the bug is in either (a) the TB parser zeroing parents that have children, or (b) `classifyISAccount` returning `null` for the parent row's `accountName`/`accountType` combination.
+So every uploaded Cash Flow Statement compares against Net Income on one row and zero on the others. That's why this project shows 0% match, OCF off by +10%, ICF/FCF reading as `-` (no TB value), and Net Change off by +10%.
 
-## Diagnose first (one short script, no code changes)
+## Fix
 
-1. Query the parsed `trial_balance_accounts` (or equivalent) rows for this project where `account_name ILIKE '%maintenance and repair%'`. Confirm:
-   - Does a row exist for the parent (`Maintenance and Repair`, no colon)?
-   - If yes, are its `monthlyValues` populated or zeroed?
-   - What's its `accountType` / `fsType`?
-2. Pipe that exact `accountName` + `accountType` into `classifyISAccount` and see what bucket comes back.
+Derive a real **indirect-method** cash flow from the Trial Balance over the document's reporting period, using the BS deltas already present in TB plus the IS activity we already compute. Scope: only the `cash_flow` document path in `deriveTotalsFromTrialBalance`. No schema changes, no AI prompt changes, no UI changes.
 
-This tells us whether the fix belongs in the parser or the classifier.
+### What gets computed
 
-## Fix path A — parser drops parents that have children
+Period = `[periodStartKey, periodEndKey]` from the uploaded statement (same YTD slice logic already used for the equity rollup).
 
-If the parent row exists but its `monthlyValues` are empty/zero, update the TB ingestion to keep parent direct postings even when child accounts share the path prefix. The display layer can still nest them; the numeric totals must include the parent's own line.
+1. **Period Net Income** — sum of IS bucket activity (revenue − cogs − expenses + other_income − other_expense) restricted to the period slice. We already produce `ytdNetIncome` for the equity rollup; generalize it to any period window and reuse.
 
-## Fix path B — classifier returns null for the parent
+2. **BS deltas over the period** — for each BS account, `delta = balance(periodEnd) − balance(periodStart − 1)`. Classify each account into a CF bucket:
+   - `cash` → tracked separately, drives the check figure
+   - `current_asset_noncash` (AR, inventory, prepaid, other current asset) → OCF, sign: `−Δ`
+   - `current_liability_noninterest` (AP, accrued, other current liab; exclude lines containing "loan", "note", "line of credit", "credit card") → OCF, sign: `+Δ`
+   - `fixed_asset` / `intangible` → ICF, sign: `−Δ` (CapEx and intangible additions)
+   - `other_noncurrent_asset` → ICF, sign: `−Δ`
+   - `debt_liability` (long-term liabilities + current-liability rows whose name matches debt keywords) → FCF, sign: `+Δ`
+   - `equity` (excluding retained earnings movement, which is captured by Net Income) → FCF, sign: `+Δ`
+   - Retained earnings movement is intentionally excluded — it's already represented by Net Income.
 
-If the parent's `accountType` (e.g. `Expense` / `Expenses`) is what's failing the classifier, broaden `classifyISAccount` so a row with `accountType` matching `/expense/i` and no override falls through to the `expense` bucket, instead of returning `null`. Same treatment for revenue/COGS parents.
+3. **Non-cash addback** — Depreciation/amortization expense for the period (sum of IS accounts whose name matches `/deprec|amort/i`) is added back into OCF. We already have `calcDepreciationExpense` in `src/lib/calculations.ts`; port the same matching rule into the edge function (it can't import frontend code).
 
-## Adjust the "missing accounts" detector
+4. **Totals**
+   - `operatingCashFlow = netIncome + D&A + Σ(current_asset Δ with −) + Σ(current_liab_noninterest Δ with +)`
+   - `investingCashFlow = Σ(fixed/intangible/other_noncurrent_asset Δ with −)`
+   - `financingCashFlow = Σ(debt Δ with +) + Σ(equity Δ with +)`
+   - `netChangeInCash = OCF + ICF + FCF` (should reconcile to actual ΔCash; we'll log the gap as a sanity check, not surface it)
 
-Currently it flags any uploaded P&L row whose label doesn't appear in `tbBreakdown`. After the fix above, `Maintenance and Repair` will appear in the breakdown and will stop showing as missing. Also tighten the matcher so a parent label matches a TB row whose `accountName` ends with that exact segment (already partly there — verify it works once the parent is in the breakdown).
+### Classification rules (in the edge function)
+
+Add a small helper next to the existing `classifyBSAccount`:
+
+```ts
+function classifyCFBucket(accountName: string, accountType: string, bucket: BsBucket):
+  'current_asset_noncash' | 'cash' | 'fixed_asset' | 'other_asset' |
+  'current_liab_op' | 'debt' | 'equity' | null
+```
+
+Keyed off the existing `bucket` ('asset' | 'liability' | 'equity') plus name/type heuristics already used elsewhere in the file (cash/AR/inventory/prepaid/fixed/intangible for assets; loan|note|line of credit|credit card|long.?term for debt; everything else under liability → operating).
+
+### Output shape
+
+`deriveTotalsFromTrialBalance` returns the same `DerivedTotals` shape — only the four CF fields change from stubs to real numbers. No frontend changes needed; `LINE_ITEM_DEFS.cash_flow` already lists the four rows.
+
+## Files touched
+
+- `supabase/functions/validate-financial-statement/index.ts` — generalize the YTD slice into a `slicePeriod()` helper, add `classifyCFBucket`, replace the four stub lines with computed values. ~80 lines added.
+- Edge function gets redeployed automatically.
 
 ## Verify
 
-Re-run validation on this project. Expected:
-- Operating Expenses TB-derived: $774,058 (matches uploaded).
-- Net Operating Income variance: $0.
-- Net Income variance: $0.
-- "Why don't these match?" panel: no missing accounts.
+Re-run validation on this project's uploaded Cash Flow Statement. Expected:
+- OCF, ICF, FCF, Net Change in Cash all populated from TB.
+- Variances should drop to near-zero on this Sandbox file (QuickBooks indirect-method CF uses the same rules). Any residual variance > 1% gets surfaced via the existing "Why don't these match?" panel logic, unchanged.
 
 ## Out of scope
 
-- No schema migrations.
-- No changes to the AI prompt or `lineDetails` extraction.
-- No Balance Sheet path changes.
+- No new line items beyond the four already shown.
+- No direct-method CF.
+- No changes to balance sheet or income statement validation paths.
+- No "missing accounts" detector changes (the existing one already runs for all doc types).

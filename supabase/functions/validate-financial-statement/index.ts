@@ -413,6 +413,95 @@ function deriveTotalsFromTrialBalance(
     }
   }
 
+  // --- Cash Flow Statement derivation (indirect method) ---
+  // Only compute when validating a cash flow document, otherwise leave stubs at 0.
+  let operatingCashFlow = netIncome;
+  let investingCashFlow = 0;
+  let financingCashFlow = 0;
+  let netChangeInCash = netIncome;
+
+  if (documentType === 'cash_flow') {
+    // Determine period window
+    let endKey = periodEnd ? periodEnd.slice(0, 7) : null;
+    if (!endKey) {
+      for (const a of accounts) {
+        const k = getLatestPeriodKey(a.monthlyValues);
+        if (k && (!endKey || k > endKey)) endKey = k;
+      }
+    }
+    const startKey = periodStart ? periodStart.slice(0, 7) : null;
+    const priorKey: string | null = (() => {
+      if (!startKey) return null;
+      const [y, m] = startKey.split('-').map(Number);
+      const d = new Date(Date.UTC(y, m - 1, 1));
+      d.setUTCMonth(d.getUTCMonth() - 1);
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    })();
+
+    const balAt = (mv: Record<string, number>, key: string | null): number => {
+      if (!key) return 0;
+      const k = Object.keys(mv).sort().filter(x => x <= key).pop();
+      return k ? (mv[k] || 0) : 0;
+    };
+
+    // Depreciation & amortization (non-cash) — sum IS rows whose name matches
+    let dna = 0;
+    const fyEndMonth = parseFiscalYearEndMonth(fiscalYearEnd);
+    for (const a of accounts) {
+      if (a.fsType !== 'IS') continue;
+      const nm = (a.accountName || '').toLowerCase();
+      if (!/deprec|amort/.test(nm)) continue;
+      const monthly = convertIsYtdToMonthlyActivity(a.monthlyValues, fyEndMonth);
+      const keys = getPeriodKeysInRange(monthly, periodStart, periodEnd);
+      const v = keys.reduce((s, k) => s + (monthly[k] || 0), 0);
+      dna += Math.abs(v);
+    }
+
+    // BS deltas → working-capital, capex, financing buckets
+    let ocfAcc = 0, icfAcc = 0, fcfAcc = 0, cashDelta = 0;
+    for (const a of accounts) {
+      if (a.fsType !== 'BS') continue;
+      const bucket = classifyBSAccount(a.accountName, a.accountType);
+      if (!bucket) continue;
+      const endBal = balAt(a.monthlyValues, endKey);
+      const startBal = balAt(a.monthlyValues, priorKey);
+      const delta = endBal - startBal;
+      const cashImpact = -delta; // TB-sign: asset↑ uses cash; liab/equity↑ (more negative) generates cash
+
+      const name = (a.accountName || '').toLowerCase();
+      const type = (a.accountType || '').toLowerCase();
+
+      if (bucket === 'asset') {
+        const isCash = type.includes('bank') || type.includes('cash') ||
+          /\b(cash|petty cash|money market|checking|savings)\b/.test(name);
+        if (isCash) { cashDelta += delta; continue; }
+        const isLongTerm = type.includes('fixed') || type.includes('intangible') ||
+          type.includes('other asset') ||
+          /\b(equipment|building|vehicle|furniture|machinery|land|property|goodwill|patent|trademark|accumulated depreciation)\b/.test(name);
+        if (isLongTerm) icfAcc += cashImpact;
+        else ocfAcc += cashImpact;
+      } else if (bucket === 'liability') {
+        const isDebt = /loan|note|line of credit|credit card|long.?term|mortgage|bond/.test(name) ||
+          type.includes('loan') || type.includes('credit card') ||
+          type.includes('long term') || type.includes('notes payable');
+        if (isDebt) fcfAcc += cashImpact;
+        else ocfAcc += cashImpact;
+      } else if (bucket === 'equity') {
+        // Retained earnings movement is captured by Net Income; don't double-count.
+        if (name.includes('retained earnings') || name.includes('net income') ||
+            name.includes('opening balance equity')) continue;
+        fcfAcc += cashImpact;
+      }
+    }
+
+    operatingCashFlow = netIncome + dna + ocfAcc;
+    investingCashFlow = icfAcc - dna; // back out accumulated-dep effect so ICF ≈ -CapEx
+    financingCashFlow = fcfAcc;
+    netChangeInCash = operatingCashFlow + investingCashFlow + financingCashFlow;
+
+    console.log(`[validate-fs CF] period=${startKey || '?'}..${endKey || '?'} NI=${netIncome} D&A=${dna} ΔWC=${ocfAcc} OCF=${operatingCashFlow} ICF=${investingCashFlow} FCF=${financingCashFlow} Net=${netChangeInCash} actualΔCash=${cashDelta}`);
+  }
+
   return {
     totalAssets, totalLiabilities, totalEquity: totalEquityAdjusted,
     totalRevenue, totalCogs, grossProfit, totalExpenses,
@@ -420,10 +509,11 @@ function deriveTotalsFromTrialBalance(
     totalOtherIncome: otherIncome,
     totalOtherExpense: otherExpense,
     netIncome,
-    operatingCashFlow: netIncome, investingCashFlow: 0, financingCashFlow: 0,
-    netChangeInCash: netIncome,
+    operatingCashFlow, investingCashFlow, financingCashFlow,
+    netChangeInCash,
   };
 }
+
 
 
 // --- Variance helpers ---
