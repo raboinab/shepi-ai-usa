@@ -223,7 +223,15 @@ function deriveTotalsFromTrialBalance(
 
     if (account.fsType === 'BS') {
       const bucket = classifyBSAccount(account.accountName, account.accountType);
-      if (!bucket) continue;
+      if (!bucket) {
+        if (documentType === 'balance_sheet' && ytdStartKey) {
+          const fallbackBucket = classifyLikelyISAccount(account.accountName, account.accountType);
+          if (fallbackBucket === 'revenue') ytdRevenue += -value;
+          else if (fallbackBucket === 'cogs') ytdCogs += Math.abs(value);
+          else if (fallbackBucket === 'expense') ytdExpenses += Math.abs(value);
+        }
+        continue;
+      }
       if (bucket === 'asset') totalAssets += value;
       else if (bucket === 'liability') totalLiabilities += -value;
       else totalEquity += -value;
@@ -235,10 +243,11 @@ function deriveTotalsFromTrialBalance(
 
       // YTD slice for equity rollup
       if (ytdStartKey) {
-        const ytdKeys = Object.keys(account.monthlyValues).filter(k =>
-          k >= ytdStartKey! && (!ytdEndKey || k <= ytdEndKey)
-        );
-        const ytdValue = ytdKeys.reduce((sum, k) => sum + (account.monthlyValues[k] || 0), 0);
+        const ytdValue = documentType === 'balance_sheet'
+          ? value
+          : Object.keys(account.monthlyValues)
+            .filter(k => k >= ytdStartKey! && (!ytdEndKey || k <= ytdEndKey))
+            .reduce((sum, k) => sum + (account.monthlyValues[k] || 0), 0);
         if (bucket === 'revenue') ytdRevenue += -ytdValue;
         else if (bucket === 'cogs') ytdCogs += Math.abs(ytdValue);
         else if (bucket === 'expense') ytdExpenses += Math.abs(ytdValue);
