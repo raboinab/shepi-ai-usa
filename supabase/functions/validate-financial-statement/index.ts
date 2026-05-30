@@ -162,8 +162,15 @@ function deriveTotalsFromTrialBalance(
   const grossProfit = totalRevenue - totalCogs;
   const netIncome = grossProfit - totalExpenses;
 
+  // Roll current-period net income into equity for balance-sheet comparisons.
+  // A real balance sheet shows period-end equity = book equity + YTD earnings
+  // closed to retained earnings. TB equity rows alone exclude that — so without
+  // this roll-up, TB-derived equity is short by exactly net income and the
+  // sheet appears unbalanced even when it isn't.
+  const totalEquityWithNetIncome = totalEquity + netIncome;
+
   return {
-    totalAssets, totalLiabilities, totalEquity,
+    totalAssets, totalLiabilities, totalEquity: totalEquityWithNetIncome,
     totalRevenue, totalCogs, grossProfit, totalExpenses, netIncome,
     operatingCashFlow: netIncome, investingCashFlow: 0, financingCashFlow: 0,
     netChangeInCash: netIncome,
