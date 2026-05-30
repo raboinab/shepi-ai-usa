@@ -128,9 +128,12 @@ serve(async (req) => {
         let netSum = 0;
 
         // Detect column layout. QB GL detail uses one of two shapes:
-        //   (a) [..., Amount, Balance] — two trailing money columns; Balance is the running balance
-        //   (b) [..., Amount]          — one trailing money column; no Balance, derive from running sum
-        // Scan a handful of rows to count distinct money column indices.
+        //   (a) [..., Amount, Balance] — two trailing dense money columns
+        //   (b) [..., Amount]          — one dense money column; derive balance from running sum
+        // Require columns to be DENSE (>=50% of sampled DATA rows numeric) before treating them as
+        // money. Otherwise stray numerics in doc-num / memo string columns get picked, and the
+        // real Amount column ends up mis-classified as Balance — in which case glBalance becomes
+        // the LAST transaction's amount instead of the period total.
         const moneyColFreq = new Map<number, number>();
         let sampled = 0;
         for (const r of childRows) {
@@ -143,7 +146,15 @@ serve(async (req) => {
           }
           if (++sampled >= 30) break;
         }
-        const moneyIdxsSorted = [...moneyColFreq.keys()].sort((a, b) => a - b);
+        const minHits = Math.max(3, Math.ceil(sampled * 0.5));
+        let moneyIdxsSorted = [...moneyColFreq.entries()]
+          .filter(([, n]) => n >= minHits)
+          .map(([i]) => i)
+          .sort((a, b) => a - b);
+        // Tiny sections (<3 DATA rows) can't meet the density floor — fall back to any numeric col.
+        if (moneyIdxsSorted.length === 0 && moneyColFreq.size > 0) {
+          moneyIdxsSorted = [...moneyColFreq.keys()].sort((a, b) => a - b);
+        }
         if (moneyIdxsSorted.length >= 2) {
           balanceColIdx = moneyIdxsSorted[moneyIdxsSorted.length - 1];
           amountColIdx = moneyIdxsSorted[moneyIdxsSorted.length - 2];
