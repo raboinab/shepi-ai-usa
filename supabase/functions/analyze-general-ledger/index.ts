@@ -416,22 +416,21 @@ serve(async (req) => {
       if (Math.abs(acct.glBalance) < 0.01 && acct.glActivity < 0.01) continue;
 
       let tb: TBAcct | undefined;
-      if (acct.acctNumber) tb = tbByAcctNum.get(acct.acctNumber);
-      if (!tb) tb = tbByName.get(acct.name.toLowerCase());
-      if (!tb) tb = tbByLeaf.get(acct.leaf);
+      let matchedBy = "";
+      if (acct.acctNumber) { tb = tbByAcctNum.get(acct.acctNumber); if (tb) matchedBy = "acctNum"; }
+      if (!tb) { tb = tbByName.get(acct.name.toLowerCase()) || tbByName.get(normKey(acct.name)); if (tb) matchedBy = "fullName"; }
+      if (!tb) { tb = tbByLeaf.get(normKey(acct.leaf)) || tbByLeaf.get(normKey(leafOf(acct.name))); if (tb) matchedBy = "leaf"; }
 
       if (tb) {
         matchedTbKeys.add(tb.name.toLowerCase());
-        // Sign convention can differ between GL (debit-positive) and TB (credit-balance)
-        // especially for revenue/liability/equity accounts. Compare magnitudes for the
-        // match decision; preserve signed variance for display.
+        matchedTbKeys.add(normKey(tb.name));
+        matchedTbKeys.add(normKey(leafOf(tb.name)));
         const variance = acct.glBalance - tb.balance;
         const absDiffSigned = Math.abs(variance);
         const absDiffMag = Math.abs(Math.abs(acct.glBalance) - Math.abs(tb.balance));
         const absDiff = Math.min(absDiffSigned, absDiffMag);
         const denom = Math.max(Math.abs(acct.glBalance), Math.abs(tb.balance), 1);
         const variancePct = absDiff / denom;
-        // Treat <$50 absolute or <0.5% relative as match; <$500 absolute as immaterial
         const isMatch = absDiff < 50 || variancePct < 0.005;
         const cmp: TBComparison = {
           accountName: acct.name,
@@ -446,7 +445,7 @@ serve(async (req) => {
           varianceCount++;
           if (absDiff > 1000 && variancePct > 0.05) materialVariances.push(cmp);
           if (varianceLogged < 25) {
-            console.log(`[ANALYZE-GL] VARIANCE: ${acct.name} cls=${acct.classification} gl=${acct.glBalance.toFixed(2)} tb=${tb.balance.toFixed(2)} (tbIdx=${tb.snapshotIdx ?? "n/a"})`);
+            console.log(`[ANALYZE-GL] VARIANCE (by ${matchedBy}): ${acct.name} cls=${acct.classification} gl=${acct.glBalance.toFixed(2)} tb=${tb.balance.toFixed(2)}`);
             varianceLogged++;
           }
         }
