@@ -204,9 +204,13 @@ serve(async (req) => {
         if (balanceColIdx >= 0 && endingBalance !== 0) glBalance = endingBalance;
         else glBalance = beginningBalance + netSum;
 
-        const key = acctName.toLowerCase();
-        const coa = coaByName.get(key) || coaByLeaf.get(normName(acctName)) ||
-                    (acctId ? coaByAcctNum.get(acctId) : undefined);
+        // Key on stable QB acctId so leaves that exist on both sides of the chart
+        // (e.g. "Decks and Patios" under Income AND under Expenses) stay separate.
+        // Fall back to a name-based key only if QB omitted the id.
+        const key = acctId ? `id:${acctId}` : `name:${acctName.toLowerCase()}`;
+        const coa = (acctId ? coaByAcctNum.get(acctId) : undefined) ||
+                    coaByName.get(acctName.toLowerCase()) ||
+                    coaByLeaf.get(normName(acctName));
 
         acctMap.set(key, {
           name: acctName,
@@ -269,14 +273,21 @@ serve(async (req) => {
     }
 
     // Add COA accounts that have no GL activity but have a current balance
-    for (const [, coa] of coaByName) {
-      const k = coa.name.toLowerCase();
-      if (!acctMap.has(k) && Math.abs(coa.balance) > 0.01) {
-        acctMap.set(k, {
-          name: coa.name, leaf: normName(coa.name),
-          acctNumber: coa.acctNum, classification: coa.classification,
-          glBalance: coa.balance, glActivity: 0, txnCount: 0,
-        });
+    {
+      const haveAcctIds = new Set(Array.from(acctMap.values()).map(a => a.acctNumber).filter(Boolean) as string[]);
+      const haveNames = new Set(Array.from(acctMap.values()).map(a => a.name.toLowerCase()));
+      for (const [, coa] of coaByName) {
+        const k = coa.name.toLowerCase();
+        if (haveNames.has(k)) continue;
+        if (coa.acctNum && haveAcctIds.has(coa.acctNum)) continue;
+        if (Math.abs(coa.balance) > 0.01) {
+          const mapKey = coa.acctNum ? `id:${coa.acctNum}` : `name:${k}`;
+          acctMap.set(mapKey, {
+            name: coa.name, leaf: normName(coa.name),
+            acctNumber: coa.acctNum, classification: coa.classification,
+            glBalance: coa.balance, glActivity: 0, txnCount: 0,
+          });
+        }
       }
     }
 
@@ -309,22 +320,30 @@ serve(async (req) => {
     //      • Revenue / Expense: YTD-cumulative within a calendar year, RESETS each
     //        January. For a multi-year period we sum the LAST populated month of EACH
     //        calendar year touched ("yearSum").
-    //    We compute both per series and pick at match time based on classification. ──
+    //
+    //    TB rows are flat with QB stable account `id` and a FULLY-QUALIFIED `value`
+    //    (e.g. "Landscaping Services:Job Materials:Decks and Patios"). The same leaf
+    //    name often appears under both Income and Expense sections with DIFFERENT ids.
+    //    We MUST key series on `acctId` (or full path) — keying on leaf collapses
+    //    revenue + expense halves into one bucket and contaminates every match. ──
     const { data: tbRecords } = await supabase
       .from("processed_data").select("data, created_at, period_end")
       .eq("project_id", projectId).eq("data_type", "trial_balance")
       .order("created_at", { ascending: false }).limit(1);
 
     type TBAcct = {
-      name: string;
+      id: string;
+      fullPath: string;
+      leaf: string;
       snapshotDebit: number; snapshotCredit: number;
       yearSumDebit: number;  yearSumCredit: number;
-      snapshotBalance: number; // snapshotDebit - snapshotCredit
-      yearSumBalance: number;  // yearSumDebit  - yearSumCredit
+      snapshotBalance: number;
+      yearSumBalance: number;
+      side: "REVENUE" | "EXPENSE" | "ASSET" | "LIABILITY" | "EQUITY" | "OTHER";
     };
-    const tbByLeaf = new Map<string, TBAcct>();
-    const tbByName = new Map<string, TBAcct>();
-    const tbByAcctNum = new Map<string, TBAcct>();
+    const tbById = new Map<string, TBAcct>();
+    const tbByFullPath = new Map<string, TBAcct>();
+    const tbByLeaf = new Map<string, TBAcct[]>();   // multi-value — collisions kept separate
     let tbHas = false;
     let monthlyReportCount = 0;
 
@@ -333,6 +352,18 @@ serve(async (req) => {
     const normKey = (s: string): string =>
       (s || "").toLowerCase().replace(/\([^)]*\)/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
     const leafOf = (s: string): string => (s || "").split(":").pop()!.trim();
+
+    // Infer which side of the chart a TB account lives on from its root segment.
+    // Pure heuristic — gets refined by COA lookup below.
+    const inferSide = (fullPath: string): TBAcct["side"] => {
+      const root = (fullPath.split(":")[0] || "").toLowerCase();
+      if (/^(income|revenue|sales|service|landscaping services|fees|other income)/i.test(root)) return "REVENUE";
+      if (/^(cost of (goods sold|labor|sales)|cogs|expense|job expenses|operating|payroll|advertis|insurance|rent|utilit|office|professional|legal|repair|maintenance|depreciation|amortization|interest expense|tax|other expense)/i.test(root)) return "EXPENSE";
+      if (/(payable|liabilit|loan|note|credit card|mastercard|visa|line of credit|accrued)/i.test(root)) return "LIABILITY";
+      if (/(equity|retained earnings|opening balance|capital|owner|distribut)/i.test(root)) return "EQUITY";
+      if (/(checking|savings|cash|bank|receivable|inventory|asset|undeposited|prepaid|fixed|truck|equipment|original cost|accumulated depreciation)/i.test(root)) return "ASSET";
+      return "OTHER";
+    };
 
     if (tbRecords && tbRecords.length > 0) {
       const tbData = tbRecords[0].data as Record<string, unknown>;
@@ -348,23 +379,25 @@ serve(async (req) => {
         return Number.isFinite(ey) ? ey : 0;
       });
 
-      // Build per-account series keyed by full colon-delimited path.
-      type Series = { name: string; acctId: string | null; perMonth: Array<{ debit: number; credit: number }> };
+      // Build per-account series keyed by stable QB acctId. Different leaves under
+      // different parents always have different ids.
+      type Series = { id: string; fullPath: string; perMonth: Array<{ debit: number; credit: number }> };
       const series = new Map<string, Series>();
 
       const walk = (rs: Array<Record<string, unknown>>, monthIdx: number) => {
         for (const r of rs) {
           const cd = (r.colData as Array<Record<string, unknown>>) || [];
           if (cd.length >= 2) {
-            const name = String(cd[0]?.value || "").trim();
+            const fullPath = String(cd[0]?.value || "").trim();
             const acctId = String(cd[0]?.id || "").trim();
             const debit = parseFloat(String(cd[1]?.value || "0").replace(/[,$]/g, "")) || 0;
             const credit = cd.length >= 3 ? (parseFloat(String(cd[2]?.value || "0").replace(/[,$]/g, "")) || 0) : 0;
-            if (name && (debit !== 0 || credit !== 0)) {
-              const key = name.toLowerCase();
+            if (fullPath && (debit !== 0 || credit !== 0)) {
+              // Prefer id; if QB omitted id, fall back to a path-based synthetic key.
+              const key = acctId ? `id:${acctId}` : `path:${fullPath.toLowerCase()}`;
               let s = series.get(key);
               if (!s) {
-                s = { name, acctId: acctId || null, perMonth: [] };
+                s = { id: acctId || key, fullPath, perMonth: [] };
                 series.set(key, s);
               }
               while (s.perMonth.length <= monthIdx) s.perMonth.push({ debit: 0, credit: 0 });
@@ -391,7 +424,6 @@ serve(async (req) => {
       // Distinct years across the period, ordered.
       const yearsPresent = [...new Set(monthYear.filter((y) => y > 0))].sort((a, b) => a - b);
 
-      const fullPathTB: TBAcct[] = [];
       for (const [, s] of series) {
         // ── snapshot: value at lastPopulatedIdx, walk back if empty for this account.
         let sDebit = 0, sCredit = 0;
@@ -424,49 +456,40 @@ serve(async (req) => {
           }
         }
 
+        const leaf = leafOf(s.fullPath);
         const t: TBAcct = {
-          name: s.name,
+          id: s.id,
+          fullPath: s.fullPath,
+          leaf,
           snapshotDebit: sDebit, snapshotCredit: sCredit,
           yearSumDebit: ySumDr,  yearSumCredit: ySumCr,
           snapshotBalance: sDebit - sCredit,
           yearSumBalance:  ySumDr - ySumCr,
+          side: inferSide(s.fullPath),
         };
-        fullPathTB.push(t);
-        tbByName.set(s.name.toLowerCase(), t);
-        tbByName.set(normKey(s.name), t);
-        if (s.acctId) tbByAcctNum.set(s.acctId, t);
-      }
-
-      // Aggregate by normalized LEAF with signed net, summing both snapshot and yearSum
-      // separately so multi-parent leaves (e.g. "Decks and Patios" appearing under
-      // both revenue and expense parents) net correctly on either axis.
-      type LeafAgg = { name: string; sDr: number; sCr: number; yDr: number; yCr: number };
-      const leafAgg = new Map<string, LeafAgg>();
-      for (const t of fullPathTB) {
-        const lk = normKey(leafOf(t.name));
-        if (!lk) continue;
-        const cur = leafAgg.get(lk) || { name: leafOf(t.name), sDr: 0, sCr: 0, yDr: 0, yCr: 0 };
-        cur.sDr += t.snapshotDebit; cur.sCr += t.snapshotCredit;
-        cur.yDr += t.yearSumDebit;  cur.yCr += t.yearSumCredit;
-        leafAgg.set(lk, cur);
-      }
-      for (const [lk, agg] of leafAgg) {
-        tbByLeaf.set(lk, {
-          name: agg.name,
-          snapshotDebit: agg.sDr, snapshotCredit: agg.sCr,
-          yearSumDebit:  agg.yDr, yearSumCredit:  agg.yCr,
-          snapshotBalance: agg.sDr - agg.sCr,
-          yearSumBalance:  agg.yDr - agg.yCr,
-        });
+        tbById.set(s.id, t);
+        tbByFullPath.set(normKey(s.fullPath), t);
+        const lk = normKey(leaf);
+        if (lk) {
+          const arr = tbByLeaf.get(lk) || [];
+          arr.push(t);
+          tbByLeaf.set(lk, arr);
+        }
       }
     }
-    console.log(`[ANALYZE-GL] TB ingested: ${monthlyReportCount} monthly reports, ${tbByName.size} full-path entries, ${tbByLeaf.size} leaf aggregates (snapshot for BS, yearSum for P&L)`);
+    console.log(`[ANALYZE-GL] TB ingested: ${monthlyReportCount} monthly reports, ${tbById.size} series (by acctId), ${tbByLeaf.size} unique leaves`);
+
+    // ── NOTE: QuickBooks' per-report `colData[0].id` is a LOCAL ordinal — NOT a stable
+    //    QB Account.Id. GL id 22 is "Decks and Patios" while TB id 22 is "Sprinklers and
+    //    Drip Systems" — different reports, different numbering. Matching across reports
+    //    must use NAME, not id.
 
     // ── Reconciliation ──
     const reconciliation: TBComparison[] = [];
     const matchedTbKeys = new Set<string>();
     let matchCount = 0, varianceCount = 0, missingInTB = 0;
     let matchBS = 0, matchPL = 0;
+    let matchByFullPath = 0, matchByLeaf = 0, ambiguousLeaf = 0;
     const materialVariances: TBComparison[] = [];
     let varianceLogged = 0;
 
@@ -474,19 +497,55 @@ serve(async (req) => {
       // Skip zero-balance, zero-activity accounts
       if (Math.abs(acct.glBalance) < 0.01 && acct.glActivity < 0.01) continue;
 
+      const fullPath = (acct as AccountInfo & { fullPath?: string }).fullPath || acct.name;
+
       let tb: TBAcct | undefined;
       let matchedBy = "";
-      if (acct.acctNumber) { tb = tbByAcctNum.get(acct.acctNumber); if (tb) matchedBy = "acctNum"; }
-      if (!tb) { tb = tbByName.get(acct.name.toLowerCase()) || tbByName.get(normKey(acct.name)); if (tb) matchedBy = "fullName"; }
-      if (!tb) { tb = tbByLeaf.get(normKey(acct.leaf)) || tbByLeaf.get(normKey(leafOf(acct.name))); if (tb) matchedBy = "leaf"; }
+
+      // 1) by exact full path (works when GL already carries a colon path)
+      if (fullPath.includes(":")) {
+        tb = tbByFullPath.get(normKey(fullPath));
+        if (tb) { matchedBy = "fullPath"; matchByFullPath++; }
+      }
+
+      // 2) by leaf — disambiguate multi-candidates by signed-magnitude distance to GL.
+      //    This is the most robust strategy when GL is leaf-only and the same leaf
+      //    appears on both Income and Expense sides of the chart.
+      if (!tb) {
+        const candidates = tbByLeaf.get(normKey(acct.leaf)) || tbByLeaf.get(normKey(leafOf(acct.name))) || [];
+        if (candidates.length === 1) {
+          tb = candidates[0]; matchedBy = "leaf"; matchByLeaf++;
+        } else if (candidates.length > 1) {
+          // Score each candidate by which axis is closer (in magnitude) to GL's balance.
+          // Treats sign-convention differences gracefully (a $13k expense GL could land
+          // against a $22k TB expense yearSum more cleanly than a $45k TB revenue yearSum).
+          const glMag = Math.abs(acct.glBalance);
+          let bestScore = Infinity, best: TBAcct | undefined;
+          for (const c of candidates) {
+            const sMag = Math.abs(c.snapshotBalance);
+            const yMag = Math.abs(c.yearSumBalance);
+            const score = Math.min(Math.abs(sMag - glMag), Math.abs(yMag - glMag));
+            if (score < bestScore) { bestScore = score; best = c; }
+          }
+          if (best && bestScore < Math.max(glMag, 1) * 10) {
+            tb = best; matchedBy = "leaf(disambig)"; matchByLeaf++;
+          } else {
+            ambiguousLeaf++;
+          }
+        }
+      }
 
       if (tb) {
-        matchedTbKeys.add(tb.name.toLowerCase());
-        matchedTbKeys.add(normKey(tb.name));
-        matchedTbKeys.add(normKey(leafOf(tb.name)));
-        // Pick TB axis by classification: BS uses end-of-period snapshot, P&L sums each
-        // year's YTD-final because monthly TBs reset every January.
-        const isPL = acct.classification === "REVENUE" || acct.classification === "EXPENSE";
+        matchedTbKeys.add(tb.fullPath);
+        // Re-derive classification when we had OTHER, from the matched TB side.
+        if (acct.classification === "OTHER" && tb.side !== "OTHER") {
+          acct.classification = tb.side;
+        }
+        const isPL = acct.classification === "REVENUE" || acct.classification === "INCOME" ||
+                     acct.classification === "OTHER_INCOME" || acct.classification === "EXPENSE" ||
+                     acct.classification === "COST_OF_GOODS_SOLD" || acct.classification === "OTHER_EXPENSE" ||
+                     tb.side === "REVENUE" || tb.side === "EXPENSE";
+        // BS uses end-of-period snapshot; P&L sums each year's YTD-final (monthly TBs reset every January).
         const tbBalance = isPL ? tb.yearSumBalance : tb.snapshotBalance;
         const variance = acct.glBalance - tbBalance;
         const absDiffSigned = Math.abs(variance);
@@ -520,19 +579,16 @@ serve(async (req) => {
         });
       }
     }
+    console.log(`[ANALYZE-GL] Match attempts: fullPath=${matchByFullPath}, leaf=${matchByLeaf}, ambiguous-leaf=${ambiguousLeaf}, missingInTB=${missingInTB}`);
     console.log(`[ANALYZE-GL] Reconciliation: matched=${matchCount}/${accounts.length} (BS=${matchBS}, P&L=${matchPL}), variances=${varianceCount}, missingInTB=${missingInTB}`);
 
-    // Accounts in TB but not in GL — iterate leaf aggregates to avoid double-counting
-    // the multi-parent leaves (e.g. revenue+expense halves of "Decks and Patios").
+    // TB accounts not matched to any GL row.
     const missingInGL: { name: string; balance: number }[] = [];
     if (tbHas) {
-      for (const [lk, t] of tbByLeaf) {
-        if (matchedTbKeys.has(lk)) continue;
-        const covered = accounts.some(a => normKey(a.leaf) === lk || normKey(leafOf(a.name)) === lk);
-        // For missing-in-GL we don't know the class, so report whichever axis is non-zero
-        // (prefer snapshot, fall back to yearSum). This is informational only.
+      for (const [, t] of tbById) {
+        if (matchedTbKeys.has(t.fullPath)) continue;
         const bal = Math.abs(t.snapshotBalance) > 0.01 ? t.snapshotBalance : t.yearSumBalance;
-        if (!covered && Math.abs(bal) > 0.01) missingInGL.push({ name: t.name, balance: bal });
+        if (Math.abs(bal) > 0.01) missingInGL.push({ name: t.fullPath, balance: bal });
       }
     }
 

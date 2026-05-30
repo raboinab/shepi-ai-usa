@@ -1,91 +1,111 @@
-# Fix TB ingestion: P&L is YTD-within-year and resets each January
+## What's actually broken (confirmed against `processed_data` for project `fa0768ca…`)
 
-## What re-ran
+Re-run did fire — logs show two `Complete: 78 accounts, 2 flags, score=1, matched=1/76` invocations and the new `(snapshot for BS, yearSum for P&L)` log line is present. The yearSum work is live. But reconciliation got *worse* (1/78 matched, 75 variances) because two deeper bugs were always there and are now exposed.
 
-Yes — Edge Function logs show two `Complete: 78 accounts, 2 flags, score=1, matched=1/76` calls in the last few minutes. The previous GL-parser fix is live and working (Decks $13,037, Plants $15,993, Sprinklers $24,891 are now real period totals instead of last-txn fragments). But `matched` is still 1/76 because **the TB side is now under-reported**, so almost every account fails the variance tolerance.
+### Bug 1 — TB leaf aggregation merges Revenue and Expense sides of the same leaf
 
-## Root cause (confirmed against `processed_data` id `ad998424…`)
+QB returns the TB as a **flat list of rows** where `colData[0].value` is the full colon-delimited path and `colData[0].id` is the stable QB account id. Confirmed for month 35:
 
-Each entry in `monthlyReports[]` is a **single-month** QuickBooks TB run (`startDate` = first of month, `endDate` = last of month, e.g. Dec 1 2025 → Dec 31 2025). 36 reports cover Jan 2023 → Dec 2025.
+```text
+id 19   Landscaping Services:Job Materials:Decks and Patios            credit 15,314.13   (revenue leaf)
+id 50   Job Expenses:Job Materials:Decks and Patios                    debit   7,363.81   (expense leaf)
+id 23   Landscaping Services:Labor                                     credit 14,567.05   (revenue leaf)
+id 45   Job Expenses:Cost of Labor                                     debit   3,823.47   (expense leaf)
+…
+```
 
-The values inside each monthly TB behave differently by account class:
+`series` is keyed by full path → distinct. **But `leafAgg`** (lines 440-461) reduces every series to `normKey(leafOf(name))` — i.e. just `"decks and patios"` — and sums the revenue and expense halves into a single TB bucket. That bucket then leaks back through `tbByLeaf`, AND through `tbByAcctNum` because the series records the *first* acctId seen for that leaf.
 
-- **Balance Sheet (Asset / Liability / Equity)** — true end-of-month balance. Example: month 35 Checking = $410,901, which IS the period-end. Last populated month is the right answer.
-- **Revenue / Expense** — YTD-cumulative within a calendar year, RESET each January. Confirmed for "Other Income":
+This is exactly what the shared `supabase/functions/_shared/tbAggregation.ts` was written to prevent ("Never merges two TB rows on bare leaf name alone — that was the bug that silently collapsed accounts like Job Materials (Income) + Job Materials (Expense)…"). This analyzer doesn't use that helper.
 
-  ```
-  May–Nov 2023:   credit  $5,420.14  ← YTD plateau
-  Dec 2023:       credit  $7,570.44  ← full year 2023
-  Jan–Oct 2024:   (empty / 0)
-  Nov–Dec 2024:   credit $21,633.84  ← full year 2024
-  Jan–May 2025:   (empty)
-  Jun–Jul 2025:   credit $56,312.95
-  Aug–Dec 2025:   credit $69,017.69  ← full year 2025
-  ```
+### Bug 2 — GL classification is wrong for the same colliding leaves
 
-  Correct full-period TB for Other Income = Dec23 + Dec24 + Dec25 = **$98,221.97**. The analyzer currently reports `$6,607` (one slot of one month) and the previous "sum-all-months" code would have reported ~$300k (~3× year inflation).
+Variance log shows `Labor cls=REVENUE gl=148370.62` and `Fountains and Garden Lighting cls=REVENUE gl=45.00`. Labor is an expense; Fountains and Garden Lighting appears under both Revenue (small $45) and Expense ($14k). The GL parser is inferring classification from leaf name without preserving parent context, so the same name gets one class for all occurrences. This needs disambiguation too.
 
-The current code (lines 304–415) always uses `lastPopulatedIdx` globally — fine for BS, wrong for P&L. That's why every revenue/expense line shows variance.
+### Bug 3 — Match priority guarantees the wrong answer
 
-## Fix — `supabase/functions/analyze-general-ledger/index.ts`
+`acct.acctNumber` (GL side) is matched against `tbByAcctNum` (TB side). When series collapsed onto a leaf overwrote `acctId`, the wrong TB row gets returned and the variance log misleadingly says `matchedBy=acctNum`.
 
-### 1. Build BOTH a snapshot AND a year-sum per series (lines 372–398)
+## Fix — three coordinated changes in `supabase/functions/analyze-general-ledger/index.ts`
 
-For each series, compute two TB values from `perMonth[]`:
-- `snapshot` — value at `lastPopulatedIdx` with walk-back fallback (current logic).
-- `yearSum` — sum of the **last populated month within each calendar year** the series touched. Year boundaries derive from the `monthly[idx].year` field which is already present in the data.
+### 1. Key TB series on `acctId` (stable QB id), not display name
 
-Carry both on the `TBAcct` so reconciliation can pick the right one per match.
+Lines 352–386. The walker today does `series.set(name.toLowerCase(), ...)`. Change to:
 
 ```ts
-type TBAcct = {
-  name: string;
-  snapshotDebit: number; snapshotCredit: number;
-  yearSumDebit: number;  yearSumCredit: number;
-  snapshotBalance: number;  // snapshotDebit - snapshotCredit
-  yearSumBalance: number;   // yearSumDebit  - yearSumCredit
-};
+type Series = { id: string; fullPath: string; perMonth: Array<{debit:number; credit:number}> };
+const series = new Map<string, Series>();          // key = acctId
+const seriesByPath = new Map<string, Series>();    // secondary index for path matches
+
+// inside walk:
+const id = String(cd[0]?.id || "").trim();
+const path = String(cd[0]?.value || "").trim();
+const key = id || `path:${path.toLowerCase()}`;    // synthesize only if QB omitted id
+let s = series.get(key);
+if (!s) { s = { id: key, fullPath: path, perMonth: [] }; series.set(key, s); seriesByPath.set(path.toLowerCase(), s); }
+…
 ```
 
-Year-sum algorithm: for each unique `year` value in `monthly`, find the highest `monthIdx` in that year where `perMonth[idx].debit !== 0 || credit !== 0`; add that slot. Accounts with no activity in a year contribute 0 for that year.
+Two different QB accounts with the same leaf no longer collide.
 
-### 2. Leaf aggregation operates on both values (lines 400–414)
+### 2. Replace `tbByLeaf` collapse with strict, source-tagged lookup maps
 
-`leafAgg` sums `snapshotDebit/Credit` and `yearSumDebit/Credit` separately so the leaf bucket exposes both.
+Lines 394–461. Drop `leafAgg` entirely. Build three maps that *preserve* the per-account axis values:
 
-### 3. Pick the right value at match time (lines 435–445)
+- `tbById: Map<string, TBAcct>` — keyed by QB acctId.
+- `tbByFullPath: Map<string, TBAcct>` — keyed by `normKey(fullPath)`.
+- `tbByLeaf: Map<string, TBAcct[]>` — keyed by `normKey(leafOf(fullPath))`, value is an **array**.
 
-The GL `acct.classification` is already known here (`ASSET | LIABILITY | EQUITY | REVENUE | EXPENSE | OTHER`).
+Matching in the reconciliation loop (lines 477–482) becomes:
 
 ```ts
-const isPL = acct.classification === "REVENUE" || acct.classification === "EXPENSE";
-const tbBalance = isPL ? tb.yearSumBalance : tb.snapshotBalance;
+// priority: id → full path → leaf (only when exactly one TB candidate matches the GL's classification)
+let tb = acct.acctNumber ? tbById.get(acct.acctNumber) : undefined;
+let matchedBy = tb ? "id" : "";
+if (!tb && acct.fullPath) { tb = tbByFullPath.get(normKey(acct.fullPath)); if (tb) matchedBy = "fullPath"; }
+if (!tb) {
+  const candidates = tbByLeaf.get(normKey(acct.leaf)) || [];
+  const isPL = acct.classification === "REVENUE" || acct.classification === "EXPENSE";
+  // Filter candidates to the half of the chart that matches the GL row's class.
+  // For BS use signed balance, for P&L use yearSum.
+  const compatible = candidates.filter(c => sideMatches(c.fullPath, isPL));
+  if (compatible.length === 1) { tb = compatible[0]; matchedBy = "leaf"; }
+}
 ```
 
-Then variance compares `acct.glBalance` to that picked `tbBalance`. Material-variance and match logic unchanged.
+`sideMatches` reads the root segment of the TB `fullPath` (Income / Cost of Goods Sold / Expenses / Other Income / Asset / Liability / etc.) and decides whether it belongs to the revenue or expense side. If there are 0 or 2+ compatible candidates we leave it unmatched and let the variance card report `missing_in_tb` rather than silently match the wrong half.
 
-### 4. Update the comment block at lines 304–308
+### 3. Make the GL side carry `fullPath` and disambiguate classification
 
-State the actual behavior (single-month TB; P&L resets each January; sum each year's last populated month for P&L; last-populated-month overall for BS).
+The GL parser needs to surface the same fully-qualified path the TB has, and use that path to set `classification`. Today `acct.classification` is set per leaf, so two GL rows with the same leaf get the same class. Walk the GL `Sections` ancestry when parsing each row and set:
 
-### 5. Logging
+- `acct.fullPath` — colon-delimited.
+- `acct.classification` — derived from the root section (Income / Cost of Goods Sold / Expenses / Other Income / Other Expense / Asset / Liability / Equity).
 
-Update the summary log to also print P&L vs BS match counts so future regressions are obvious:
+This lets the new matcher in step 2 actually disambiguate `Labor (Income)` from `Cost of Labor (Expense)`.
 
-```
-[ANALYZE-GL] TB ingested: 36 monthly reports, N full-path, M leaf
+The plan stays inside the analyze-general-ledger function; the upstream `qbToJson` pipeline is unchanged.
+
+### 4. Update logging
+
+```text
+[ANALYZE-GL] TB ingested: 36 monthly reports, N series (by acctId)
+[ANALYZE-GL] Match attempts: id=A, fullPath=B, leaf=C, ambiguous-leaf=D, unmatched=E
 [ANALYZE-GL] Reconciliation: matched=X/Y (BS=a, P&L=b), variances=Z, missingInTB=W
 ```
 
-## Expected outcome after deploy
+The `ambiguous-leaf` counter calls out exactly the cases where leaf-name collision blocked a match — useful to spot future regressions.
 
-- `Other Income` TB → ~$98,222 (vs current −$6,607) and GL $331k — closer but still variance (likely a separate `qbToJson` issue for income side; out of scope).
-- `Labor` TB → ~$148k (matches GL $148k).
-- `Decks and Patios` TB → ~$13k (matches GL $13k).
-- `matched` count jumps materially. Whatever residual variance remains is real data drift between the GL and TB ingestion pipelines, not an analyzer bug.
+## Expected result
 
-## Out of scope (separate issue if remaining)
+After deploy, for project `fa0768ca…`:
 
-- Sign convention on the income side (revenue accounts in QBO carry a credit balance; the analyzer treats `balance = debit - credit`, which yields negative — that's fine for BS but P&L variance should compare absolute magnitudes; the existing `absDiffMag` branch already does this).
-- The `qbToJson` ingestion pipeline that produces `processed_data`.
-- COA enrichment, frontend, scoring.
+- `Decks and Patios` (expense) matches TB `Job Expenses:Job Materials:Decks and Patios` (yearSum ≈ +$22k vs GL $13k) — small remaining variance is real data drift, not the −$261k cross-contamination.
+- `Labor` GL row is correctly classified `EXPENSE`, matches `Job Expenses:Cost of Labor`, not the revenue Labor series.
+- `matched` count goes from 1/78 into the 40–60 range. Remaining variances will be actual data issues (the saved $1.85M vs $2.31M kind), not analyzer bugs.
+
+## Out of scope (separate work, flag only if needed)
+
+- Sign convention on the income side (existing `absDiffMag` already handles magnitude comparison).
+- `qbToJson` ingestion or COA enrichment — both already produce correct-shape data; the bug is purely in how analyze-general-ledger consumes it.
+- Wizard / Workbook UI — no changes.
