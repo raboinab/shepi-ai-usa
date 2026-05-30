@@ -341,40 +341,81 @@ serve(async (req) => {
         }
       };
 
+      // Track which report indices actually contain any rows at all (global "populated month" set).
+      const populatedReportIdxs: number[] = [];
       monthly.forEach((report, idx) => {
         const rows = (((report?.report as Record<string, unknown>)?.rows as Record<string, unknown>)?.row as Array<Record<string, unknown>>) || [];
+        if (rows.length > 0) populatedReportIdxs.push(idx);
         walk(rows, idx);
       });
+      const lastPopulatedIdx = populatedReportIdxs.length > 0
+        ? populatedReportIdxs[populatedReportIdxs.length - 1]
+        : -1;
 
       const isBSClass = (c: string) => c === "ASSET" || c === "LIABILITY" || c === "EQUITY";
+
+      // Heuristic BS detector for accounts where COA classification is missing.
+      // QuickBooks Trial Balance monthly slices store BS balances as snapshots; if we sum
+      // them as YTD we get 10–30× inflation (the bug behind Workbook Checking $411k vs
+      // GL $260k). Detect by (a) account-name keywords or (b) monotonic per-month series.
+      const bsNameRe = /\b(checking|savings|cash|bank|deposit|undeposited|payable|receivable|loan|note|mortgage|line of credit|equity|retained|capital|fixed asset|accumulated|inventory|prepaid|accrued|payroll liab|tax payable|credit card)\b/i;
+      const looksMonotonic = (vals: number[]): boolean => {
+        const nz = vals.filter(v => v !== 0);
+        if (nz.length < 3) return false;
+        let nondec = true, noninc = true;
+        for (let i = 1; i < nz.length; i++) {
+          if (nz[i] < nz[i - 1]) nondec = false;
+          if (nz[i] > nz[i - 1]) noninc = false;
+        }
+        return nondec || noninc;
+      };
 
       for (const [key, s] of series) {
         // Look up classification via COA (name → leaf → acctNum)
         const coa = coaByName.get(key) || coaByLeaf.get(normName(s.name)) ||
                     (s.acctId ? coaByAcctNum.get(s.acctId) : undefined);
-        const cls = (coa?.classification || "OTHER").toUpperCase();
+        let cls = (coa?.classification || "OTHER").toUpperCase();
+        let snapshotIdx = -1;
+
+        // Heuristic BS detection when COA classification is unknown.
+        if (!isBSClass(cls) && cls === "OTHER") {
+          const balances = s.perMonth.map(m => m.debit - m.credit);
+          if (bsNameRe.test(s.name) || looksMonotonic(balances)) {
+            cls = "ASSET"; // treat as BS for snapshot purposes; identity bucket recomputed later via COA
+          }
+        }
+
         let debit = 0, credit = 0;
         if (isBSClass(cls)) {
-          // Point-in-time: take last non-empty monthly snapshot
-          for (let i = s.perMonth.length - 1; i >= 0; i--) {
-            if (s.perMonth[i].debit !== 0 || s.perMonth[i].credit !== 0) {
-              debit = s.perMonth[i].debit;
-              credit = s.perMonth[i].credit;
-              break;
+          // Point-in-time: prefer the globally-last populated monthly report. Zero is
+          // a valid snapshot — only fall back to an earlier month if this slot is missing.
+          if (lastPopulatedIdx >= 0 && lastPopulatedIdx < s.perMonth.length) {
+            debit = s.perMonth[lastPopulatedIdx].debit;
+            credit = s.perMonth[lastPopulatedIdx].credit;
+            snapshotIdx = lastPopulatedIdx;
+          }
+          if (snapshotIdx < 0 || (debit === 0 && credit === 0 && s.perMonth.length > 0)) {
+            // Genuine "account didn't exist this month" fallback: walk back to last non-empty.
+            for (let i = Math.min(lastPopulatedIdx, s.perMonth.length - 1); i >= 0; i--) {
+              if (s.perMonth[i] && (s.perMonth[i].debit !== 0 || s.perMonth[i].credit !== 0)) {
+                debit = s.perMonth[i].debit;
+                credit = s.perMonth[i].credit;
+                snapshotIdx = i;
+                break;
+              }
             }
           }
         } else {
           // P&L (or unknown): sum YTD
           for (const m of s.perMonth) { debit += m.debit; credit += m.credit; }
         }
-        const t: TBAcct = { name: s.name, debit, credit, balance: debit - credit };
+        const t: TBAcct = { name: s.name, debit, credit, balance: debit - credit, snapshotIdx };
         tbByName.set(key, t);
         tbByLeaf.set(normName(s.name), t);
         if (s.acctId) tbByAcctNum.set(s.acctId, t);
       }
     }
-    console.log(`[ANALYZE-GL] TB has ${tbByLeaf.size} accounts (BS=point-in-time, P&L=YTD-sum across ${monthlyReportCount} monthly reports)`);
-    console.log(`[ANALYZE-GL] TB has ${tbByLeaf.size} accounts (cumulative YTD across ${monthlyReportCount} monthly reports)`);
+    console.log(`[ANALYZE-GL] TB has ${tbByLeaf.size} accounts (BS=point-in-time @ last populated month, P&L=YTD-sum across ${monthlyReportCount} monthly reports)`);
 
     // ── Reconciliation ──
     const reconciliation: TBComparison[] = [];
