@@ -458,6 +458,10 @@ serve(async (req) => {
         else {
           varianceCount++;
           if (absDiff > 1000 && variancePct > 0.05) materialVariances.push(cmp);
+          if (varianceLogged < 25) {
+            console.log(`[ANALYZE-GL] VARIANCE: ${acct.name} cls=${acct.classification} gl=${acct.glBalance.toFixed(2)} tb=${tb.balance.toFixed(2)} (tbIdx=${tb.snapshotIdx ?? "n/a"})`);
+            varianceLogged++;
+          }
         }
       } else if (tbHas) {
         missingInTB++;
