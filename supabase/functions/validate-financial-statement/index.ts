@@ -370,6 +370,9 @@ const LINE_ITEM_DEFS: Record<string, { key: string; label: string }[]> = {
     { key: 'totalCogs', label: 'Cost of Goods Sold' },
     { key: 'grossProfit', label: 'Gross Profit' },
     { key: 'totalExpenses', label: 'Total Operating Expenses' },
+    { key: 'netOperatingIncome', label: 'Net Operating Income' },
+    { key: 'totalOtherIncome', label: 'Other Income' },
+    { key: 'totalOtherExpense', label: 'Other Expense' },
     { key: 'netIncome', label: 'Net Income' },
   ],
   cash_flow: [
