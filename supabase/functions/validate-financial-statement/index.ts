@@ -317,11 +317,21 @@ function deriveTotalsFromTrialBalance(
       else totalEquity += -value;
     } else if (account.fsType === 'IS') {
       const bucket = classifyISAccount(account.accountName, account.accountType);
-      if (bucket === 'revenue') totalRevenue += -value;
-      else if (bucket === 'cogs') totalCogs += Math.abs(value);
-      else if (bucket === 'expense') totalExpenses += Math.abs(value);
-      else if (bucket === 'other_income') otherIncome += -value;
-      else if (bucket === 'other_expense') otherExpense += Math.abs(value);
+      let signedTotal = 0;
+      if (bucket === 'revenue') { totalRevenue += -value; signedTotal = -value; }
+      else if (bucket === 'cogs') { totalCogs += Math.abs(value); signedTotal = Math.abs(value); }
+      else if (bucket === 'expense') { totalExpenses += Math.abs(value); signedTotal = Math.abs(value); }
+      else if (bucket === 'other_income') { otherIncome += -value; signedTotal = -value; }
+      else if (bucket === 'other_expense') { otherExpense += Math.abs(value); signedTotal = Math.abs(value); }
+
+      if (breakdownOut && bucket) {
+        breakdownOut.push({
+          accountName: account.accountName,
+          accountType: account.accountType || '',
+          bucket,
+          totalInScope: signedTotal,
+        });
+      }
 
       // YTD slice for equity rollup
       if (ytdStartKey) {
