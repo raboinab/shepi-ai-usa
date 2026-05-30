@@ -21,7 +21,7 @@ export interface ValidationDiagnostics {
 }
 
 export interface FinancialStatementValidationResult {
-  documentType: 'balance_sheet' | 'income_statement';
+  documentType: 'balance_sheet' | 'income_statement' | 'cash_flow';
   documentName: string;
   overallScore: number | null;
   lineItems: ValidationLineItem[];
