@@ -249,7 +249,8 @@ function deriveTotalsFromTrialBalance(
   documentType: string,
   periodStart?: string | null,
   periodEnd?: string | null,
-  fiscalYearEnd?: string | null
+  fiscalYearEnd?: string | null,
+  breakdownOut?: TBBreakdownItem[]
 ): DerivedTotals {
   let totalAssets = 0, totalLiabilities = 0, totalEquity = 0;
   let totalRevenue = 0, totalCogs = 0, totalExpenses = 0;
