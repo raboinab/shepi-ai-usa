@@ -109,6 +109,37 @@ function classifyISAccount(accountName: string, accountType: string): 'revenue' 
   return 'expense';
 }
 
+/** Strict classifier used only for BS rows that failed BS classification. */
+function classifyLikelyISAccount(accountName: string, accountType: string): 'revenue' | 'cogs' | 'expense' | null {
+  const name = (accountName || '').toLowerCase();
+  const type = (accountType || '').toLowerCase();
+
+  if (type.includes('cost of goods') || type.includes('cogs') || type.includes('cost of sales') || name.includes('cost of goods') || name.includes('cost of sales')) return 'cogs';
+  if (type.includes('income') || type.includes('revenue') || type.includes('sales') || name.includes('income') || name.includes('revenue') || name.includes('sales')) return 'revenue';
+  if (type.includes('expense') || type.includes('other expense')) return 'expense';
+
+  const expenseNamePatterns = [
+    'advertising', 'amortization', 'bank charge', 'bookkeeper', 'depreciation', 'dues',
+    'equipment rental', 'fee', 'insurance', 'internet', 'legal', 'license', 'maintenance',
+    'meal', 'office', 'payroll', 'penalt', 'permit', 'professional', 'rent', 'repair',
+    'salary', 'settlement', 'software', 'subscription', 'supplies', 'tax', 'telephone',
+    'travel', 'utilities', 'wage'
+  ];
+
+  return expenseNamePatterns.some(pattern => name.includes(pattern)) ? 'expense' : null;
+}
+
+function getPointInTimeValue(monthlyValues: Record<string, number>, periodEnd?: string | null): number {
+  if (periodEnd) {
+    const targetKey = periodEnd.slice(0, 7);
+    const match = Object.keys(monthlyValues).sort().filter(k => k <= targetKey).pop();
+    return match ? (monthlyValues[match] || 0) : 0;
+  }
+
+  const latestKey = getLatestPeriodKey(monthlyValues);
+  return latestKey ? (monthlyValues[latestKey] || 0) : 0;
+}
+
 /**
  * Compute the start month key (YYYY-MM) of the current open fiscal year
  * given fiscal_year_end (e.g. "12-31", "06-30") and the period-end we're reporting at.
@@ -146,7 +177,7 @@ function deriveTotalsFromTrialBalance(
 ): DerivedTotals {
   let totalAssets = 0, totalLiabilities = 0, totalEquity = 0;
   let totalRevenue = 0, totalCogs = 0, totalExpenses = 0;
-  // Parallel YTD-only IS accumulators for the current open fiscal year
+  // Open-income accumulators for the reporting endpoint.
   let ytdRevenue = 0, ytdCogs = 0, ytdExpenses = 0;
 
   // Determine YTD start key (only needed for BS validation rollup)
@@ -171,18 +202,16 @@ function deriveTotalsFromTrialBalance(
 
     if (account.fsType === 'BS' && (documentType === 'balance_sheet' || documentType === 'cash_flow')) {
       // Point-in-time: latest period ≤ periodEnd, or latest overall
-      if (periodEnd) {
-        const targetKey = periodEnd.slice(0, 7);
-        const keys = Object.keys(account.monthlyValues).sort();
-        const match = keys.filter(k => k <= targetKey).pop();
-        value = match ? (account.monthlyValues[match] || 0) : 0;
-      } else {
-        const latestKey = getLatestPeriodKey(account.monthlyValues);
-        value = latestKey ? (account.monthlyValues[latestKey] || 0) : 0;
-      }
+      value = getPointInTimeValue(account.monthlyValues, periodEnd);
     } else if (account.fsType === 'IS') {
-      const filteredKeys = getPeriodKeysInRange(account.monthlyValues, periodStart, periodEnd);
-      value = filteredKeys.reduce((sum, k) => sum + (account.monthlyValues[k] || 0), 0);
+      if (documentType === 'balance_sheet') {
+        // QB Trial Balance income rows are endpoint balances for the open fiscal year,
+        // not monthly movements. For BS equity rollup, use the reporting endpoint only.
+        value = getPointInTimeValue(account.monthlyValues, periodEnd);
+      } else {
+        const filteredKeys = getPeriodKeysInRange(account.monthlyValues, periodStart, periodEnd);
+        value = filteredKeys.reduce((sum, k) => sum + (account.monthlyValues[k] || 0), 0);
+      }
     } else {
       if (account.fsType === 'BS') {
         const latestKey = getLatestPeriodKey(account.monthlyValues);
