@@ -75,60 +75,197 @@ serve(async (req) => {
       }
     }
 
-    // ── Pull canonical GL transactions for the period (paginated to bypass PostgREST default 1000-row cap) ──
-    type GlTxn = { account_name: string | null; account_number: string | null; amount_signed: number | null; amount_abs: number | null; txn_date: string | null };
-    const txns: GlTxn[] = [];
-    const PAGE = 1000;
-    let from = 0;
-    while (true) {
-      const { data: page, error: pageErr } = await supabase
-        .from("canonical_transactions")
-        .select("account_name, account_number, amount_signed, amount_abs, txn_date")
-        .eq("project_id", projectId)
-        .eq("source_type", "general_ledger")
-        .order("txn_date", { ascending: true })
-        .range(from, from + PAGE - 1);
-      if (pageErr) {
-        console.error("[ANALYZE-GL] GL txn fetch error:", pageErr);
-        break;
-      }
-      if (!page || page.length === 0) break;
-      txns.push(...(page as GlTxn[]));
-      if (page.length < PAGE || txns.length >= 200000) break;
-      from += PAGE;
-    }
-    console.log(`[ANALYZE-GL] Found ${txns.length} GL transactions`);
-
-    // ── Aggregate by account ──
+    // ── Prefer parsing GL detail straight from processed_data (QuickBooks GeneralLedger JSON).
+    //    The legacy canonical_transactions rows on some projects have txn_date stuck on the
+    //    period-end and empty raw_payload, so they're unreliable for real period/date analysis.
+    //    Fall back to canonical_transactions only when processed_data has no GL report. ──
     const acctMap = new Map<string, AccountInfo>();
     let periodStart: string | null = null, periodEnd: string | null = null;
+    let txnCountTotal = 0;
+    let glDetailSource: "processed_data" | "canonical_transactions" = "processed_data";
 
-    for (const t of txns) {
-      const name = (t.account_name || "Unknown").trim();
-      const key = name.toLowerCase();
-      const signed = Number(t.amount_signed || 0);
-      const abs = Number(t.amount_abs || Math.abs(signed));
-      const date = (t.txn_date || "").substring(0, 10);
-      if (date) {
-        if (!periodStart || date < periodStart) periodStart = date;
-        if (!periodEnd || date > periodEnd) periodEnd = date;
+    const { data: glProcessed } = await supabase
+      .from("processed_data").select("data, period_start, period_end, created_at")
+      .eq("project_id", projectId).eq("data_type", "general_ledger")
+      .order("created_at", { ascending: false }).limit(1);
+
+    type ColData = { value?: string; id?: string | null };
+    type GlRow = { type?: string; colData?: ColData[]; rows?: { row?: GlRow[] }; header?: { colData?: ColData[] }; summary?: { colData?: ColData[] } };
+
+    const parseMoney = (v: string | undefined | null): number | null => {
+      if (v === undefined || v === null) return null;
+      const cleaned = String(v).replace(/[,$\s]/g, "");
+      if (!/^-?\d+(\.\d+)?$/.test(cleaned)) return null;
+      return parseFloat(cleaned);
+    };
+    const parseDate = (v: string | undefined | null): string | null => {
+      if (!v) return null;
+      const s = String(v).trim();
+      const m1 = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      if (m1) return `${m1[3]}-${m1[1]}-${m1[2]}`;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+      return null;
+    };
+
+    if (glProcessed && glProcessed.length > 0) {
+      const gl = glProcessed[0].data as Record<string, unknown>;
+      const sections = ((gl.rows as { row?: GlRow[] })?.row || []) as GlRow[];
+
+      for (const section of sections) {
+        if (section.type !== "SECTION") continue;
+        const hdr = section.header?.colData || [];
+        const acctName = (hdr[0]?.value || "").trim();
+        const acctId = (hdr[0]?.id || "").toString().trim() || null;
+        if (!acctName) continue;
+
+        const childRows = section.rows?.row || [];
+        let amountColIdx = -1;
+        let balanceColIdx = -1;
+        let beginningBalance = 0;
+        let endingBalance = 0;
+        let txnCount = 0;
+        let activity = 0;
+        let netSum = 0;
+
+        // Detect column layout. QB GL detail uses one of two shapes:
+        //   (a) [..., Amount, Balance] — two trailing dense money columns
+        //   (b) [..., Amount]          — one dense money column; derive balance from running sum
+        // Require columns to be DENSE (>=50% of sampled DATA rows numeric) before treating them as
+        // money. Otherwise stray numerics in doc-num / memo string columns get picked, and the
+        // real Amount column ends up mis-classified as Balance — in which case glBalance becomes
+        // the LAST transaction's amount instead of the period total.
+        const moneyColFreq = new Map<number, number>();
+        let sampled = 0;
+        for (const r of childRows) {
+          if (r.type !== "DATA") continue;
+          const cd = r.colData || [];
+          for (let i = 0; i < cd.length; i++) {
+            if (parseMoney(cd[i]?.value) !== null) {
+              moneyColFreq.set(i, (moneyColFreq.get(i) || 0) + 1);
+            }
+          }
+          if (++sampled >= 30) break;
+        }
+        const minHits = Math.max(3, Math.ceil(sampled * 0.5));
+        let moneyIdxsSorted = [...moneyColFreq.entries()]
+          .filter(([, n]) => n >= minHits)
+          .map(([i]) => i)
+          .sort((a, b) => a - b);
+        // Tiny sections (<3 DATA rows) can't meet the density floor — fall back to any numeric col.
+        if (moneyIdxsSorted.length === 0 && moneyColFreq.size > 0) {
+          moneyIdxsSorted = [...moneyColFreq.keys()].sort((a, b) => a - b);
+        }
+        if (moneyIdxsSorted.length >= 2) {
+          balanceColIdx = moneyIdxsSorted[moneyIdxsSorted.length - 1];
+          amountColIdx = moneyIdxsSorted[moneyIdxsSorted.length - 2];
+        } else if (moneyIdxsSorted.length === 1) {
+          amountColIdx = moneyIdxsSorted[0];
+          balanceColIdx = -1; // no running balance — derive via sum
+        }
+
+        for (const r of childRows) {
+          if (r.type !== "DATA") continue;
+          const cd = r.colData || [];
+          const label = (cd[0]?.value || "").trim().toLowerCase();
+          const isBeginning = label === "beginning balance";
+
+          if (isBeginning) {
+            // Beginning balance row: the running balance sits in whichever money col it can find
+            const bb = balanceColIdx >= 0 ? parseMoney(cd[balanceColIdx]?.value)
+                                          : (amountColIdx >= 0 ? parseMoney(cd[amountColIdx]?.value) : null);
+            if (bb !== null) beginningBalance = bb;
+            continue;
+          }
+
+          const amt = amountColIdx >= 0 ? parseMoney(cd[amountColIdx]?.value) : null;
+          if (amt !== null) {
+            netSum += amt;
+            activity += Math.abs(amt);
+          }
+          if (balanceColIdx >= 0) {
+            const rb = parseMoney(cd[balanceColIdx]?.value);
+            if (rb !== null) endingBalance = rb;
+          }
+
+          let txnDate: string | null = null;
+          for (const c of cd) {
+            const d = parseDate(c?.value);
+            if (d) { txnDate = d; break; }
+          }
+          if (txnDate) {
+            if (!periodStart || txnDate < periodStart) periodStart = txnDate;
+            if (!periodEnd || txnDate > periodEnd) periodEnd = txnDate;
+          }
+          txnCount += 1;
+        }
+
+        // glBalance preference: explicit running balance > beginning + net > net alone
+        let glBalance: number;
+        if (balanceColIdx >= 0 && endingBalance !== 0) glBalance = endingBalance;
+        else glBalance = beginningBalance + netSum;
+
+        const key = acctName.toLowerCase();
+        const coa = coaByName.get(key) || coaByLeaf.get(normName(acctName)) ||
+                    (acctId ? coaByAcctNum.get(acctId) : undefined);
+
+        acctMap.set(key, {
+          name: acctName,
+          leaf: normName(acctName),
+          acctNumber: acctId || coa?.acctNum || null,
+          classification: (coa?.classification || "OTHER").toUpperCase(),
+          glBalance,
+          glActivity: activity,
+          txnCount,
+        });
+        txnCountTotal += txnCount;
       }
-      const coa = coaByName.get(key) || coaByLeaf.get(normName(name)) ||
-                  (t.account_number ? coaByAcctNum.get(String(t.account_number)) : undefined);
-      let acc = acctMap.get(key);
-      if (!acc) {
-        acc = {
-          name,
-          leaf: normName(name),
-          acctNumber: (t.account_number as string) || coa?.acctNum || null,
-          classification: coa?.classification || "OTHER",
-          glBalance: 0, glActivity: 0, txnCount: 0,
-        };
-        acctMap.set(key, acc);
+      console.log(`[ANALYZE-GL] Parsed ${acctMap.size} accounts / ${txnCountTotal} txns from processed_data GL detail`);
+    }
+
+    // Fallback: legacy canonical_transactions path
+    if (acctMap.size === 0) {
+      glDetailSource = "canonical_transactions";
+      type GlTxn = { account_name: string | null; account_number: string | null; amount_signed: number | null; amount_abs: number | null; txn_date: string | null };
+      const PAGE = 1000;
+      let from = 0;
+      const txns: GlTxn[] = [];
+      while (true) {
+        const { data: page, error: pageErr } = await supabase
+          .from("canonical_transactions")
+          .select("account_name, account_number, amount_signed, amount_abs, txn_date")
+          .eq("project_id", projectId).eq("source_type", "general_ledger")
+          .order("txn_date", { ascending: true })
+          .range(from, from + PAGE - 1);
+        if (pageErr) { console.error("[ANALYZE-GL] GL txn fetch error:", pageErr); break; }
+        if (!page || page.length === 0) break;
+        txns.push(...(page as GlTxn[]));
+        if (page.length < PAGE || txns.length >= 200000) break;
+        from += PAGE;
       }
-      acc.glBalance += signed;
-      acc.glActivity += abs;
-      acc.txnCount += 1;
+      for (const t of txns) {
+        const name = (t.account_name || "Unknown").trim();
+        const key = name.toLowerCase();
+        const signed = Number(t.amount_signed || 0);
+        const abs = Number(t.amount_abs || Math.abs(signed));
+        const date = (t.txn_date || "").substring(0, 10);
+        if (date) {
+          if (!periodStart || date < periodStart) periodStart = date;
+          if (!periodEnd || date > periodEnd) periodEnd = date;
+        }
+        const coa = coaByName.get(key) || coaByLeaf.get(normName(name)) ||
+                    (t.account_number ? coaByAcctNum.get(String(t.account_number)) : undefined);
+        let acc = acctMap.get(key);
+        if (!acc) {
+          acc = { name, leaf: normName(name), acctNumber: (t.account_number as string) || coa?.acctNum || null,
+                  classification: coa?.classification || "OTHER", glBalance: 0, glActivity: 0, txnCount: 0 };
+          acctMap.set(key, acc);
+        }
+        acc.glBalance += signed;
+        acc.glActivity += abs;
+        acc.txnCount += 1;
+      }
+      txnCountTotal = txns.length;
+      console.log(`[ANALYZE-GL] Fallback: aggregated ${acctMap.size} accounts from ${txns.length} canonical_transactions rows`);
     }
 
     // Add COA accounts that have no GL activity but have a current balance
@@ -143,29 +280,79 @@ serve(async (req) => {
       }
     }
 
-    const accounts = Array.from(acctMap.values());
-    console.log(`[ANALYZE-GL] Aggregated ${accounts.length} unique accounts`);
+    let accounts = Array.from(acctMap.values());
 
-    // ── Pull latest TB (monthly reports) and build leaf-name index from latest period ──
+    // ── Dedupe parent-rollup rows. If "X" and "X:Y" both exist with non-zero balances,
+    //    "X" is the rollup (QuickBooks GL emits both header and detail rows) → drop it. ──
+    {
+      const fqByLeafCount = new Map<string, number>();
+      for (const a of accounts) {
+        if (a.name.includes(":")) {
+          const leaf = a.name.split(":").pop()!.toLowerCase().trim();
+          fqByLeafCount.set(leaf, (fqByLeafCount.get(leaf) || 0) + 1);
+        }
+      }
+      const namesLower = new Set(accounts.map(a => a.name.toLowerCase()));
+      accounts = accounts.filter(a => {
+        // Drop bare "X" when a child "X:Y" exists
+        const hasChild = !a.name.includes(":") && Array.from(namesLower).some(n => n.startsWith(a.name.toLowerCase() + ":"));
+        return !hasChild;
+      });
+    }
+    console.log(`[ANALYZE-GL] Aggregated ${accounts.length} unique accounts (post-rollup dedupe)`);
+
+    // ── Pull latest TB. Each entry in `monthlyReports` is a single-MONTH QuickBooks TB
+    //    (startDate = first of month, endDate = last of month). The values inside behave
+    //    differently by account class:
+    //      • Balance Sheet (asset/liability/equity): true end-of-month balance →
+    //        use the LAST populated month overall ("snapshot").
+    //      • Revenue / Expense: YTD-cumulative within a calendar year, RESETS each
+    //        January. For a multi-year period we sum the LAST populated month of EACH
+    //        calendar year touched ("yearSum").
+    //    We compute both per series and pick at match time based on classification. ──
     const { data: tbRecords } = await supabase
       .from("processed_data").select("data, created_at, period_end")
       .eq("project_id", projectId).eq("data_type", "trial_balance")
       .order("created_at", { ascending: false }).limit(1);
 
-    type TBAcct = { name: string; debit: number; credit: number; balance: number };
+    type TBAcct = {
+      name: string;
+      snapshotDebit: number; snapshotCredit: number;
+      yearSumDebit: number;  yearSumCredit: number;
+      snapshotBalance: number; // snapshotDebit - snapshotCredit
+      yearSumBalance: number;  // yearSumDebit  - yearSumCredit
+    };
     const tbByLeaf = new Map<string, TBAcct>();
     const tbByName = new Map<string, TBAcct>();
     const tbByAcctNum = new Map<string, TBAcct>();
     let tbHas = false;
+    let monthlyReportCount = 0;
+
+    // Symmetric normalizer for matching: strip parenthetical suffixes like "(A/R)",
+    // lowercase, collapse non-alphanumerics to single spaces, trim.
+    const normKey = (s: string): string =>
+      (s || "").toLowerCase().replace(/\([^)]*\)/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
+    const leafOf = (s: string): string => (s || "").split(":").pop()!.trim();
 
     if (tbRecords && tbRecords.length > 0) {
       const tbData = tbRecords[0].data as Record<string, unknown>;
       const monthly = (tbData.monthlyReports as Array<Record<string, unknown>>) || [];
-      // Use the LAST monthly report (most recent period)
-      const lastReport = monthly[monthly.length - 1];
-      const rows = (((lastReport?.report as Record<string, unknown>)?.rows as Record<string, unknown>)?.row as Array<Record<string, unknown>>) || [];
+      monthlyReportCount = monthly.length;
 
-      const walk = (rs: Array<Record<string, unknown>>) => {
+      // Map each monthIdx → calendar year (from monthly[idx].year, fall back to endDate).
+      const monthYear: number[] = monthly.map((m) => {
+        const y = Number((m as Record<string, unknown>).year);
+        if (Number.isFinite(y) && y > 1900) return y;
+        const ed = String((m as Record<string, unknown>).endDate || "");
+        const ey = parseInt(ed.slice(0, 4), 10);
+        return Number.isFinite(ey) ? ey : 0;
+      });
+
+      // Build per-account series keyed by full colon-delimited path.
+      type Series = { name: string; acctId: string | null; perMonth: Array<{ debit: number; credit: number }> };
+      const series = new Map<string, Series>();
+
+      const walk = (rs: Array<Record<string, unknown>>, monthIdx: number) => {
         for (const r of rs) {
           const cd = (r.colData as Array<Record<string, unknown>>) || [];
           if (cd.length >= 2) {
@@ -174,56 +361,156 @@ serve(async (req) => {
             const debit = parseFloat(String(cd[1]?.value || "0").replace(/[,$]/g, "")) || 0;
             const credit = cd.length >= 3 ? (parseFloat(String(cd[2]?.value || "0").replace(/[,$]/g, "")) || 0) : 0;
             if (name && (debit !== 0 || credit !== 0)) {
-              const balance = debit - credit;
-              const t: TBAcct = { name, debit, credit, balance };
-              tbByName.set(name.toLowerCase(), t);
-              tbByLeaf.set(normName(name), t);
-              if (acctId) tbByAcctNum.set(acctId, t);
+              const key = name.toLowerCase();
+              let s = series.get(key);
+              if (!s) {
+                s = { name, acctId: acctId || null, perMonth: [] };
+                series.set(key, s);
+              }
+              while (s.perMonth.length <= monthIdx) s.perMonth.push({ debit: 0, credit: 0 });
+              s.perMonth[monthIdx].debit += debit;
+              s.perMonth[monthIdx].credit += credit;
               tbHas = true;
             }
           }
           const nested = (r.rows as Record<string, unknown>)?.row as Array<Record<string, unknown>>;
-          if (nested) walk(nested);
+          if (nested) walk(nested, monthIdx);
         }
       };
-      walk(rows);
+
+      const populatedReportIdxs: number[] = [];
+      monthly.forEach((report, idx) => {
+        const rows = (((report?.report as Record<string, unknown>)?.rows as Record<string, unknown>)?.row as Array<Record<string, unknown>>) || [];
+        if (rows.length > 0) populatedReportIdxs.push(idx);
+        walk(rows, idx);
+      });
+      const lastPopulatedIdx = populatedReportIdxs.length > 0
+        ? populatedReportIdxs[populatedReportIdxs.length - 1]
+        : -1;
+
+      // Distinct years across the period, ordered.
+      const yearsPresent = [...new Set(monthYear.filter((y) => y > 0))].sort((a, b) => a - b);
+
+      const fullPathTB: TBAcct[] = [];
+      for (const [, s] of series) {
+        // ── snapshot: value at lastPopulatedIdx, walk back if empty for this account.
+        let sDebit = 0, sCredit = 0;
+        if (lastPopulatedIdx >= 0 && lastPopulatedIdx < s.perMonth.length) {
+          sDebit = s.perMonth[lastPopulatedIdx].debit;
+          sCredit = s.perMonth[lastPopulatedIdx].credit;
+        }
+        if (sDebit === 0 && sCredit === 0) {
+          for (let i = Math.min(lastPopulatedIdx, s.perMonth.length - 1); i >= 0; i--) {
+            const slot = s.perMonth[i];
+            if (slot && (slot.debit !== 0 || slot.credit !== 0)) {
+              sDebit = slot.debit; sCredit = slot.credit; break;
+            }
+          }
+        }
+
+        // ── yearSum: for each calendar year, take the highest monthIdx in that year
+        //    where this series has any value (the YTD-final for the year), and sum.
+        let ySumDr = 0, ySumCr = 0;
+        for (const yr of yearsPresent) {
+          let bestIdx = -1;
+          for (let i = 0; i < s.perMonth.length; i++) {
+            if (monthYear[i] !== yr) continue;
+            const slot = s.perMonth[i];
+            if (slot && (slot.debit !== 0 || slot.credit !== 0)) bestIdx = i;
+          }
+          if (bestIdx >= 0) {
+            ySumDr += s.perMonth[bestIdx].debit;
+            ySumCr += s.perMonth[bestIdx].credit;
+          }
+        }
+
+        const t: TBAcct = {
+          name: s.name,
+          snapshotDebit: sDebit, snapshotCredit: sCredit,
+          yearSumDebit: ySumDr,  yearSumCredit: ySumCr,
+          snapshotBalance: sDebit - sCredit,
+          yearSumBalance:  ySumDr - ySumCr,
+        };
+        fullPathTB.push(t);
+        tbByName.set(s.name.toLowerCase(), t);
+        tbByName.set(normKey(s.name), t);
+        if (s.acctId) tbByAcctNum.set(s.acctId, t);
+      }
+
+      // Aggregate by normalized LEAF with signed net, summing both snapshot and yearSum
+      // separately so multi-parent leaves (e.g. "Decks and Patios" appearing under
+      // both revenue and expense parents) net correctly on either axis.
+      type LeafAgg = { name: string; sDr: number; sCr: number; yDr: number; yCr: number };
+      const leafAgg = new Map<string, LeafAgg>();
+      for (const t of fullPathTB) {
+        const lk = normKey(leafOf(t.name));
+        if (!lk) continue;
+        const cur = leafAgg.get(lk) || { name: leafOf(t.name), sDr: 0, sCr: 0, yDr: 0, yCr: 0 };
+        cur.sDr += t.snapshotDebit; cur.sCr += t.snapshotCredit;
+        cur.yDr += t.yearSumDebit;  cur.yCr += t.yearSumCredit;
+        leafAgg.set(lk, cur);
+      }
+      for (const [lk, agg] of leafAgg) {
+        tbByLeaf.set(lk, {
+          name: agg.name,
+          snapshotDebit: agg.sDr, snapshotCredit: agg.sCr,
+          yearSumDebit:  agg.yDr, yearSumCredit:  agg.yCr,
+          snapshotBalance: agg.sDr - agg.sCr,
+          yearSumBalance:  agg.yDr - agg.yCr,
+        });
+      }
     }
-    console.log(`[ANALYZE-GL] TB has ${tbByLeaf.size} accounts`);
+    console.log(`[ANALYZE-GL] TB ingested: ${monthlyReportCount} monthly reports, ${tbByName.size} full-path entries, ${tbByLeaf.size} leaf aggregates (snapshot for BS, yearSum for P&L)`);
 
     // ── Reconciliation ──
     const reconciliation: TBComparison[] = [];
     const matchedTbKeys = new Set<string>();
     let matchCount = 0, varianceCount = 0, missingInTB = 0;
+    let matchBS = 0, matchPL = 0;
     const materialVariances: TBComparison[] = [];
+    let varianceLogged = 0;
 
     for (const acct of accounts) {
       // Skip zero-balance, zero-activity accounts
       if (Math.abs(acct.glBalance) < 0.01 && acct.glActivity < 0.01) continue;
 
       let tb: TBAcct | undefined;
-      if (acct.acctNumber) tb = tbByAcctNum.get(acct.acctNumber);
-      if (!tb) tb = tbByName.get(acct.name.toLowerCase());
-      if (!tb) tb = tbByLeaf.get(acct.leaf);
+      let matchedBy = "";
+      if (acct.acctNumber) { tb = tbByAcctNum.get(acct.acctNumber); if (tb) matchedBy = "acctNum"; }
+      if (!tb) { tb = tbByName.get(acct.name.toLowerCase()) || tbByName.get(normKey(acct.name)); if (tb) matchedBy = "fullName"; }
+      if (!tb) { tb = tbByLeaf.get(normKey(acct.leaf)) || tbByLeaf.get(normKey(leafOf(acct.name))); if (tb) matchedBy = "leaf"; }
 
       if (tb) {
         matchedTbKeys.add(tb.name.toLowerCase());
-        const variance = acct.glBalance - tb.balance;
-        const absVar = Math.abs(variance);
-        const denom = Math.max(Math.abs(acct.glBalance), Math.abs(tb.balance), 1);
-        const variancePct = absVar / denom;
-        const isMatch = absVar < 1 || variancePct < 0.005;
+        matchedTbKeys.add(normKey(tb.name));
+        matchedTbKeys.add(normKey(leafOf(tb.name)));
+        // Pick TB axis by classification: BS uses end-of-period snapshot, P&L sums each
+        // year's YTD-final because monthly TBs reset every January.
+        const isPL = acct.classification === "REVENUE" || acct.classification === "EXPENSE";
+        const tbBalance = isPL ? tb.yearSumBalance : tb.snapshotBalance;
+        const variance = acct.glBalance - tbBalance;
+        const absDiffSigned = Math.abs(variance);
+        const absDiffMag = Math.abs(Math.abs(acct.glBalance) - Math.abs(tbBalance));
+        const absDiff = Math.min(absDiffSigned, absDiffMag);
+        const denom = Math.max(Math.abs(acct.glBalance), Math.abs(tbBalance), 1);
+        const variancePct = absDiff / denom;
+        const isMatch = absDiff < 50 || variancePct < 0.005;
         const cmp: TBComparison = {
           accountName: acct.name,
           glBalance: acct.glBalance,
-          tbBalance: tb.balance,
+          tbBalance,
           variance, variancePct,
           status: isMatch ? "match" : "variance",
         };
         reconciliation.push(cmp);
-        if (isMatch) matchCount++;
+        if (isMatch) { matchCount++; if (isPL) matchPL++; else matchBS++; }
         else {
           varianceCount++;
-          if (absVar > 1000 || variancePct > 0.05) materialVariances.push(cmp);
+          if (absDiff > 1000 && variancePct > 0.05) materialVariances.push(cmp);
+          if (varianceLogged < 25) {
+            console.log(`[ANALYZE-GL] VARIANCE (by ${matchedBy}, ${isPL ? "P&L" : "BS"}): ${acct.name} cls=${acct.classification} gl=${acct.glBalance.toFixed(2)} tb=${tbBalance.toFixed(2)}`);
+            varianceLogged++;
+          }
         }
       } else if (tbHas) {
         missingInTB++;
@@ -233,17 +520,19 @@ serve(async (req) => {
         });
       }
     }
+    console.log(`[ANALYZE-GL] Reconciliation: matched=${matchCount}/${accounts.length} (BS=${matchBS}, P&L=${matchPL}), variances=${varianceCount}, missingInTB=${missingInTB}`);
 
-    // Accounts in TB but not in GL
+    // Accounts in TB but not in GL — iterate leaf aggregates to avoid double-counting
+    // the multi-parent leaves (e.g. revenue+expense halves of "Decks and Patios").
     const missingInGL: { name: string; balance: number }[] = [];
     if (tbHas) {
-      for (const [k, t] of tbByName) {
-        if (!matchedTbKeys.has(k)) {
-          // also check leaf match against accounts already covered
-          const leaf = normName(t.name);
-          const covered = accounts.some(a => a.leaf === leaf || a.name.toLowerCase() === k);
-          if (!covered) missingInGL.push({ name: t.name, balance: t.balance });
-        }
+      for (const [lk, t] of tbByLeaf) {
+        if (matchedTbKeys.has(lk)) continue;
+        const covered = accounts.some(a => normKey(a.leaf) === lk || normKey(leafOf(a.name)) === lk);
+        // For missing-in-GL we don't know the class, so report whichever axis is non-zero
+        // (prefer snapshot, fall back to yearSum). This is informational only.
+        const bal = Math.abs(t.snapshotBalance) > 0.01 ? t.snapshotBalance : t.yearSumBalance;
+        if (!covered && Math.abs(bal) > 0.01) missingInGL.push({ name: t.name, balance: bal });
       }
     }
 
@@ -251,21 +540,26 @@ serve(async (req) => {
     const accountTypeBreakdown: Record<string, number> = {};
     for (const a of accounts) accountTypeBreakdown[a.classification] = (accountTypeBreakdown[a.classification] || 0) + 1;
 
-    // ── Accounting identity: Assets − Liabilities − Equity = 0 ──
-    let sumAssets = 0, sumLiab = 0, sumEquity = 0, sumIncome = 0, sumExpense = 0;
+    // ── Accounting identity: Assets = Liabilities + Equity + (Revenue − Expense)
+    //    Handle both sign conventions: detect whether revenues sum positive (debit-positive
+    //    convention common in QB GL exports) or negative (true double-entry signed sum). ──
+    // Apply Math.abs per-account *before* summing so sign-convention drift between
+    // imports (one liability +500, another −300) doesn't net to 200 and mask the real $800.
+    let sumAssets = 0, sumLiab = 0, sumEquity = 0, sumRevenue = 0, sumExpense = 0;
     for (const a of accounts) {
-      switch (a.classification) {
-        case "ASSET": sumAssets += a.glBalance; break;
-        case "LIABILITY": sumLiab += a.glBalance; break;
-        case "EQUITY": sumEquity += a.glBalance; break;
-        case "INCOME": sumIncome += a.glBalance; break;
-        case "EXPENSE": sumExpense += a.glBalance; break;
-      }
+      const c = a.classification;
+      const v = a.glBalance;
+      if (c === "ASSET") sumAssets += v; // assets keep sign so contra-assets net correctly
+      else if (c === "LIABILITY") sumLiab += Math.abs(v);
+      else if (c === "EQUITY") sumEquity += Math.abs(v);
+      else if (c === "REVENUE" || c === "INCOME" || c === "OTHER_INCOME") sumRevenue += Math.abs(v);
+      else if (c === "EXPENSE" || c === "COST_OF_GOODS_SOLD" || c === "OTHER_EXPENSE") sumExpense += Math.abs(v);
     }
-    // Liabilities & Equity are typically credit-balances (negative in signed sum) → flip
-    const liabAbs = Math.abs(sumLiab);
-    const equityAbs = Math.abs(sumEquity);
-    const netIncome = Math.abs(sumIncome) - Math.abs(sumExpense);
+    const liabAbs = sumLiab;
+    const equityAbs = sumEquity;
+    const revenueAbs = sumRevenue;
+    const expenseAbs = sumExpense;
+    const netIncome = revenueAbs - expenseAbs;
     const accountingEquationDiff = sumAssets - liabAbs - equityAbs - netIncome;
 
     // ── Largest accounts by |balance| ──
@@ -290,10 +584,15 @@ serve(async (req) => {
         flags.push(`Suspense/clearing account "${a.name}" has non-zero balance (${a.glBalance.toFixed(2)})`);
       }
     }
-    // Round-number balances on large accounts (potential plug)
+    // Round-number balances — only flag on revenue/expense accounts where round numbers
+    // suggest manual journal plugs. Skip assets, liabilities (loan principals), equity,
+    // and any account whose name implies a loan/note/mortgage/LOC.
+    const loanLike = /loan|note|mortgage|line of credit|capital lease/i;
     for (const a of accounts) {
       const abs = Math.abs(a.glBalance);
-      if (abs >= 10000 && abs % 1000 === 0 && a.classification !== "ASSET") {
+      const c = a.classification;
+      const isPL = c === "REVENUE" || c === "INCOME" || c === "EXPENSE" || c === "COST_OF_GOODS_SOLD" || c === "OTHER_INCOME" || c === "OTHER_EXPENSE";
+      if (isPL && !loanLike.test(a.name) && abs >= 10000 && abs % 1000 === 0) {
         flags.push(`Round-number balance on ${a.name}: ${a.glBalance.toFixed(0)} — possible plug entry`);
       }
     }
@@ -303,7 +602,8 @@ serve(async (req) => {
 
     const analysisResult = {
       accountCount: accounts.length,
-      txnCount: txns.length,
+      txnCount: txnCountTotal,
+      glDetailSource,
       accountTypeBreakdown,
       identityCheck: {
         assets: sumAssets,

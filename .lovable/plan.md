@@ -1,66 +1,91 @@
-## Goal
+# Fix TB ingestion: P&L is YTD-within-year and resets each January
 
-Introduce a single **NWC Method** toggle in Shepi. The user picks one of five methods, and every downstream calculation (Working Capital tab, NWC Analysis tab, Deal Parameters peg, Free Cash Flow change-in-NWC, PDF Working Capital slide, and workbook XLSX export) uses that method.
+## What re-ran
 
-The five methods follow the taxonomy you laid out:
+Yes — Edge Function logs show two `Complete: 78 accounts, 2 flags, score=1, matched=1/76` calls in the last few minutes. The previous GL-parser fix is live and working (Decks $13,037, Plants $15,993, Sprinklers $24,891 are now real period totals instead of last-txn fragments). But `matched` is still 1/76 because **the TB side is now under-reported**, so almost every account fails the variance tolerance.
 
-1. **Reported** — Total Current Assets − Total Current Liabilities (book)
-2. **Operating** — excludes cash, short-term debt, income taxes payable
-3. **Transaction** — Operating with configurable inclusions/exclusions per LOI
-4. **Normalized** — Transaction + user-entered normalization adjustments (seasonality, one-time items)
-5. **Component** — AR + Inventory + Prepaids − AP − Accrued Expenses − Deferred Revenue
+## Root cause (confirmed against `processed_data` id `ad998424…`)
 
-## Scope
+Each entry in `monthlyReports[]` is a **single-month** QuickBooks TB run (`startDate` = first of month, `endDate` = last of month, e.g. Dec 1 2025 → Dec 31 2025). 36 reports cover Jan 2023 → Dec 2025.
 
-### 1. Data model
+The values inside each monthly TB behave differently by account class:
 
-- Add `nwcMethod: 'reported' | 'operating' | 'transaction' | 'normalized' | 'component'` to `DealParameters` in `src/lib/nwcDataUtils.ts`. Default `'operating'`.
-- Add `transactionInclusions` (record of line-item keys → boolean) for the Transaction method's exclude toggles (cash, short-term debt, income taxes payable, owner-related balances).
-- Add `normalizationAdjustments: Array<{ id, label, periodValues: Record<periodId, number> }>` for Normalized method.
-- Persist via existing `dealParameters` save path (no schema migration — these live in the same `dealParameters` JSON column already used).
+- **Balance Sheet (Asset / Liability / Equity)** — true end-of-month balance. Example: month 35 Checking = $410,901, which IS the period-end. Last populated month is the right answer.
+- **Revenue / Expense** — YTD-cumulative within a calendar year, RESET each January. Confirmed for "Other Income":
 
-### 2. Calculation layer (`src/lib/calculations.ts`)
+  ```
+  May–Nov 2023:   credit  $5,420.14  ← YTD plateau
+  Dec 2023:       credit  $7,570.44  ← full year 2023
+  Jan–Oct 2024:   (empty / 0)
+  Nov–Dec 2024:   credit $21,633.84  ← full year 2024
+  Jan–May 2025:   (empty)
+  Jun–Jul 2025:   credit $56,312.95
+  Aug–Dec 2025:   credit $69,017.69  ← full year 2025
+  ```
 
-Add one entry point: `calcNWCByMethod(entries, periodId, method, params) → number`. Internally it composes the existing primitives:
+  Correct full-period TB for Other Income = Dec23 + Dec24 + Dec25 = **$98,221.97**. The analyzer currently reports `$6,607` (one slot of one month) and the previous "sum-all-months" code would have reported ~$300k (~3× year inflation).
 
-- `reported` → `calcNetWorkingCapital`
-- `operating` → `calcNWCExCash` minus short-term debt and income taxes payable buckets (read from `Other current liabilities` sub-rows when tagged; fall back to `calcNWCExCash` if not tagged)
-- `transaction` → operating with user `transactionInclusions` applied
-- `normalized` → transaction + sum of `normalizationAdjustments[period]`
-- `component` → AR + Inventory + Prepaids − AP − Accrued − Deferred Revenue, using COA sub-line-item tags
+The current code (lines 304–415) always uses `lastPopulatedIdx` globally — fine for BS, wrong for P&L. That's why every revenue/expense line shows variance.
 
-Component requires sub-tags that the current 5-bucket COA does not expose individually. **Decision needed (see Open Questions):** introduce sub-line-item tags or treat `component` as currently equivalent to `operating` until sub-tags exist.
+## Fix — `supabase/functions/analyze-general-ledger/index.ts`
 
-### 3. UI — Method selector
+### 1. Build BOTH a snapshot AND a year-sum per series (lines 372–398)
 
-New component `src/components/wizard/shared/NWCMethodSelector.tsx`: segmented control with the 5 options, short description tooltip per method, and a "Configure" affordance that opens:
+For each series, compute two TB values from `perMonth[]`:
+- `snapshot` — value at `lastPopulatedIdx` with walk-back fallback (current logic).
+- `yearSum` — sum of the **last populated month within each calendar year** the series touched. Year boundaries derive from the `monthly[idx].year` field which is already present in the data.
 
-- **Transaction method:** checkbox list of items to exclude (Cash, Short-term debt, Income taxes payable, Owner loans).
-- **Normalized method:** editable table of adjustment rows × periods (replaces the current free-text "Additional NWC adjustments" row in the NWC Analysis grid).
+Carry both on the `TBAcct` so reconciliation can pick the right one per match.
 
-Place the selector at the top of `NWCFCFSection.tsx`, above the summary cards.
+```ts
+type TBAcct = {
+  name: string;
+  snapshotDebit: number; snapshotCredit: number;
+  yearSumDebit: number;  yearSumCredit: number;
+  snapshotBalance: number;  // snapshotDebit - snapshotCredit
+  yearSumBalance: number;   // yearSumDebit  - yearSumCredit
+};
+```
 
-### 4. Downstream wiring
+Year-sum algorithm: for each unique `year` value in `monthly`, find the highest `monthIdx` in that year where `perMonth[idx].debit !== 0 || credit !== 0`; add that slot. Accounts with no activity in a year contribute 0 for that year.
 
-- **Summary cards** in `NWCFCFSection.tsx`: "Current NWC" reflects the active method; add a small method badge.
-- **WorkingCapitalTab.tsx**: replace the hardcoded "Net Working Capital" / "NWC ex. Cash" rows with a single "Net Working Capital ({method})" row and the % of Revenue ratio using that value.
-- **NWCAnalysisTab.tsx**: re-label the "reported → adjusted" flow to match the selected method, and route the "Normal NWC adjustments" block to the Normalized adjustments store.
-- **DealParametersCard.tsx**: peg averages (T3M / T6M / T12M) are recomputed against the selected NWC method via `calcNWCByMethod`, not from the legacy `extractNWCMetrics` scraper.
-- **FreeCashFlowTab.tsx**: "Change in NWC" line uses the selected method.
-- **PDF (`src/lib/pdf/pdfWorker.ts`) + workbook XLSX builders**: Working Capital slide / tab header shows the method name and uses its values; narratives reference the chosen definition.
+### 2. Leaf aggregation operates on both values (lines 400–414)
 
-### 5. Tests
+`leafAgg` sums `snapshotDebit/Credit` and `yearSumDebit/Credit` separately so the leaf bucket exposes both.
 
-Add unit tests in `src/lib/nwcDataUtils.test.ts` and `calculations.test.ts` covering each method against a fixed mock trial balance, plus a regression test that switching method does not mutate trial balance data.
+### 3. Pick the right value at match time (lines 435–445)
 
-## Open questions
+The GL `acct.classification` is already known here (`ASSET | LIABILITY | EQUITY | REVENUE | EXPENSE | OTHER`).
 
-1. **Component method line items.** The current Chart of Accounts only has `Cash / AR / Other current assets / Current liabilities / Other current liabilities`. Component requires AR / Inventory / Prepaids / AP / Accrued / Deferred Revenue separately. Two options: (a) add sub-line-item tags to the COA so users classify accounts at a finer grain (bigger change, touches Trial Balance import / COA mapping UI); or (b) ship Component as "equivalent to Operating" with a "Requires sub-classification — coming soon" badge until the COA is expanded.
-2. **Method scope.** Should the chosen method also drive the **homepage / marketing copy and guides** (e.g. `/guides/WorkingCapitalAnalysis`), or only the in-app calculations? I'd recommend in-app only for this pass; we can update the guide separately.
-3. **Demo PDF/XLSX.** After this change the demo assets in `/public/demo/` will be out of date — should I regenerate them as part of this work (per the project memory note about `scripts/generate-demo-pdf.ts` / `generate-demo-workbook.ts`)?
+```ts
+const isPL = acct.classification === "REVENUE" || acct.classification === "EXPENSE";
+const tbBalance = isPL ? tb.yearSumBalance : tb.snapshotBalance;
+```
 
-## Out of scope
+Then variance compares `acct.glBalance` to that picked `tbBalance`. Material-variance and match logic unchanged.
 
-- No changes to CPA review workflow, DFY messaging, or marketing claims.
-- No new database tables; reuses existing `dealParameters` JSON.
-- No CPA-attestation-style language added to the report.
+### 4. Update the comment block at lines 304–308
+
+State the actual behavior (single-month TB; P&L resets each January; sum each year's last populated month for P&L; last-populated-month overall for BS).
+
+### 5. Logging
+
+Update the summary log to also print P&L vs BS match counts so future regressions are obvious:
+
+```
+[ANALYZE-GL] TB ingested: 36 monthly reports, N full-path, M leaf
+[ANALYZE-GL] Reconciliation: matched=X/Y (BS=a, P&L=b), variances=Z, missingInTB=W
+```
+
+## Expected outcome after deploy
+
+- `Other Income` TB → ~$98,222 (vs current −$6,607) and GL $331k — closer but still variance (likely a separate `qbToJson` issue for income side; out of scope).
+- `Labor` TB → ~$148k (matches GL $148k).
+- `Decks and Patios` TB → ~$13k (matches GL $13k).
+- `matched` count jumps materially. Whatever residual variance remains is real data drift between the GL and TB ingestion pipelines, not an analyzer bug.
+
+## Out of scope (separate issue if remaining)
+
+- Sign convention on the income side (revenue accounts in QBO carry a credit balance; the analyzer treats `balance = debit - credit`, which yields negative — that's fine for BS but P&L variance should compare absolute magnitudes; the existing `absDiffMag` branch already does this).
+- The `qbToJson` ingestion pipeline that produces `processed_data`.
+- COA enrichment, frontend, scoring.
