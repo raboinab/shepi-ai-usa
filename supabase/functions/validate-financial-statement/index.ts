@@ -292,8 +292,8 @@ function deriveTotalsFromTrialBalance(
       if (bucket === 'revenue') totalRevenue += -value;
       else if (bucket === 'cogs') totalCogs += Math.abs(value);
       else if (bucket === 'expense') totalExpenses += Math.abs(value);
-      // other_income / other_expense intentionally excluded from operating Revenue / OpEx
-      // (they live below-the-line on QB P&Ls and are NOT in "Total Income" / "Total Expenses")
+      else if (bucket === 'other_income') otherIncome += -value;
+      else if (bucket === 'other_expense') otherExpense += Math.abs(value);
 
       // YTD slice for equity rollup
       if (ytdStartKey) {
