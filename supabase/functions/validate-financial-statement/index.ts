@@ -291,6 +291,8 @@ function deriveTotalsFromTrialBalance(
       if (bucket === 'revenue') totalRevenue += -value;
       else if (bucket === 'cogs') totalCogs += Math.abs(value);
       else if (bucket === 'expense') totalExpenses += Math.abs(value);
+      // other_income / other_expense intentionally excluded from operating Revenue / OpEx
+      // (they live below-the-line on QB P&Ls and are NOT in "Total Income" / "Total Expenses")
 
       // YTD slice for equity rollup
       if (ytdStartKey) {
@@ -302,6 +304,9 @@ function deriveTotalsFromTrialBalance(
         if (bucket === 'revenue') ytdRevenue += -ytdValue;
         else if (bucket === 'cogs') ytdCogs += Math.abs(ytdValue);
         else if (bucket === 'expense') ytdExpenses += Math.abs(ytdValue);
+        // include other_income/other_expense in YTD net income for equity rollup
+        else if (bucket === 'other_income') ytdRevenue += -ytdValue;
+        else if (bucket === 'other_expense') ytdExpenses += Math.abs(ytdValue);
       }
     }
   }
