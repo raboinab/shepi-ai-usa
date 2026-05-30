@@ -143,8 +143,26 @@ serve(async (req) => {
       }
     }
 
-    const accounts = Array.from(acctMap.values());
-    console.log(`[ANALYZE-GL] Aggregated ${accounts.length} unique accounts`);
+    let accounts = Array.from(acctMap.values());
+
+    // ── Dedupe parent-rollup rows. If "X" and "X:Y" both exist with non-zero balances,
+    //    "X" is the rollup (QuickBooks GL emits both header and detail rows) → drop it. ──
+    {
+      const fqByLeafCount = new Map<string, number>();
+      for (const a of accounts) {
+        if (a.name.includes(":")) {
+          const leaf = a.name.split(":").pop()!.toLowerCase().trim();
+          fqByLeafCount.set(leaf, (fqByLeafCount.get(leaf) || 0) + 1);
+        }
+      }
+      const namesLower = new Set(accounts.map(a => a.name.toLowerCase()));
+      accounts = accounts.filter(a => {
+        // Drop bare "X" when a child "X:Y" exists
+        const hasChild = !a.name.includes(":") && Array.from(namesLower).some(n => n.startsWith(a.name.toLowerCase() + ":"));
+        return !hasChild;
+      });
+    }
+    console.log(`[ANALYZE-GL] Aggregated ${accounts.length} unique accounts (post-rollup dedupe)`);
 
     // ── Pull latest TB and build CUMULATIVE YTD balance per account by summing
     //    across ALL monthly reports, so it aligns with GL YTD sums (not just last month). ──
