@@ -2,6 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { CheckCircle2, AlertTriangle, XCircle, Scale, Info, HelpCircle } from "lucide-react";
 
 export interface ValidationLineItem {
@@ -11,6 +12,12 @@ export interface ValidationLineItem {
   variance: number | null;
   variancePercent: number | null;
   status: 'match' | 'minor' | 'significant' | 'extraction_failed';
+}
+
+export interface ValidationDiagnostics {
+  tbBreakdown: Array<{ accountName: string; accountType: string; bucket: string; totalInScope: number }>;
+  uploadedBreakdown: Array<{ label: string; amount: number; section: string }>;
+  missingAccounts: Array<{ label: string; section: string; uploadedAmount: number; suspectedBucket: string }>;
 }
 
 export interface FinancialStatementValidationResult {
@@ -23,6 +30,7 @@ export interface FinancialStatementValidationResult {
   tbIsBalanced?: boolean;
   extractionFailed?: boolean;
   summary?: string;
+  diagnostics?: ValidationDiagnostics;
 }
 
 interface FinancialStatementValidationCardProps {
@@ -261,6 +269,101 @@ export function FinancialStatementValidationCard({ result, onDismiss }: Financia
             </TableBody>
           </Table>
         </div>
+
+        {result.diagnostics && (
+          (result.diagnostics.missingAccounts.length > 0 ||
+            result.diagnostics.uploadedBreakdown.length > 0 ||
+            result.diagnostics.tbBreakdown.length > 0) && (
+            <Accordion type="single" collapsible className="border rounded-md">
+              <AccordionItem value="diag" className="border-none">
+                <AccordionTrigger className="px-4 py-3 text-sm font-medium">
+                  Why don't these match? Diagnostic breakdown
+                </AccordionTrigger>
+                <AccordionContent className="px-4 pb-4 space-y-4">
+                  {result.diagnostics.missingAccounts.length > 0 && (
+                    <Alert variant="destructive">
+                      <AlertTriangle className="h-4 w-4" />
+                      <AlertDescription>
+                        <div className="font-medium mb-2">
+                          {result.diagnostics.missingAccounts.length} uploaded line item
+                          {result.diagnostics.missingAccounts.length === 1 ? '' : 's'} not found in your Trial Balance
+                        </div>
+                        <div className="text-xs mb-2">
+                          These rows appear in the uploaded statement but have no matching account in your TB.
+                          Add them to the TB to close the gap.
+                        </div>
+                        <ul className="text-xs font-mono space-y-1">
+                          {result.diagnostics.missingAccounts.map((m, i) => (
+                            <li key={i} className="flex justify-between gap-4">
+                              <span className="truncate">{m.label} <span className="opacity-60">[{m.section}]</span></span>
+                              <span className="shrink-0">{formatCurrency(m.uploadedAmount)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </AlertDescription>
+                    </Alert>
+                  )}
+
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <div className="text-xs font-semibold mb-2 text-muted-foreground uppercase tracking-wide">
+                        Uploaded P&L line items ({result.diagnostics.uploadedBreakdown.length})
+                      </div>
+                      <div className="rounded border max-h-96 overflow-y-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="text-xs">Label</TableHead>
+                              <TableHead className="text-xs">Section</TableHead>
+                              <TableHead className="text-xs text-right">Amount</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {[...result.diagnostics.uploadedBreakdown]
+                              .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
+                              .map((r, i) => (
+                                <TableRow key={i}>
+                                  <TableCell className="text-xs py-1.5">{r.label}</TableCell>
+                                  <TableCell className="text-xs py-1.5 opacity-60">{r.section}</TableCell>
+                                  <TableCell className="text-xs py-1.5 text-right font-mono">{formatCurrency(r.amount)}</TableCell>
+                                </TableRow>
+                              ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="text-xs font-semibold mb-2 text-muted-foreground uppercase tracking-wide">
+                        Trial Balance accounts ({result.diagnostics.tbBreakdown.length})
+                      </div>
+                      <div className="rounded border max-h-96 overflow-y-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="text-xs">Account</TableHead>
+                              <TableHead className="text-xs">Bucket</TableHead>
+                              <TableHead className="text-xs text-right">Total</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {result.diagnostics.tbBreakdown.map((r, i) => (
+                              <TableRow key={i}>
+                                <TableCell className="text-xs py-1.5">{r.accountName}</TableCell>
+                                <TableCell className="text-xs py-1.5 opacity-60">{r.bucket}</TableCell>
+                                <TableCell className="text-xs py-1.5 text-right font-mono">{formatCurrency(r.totalInScope)}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </div>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+          )
+        )}
 
         <p className="text-xs text-muted-foreground">
           Validated at {new Date(result.validatedAt).toLocaleString()}.

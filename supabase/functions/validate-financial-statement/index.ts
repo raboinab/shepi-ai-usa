@@ -37,6 +37,22 @@ interface DerivedTotals {
   asOfDate?: string | null;
   periodStart?: string | null;
   periodEnd?: string | null;
+  /** AI-extracted detail rows, only populated for income_statement. Excludes subtotals/headers. */
+  lineDetails?: { label: string; amount: number; section: 'income' | 'cogs' | 'expenses' | 'other_income' | 'other_expense' }[];
+}
+
+interface TBBreakdownItem {
+  accountName: string;
+  accountType: string;
+  bucket: 'revenue' | 'cogs' | 'expense' | 'other_income' | 'other_expense';
+  totalInScope: number;
+}
+
+interface MissingAccount {
+  label: string;
+  section: string;
+  uploadedAmount: number;
+  suspectedBucket: string;
 }
 
 
@@ -233,7 +249,8 @@ function deriveTotalsFromTrialBalance(
   documentType: string,
   periodStart?: string | null,
   periodEnd?: string | null,
-  fiscalYearEnd?: string | null
+  fiscalYearEnd?: string | null,
+  breakdownOut?: TBBreakdownItem[]
 ): DerivedTotals {
   let totalAssets = 0, totalLiabilities = 0, totalEquity = 0;
   let totalRevenue = 0, totalCogs = 0, totalExpenses = 0;
@@ -300,11 +317,21 @@ function deriveTotalsFromTrialBalance(
       else totalEquity += -value;
     } else if (account.fsType === 'IS') {
       const bucket = classifyISAccount(account.accountName, account.accountType);
-      if (bucket === 'revenue') totalRevenue += -value;
-      else if (bucket === 'cogs') totalCogs += Math.abs(value);
-      else if (bucket === 'expense') totalExpenses += Math.abs(value);
-      else if (bucket === 'other_income') otherIncome += -value;
-      else if (bucket === 'other_expense') otherExpense += Math.abs(value);
+      let signedTotal = 0;
+      if (bucket === 'revenue') { totalRevenue += -value; signedTotal = -value; }
+      else if (bucket === 'cogs') { totalCogs += Math.abs(value); signedTotal = Math.abs(value); }
+      else if (bucket === 'expense') { totalExpenses += Math.abs(value); signedTotal = Math.abs(value); }
+      else if (bucket === 'other_income') { otherIncome += -value; signedTotal = -value; }
+      else if (bucket === 'other_expense') { otherExpense += Math.abs(value); signedTotal = Math.abs(value); }
+
+      if (breakdownOut && bucket) {
+        breakdownOut.push({
+          accountName: account.accountName,
+          accountType: account.accountType || '',
+          bucket,
+          totalInScope: signedTotal,
+        });
+      }
 
       // YTD slice for equity rollup
       if (ytdStartKey) {
@@ -355,6 +382,10 @@ function deriveTotalsFromTrialBalance(
 
 
 // --- Variance helpers ---
+
+function formatCurrencyForSummary(n: number): string {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
+}
 
 function getVarianceStatus(variance: number, baseValue: number): 'match' | 'minor' | 'significant' {
   if (variance === 0) return 'match';
@@ -414,6 +445,62 @@ function buildLineItems(
     const variancePercent = tbValue !== 0 ? (variance / Math.abs(tbValue)) * 100 : 0;
     return [{ lineItem: label, uploadedValue, trialBalanceValue: tbValue, variance, variancePercent, status: getVarianceStatus(variance, tbValue) }];
   });
+}
+
+// --- Diagnostics: detect uploaded line items with no matching TB account ---
+
+function normalizeAccountLabel(s: string): string {
+  return (s || '')
+    .toLowerCase()
+    .replace(/^\s*total\s+for\s+/i, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+/** For each uploaded detail row, check whether a TB account (or any path segment) matches by name. */
+function computeMissingAccounts(
+  uploadedLines: NonNullable<DerivedTotals['lineDetails']>,
+  tbAccounts: TrialBalanceAccount[]
+): MissingAccount[] {
+  // Build a set of normalized TB names: full path AND each ":"-separated segment.
+  const tbNames = new Set<string>();
+  for (const a of tbAccounts) {
+    if (a.fsType !== 'IS') continue;
+    const name = a.accountName || '';
+    tbNames.add(normalizeAccountLabel(name));
+    for (const seg of name.split(':')) {
+      tbNames.add(normalizeAccountLabel(seg));
+    }
+  }
+
+  const missing: MissingAccount[] = [];
+  const SECTION_TO_BUCKET: Record<string, string> = {
+    income: 'revenue',
+    cogs: 'cogs',
+    expenses: 'expense',
+    other_income: 'other_income',
+    other_expense: 'other_expense',
+  };
+  for (const row of uploadedLines || []) {
+    if (!row?.label || typeof row.amount !== 'number' || row.amount === 0) continue;
+    const norm = normalizeAccountLabel(row.label);
+    if (!norm) continue;
+    // Skip obvious subtotals / headers the AI may have leaked through.
+    if (/^(total|gross profit|net (operating |other )?income|net loss|income|expenses|cost of goods sold)$/.test(norm)) continue;
+    if (tbNames.has(norm)) continue;
+    // Try last segment in case the AI included an indented sub-path.
+    const parts = norm.split(' ');
+    if (parts.length > 1 && tbNames.has(parts[parts.length - 1])) continue;
+    missing.push({
+      label: row.label,
+      section: row.section,
+      uploadedAmount: row.amount,
+      suspectedBucket: SECTION_TO_BUCKET[row.section] || 'expense',
+    });
+  }
+  // Sort by absolute amount desc, cap at 20.
+  missing.sort((a, b) => Math.abs(b.uploadedAmount) - Math.abs(a.uploadedAmount));
+  return missing.slice(0, 20);
 }
 
 // --- XLSX parsing: download file from storage and convert to text for AI ---
@@ -497,9 +584,10 @@ EXTRACTION RULES
 - periodStart: first day of earliest reporting month (YYYY-MM-DD) from the earliest monthly column header.
 - periodEnd: last day of latest reporting month (YYYY-MM-DD) from the latest monthly column header.
 - If only a month/year is shown, snap to first/last day of that month. Return null only if truly unknown.
+- lineDetails: an array of EVERY detail (leaf) row in the P&L with its Total-column amount and section. EXCLUDE section headers (e.g. "Income", "Expenses"), subtotal rows ("Total for …", "Gross Profit", "Net Operating Income", "Net Income"). INCLUDE parent accounts that have their own posted amount (e.g. a row labeled "Maintenance and Repair" with a value, even if it is followed by sub-rows that roll up under "Total for Maintenance and Repair"). Use the row label EXACTLY as printed (do not strip indentation prefixes other than leading whitespace). section ∈ "income" | "cogs" | "expenses" | "other_income" | "other_expense". Cap at 100 rows.
 
 Return ONLY valid JSON (no markdown):
-{ "totalRevenue": number or null, "totalCogs": number or null, "grossProfit": number or null, "totalExpenses": number or null, "netOperatingIncome": number or null, "totalOtherIncome": number or null, "totalOtherExpense": number or null, "netIncome": number or null, "periodStart": "YYYY-MM-DD" or null, "periodEnd": "YYYY-MM-DD" or null }
+{ "totalRevenue": number or null, "totalCogs": number or null, "grossProfit": number or null, "totalExpenses": number or null, "netOperatingIncome": number or null, "totalOtherIncome": number or null, "totalOtherExpense": number or null, "netIncome": number or null, "periodStart": "YYYY-MM-DD" or null, "periodEnd": "YYYY-MM-DD" or null, "lineDetails": [{ "label": string, "amount": number, "section": "income"|"cogs"|"expenses"|"other_income"|"other_expense" }] }
 
 Spreadsheet data:\n${textContent.slice(0, 32000)}`;
   } else if (documentType === 'cash_flow') {
@@ -774,6 +862,26 @@ serve(async (req) => {
     }
 
 
+    // Build diagnostics (only meaningful for income_statement)
+    let diagnostics: {
+      tbBreakdown: TBBreakdownItem[];
+      uploadedBreakdown: NonNullable<DerivedTotals['lineDetails']>;
+      missingAccounts: MissingAccount[];
+    } | undefined;
+    if (documentType === 'income_statement') {
+      const tbBreakdown: TBBreakdownItem[] = [];
+      // Re-derive once more with breakdownOut populated (cheap, in-memory).
+      deriveTotalsFromTrialBalance(accounts, documentType, effectivePeriodStart, effectivePeriodEnd, fiscalYearEnd, tbBreakdown);
+      tbBreakdown.sort((a, b) => Math.abs(b.totalInScope) - Math.abs(a.totalInScope));
+      const uploadedBreakdown = (uploadedTotals.lineDetails || []).slice(0, 100);
+      const missingAccounts = computeMissingAccounts(uploadedBreakdown, accounts);
+      diagnostics = { tbBreakdown: tbBreakdown.slice(0, 80), uploadedBreakdown, missingAccounts };
+      if (missingAccounts.length > 0) {
+        const totalMissing = missingAccounts.reduce((s, m) => s + Math.abs(m.uploadedAmount), 0);
+        summary += ` Detected ${missingAccounts.length} uploaded line item(s) with no matching TB account (${formatCurrencyForSummary(totalMissing)} unmatched).`;
+      }
+    }
+
     const result = {
       documentType,
       documentName,
@@ -785,6 +893,7 @@ serve(async (req) => {
       extractionFailed: false,
       summary,
       derivedTotals,
+      diagnostics,
     };
 
     if (documentId) {
