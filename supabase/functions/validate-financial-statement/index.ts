@@ -26,6 +26,9 @@ interface DerivedTotals {
   totalCogs?: number;
   grossProfit?: number;
   totalExpenses?: number;
+  netOperatingIncome?: number;
+  totalOtherIncome?: number;
+  totalOtherExpense?: number;
   netIncome?: number;
   operatingCashFlow?: number;
   investingCashFlow?: number;
