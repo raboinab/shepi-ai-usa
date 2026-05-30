@@ -576,6 +576,23 @@ serve(async (req) => {
       console.warn(`[validate-fs] No as-of date extracted from uploaded BS; YTD equity rollup may be off`);
     }
 
+    // For income_statement, scope TB-derived totals to the uploaded P&L's reporting window.
+    let isPeriodScoped = false;
+    if (documentType === 'income_statement' && uploadedTotals) {
+      const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+      const extractedStart = dateRe.test(uploadedTotals.periodStart || '') ? uploadedTotals.periodStart! : null;
+      const extractedEnd = dateRe.test(uploadedTotals.periodEnd || '') ? uploadedTotals.periodEnd! : null;
+      if ((extractedStart && !periodStart) || (extractedEnd && !periodEnd)) {
+        if (extractedStart && !periodStart) effectivePeriodStart = extractedStart;
+        if (extractedEnd && !periodEnd) effectivePeriodEnd = extractedEnd;
+        console.log(`[validate-fs] Re-deriving IS with extracted period ${effectivePeriodStart} → ${effectivePeriodEnd}`);
+        derivedTotals = deriveTotalsFromTrialBalance(accounts, documentType, effectivePeriodStart, effectivePeriodEnd, fiscalYearEnd);
+        isPeriodScoped = true;
+      } else if (!extractedStart && !extractedEnd) {
+        console.warn(`[validate-fs] No reporting period extracted from uploaded P&L; TB totals span all available months`);
+      }
+    }
+
 
     // Get document name
     let documentName = "Uploaded Document";
