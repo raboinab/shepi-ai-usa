@@ -524,9 +524,10 @@ EXTRACTION RULES
 - periodStart: first day of earliest reporting month (YYYY-MM-DD) from the earliest monthly column header.
 - periodEnd: last day of latest reporting month (YYYY-MM-DD) from the latest monthly column header.
 - If only a month/year is shown, snap to first/last day of that month. Return null only if truly unknown.
+- lineDetails: an array of EVERY detail (leaf) row in the P&L with its Total-column amount and section. EXCLUDE section headers (e.g. "Income", "Expenses"), subtotal rows ("Total for …", "Gross Profit", "Net Operating Income", "Net Income"). INCLUDE parent accounts that have their own posted amount (e.g. a row labeled "Maintenance and Repair" with a value, even if it is followed by sub-rows that roll up under "Total for Maintenance and Repair"). Use the row label EXACTLY as printed (do not strip indentation prefixes other than leading whitespace). section ∈ "income" | "cogs" | "expenses" | "other_income" | "other_expense". Cap at 100 rows.
 
 Return ONLY valid JSON (no markdown):
-{ "totalRevenue": number or null, "totalCogs": number or null, "grossProfit": number or null, "totalExpenses": number or null, "netOperatingIncome": number or null, "totalOtherIncome": number or null, "totalOtherExpense": number or null, "netIncome": number or null, "periodStart": "YYYY-MM-DD" or null, "periodEnd": "YYYY-MM-DD" or null }
+{ "totalRevenue": number or null, "totalCogs": number or null, "grossProfit": number or null, "totalExpenses": number or null, "netOperatingIncome": number or null, "totalOtherIncome": number or null, "totalOtherExpense": number or null, "netIncome": number or null, "periodStart": "YYYY-MM-DD" or null, "periodEnd": "YYYY-MM-DD" or null, "lineDetails": [{ "label": string, "amount": number, "section": "income"|"cogs"|"expenses"|"other_income"|"other_expense" }] }
 
 Spreadsheet data:\n${textContent.slice(0, 32000)}`;
   } else if (documentType === 'cash_flow') {
