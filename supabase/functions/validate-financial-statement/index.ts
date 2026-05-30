@@ -309,10 +309,23 @@ function deriveTotalsFromTrialBalance(
   for (const account of accounts) {
     let value = 0;
 
-    if (account.fsType === 'BS' && (documentType === 'balance_sheet' || documentType === 'cash_flow')) {
+    // Detect orphan parents misclassified as BS with empty type — reclassify
+    // to IS using bucket inferred from same-prefix children.
+    const inferredParentBucket: IsBucket | null = (() => {
+      const name = (account.accountName || '').trim();
+      if (!name || name.includes(':')) return null;
+      if (account.fsType !== 'BS') return null;
+      if ((account.accountType || '').trim() !== '') return null;
+      const bsBucket = classifyBSAccount(account.accountName, account.accountType);
+      if (bsBucket) return null;
+      return parentBucketInference.get(name) || null;
+    })();
+    const effectiveFsType: 'BS' | 'IS' = inferredParentBucket ? 'IS' : account.fsType;
+
+    if (effectiveFsType === 'BS' && (documentType === 'balance_sheet' || documentType === 'cash_flow')) {
       // Point-in-time: latest period ≤ periodEnd, or latest overall
       value = getPointInTimeValue(account.monthlyValues, periodEnd);
-    } else if (account.fsType === 'IS') {
+    } else if (effectiveFsType === 'IS') {
       if (documentType === 'balance_sheet') {
         // QB Trial Balance income rows are endpoint balances for the open fiscal year,
         // not monthly movements. For BS equity rollup, use the reporting endpoint only.
@@ -324,7 +337,7 @@ function deriveTotalsFromTrialBalance(
         value = filteredKeys.reduce((sum, k) => sum + (monthly[k] || 0), 0);
       }
     } else {
-      if (account.fsType === 'BS') {
+      if (effectiveFsType === 'BS') {
         const latestKey = getLatestPeriodKey(account.monthlyValues);
         value = latestKey ? (account.monthlyValues[latestKey] || 0) : 0;
       } else {
@@ -332,7 +345,7 @@ function deriveTotalsFromTrialBalance(
       }
     }
 
-    if (account.fsType === 'BS') {
+    if (effectiveFsType === 'BS') {
       const bucket = classifyBSAccount(account.accountName, account.accountType);
       if (!bucket) {
         if (documentType === 'balance_sheet' && ytdStartKey) {
@@ -346,8 +359,9 @@ function deriveTotalsFromTrialBalance(
       if (bucket === 'asset') totalAssets += value;
       else if (bucket === 'liability') totalLiabilities += -value;
       else totalEquity += -value;
-    } else if (account.fsType === 'IS') {
-      const bucket = classifyISAccount(account.accountName, account.accountType);
+    } else if (effectiveFsType === 'IS') {
+      const bucket: IsBucket | null = inferredParentBucket
+        ?? (classifyISAccount(account.accountName, account.accountType) as IsBucket | null);
       let signedTotal = 0;
       if (bucket === 'revenue') { totalRevenue += -value; signedTotal = -value; }
       else if (bucket === 'cogs') { totalCogs += Math.abs(value); signedTotal = Math.abs(value); }
@@ -358,7 +372,7 @@ function deriveTotalsFromTrialBalance(
       if (breakdownOut && bucket) {
         breakdownOut.push({
           accountName: account.accountName,
-          accountType: account.accountType || '',
+          accountType: account.accountType || (inferredParentBucket ? '(inferred from children)' : ''),
           bucket,
           totalInScope: signedTotal,
         });
