@@ -99,14 +99,16 @@ function classifyBSAccount(accountName: string, accountType: string): 'asset' | 
   return null;
 }
 
-function classifyISAccount(accountName: string, accountType: string): 'revenue' | 'cogs' | 'expense' | null {
+function classifyISAccount(accountName: string, accountType: string): 'revenue' | 'cogs' | 'expense' | 'other_income' | 'other_expense' | null {
   const name = (accountName || '').toLowerCase();
   const type = (accountType || '').toLowerCase();
 
   if (type.includes('cost of goods') || type.includes('cogs') || type.includes('cost of sales') || name.includes('cost of goods') || name.includes('cost of sales')) return 'cogs';
+  // Other Income / Other Expense — non-operating, reported below the operating block on QB P&Ls
+  if (type.includes('other income') || name.includes('interest income') || name.includes('gain on') || name.includes('dividend income')) return 'other_income';
+  if (type.includes('other expense') || name.includes('interest expense') || name.includes('loss on')) return 'other_expense';
   if (type.includes('income') || type.includes('revenue') || type.includes('sales')) return 'revenue';
-  if (type.includes('expense') || type.includes('other expense')) return 'expense';
-  if (type.includes('other income')) return 'revenue';
+  if (type.includes('expense')) return 'expense';
 
   return 'expense';
 }
