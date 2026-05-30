@@ -1,33 +1,23 @@
-## Problem
+## Plan
 
-Uploaded P&L "Sandbox Company_US_2_Profit and Loss by Month.csv" shows $2.7M revenue. TB-derived shows $18.4M revenue. Ratio ~6.8x.
+Fix the P&L validation at the source: the uploaded Profit & Loss file contains monthly activity totals, while the Trial Balance IS rows are QuickBooks cumulative YTD balances. The current validator is summing those YTD snapshots, which overstates revenue/expenses across multi-month ranges.
 
-Root cause: TB spans Jan-2023 → Dec-2025 (36 months). The current IS path in `deriveTotalsFromTrialBalance` sums **all periods** in the TB when no `periodStart`/`periodEnd` is passed. The uploaded P&L covers only a subset of those months (likely partial-year or a specific year), so we're comparing a multi-year TB total against a single-period upload.
+### 1. Update Trial Balance derivation for Income Statements
+- In `supabase/functions/validate-financial-statement/index.ts`, change the `income_statement` path so IS accounts are converted from cumulative YTD snapshots into period activity before summing.
+- Keep Balance Sheet behavior intact: BS validation should still use point-in-time IS values for current-year income rollup.
+- Respect fiscal year boundaries when calculating monthly deltas, defaulting to calendar year if no fiscal year end is stored.
 
-The Balance Sheet flow already handles this: AI extracts `asOfDate` and we re-derive TB totals anchored on that date. The Income Statement flow has no equivalent — it never extracts or applies a reporting period from the uploaded P&L.
+### 2. Improve period handling
+- Keep the extracted `periodStart` / `periodEnd` summary context, but do not let a full-file period like `2023-01-01 → 2025-12-31` cause YTD double-counting.
+- Derive P&L totals over the selected/extracted range using monthly activity deltas.
 
-## Fix (single file: `supabase/functions/validate-financial-statement/index.ts`)
+### 3. Align COGS extraction/validation
+- The uploaded P&L parser extracted COGS as `$7,255.78`, while the stored processed QuickBooks P&L has COGS summarized as `$0` for this dataset.
+- Add more defensive handling around COGS so validation compares like-for-like and avoids treating account detail rows as COGS totals when the P&L report summary indicates none.
 
-1. **Extend `DerivedTotals`** with `periodStart?: string | null` and `periodEnd?: string | null` (uploaded side).
+### 4. Validate against the reported project
+- Deploy the updated `validate-financial-statement` edge function.
+- Re-run validation for project `fa0768ca-96f9-4ded-b498-f64ca5be3ede` / document `c25d4cb8-00e1-405e-a1a9-95c9921bc727`.
+- Confirm the Trial Balance-derived P&L drops from the inflated `$18.4M` revenue to the uploaded `$2.7M` scale and that remaining variances represent real mapping/extraction issues, not period math.
 
-2. **Update the AI extraction prompt for `income_statement`** to also extract:
-   - `periodStart` (YYYY-MM-DD) — first reporting month in the file (e.g. earliest monthly column header, "For the period beginning …", or first month of a "YTD" range).
-   - `periodEnd` (YYYY-MM-DD) — last reporting month (e.g. latest monthly column header, "as of …", "year ended …").
-   - If only month/year is available, snap start to first-of-month and end to last-of-month.
-   - Return null for either if not determinable.
-
-3. **In the handler**, after AI extraction for `income_statement`, if uploaded `periodStart` and/or `periodEnd` came back and caller didn't pass explicit values, set `effectivePeriodStart`/`effectivePeriodEnd` to the extracted dates and **re-derive `derivedTotals`** scoped to that range. The existing `getPeriodKeysInRange` already handles the slice for IS accounts.
-
-4. **Defensive fallback**: if neither date can be extracted, log a warning and append a note to the summary ("Could not determine the P&L reporting period — derived TB values may span a different range").
-
-5. **Surface the period context** in the summary on success, e.g. "(Scoped to 2025-01-01 → 2025-05-31.)" so users see what window we compared.
-
-## Expected outcome
-
-AI extracts the P&L's actual reporting window from the monthly column headers → TB IS sum narrows to those same months → revenue/COGS/OpEx/GP/NI line up → match score climbs from 0% to ~100% (or surfaces real classification variances instead of period-mismatch noise).
-
-## Out of scope
-
-- No client/UI changes (existing card already renders summary + line items).
-- No schema/migration changes.
-- BS validation path untouched.
+No UI, schema, or migration changes are needed.

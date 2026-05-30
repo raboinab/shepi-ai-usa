@@ -142,6 +142,51 @@ function getPointInTimeValue(monthlyValues: Record<string, number>, periodEnd?: 
   return latestKey ? (monthlyValues[latestKey] || 0) : 0;
 }
 
+/** Parse fiscal year end (e.g. "12-31", "2024-12-31", "06-30") to month 1-12. */
+function parseFiscalYearEndMonth(fiscalYearEnd: string | null | undefined): number {
+  if (!fiscalYearEnd) return 12;
+  const m = fiscalYearEnd.match(/(\d{1,2})[-\/](\d{1,2})/);
+  if (!m) return 12;
+  const a = parseInt(m[1], 10);
+  const b = parseInt(m[2], 10);
+  return a <= 12 ? a : b;
+}
+
+/**
+ * QuickBooks Trial Balance IS rows are stored as cumulative YTD balances that
+ * reset at each fiscal-year start. To get monthly activity, take the delta
+ * between consecutive months within the same fiscal year; the first month of
+ * each FY is the activity itself.
+ */
+function convertIsYtdToMonthlyActivity(
+  monthlyValues: Record<string, number>,
+  fiscalYearEndMonth: number
+): Record<string, number> {
+  const orderedKeys = Object.keys(monthlyValues).sort();
+  if (orderedKeys.length === 0) return {};
+
+  const fyStartMonth = (fiscalYearEndMonth % 12) + 1;
+  const fyOf = (key: string): number => {
+    const [yStr, mStr] = key.split('-');
+    const y = parseInt(yStr, 10);
+    const mo = parseInt(mStr, 10);
+    return mo >= fyStartMonth ? y : y - 1;
+  };
+
+  const result: Record<string, number> = {};
+  for (let i = 0; i < orderedKeys.length; i++) {
+    const cur = orderedKeys[i];
+    const prev = i > 0 ? orderedKeys[i - 1] : null;
+    const curVal = monthlyValues[cur] || 0;
+    if (!prev || fyOf(cur) !== fyOf(prev)) {
+      result[cur] = curVal;
+    } else {
+      result[cur] = curVal - (monthlyValues[prev] || 0);
+    }
+  }
+  return result;
+}
+
 /**
  * Compute the start month key (YYYY-MM) of the current open fiscal year
  * given fiscal_year_end (e.g. "12-31", "06-30") and the period-end we're reporting at.
@@ -211,8 +256,10 @@ function deriveTotalsFromTrialBalance(
         // not monthly movements. For BS equity rollup, use the reporting endpoint only.
         value = getPointInTimeValue(account.monthlyValues, periodEnd);
       } else {
-        const filteredKeys = getPeriodKeysInRange(account.monthlyValues, periodStart, periodEnd);
-        value = filteredKeys.reduce((sum, k) => sum + (account.monthlyValues[k] || 0), 0);
+        // QB IS rows are cumulative YTD; convert to monthly activity before summing.
+        const monthly = convertIsYtdToMonthlyActivity(account.monthlyValues, parseFiscalYearEndMonth(fiscalYearEnd));
+        const filteredKeys = getPeriodKeysInRange(monthly, periodStart, periodEnd);
+        value = filteredKeys.reduce((sum, k) => sum + (monthly[k] || 0), 0);
       }
     } else {
       if (account.fsType === 'BS') {
