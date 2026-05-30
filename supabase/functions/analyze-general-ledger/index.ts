@@ -537,8 +537,7 @@ serve(async (req) => {
 
       if (tb) {
         matchedTbKeys.add(tb.fullPath);
-        // Re-derive classification from the matched TB side when we previously had OTHER
-        // or when GL leaf-lookup picked a side that conflicts with the chosen TB candidate.
+        // Re-derive classification when we had OTHER, from the matched TB side.
         if (acct.classification === "OTHER" && tb.side !== "OTHER") {
           acct.classification = tb.side;
         }
@@ -546,16 +545,8 @@ serve(async (req) => {
                      acct.classification === "OTHER_INCOME" || acct.classification === "EXPENSE" ||
                      acct.classification === "COST_OF_GOODS_SOLD" || acct.classification === "OTHER_EXPENSE" ||
                      tb.side === "REVENUE" || tb.side === "EXPENSE";
-        // Pick TB axis by classification: BS uses end-of-period snapshot, P&L sums each
-        // year's YTD-final because monthly TBs reset every January.
+        // BS uses end-of-period snapshot; P&L sums each year's YTD-final (monthly TBs reset every January).
         const tbBalance = isPL ? tb.yearSumBalance : tb.snapshotBalance;
-            ambiguousLeaf++;
-          }
-        }
-      }
-
-      if (tb) {
-        matchedTbKeys.add(tb.fullPath);
         const variance = acct.glBalance - tbBalance;
         const absDiffSigned = Math.abs(variance);
         const absDiffMag = Math.abs(Math.abs(acct.glBalance) - Math.abs(tbBalance));
