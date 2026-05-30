@@ -31,7 +31,9 @@ interface DerivedTotals {
   investingCashFlow?: number;
   financingCashFlow?: number;
   netChangeInCash?: number;
+  asOfDate?: string | null;
 }
+
 
 interface ValidationLineItem {
   lineItem: string;
@@ -345,10 +347,15 @@ async function extractTotalsViaAI(
 
   let prompt = '';
   if (documentType === 'balance_sheet') {
-    prompt = `Extract the following totals from this Balance Sheet spreadsheet data. Look for rows labeled "Total Assets", "Total Liabilities", "Total Equity" or similar. If there are monthly columns, use the LAST (most recent) month's value OR find a "Total" column. Return ONLY valid JSON:
-      { "totalAssets": number or null, "totalLiabilities": number or null, "totalEquity": number or null }
-      
+    prompt = `Extract the following totals from this Balance Sheet spreadsheet data. Look for rows labeled "Total Assets", "Total Liabilities", "Total Equity" or similar. If there are monthly columns, use the LAST (most recent) month's value OR find a "Total" column.
+
+ALSO extract the "as-of date" of the balance sheet. Look for phrases like "As of YYYY-MM-DD", "Balance Sheet as of …", or a date in a column header. Return it as YYYY-MM-DD. If the only date available is a month/year (e.g. "December 2024"), return the last day of that month (e.g. "2024-12-31"). If no date can be found, return null.
+
+Return ONLY valid JSON:
+      { "totalAssets": number or null, "totalLiabilities": number or null, "totalEquity": number or null, "asOfDate": "YYYY-MM-DD" or null }
+
       Spreadsheet data:\n${textContent.slice(0, 12000)}`;
+
   } else if (documentType === 'income_statement') {
     prompt = `Extract the following totals from this Income Statement / Profit & Loss spreadsheet data. 
 IMPORTANT: This spreadsheet may have monthly columns (Jan, Feb, Mar... or 2024-01, 2024-02, etc.) with a "Total" column at the end. 
@@ -466,7 +473,8 @@ serve(async (req) => {
 
     console.log(`[validate-fs] Deriving totals for ${documentType}, periodStart=${effectivePeriodStart}, periodEnd=${effectivePeriodEnd}, accounts=${accounts.length}`);
 
-    const derivedTotals = deriveTotalsFromTrialBalance(accounts, documentType, effectivePeriodStart, effectivePeriodEnd, (project as { fiscal_year_end?: string | null }).fiscal_year_end);
+    const fiscalYearEnd = (project as { fiscal_year_end?: string | null }).fiscal_year_end;
+    let derivedTotals = deriveTotalsFromTrialBalance(accounts, documentType, effectivePeriodStart, effectivePeriodEnd, fiscalYearEnd);
     let uploadedTotals = extractedTotals as DerivedTotals | undefined;
 
     // --- Extraction pipeline: try multiple sources ---
@@ -505,6 +513,23 @@ serve(async (req) => {
         }
       }
     }
+
+    // If AI extracted an as-of date and caller did not pin a periodEnd, re-derive TB totals
+    // anchored on that date so YTD equity rollup matches the uploaded BS's reporting moment.
+    if (
+      documentType === 'balance_sheet' &&
+      uploadedTotals?.asOfDate &&
+      /^\d{4}-\d{2}-\d{2}$/.test(uploadedTotals.asOfDate) &&
+      !periodEnd
+    ) {
+      const prevEnd = effectivePeriodEnd;
+      effectivePeriodEnd = uploadedTotals.asOfDate;
+      console.log(`[validate-fs] Re-deriving with extracted asOfDate=${effectivePeriodEnd} (was ${prevEnd})`);
+      derivedTotals = deriveTotalsFromTrialBalance(accounts, documentType, effectivePeriodStart, effectivePeriodEnd, fiscalYearEnd);
+    } else if (documentType === 'balance_sheet' && !uploadedTotals?.asOfDate) {
+      console.warn(`[validate-fs] No as-of date extracted from uploaded BS; YTD equity rollup may be off`);
+    }
+
 
     // Get document name
     let documentName = "Uploaded Document";
@@ -579,6 +604,16 @@ serve(async (req) => {
     } else {
       summary = 'Perfect match! The uploaded document aligns with Trial Balance-derived values.';
     }
+
+    // Append as-of date context to the summary so users know what date the TB was anchored on
+    if (documentType === 'balance_sheet') {
+      if (uploadedTotals.asOfDate) {
+        summary += ` (Anchored on as-of date ${uploadedTotals.asOfDate}.)`;
+      } else {
+        summary += ` Note: could not determine the balance sheet as-of date — derived TB values use the latest available period. Equity variance may reflect period-end timing only.`;
+      }
+    }
+
 
     const result = {
       documentType,

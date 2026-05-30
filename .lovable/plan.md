@@ -1,47 +1,46 @@
-## What went wrong
+## Diagnosis
 
-My previous fix made it worse. TB equity jumped from $2,252,980 → $16,039,005 (gap is now -$13.3M, was +$526k).
+Verified against your project:
+- `fiscal_year_end` is **NULL** (so my fallback assumed Dec-31 calendar year — correct here).
+- TB spans **Jan-2023 → Dec-2025** (3 full years).
+- My YTD logic picked `referenceEndKey = 2025-12` (latest TB period), so YTD = all of 2025 = ~$3.67M, which is what got rolled into equity (`$2,252,980 + $3,674,033 = $5,927,013`).
+- But the seller's uploaded BS is "as-of" some earlier date where YTD net income = exactly $526,104.
 
-Root cause: `deriveTotalsFromTrialBalance` sums IS account values across **every period key in `monthlyValues`** when `periodStart`/`periodEnd` aren't passed (line 134 → `getPeriodKeysInRange`). That produces **multi-year accumulated net income** (~$13.8M across all months in the TB), not the current-year YTD figure.
+So the equity rollup is correctly **computing** YTD net income — it's just YTD through the **wrong date**. We're using the TB's last available month instead of the uploaded BS's actual as-of date.
 
-I then added that whole number on top of equity. But the TB's Retained Earnings row at period-end already contains all prior closed years' earnings. So I double-counted every prior year and then some.
+## The fix
 
-The original $526,104 gap was exactly **current fiscal-year YTD net income** — the uploaded seller's BS shows period-end equity = RE-closed-through-prior-FY + YTD earnings, while TB equity rows alone only reflect RE-closed-through-prior-FY.
+Extract the **as-of date** from the uploaded balance sheet itself and use that as the YTD cutoff.
 
-## The right fix
+Changes in `supabase/functions/validate-financial-statement/index.ts`:
 
-Roll in **only current-fiscal-year YTD net income**, not all-history net income.
-
-Steps in `supabase/functions/validate-financial-statement/index.ts`:
-
-1. **Pass fiscal year context into `deriveTotalsFromTrialBalance`.** The handler already loads `project.fiscal_year_end` (need to add to the select on line 365) and has `effectivePeriodEnd`. Pass both into the deriver.
-
-2. **Compute YTD start.** Given `fiscal_year_end` (e.g. "12-31") and `effectivePeriodEnd` (or latest TB month if missing), compute the first month of the current open fiscal year. Fallback: if no `fiscal_year_end`, use Jan 1 of the year of the latest TB period.
-
-3. **Compute `ytdNetIncome` separately** by re-running the IS aggregation restricted to keys between YTD-start and periodEnd. Leave the existing `netIncome` (full-range) alone for the IS validation path — it's needed there.
-
-4. **Roll only `ytdNetIncome` into equity**:
-   ```ts
-   const totalEquityWithYTD = totalEquity + ytdNetIncome;
-   return { ..., totalEquity: totalEquityWithYTD, netIncome /* unchanged */ };
+1. **Add `asOfDate` to the AI extraction prompt** for `balance_sheet`:
    ```
+   { "totalAssets": ..., "totalLiabilities": ..., "totalEquity": ..., "asOfDate": "YYYY-MM-DD" }
+   ```
+   Look for "As of …", "Balance Sheet as of …", or the date in the column header.
 
-5. **Cap protection**: if `Math.abs(ytdNetIncome) > Math.abs(totalRevenue)` for the YTD slice, log a warning and skip the rollup — defensive against bad classification.
+2. **Add `asOfDate?: string` to `DerivedTotals`** (uploaded side only — extracted).
 
-## Expected result on this deal
+3. **In the handler**, after AI extraction, if `uploadedTotals.asOfDate` is present **and** caller did not pass `periodEnd`, set `effectivePeriodEnd = uploadedTotals.asOfDate` and **re-derive** `derivedTotals` with that date. This makes:
+   - BS point-in-time read snap to as-of month (already supported by existing code).
+   - YTD rollup window end at as-of month (matches uploaded book).
 
-- YTD slice (likely Jan–latest 2024 or 2025) → netIncome ≈ $526,104.
-- TB equity: $2,252,980 + $526,104 = $2,779,084 → matches uploaded.
-- Variance → $0, `tbIsBalanced` → true, score → ~100%.
+4. **Defensive fallback**: if `asOfDate` can't be extracted (older docs, weird formats), keep current behavior but add a visible note in the summary:
+   > "Could not determine balance sheet as-of date — derived TB values use the latest TB period. Equity variance may reflect timing only."
+
+5. **Optional UX**: surface `asOfDate` in the validation card description ("as of MM/DD/YYYY") so the user sees what we used.
+
+## Expected on this deal
+
+- AI extracts as-of date from "Sandbox Company_US_2_Balance Sheet.csv" header (likely 2024-12-31 or a 2025 mid-year date).
+- YTD slice narrows to that period → ytdNetIncome ≈ $526,104.
+- TB equity → $2,779,084. Variance → $0. Score → ~100%. `tbIsBalanced` → true.
 
 ## Files
 
 - `supabase/functions/validate-financial-statement/index.ts` only.
-  - Add `fiscal_year_end` to project select.
-  - Add `computeYtdRange(fiscalYearEnd, periodEnd, availableKeys)` helper.
-  - Add `sumIsForKeyRange(accounts, keys)` helper (or parameterize the existing loop).
-  - Replace the unconditional `totalEquity + netIncome` with YTD-only rollup.
 
-No client, schema, or migration changes. Auto-redeploys; re-run validation on the existing upload — no re-upload needed.
+No client, schema, or migration changes. Auto-redeploys; re-run validation on the existing upload.
 
-Want me to ship it?
+Ship it?
