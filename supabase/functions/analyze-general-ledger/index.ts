@@ -183,10 +183,13 @@ serve(async (req) => {
       const monthly = (tbData.monthlyReports as Array<Record<string, unknown>>) || [];
       monthlyReportCount = monthly.length;
 
-      const accum = new Map<string, TBAcct>();
-      const acctIdToKey = new Map<string, string>();
+      // Build per-account series: for each report (chronological), the {debit, credit}.
+      // Then collapse: BS accounts use LAST report's balance (point-in-time); P&L accounts
+      // sum across ALL monthly reports (YTD). Classification comes from COA lookup.
+      type Series = { name: string; acctId: string | null; perMonth: Array<{ debit: number; credit: number }> };
+      const series = new Map<string, Series>();
 
-      const walk = (rs: Array<Record<string, unknown>>) => {
+      const walk = (rs: Array<Record<string, unknown>>, monthIdx: number) => {
         for (const r of rs) {
           const cd = (r.colData as Array<Record<string, unknown>>) || [];
           if (cd.length >= 2) {
@@ -196,37 +199,55 @@ serve(async (req) => {
             const credit = cd.length >= 3 ? (parseFloat(String(cd[2]?.value || "0").replace(/[,$]/g, "")) || 0) : 0;
             if (name && (debit !== 0 || credit !== 0)) {
               const key = name.toLowerCase();
-              const existing = accum.get(key);
-              if (existing) {
-                existing.debit += debit;
-                existing.credit += credit;
-                existing.balance = existing.debit - existing.credit;
-              } else {
-                accum.set(key, { name, debit, credit, balance: debit - credit });
+              let s = series.get(key);
+              if (!s) {
+                s = { name, acctId: acctId || null, perMonth: [] };
+                series.set(key, s);
               }
-              if (acctId) acctIdToKey.set(acctId, key);
+              while (s.perMonth.length <= monthIdx) s.perMonth.push({ debit: 0, credit: 0 });
+              s.perMonth[monthIdx].debit += debit;
+              s.perMonth[monthIdx].credit += credit;
               tbHas = true;
             }
           }
           const nested = (r.rows as Record<string, unknown>)?.row as Array<Record<string, unknown>>;
-          if (nested) walk(nested);
+          if (nested) walk(nested, monthIdx);
         }
       };
 
-      for (const report of monthly) {
+      monthly.forEach((report, idx) => {
         const rows = (((report?.report as Record<string, unknown>)?.rows as Record<string, unknown>)?.row as Array<Record<string, unknown>>) || [];
-        walk(rows);
-      }
+        walk(rows, idx);
+      });
 
-      for (const [key, t] of accum) {
+      const isBSClass = (c: string) => c === "ASSET" || c === "LIABILITY" || c === "EQUITY";
+
+      for (const [key, s] of series) {
+        // Look up classification via COA (name → leaf → acctNum)
+        const coa = coaByName.get(key) || coaByLeaf.get(normName(s.name)) ||
+                    (s.acctId ? coaByAcctNum.get(s.acctId) : undefined);
+        const cls = (coa?.classification || "OTHER").toUpperCase();
+        let debit = 0, credit = 0;
+        if (isBSClass(cls)) {
+          // Point-in-time: take last non-empty monthly snapshot
+          for (let i = s.perMonth.length - 1; i >= 0; i--) {
+            if (s.perMonth[i].debit !== 0 || s.perMonth[i].credit !== 0) {
+              debit = s.perMonth[i].debit;
+              credit = s.perMonth[i].credit;
+              break;
+            }
+          }
+        } else {
+          // P&L (or unknown): sum YTD
+          for (const m of s.perMonth) { debit += m.debit; credit += m.credit; }
+        }
+        const t: TBAcct = { name: s.name, debit, credit, balance: debit - credit };
         tbByName.set(key, t);
-        tbByLeaf.set(normName(t.name), t);
-      }
-      for (const [acctId, key] of acctIdToKey) {
-        const t = accum.get(key);
-        if (t) tbByAcctNum.set(acctId, t);
+        tbByLeaf.set(normName(s.name), t);
+        if (s.acctId) tbByAcctNum.set(s.acctId, t);
       }
     }
+    console.log(`[ANALYZE-GL] TB has ${tbByLeaf.size} accounts (BS=point-in-time, P&L=YTD-sum across ${monthlyReportCount} monthly reports)`);
     console.log(`[ANALYZE-GL] TB has ${tbByLeaf.size} accounts (cumulative YTD across ${monthlyReportCount} monthly reports)`);
 
     // ── Reconciliation ──
