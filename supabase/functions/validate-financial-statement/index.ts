@@ -107,9 +107,11 @@ function classifyISAccount(accountName: string, accountType: string): 'revenue' 
   const type = (accountType || '').toLowerCase();
 
   if (type.includes('cost of goods') || type.includes('cogs') || type.includes('cost of sales') || name.includes('cost of goods') || name.includes('cost of sales')) return 'cogs';
+  // Job Costs — QuickBooks reports these as Cost of Services, not operating expenses
+  if (name.startsWith('job expenses') || name.includes(':cost of labor') || name.includes(':job materials')) return 'cogs';
   // Other Income / Other Expense — non-operating, reported below the operating block on QB P&Ls
   if (type.includes('other income') || name.includes('interest income') || name.includes('gain on') || name.includes('dividend income')) return 'other_income';
-  if (type.includes('other expense') || name.includes('interest expense') || name.includes('loss on')) return 'other_expense';
+  if (type.includes('other expense') || name.includes('interest expense') || name.includes('loss on') || name.includes('penalt') || name.includes('settlement')) return 'other_expense';
   if (type.includes('income') || type.includes('revenue') || type.includes('sales')) return 'revenue';
   if (type.includes('expense')) return 'expense';
 
