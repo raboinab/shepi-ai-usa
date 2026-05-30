@@ -514,6 +514,23 @@ serve(async (req) => {
       }
     }
 
+    // If AI extracted an as-of date and caller did not pin a periodEnd, re-derive TB totals
+    // anchored on that date so YTD equity rollup matches the uploaded BS's reporting moment.
+    if (
+      documentType === 'balance_sheet' &&
+      uploadedTotals?.asOfDate &&
+      /^\d{4}-\d{2}-\d{2}$/.test(uploadedTotals.asOfDate) &&
+      !periodEnd
+    ) {
+      const prevEnd = effectivePeriodEnd;
+      effectivePeriodEnd = uploadedTotals.asOfDate;
+      console.log(`[validate-fs] Re-deriving with extracted asOfDate=${effectivePeriodEnd} (was ${prevEnd})`);
+      derivedTotals = deriveTotalsFromTrialBalance(accounts, documentType, effectivePeriodStart, effectivePeriodEnd, fiscalYearEnd);
+    } else if (documentType === 'balance_sheet' && !uploadedTotals?.asOfDate) {
+      console.warn(`[validate-fs] No as-of date extracted from uploaded BS; YTD equity rollup may be off`);
+    }
+
+
     // Get document name
     let documentName = "Uploaded Document";
     if (documentId) {
