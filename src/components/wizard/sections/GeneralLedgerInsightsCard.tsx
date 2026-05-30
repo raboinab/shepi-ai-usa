@@ -106,7 +106,9 @@ export const GeneralLedgerInsightsCard = ({ analysisData, documentName, classNam
             {/* Period */}
             {(analysisData.periodStart || analysisData.periodEnd) && (
               <div className="text-xs text-muted-foreground">
-                Period: {analysisData.periodStart || "?"} – {analysisData.periodEnd || "?"}
+                {analysisData.periodStart && analysisData.periodEnd && analysisData.periodStart === analysisData.periodEnd
+                  ? `As of ${analysisData.periodEnd}`
+                  : `Period: ${analysisData.periodStart || "?"} – ${analysisData.periodEnd || "?"}`}
               </div>
             )}
 
