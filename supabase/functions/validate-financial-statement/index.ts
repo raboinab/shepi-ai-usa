@@ -117,8 +117,6 @@ function classifyISAccount(accountName: string, accountType: string): 'revenue' 
   // "Other expense (income)" or "Other expense" — default to other_expense unless name implied income above
   if (type.includes('other expense')) return 'other_expense';
   if (type.includes('income') || type.includes('revenue') || type.includes('sales')) return 'revenue';
-  // Job Costs — QuickBooks reports these as Cost of Services. Only apply for expense-typed accounts.
-  if (type.includes('expense') && (name.startsWith('job expenses') || name.includes(':cost of labor'))) return 'cogs';
   if (type.includes('expense')) return 'expense';
 
   return 'expense';
