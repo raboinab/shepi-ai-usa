@@ -32,6 +32,8 @@ interface DerivedTotals {
   financingCashFlow?: number;
   netChangeInCash?: number;
   asOfDate?: string | null;
+  periodStart?: string | null;
+  periodEnd?: string | null;
 }
 
 
@@ -402,8 +404,14 @@ IMPORTANT: This spreadsheet may have monthly columns (Jan, Feb, Mar... or 2024-0
 - Look for rows like "Total Revenue", "Total Income", "Gross Profit", "Total Expenses", "Total Operating Expenses", "Net Income", "Net Operating Income", "Cost of Goods Sold", "Cost of Sales".
 - Revenue/Income values are typically positive. Expense and COGS values may be positive or negative depending on convention.
 
+ALSO extract the reporting period covered by this P&L:
+- "periodStart": first day of the earliest reporting month (YYYY-MM-DD). Look at the earliest monthly column header, or phrases like "For the period beginning …", "Year-to-date from …".
+- "periodEnd": last day of the latest reporting month (YYYY-MM-DD). Look at the latest monthly column header, or phrases like "as of …", "year ended …", "for the period ending …".
+- If only a month/year is available (e.g. "December 2024"), snap to first/last day of that month.
+- Return null for either if it truly cannot be determined.
+
 Return ONLY valid JSON (use null if a value cannot be found):
-{ "totalRevenue": number or null, "totalCogs": number or null, "grossProfit": number or null, "totalExpenses": number or null, "netIncome": number or null }
+{ "totalRevenue": number or null, "totalCogs": number or null, "grossProfit": number or null, "totalExpenses": number or null, "netIncome": number or null, "periodStart": "YYYY-MM-DD" or null, "periodEnd": "YYYY-MM-DD" or null }
       
 Spreadsheet data:\n${textContent.slice(0, 12000)}`;
   } else if (documentType === 'cash_flow') {
@@ -568,6 +576,23 @@ serve(async (req) => {
       console.warn(`[validate-fs] No as-of date extracted from uploaded BS; YTD equity rollup may be off`);
     }
 
+    // For income_statement, scope TB-derived totals to the uploaded P&L's reporting window.
+    let isPeriodScoped = false;
+    if (documentType === 'income_statement' && uploadedTotals) {
+      const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+      const extractedStart = dateRe.test(uploadedTotals.periodStart || '') ? uploadedTotals.periodStart! : null;
+      const extractedEnd = dateRe.test(uploadedTotals.periodEnd || '') ? uploadedTotals.periodEnd! : null;
+      if ((extractedStart && !periodStart) || (extractedEnd && !periodEnd)) {
+        if (extractedStart && !periodStart) effectivePeriodStart = extractedStart;
+        if (extractedEnd && !periodEnd) effectivePeriodEnd = extractedEnd;
+        console.log(`[validate-fs] Re-deriving IS with extracted period ${effectivePeriodStart} → ${effectivePeriodEnd}`);
+        derivedTotals = deriveTotalsFromTrialBalance(accounts, documentType, effectivePeriodStart, effectivePeriodEnd, fiscalYearEnd);
+        isPeriodScoped = true;
+      } else if (!extractedStart && !extractedEnd) {
+        console.warn(`[validate-fs] No reporting period extracted from uploaded P&L; TB totals span all available months`);
+      }
+    }
+
 
     // Get document name
     let documentName = "Uploaded Document";
@@ -649,6 +674,14 @@ serve(async (req) => {
         summary += ` (Anchored on as-of date ${uploadedTotals.asOfDate}.)`;
       } else {
         summary += ` Note: could not determine the balance sheet as-of date — derived TB values use the latest available period. Equity variance may reflect period-end timing only.`;
+      }
+    }
+
+    if (documentType === 'income_statement') {
+      if (isPeriodScoped) {
+        summary += ` (Scoped to ${effectivePeriodStart || 'earliest'} → ${effectivePeriodEnd || 'latest'}.)`;
+      } else if (!effectivePeriodStart && !effectivePeriodEnd) {
+        summary += ` Note: could not determine the P&L reporting period — derived TB values may span a different range than the uploaded document.`;
       }
     }
 
