@@ -32,6 +32,8 @@ interface DerivedTotals {
   financingCashFlow?: number;
   netChangeInCash?: number;
   asOfDate?: string | null;
+  periodStart?: string | null;
+  periodEnd?: string | null;
 }
 
 

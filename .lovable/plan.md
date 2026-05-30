@@ -1,46 +1,33 @@
-## Diagnosis
+## Problem
 
-Verified against your project:
-- `fiscal_year_end` is **NULL** (so my fallback assumed Dec-31 calendar year — correct here).
-- TB spans **Jan-2023 → Dec-2025** (3 full years).
-- My YTD logic picked `referenceEndKey = 2025-12` (latest TB period), so YTD = all of 2025 = ~$3.67M, which is what got rolled into equity (`$2,252,980 + $3,674,033 = $5,927,013`).
-- But the seller's uploaded BS is "as-of" some earlier date where YTD net income = exactly $526,104.
+Uploaded P&L "Sandbox Company_US_2_Profit and Loss by Month.csv" shows $2.7M revenue. TB-derived shows $18.4M revenue. Ratio ~6.8x.
 
-So the equity rollup is correctly **computing** YTD net income — it's just YTD through the **wrong date**. We're using the TB's last available month instead of the uploaded BS's actual as-of date.
+Root cause: TB spans Jan-2023 → Dec-2025 (36 months). The current IS path in `deriveTotalsFromTrialBalance` sums **all periods** in the TB when no `periodStart`/`periodEnd` is passed. The uploaded P&L covers only a subset of those months (likely partial-year or a specific year), so we're comparing a multi-year TB total against a single-period upload.
 
-## The fix
+The Balance Sheet flow already handles this: AI extracts `asOfDate` and we re-derive TB totals anchored on that date. The Income Statement flow has no equivalent — it never extracts or applies a reporting period from the uploaded P&L.
 
-Extract the **as-of date** from the uploaded balance sheet itself and use that as the YTD cutoff.
+## Fix (single file: `supabase/functions/validate-financial-statement/index.ts`)
 
-Changes in `supabase/functions/validate-financial-statement/index.ts`:
+1. **Extend `DerivedTotals`** with `periodStart?: string | null` and `periodEnd?: string | null` (uploaded side).
 
-1. **Add `asOfDate` to the AI extraction prompt** for `balance_sheet`:
-   ```
-   { "totalAssets": ..., "totalLiabilities": ..., "totalEquity": ..., "asOfDate": "YYYY-MM-DD" }
-   ```
-   Look for "As of …", "Balance Sheet as of …", or the date in the column header.
+2. **Update the AI extraction prompt for `income_statement`** to also extract:
+   - `periodStart` (YYYY-MM-DD) — first reporting month in the file (e.g. earliest monthly column header, "For the period beginning …", or first month of a "YTD" range).
+   - `periodEnd` (YYYY-MM-DD) — last reporting month (e.g. latest monthly column header, "as of …", "year ended …").
+   - If only month/year is available, snap start to first-of-month and end to last-of-month.
+   - Return null for either if not determinable.
 
-2. **Add `asOfDate?: string` to `DerivedTotals`** (uploaded side only — extracted).
+3. **In the handler**, after AI extraction for `income_statement`, if uploaded `periodStart` and/or `periodEnd` came back and caller didn't pass explicit values, set `effectivePeriodStart`/`effectivePeriodEnd` to the extracted dates and **re-derive `derivedTotals`** scoped to that range. The existing `getPeriodKeysInRange` already handles the slice for IS accounts.
 
-3. **In the handler**, after AI extraction, if `uploadedTotals.asOfDate` is present **and** caller did not pass `periodEnd`, set `effectivePeriodEnd = uploadedTotals.asOfDate` and **re-derive** `derivedTotals` with that date. This makes:
-   - BS point-in-time read snap to as-of month (already supported by existing code).
-   - YTD rollup window end at as-of month (matches uploaded book).
+4. **Defensive fallback**: if neither date can be extracted, log a warning and append a note to the summary ("Could not determine the P&L reporting period — derived TB values may span a different range").
 
-4. **Defensive fallback**: if `asOfDate` can't be extracted (older docs, weird formats), keep current behavior but add a visible note in the summary:
-   > "Could not determine balance sheet as-of date — derived TB values use the latest TB period. Equity variance may reflect timing only."
+5. **Surface the period context** in the summary on success, e.g. "(Scoped to 2025-01-01 → 2025-05-31.)" so users see what window we compared.
 
-5. **Optional UX**: surface `asOfDate` in the validation card description ("as of MM/DD/YYYY") so the user sees what we used.
+## Expected outcome
 
-## Expected on this deal
+AI extracts the P&L's actual reporting window from the monthly column headers → TB IS sum narrows to those same months → revenue/COGS/OpEx/GP/NI line up → match score climbs from 0% to ~100% (or surfaces real classification variances instead of period-mismatch noise).
 
-- AI extracts as-of date from "Sandbox Company_US_2_Balance Sheet.csv" header (likely 2024-12-31 or a 2025 mid-year date).
-- YTD slice narrows to that period → ytdNetIncome ≈ $526,104.
-- TB equity → $2,779,084. Variance → $0. Score → ~100%. `tbIsBalanced` → true.
+## Out of scope
 
-## Files
-
-- `supabase/functions/validate-financial-statement/index.ts` only.
-
-No client, schema, or migration changes. Auto-redeploys; re-run validation on the existing upload.
-
-Ship it?
+- No client/UI changes (existing card already renders summary + line items).
+- No schema/migration changes.
+- BS validation path untouched.
