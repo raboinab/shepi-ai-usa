@@ -605,6 +605,16 @@ serve(async (req) => {
       summary = 'Perfect match! The uploaded document aligns with Trial Balance-derived values.';
     }
 
+    // Append as-of date context to the summary so users know what date the TB was anchored on
+    if (documentType === 'balance_sheet') {
+      if (uploadedTotals.asOfDate) {
+        summary += ` (Anchored on as-of date ${uploadedTotals.asOfDate}.)`;
+      } else {
+        summary += ` Note: could not determine the balance sheet as-of date — derived TB values use the latest available period. Equity variance may reflect period-end timing only.`;
+      }
+    }
+
+
     const result = {
       documentType,
       documentName,
