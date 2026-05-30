@@ -107,12 +107,17 @@ function classifyISAccount(accountName: string, accountType: string): 'revenue' 
   const type = (accountType || '').toLowerCase();
 
   if (type.includes('cost of goods') || type.includes('cogs') || type.includes('cost of sales') || name.includes('cost of goods') || name.includes('cost of sales')) return 'cogs';
-  // Other Income / Other Expense — non-operating, reported below the operating block on QB P&Ls
-  if (type.includes('other income') || name.includes('interest income') || name.includes('gain on') || name.includes('dividend income')) return 'other_income';
-  if (type.includes('other expense') || name.includes('interest expense') || name.includes('loss on') || name.includes('penalt') || name.includes('settlement')) return 'other_expense';
+
+  // Name-based hard overrides for below-the-line items (catches QB's combined "Other expense (income)" type)
+  if (name.includes('interest income') || name.includes('interest earned') || name.includes('dividend income') || name.includes('gain on') || name.includes('portfolio income')) return 'other_income';
+  if (name.includes('interest expense') || name.includes('loss on') || name.includes('penalt') || name.includes('settlement')) return 'other_expense';
+
+  // Type-based: "Other income"
+  if (type.includes('other income')) return 'other_income';
+  // "Other expense (income)" or "Other expense" — default to other_expense unless name implied income above
+  if (type.includes('other expense')) return 'other_expense';
   if (type.includes('income') || type.includes('revenue') || type.includes('sales')) return 'revenue';
-  // Job Costs — QuickBooks reports these as Cost of Services, not operating expenses.
-  // Only apply when the account is expense-typed (avoid hitting revenue subaccounts named "Job Materials").
+  // Job Costs — QuickBooks reports these as Cost of Services. Only apply for expense-typed accounts.
   if (type.includes('expense') && (name.startsWith('job expenses') || name.includes(':cost of labor'))) return 'cogs';
   if (type.includes('expense')) return 'expense';
 
