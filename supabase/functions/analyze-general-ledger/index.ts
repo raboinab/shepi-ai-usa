@@ -290,8 +290,11 @@ serve(async (req) => {
     }
     console.log(`[ANALYZE-GL] Aggregated ${accounts.length} unique accounts (post-rollup dedupe)`);
 
-    // ── Pull latest TB and build CUMULATIVE YTD balance per account by summing
-    //    across ALL monthly reports, so it aligns with GL YTD sums (not just last month). ──
+    // ── Pull latest TB. Each entry in `monthlyReports` is a QuickBooks Trial Balance
+    //    run dated to the end of that month — it is YTD-CUMULATIVE, NOT a per-month
+    //    movement. End-of-Dec-2025 IS the period total for P&L AND the snapshot for BS.
+    //    Therefore: take the LAST populated monthly report for every account. Do not sum
+    //    across months (that previously multiplied P&L values by ~36×). ──
     const { data: tbRecords } = await supabase
       .from("processed_data").select("data, created_at, period_end")
       .eq("project_id", projectId).eq("data_type", "trial_balance")
@@ -304,14 +307,18 @@ serve(async (req) => {
     let tbHas = false;
     let monthlyReportCount = 0;
 
+    // Symmetric normalizer for matching: strip parenthetical suffixes like "(A/R)",
+    // lowercase, collapse non-alphanumerics to single spaces, trim.
+    const normKey = (s: string): string =>
+      (s || "").toLowerCase().replace(/\([^)]*\)/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
+    const leafOf = (s: string): string => (s || "").split(":").pop()!.trim();
+
     if (tbRecords && tbRecords.length > 0) {
       const tbData = tbRecords[0].data as Record<string, unknown>;
       const monthly = (tbData.monthlyReports as Array<Record<string, unknown>>) || [];
       monthlyReportCount = monthly.length;
 
-      // Build per-account series: for each report (chronological), the {debit, credit}.
-      // Then collapse: BS accounts use LAST report's balance (point-in-time); P&L accounts
-      // sum across ALL monthly reports (YTD). Classification comes from COA lookup.
+      // Build per-account series keyed by full colon-delimited path.
       type Series = { name: string; acctId: string | null; perMonth: Array<{ debit: number; credit: number }> };
       const series = new Map<string, Series>();
 
@@ -341,7 +348,6 @@ serve(async (req) => {
         }
       };
 
-      // Track which report indices actually contain any rows at all (global "populated month" set).
       const populatedReportIdxs: number[] = [];
       monthly.forEach((report, idx) => {
         const rows = (((report?.report as Record<string, unknown>)?.rows as Record<string, unknown>)?.row as Array<Record<string, unknown>>) || [];
@@ -352,70 +358,51 @@ serve(async (req) => {
         ? populatedReportIdxs[populatedReportIdxs.length - 1]
         : -1;
 
-      const isBSClass = (c: string) => c === "ASSET" || c === "LIABILITY" || c === "EQUITY";
-
-      // Heuristic BS detector for accounts where COA classification is missing.
-      // QuickBooks Trial Balance monthly slices store BS balances as snapshots; if we sum
-      // them as YTD we get 10–30× inflation (the bug behind Workbook Checking $411k vs
-      // GL $260k). Detect by (a) account-name keywords or (b) monotonic per-month series.
-      const bsNameRe = /\b(checking|savings|cash|bank|deposit|undeposited|payable|receivable|loan|note|mortgage|line of credit|equity|retained|capital|fixed asset|accumulated|inventory|prepaid|accrued|payroll liab|tax payable|credit card)\b/i;
-      const looksMonotonic = (vals: number[]): boolean => {
-        const nz = vals.filter(v => v !== 0);
-        if (nz.length < 3) return false;
-        let nondec = true, noninc = true;
-        for (let i = 1; i < nz.length; i++) {
-          if (nz[i] < nz[i - 1]) nondec = false;
-          if (nz[i] > nz[i - 1]) noninc = false;
+      // For every series: take the last-populated month's snapshot.
+      // Fall back to walk-back if that slot is empty for this specific account.
+      const fullPathTB: TBAcct[] = [];
+      for (const [, s] of series) {
+        let debit = 0, credit = 0, snapshotIdx = -1;
+        if (lastPopulatedIdx >= 0 && lastPopulatedIdx < s.perMonth.length) {
+          debit = s.perMonth[lastPopulatedIdx].debit;
+          credit = s.perMonth[lastPopulatedIdx].credit;
+          snapshotIdx = lastPopulatedIdx;
         }
-        return nondec || noninc;
-      };
-
-      for (const [key, s] of series) {
-        // Look up classification via COA (name → leaf → acctNum)
-        const coa = coaByName.get(key) || coaByLeaf.get(normName(s.name)) ||
-                    (s.acctId ? coaByAcctNum.get(s.acctId) : undefined);
-        let cls = (coa?.classification || "OTHER").toUpperCase();
-        let snapshotIdx = -1;
-
-        // Heuristic BS detection when COA classification is unknown.
-        if (!isBSClass(cls) && cls === "OTHER") {
-          const balances = s.perMonth.map(m => m.debit - m.credit);
-          if (bsNameRe.test(s.name) || looksMonotonic(balances)) {
-            cls = "ASSET"; // treat as BS for snapshot purposes; identity bucket recomputed later via COA
-          }
-        }
-
-        let debit = 0, credit = 0;
-        if (isBSClass(cls)) {
-          // Point-in-time: prefer the globally-last populated monthly report. Zero is
-          // a valid snapshot — only fall back to an earlier month if this slot is missing.
-          if (lastPopulatedIdx >= 0 && lastPopulatedIdx < s.perMonth.length) {
-            debit = s.perMonth[lastPopulatedIdx].debit;
-            credit = s.perMonth[lastPopulatedIdx].credit;
-            snapshotIdx = lastPopulatedIdx;
-          }
-          if (snapshotIdx < 0 || (debit === 0 && credit === 0 && s.perMonth.length > 0)) {
-            // Genuine "account didn't exist this month" fallback: walk back to last non-empty.
-            for (let i = Math.min(lastPopulatedIdx, s.perMonth.length - 1); i >= 0; i--) {
-              if (s.perMonth[i] && (s.perMonth[i].debit !== 0 || s.perMonth[i].credit !== 0)) {
-                debit = s.perMonth[i].debit;
-                credit = s.perMonth[i].credit;
-                snapshotIdx = i;
-                break;
-              }
+        if (snapshotIdx < 0 || (debit === 0 && credit === 0)) {
+          for (let i = Math.min(lastPopulatedIdx, s.perMonth.length - 1); i >= 0; i--) {
+            if (s.perMonth[i] && (s.perMonth[i].debit !== 0 || s.perMonth[i].credit !== 0)) {
+              debit = s.perMonth[i].debit;
+              credit = s.perMonth[i].credit;
+              snapshotIdx = i;
+              break;
             }
           }
-        } else {
-          // P&L (or unknown): sum YTD
-          for (const m of s.perMonth) { debit += m.debit; credit += m.credit; }
         }
         const t: TBAcct = { name: s.name, debit, credit, balance: debit - credit, snapshotIdx };
-        tbByName.set(key, t);
-        tbByLeaf.set(normName(s.name), t);
+        fullPathTB.push(t);
+        // Full-path lookup: exact lowercased name and normKey'd full path.
+        tbByName.set(s.name.toLowerCase(), t);
+        tbByName.set(normKey(s.name), t);
         if (s.acctId) tbByAcctNum.set(s.acctId, t);
       }
+
+      // Aggregate by normalized LEAF with signed net (debit - credit), so a leaf that
+      // appears under multiple parent groups (e.g. "Decks and Patios" as both
+      // Landscaping Services:... revenue AND Job Expenses:... expense) nets correctly.
+      const leafAgg = new Map<string, { name: string; debit: number; credit: number }>();
+      for (const t of fullPathTB) {
+        const lk = normKey(leafOf(t.name));
+        if (!lk) continue;
+        const cur = leafAgg.get(lk) || { name: leafOf(t.name), debit: 0, credit: 0 };
+        cur.debit += t.debit;
+        cur.credit += t.credit;
+        leafAgg.set(lk, cur);
+      }
+      for (const [lk, agg] of leafAgg) {
+        tbByLeaf.set(lk, { name: agg.name, debit: agg.debit, credit: agg.credit, balance: agg.debit - agg.credit });
+      }
     }
-    console.log(`[ANALYZE-GL] TB has ${tbByLeaf.size} accounts (BS=point-in-time @ last populated month, P&L=YTD-sum across ${monthlyReportCount} monthly reports)`);
+    console.log(`[ANALYZE-GL] TB ingested: ${monthlyReportCount} monthly reports, ${tbByName.size} full-path entries, ${tbByLeaf.size} leaf aggregates (last-populated-month snapshot)`);
 
     // ── Reconciliation ──
     const reconciliation: TBComparison[] = [];
