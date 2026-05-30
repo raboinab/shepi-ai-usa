@@ -485,9 +485,9 @@ STRUCTURE NOTES
 
 EXTRACTION RULES
 - totalRevenue: the printed "Total Income" or "Total Revenue" row from the operating Income section. If no such subtotal exists, SUM every detail row inside the Income section (stop at "Cost of Goods Sold" / "Gross Profit").
-- totalCogs: SUM of all rows in the "Cost of Goods Sold" section AND any "Job Expenses" / "Job Costs" / "Cost of Labor" / "Job Materials" rows (QuickBooks treats these as cost of services). Use the printed "Total Cost of Goods Sold" / "Total Job Expenses" subtotals if present.
+- totalCogs: "Total Cost of Goods Sold" / "Total COGS" / "Cost of Sales" subtotal, or sum of all detail rows in that section. 0 if the section is empty. Do NOT include Job Expenses / Job Materials / Cost of Labor here unless they are explicitly inside a "Cost of Goods Sold" section header.
 - grossProfit: the printed "Gross Profit" row, or totalRevenue − totalCogs.
-- totalExpenses: the printed "Total Expenses" / "Total Operating Expenses" row from the operating Expenses section, EXCLUDING any Job Expenses / Job Costs already counted in totalCogs. If ambiguous, SUM every detail row in the Expenses section (between Gross Profit and Net Operating Income), excluding Job Expenses.
+- totalExpenses: the printed "Total Expenses" / "Total Operating Expenses" row from the operating Expenses section. If ambiguous, SUM every detail row in the Expenses section (between Gross Profit and Net Operating Income). Include Job Expenses if QuickBooks places them in this section.
 - netOperatingIncome: the printed "Net Operating Income" row, or grossProfit − totalExpenses.
 - totalOtherIncome: SUM of rows in the "Other Income" section (below Net Operating Income). 0 if no such section.
 - totalOtherExpense: SUM of rows in the "Other Expense" section. 0 if no such section.
