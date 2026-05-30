@@ -457,17 +457,16 @@ serve(async (req) => {
         });
       }
     }
+    console.log(`[ANALYZE-GL] Reconciliation: matched=${matchCount}/${accounts.length}, variances=${varianceCount}, missingInTB=${missingInTB}`);
 
-    // Accounts in TB but not in GL
+    // Accounts in TB but not in GL — iterate leaf aggregates to avoid double-counting
+    // the multi-parent leaves (e.g. revenue+expense halves of "Decks and Patios").
     const missingInGL: { name: string; balance: number }[] = [];
     if (tbHas) {
-      for (const [k, t] of tbByName) {
-        if (!matchedTbKeys.has(k)) {
-          // also check leaf match against accounts already covered
-          const leaf = normName(t.name);
-          const covered = accounts.some(a => a.leaf === leaf || a.name.toLowerCase() === k);
-          if (!covered) missingInGL.push({ name: t.name, balance: t.balance });
-        }
+      for (const [lk, t] of tbByLeaf) {
+        if (matchedTbKeys.has(lk)) continue;
+        const covered = accounts.some(a => normKey(a.leaf) === lk || normKey(leafOf(a.name)) === lk);
+        if (!covered && Math.abs(t.balance) > 0.01) missingInGL.push({ name: t.name, balance: t.balance });
       }
     }
 
