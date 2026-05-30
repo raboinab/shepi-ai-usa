@@ -1,71 +1,91 @@
-# Fix GL detail parser column-detection bug in `analyze-general-ledger`
+# Fix TB ingestion: P&L is YTD-within-year and resets each January
 
-## Root cause (confirmed against live data, project `fa07…`, processed_data id `779284ae`)
+## What re-ran
 
-The QuickBooks GL detail JSON has only **one money column per DATA row** (col 7 = Amount). There is no running balance column. But occasional non-money columns happen to contain a stray numeric string — e.g. a doc-num "1" — which the parser counts as a money column.
+Yes — Edge Function logs show two `Complete: 78 accounts, 2 flags, score=1, matched=1/76` calls in the last few minutes. The previous GL-parser fix is live and working (Decks $13,037, Plants $15,993, Sprinklers $24,891 are now real period totals instead of last-txn fragments). But `matched` is still 1/76 because **the TB side is now under-reported**, so almost every account fails the variance tolerance.
 
-For "Decks and Patios" (23 DATA rows):
+## Root cause (confirmed against `processed_data` id `ad998424…`)
+
+Each entry in `monthlyReports[]` is a **single-month** QuickBooks TB run (`startDate` = first of month, `endDate` = last of month, e.g. Dec 1 2025 → Dec 31 2025). 36 reports cover Jan 2023 → Dec 2025.
+
+The values inside each monthly TB behave differently by account class:
+
+- **Balance Sheet (Asset / Liability / Equity)** — true end-of-month balance. Example: month 35 Checking = $410,901, which IS the period-end. Last populated month is the right answer.
+- **Revenue / Expense** — YTD-cumulative within a calendar year, RESET each January. Confirmed for "Other Income":
+
+  ```
+  May–Nov 2023:   credit  $5,420.14  ← YTD plateau
+  Dec 2023:       credit  $7,570.44  ← full year 2023
+  Jan–Oct 2024:   (empty / 0)
+  Nov–Dec 2024:   credit $21,633.84  ← full year 2024
+  Jan–May 2025:   (empty)
+  Jun–Jul 2025:   credit $56,312.95
+  Aug–Dec 2025:   credit $69,017.69  ← full year 2025
+  ```
+
+  Correct full-period TB for Other Income = Dec23 + Dec24 + Dec25 = **$98,221.97**. The analyzer currently reports `$6,607` (one slot of one month) and the previous "sum-all-months" code would have reported ~$300k (~3× year inflation).
+
+The current code (lines 304–415) always uses `lastPopulatedIdx` globally — fine for BS, wrong for P&L. That's why every revenue/expense line shows variance.
+
+## Fix — `supabase/functions/analyze-general-ledger/index.ts`
+
+### 1. Build BOTH a snapshot AND a year-sum per series (lines 372–398)
+
+For each series, compute two TB values from `perMonth[]`:
+- `snapshot` — value at `lastPopulatedIdx` with walk-back fallback (current logic).
+- `yearSum` — sum of the **last populated month within each calendar year** the series touched. Year boundaries derive from the `monthly[idx].year` field which is already present in the data.
+
+Carry both on the `TBAcct` so reconciliation can pick the right one per match.
+
+```ts
+type TBAcct = {
+  name: string;
+  snapshotDebit: number; snapshotCredit: number;
+  yearSumDebit: number;  yearSumCredit: number;
+  snapshotBalance: number;  // snapshotDebit - snapshotCredit
+  yearSumBalance: number;   // yearSumDebit  - yearSumCredit
+};
+```
+
+Year-sum algorithm: for each unique `year` value in `monthly`, find the highest `monthIdx` in that year where `perMonth[idx].debit !== 0 || credit !== 0`; add that slot. Accounts with no activity in a year contribute 0 for that year.
+
+### 2. Leaf aggregation operates on both values (lines 400–414)
+
+`leafAgg` sums `snapshotDebit/Credit` and `yearSumDebit/Credit` separately so the leaf bucket exposes both.
+
+### 3. Pick the right value at match time (lines 435–445)
+
+The GL `acct.classification` is already known here (`ASSET | LIABILITY | EQUITY | REVENUE | EXPENSE | OTHER`).
+
+```ts
+const isPL = acct.classification === "REVENUE" || acct.classification === "EXPENSE";
+const tbBalance = isPL ? tb.yearSumBalance : tb.snapshotBalance;
+```
+
+Then variance compares `acct.glBalance` to that picked `tbBalance`. Material-variance and match logic unchanged.
+
+### 4. Update the comment block at lines 304–308
+
+State the actual behavior (single-month TB; P&L resets each January; sum each year's last populated month for P&L; last-populated-month overall for BS).
+
+### 5. Logging
+
+Update the summary log to also print P&L vs BS match counts so future regressions are obvious:
 
 ```
-col  numeric_count   colsum
-0    0               0          (account name)
-1    0               0          (date)
-2    0               0          (txn type)
-3    1               1          ← stray "1" in doc-num field
-4    0               0
-5    0               0
-6    0               0          (split account name)
-7    23              13,036.85  ← real Amount column
+[ANALYZE-GL] TB ingested: 36 monthly reports, N full-path, M leaf
+[ANALYZE-GL] Reconciliation: matched=X/Y (BS=a, P&L=b), variances=Z, missingInTB=W
 ```
 
-The current detection at lines 130–153 sorts all columns that had ≥1 numeric value and picks the **second-from-last** as `amountColIdx` and the **last** as `balanceColIdx`. So it picks:
+## Expected outcome after deploy
 
-- `amountColIdx = 3` (1-of-23 hit rate, captures basically nothing)
-- `balanceColIdx = 7` (the real amount column, **mis-classified as running balance**)
+- `Other Income` TB → ~$98,222 (vs current −$6,607) and GL $331k — closer but still variance (likely a separate `qbToJson` issue for income side; out of scope).
+- `Labor` TB → ~$148k (matches GL $148k).
+- `Decks and Patios` TB → ~$13k (matches GL $13k).
+- `matched` count jumps materially. Whatever residual variance remains is real data drift between the GL and TB ingestion pipelines, not an analyzer bug.
 
-In the loop, `endingBalance` is overwritten on every row with col-7's value, so it ends up as the **last transaction's amount** (Decks: $103.55). The final preference rule at line 193 (`if balanceColIdx ≥ 0 && endingBalance ≠ 0 → glBalance = endingBalance`) then ships that single-transaction number as the account's GL balance.
+## Out of scope (separate issue if remaining)
 
-This explains every variance in the log:
-
-| Account | GL (now) | Real net sum of Amount col | TB |
-|---|---|---|---|
-| Decks and Patios | $103.55 | ~$13,037 | −$86,820 |
-| Labor | $148,371 | (last txn) | −$69,018 |
-| Office Expenses | $18 | (last txn) | $3,694 |
-| Other Income | $331,583 | (last txn) | −$6,607 |
-
-(GL-vs-TB sign and magnitude beyond this are a separate sandbox-data question; the parser bug is the dominant error.)
-
-## Fix — `supabase/functions/analyze-general-ledger/index.ts`, lines 130–153
-
-Require a money column to actually be **dense** before treating it as such. Concretely:
-
-1. After building `moneyColFreq`, drop any column whose hit rate is below a threshold:
-   ```
-   minHits = max(3, ceil(sampled * 0.5))
-   moneyIdxsSorted = [...moneyColFreq.entries()]
-       .filter(([, n]) => n >= minHits)
-       .map(([i]) => i)
-       .sort((a, b) => a - b)
-   ```
-2. Keep the existing branching (`length ≥ 2` ⇒ amount + balance; `length === 1` ⇒ amount only; `0` ⇒ leave both -1, glBalance defaults to 0).
-3. Additional safety on the "balance" branch: when `balanceColIdx` is selected, also require that the column be **monotonically related** to the amount column on the sample (i.e. actually behaves like a running balance). If not, downgrade to `balanceColIdx = -1` and treat the higher-index column as `amountColIdx`. This handles future QBO variants where some other dense numeric column appears.
-4. Update the comment block at lines 130–133 to reflect the new heuristic.
-
-No other functions or files need to change. The TB-side fix from the previous turn stays.
-
-## Verification after deploy
-
-Re-run analysis on the existing deal. Edge-function log should show:
-
-- `[ANALYZE-GL] Parsed 76 accounts / 7691 txns` (unchanged).
-- The per-variance log lines should show `gl=` values in the thousands or tens-of-thousands range for the previously-truncated leaf accounts (Decks, Plants and Soil, Sprinklers, Fuel, Office Expenses), not in the $10–$200 range.
-- `matched=` count should jump materially above 1/76 — most P&L accounts will newly land within the existing match tolerance.
-- Any GL-vs-TB residuals after this fix are real data variances (or sandbox quirks), not parser bugs.
-
-## Out of scope
-
-- TB ingestion (already fixed last turn).
-- COA enrichment / classification (separate file; unaffected).
-- The GL ingestion pipeline (`qbToJson` / CSV parser) that produced `processed_data.data` — we just consume what's already stored.
-- Frontend display.
+- Sign convention on the income side (revenue accounts in QBO carry a credit balance; the analyzer treats `balance = debit - credit`, which yields negative — that's fine for BS but P&L variance should compare absolute magnitudes; the existing `absDiffMag` branch already does this).
+- The `qbToJson` ingestion pipeline that produces `processed_data`.
+- COA enrichment, frontend, scoring.
