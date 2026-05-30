@@ -146,7 +146,8 @@ serve(async (req) => {
     const accounts = Array.from(acctMap.values());
     console.log(`[ANALYZE-GL] Aggregated ${accounts.length} unique accounts`);
 
-    // ── Pull latest TB (monthly reports) and build leaf-name index from latest period ──
+    // ── Pull latest TB and build CUMULATIVE YTD balance per account by summing
+    //    across ALL monthly reports, so it aligns with GL YTD sums (not just last month). ──
     const { data: tbRecords } = await supabase
       .from("processed_data").select("data, created_at, period_end")
       .eq("project_id", projectId).eq("data_type", "trial_balance")
@@ -157,13 +158,15 @@ serve(async (req) => {
     const tbByName = new Map<string, TBAcct>();
     const tbByAcctNum = new Map<string, TBAcct>();
     let tbHas = false;
+    let monthlyReportCount = 0;
 
     if (tbRecords && tbRecords.length > 0) {
       const tbData = tbRecords[0].data as Record<string, unknown>;
       const monthly = (tbData.monthlyReports as Array<Record<string, unknown>>) || [];
-      // Use the LAST monthly report (most recent period)
-      const lastReport = monthly[monthly.length - 1];
-      const rows = (((lastReport?.report as Record<string, unknown>)?.rows as Record<string, unknown>)?.row as Array<Record<string, unknown>>) || [];
+      monthlyReportCount = monthly.length;
+
+      const accum = new Map<string, TBAcct>();
+      const acctIdToKey = new Map<string, string>();
 
       const walk = (rs: Array<Record<string, unknown>>) => {
         for (const r of rs) {
@@ -174,11 +177,16 @@ serve(async (req) => {
             const debit = parseFloat(String(cd[1]?.value || "0").replace(/[,$]/g, "")) || 0;
             const credit = cd.length >= 3 ? (parseFloat(String(cd[2]?.value || "0").replace(/[,$]/g, "")) || 0) : 0;
             if (name && (debit !== 0 || credit !== 0)) {
-              const balance = debit - credit;
-              const t: TBAcct = { name, debit, credit, balance };
-              tbByName.set(name.toLowerCase(), t);
-              tbByLeaf.set(normName(name), t);
-              if (acctId) tbByAcctNum.set(acctId, t);
+              const key = name.toLowerCase();
+              const existing = accum.get(key);
+              if (existing) {
+                existing.debit += debit;
+                existing.credit += credit;
+                existing.balance = existing.debit - existing.credit;
+              } else {
+                accum.set(key, { name, debit, credit, balance: debit - credit });
+              }
+              if (acctId) acctIdToKey.set(acctId, key);
               tbHas = true;
             }
           }
@@ -186,9 +194,22 @@ serve(async (req) => {
           if (nested) walk(nested);
         }
       };
-      walk(rows);
+
+      for (const report of monthly) {
+        const rows = (((report?.report as Record<string, unknown>)?.rows as Record<string, unknown>)?.row as Array<Record<string, unknown>>) || [];
+        walk(rows);
+      }
+
+      for (const [key, t] of accum) {
+        tbByName.set(key, t);
+        tbByLeaf.set(normName(t.name), t);
+      }
+      for (const [acctId, key] of acctIdToKey) {
+        const t = accum.get(key);
+        if (t) tbByAcctNum.set(acctId, t);
+      }
     }
-    console.log(`[ANALYZE-GL] TB has ${tbByLeaf.size} accounts`);
+    console.log(`[ANALYZE-GL] TB has ${tbByLeaf.size} accounts (cumulative YTD across ${monthlyReportCount} monthly reports)`);
 
     // ── Reconciliation ──
     const reconciliation: TBComparison[] = [];
