@@ -226,6 +226,7 @@ function deriveTotalsFromTrialBalance(
 ): DerivedTotals {
   let totalAssets = 0, totalLiabilities = 0, totalEquity = 0;
   let totalRevenue = 0, totalCogs = 0, totalExpenses = 0;
+  let otherIncome = 0, otherExpense = 0;
   // Open-income accumulators for the reporting endpoint.
   let ytdRevenue = 0, ytdCogs = 0, ytdExpenses = 0;
 
