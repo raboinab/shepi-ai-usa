@@ -479,33 +479,17 @@ serve(async (req) => {
     }
     console.log(`[ANALYZE-GL] TB ingested: ${monthlyReportCount} monthly reports, ${tbById.size} series (by acctId), ${tbByLeaf.size} unique leaves`);
 
-    // ── Enrich GL accounts with TB's fullPath + re-classify via COA when possible.
-    //    GL detail gives us leaf-only names with stable ids; TB has the same ids with
-    //    full paths. Lifting the full path lets COA-by-fullyQualifiedName work, which
-    //    fixes wrong classifications for leaves that exist on both sides of the chart
-    //    (Labor: Revenue vs Cost of Labor: Expense, Decks and Patios under both, etc.).
-    for (const acct of accounts) {
-      const tb = acct.acctNumber ? tbById.get(acct.acctNumber) : undefined;
-      if (tb && tb.fullPath && tb.fullPath !== acct.name) {
-        (acct as AccountInfo & { fullPath?: string }).fullPath = tb.fullPath;
-        // Re-classify via COA fullPath if we now have one and it differs from current.
-        const coaFP = coaByName.get(tb.fullPath.toLowerCase());
-        if (coaFP) acct.classification = coaFP.classification.toUpperCase();
-        else {
-          // Heuristic from TB side as a last resort.
-          if (acct.classification === "OTHER" && tb.side !== "OTHER") {
-            acct.classification = tb.side;
-          }
-        }
-      }
-    }
+    // ── NOTE: QuickBooks' per-report `colData[0].id` is a LOCAL ordinal — NOT a stable
+    //    QB Account.Id. GL id 22 is "Decks and Patios" while TB id 22 is "Sprinklers and
+    //    Drip Systems" — different reports, different numbering. Matching across reports
+    //    must use NAME, not id.
 
     // ── Reconciliation ──
     const reconciliation: TBComparison[] = [];
-    const matchedTbIds = new Set<string>();
+    const matchedTbKeys = new Set<string>();
     let matchCount = 0, varianceCount = 0, missingInTB = 0;
     let matchBS = 0, matchPL = 0;
-    let matchById = 0, matchByFullPath = 0, matchByLeaf = 0, ambiguousLeaf = 0;
+    let matchByFullPath = 0, matchByLeaf = 0, ambiguousLeaf = 0;
     const materialVariances: TBComparison[] = [];
     let varianceLogged = 0;
 
@@ -513,41 +497,58 @@ serve(async (req) => {
       // Skip zero-balance, zero-activity accounts
       if (Math.abs(acct.glBalance) < 0.01 && acct.glActivity < 0.01) continue;
 
-      const isPL = acct.classification === "REVENUE" || acct.classification === "INCOME" ||
-                   acct.classification === "OTHER_INCOME" || acct.classification === "EXPENSE" ||
-                   acct.classification === "COST_OF_GOODS_SOLD" || acct.classification === "OTHER_EXPENSE";
-      const glSide: TBAcct["side"] = (acct.classification === "REVENUE" || acct.classification === "INCOME" || acct.classification === "OTHER_INCOME")
-        ? "REVENUE"
-        : (acct.classification === "EXPENSE" || acct.classification === "COST_OF_GOODS_SOLD" || acct.classification === "OTHER_EXPENSE")
-        ? "EXPENSE"
-        : (acct.classification as TBAcct["side"]);
-
       const fullPath = (acct as AccountInfo & { fullPath?: string }).fullPath || acct.name;
 
       let tb: TBAcct | undefined;
       let matchedBy = "";
 
-      // 1) by stable id
-      if (acct.acctNumber) {
-        tb = tbById.get(acct.acctNumber);
-        if (tb) { matchedBy = "id"; matchById++; }
-      }
-      // 2) by full path
-      if (!tb && fullPath) {
+      // 1) by exact full path (works when GL already carries a colon path)
+      if (fullPath.includes(":")) {
         tb = tbByFullPath.get(normKey(fullPath));
         if (tb) { matchedBy = "fullPath"; matchByFullPath++; }
       }
-      // 3) by leaf — only when exactly one TB candidate sits on the same side of the chart
+
+      // 2) by leaf — disambiguate multi-candidates by signed-magnitude distance to GL.
+      //    This is the most robust strategy when GL is leaf-only and the same leaf
+      //    appears on both Income and Expense sides of the chart.
       if (!tb) {
         const candidates = tbByLeaf.get(normKey(acct.leaf)) || tbByLeaf.get(normKey(leafOf(acct.name))) || [];
         if (candidates.length === 1) {
           tb = candidates[0]; matchedBy = "leaf"; matchByLeaf++;
         } else if (candidates.length > 1) {
-          // Filter to candidates compatible with the GL row's side. Treat unknown as compatible.
-          const compatible = candidates.filter(c => c.side === "OTHER" || glSide === "OTHER" || c.side === glSide);
-          if (compatible.length === 1) {
-            tb = compatible[0]; matchedBy = "leaf"; matchByLeaf++;
+          // Score each candidate by which axis is closer (in magnitude) to GL's balance.
+          // Treats sign-convention differences gracefully (a $13k expense GL could land
+          // against a $22k TB expense yearSum more cleanly than a $45k TB revenue yearSum).
+          const glMag = Math.abs(acct.glBalance);
+          let bestScore = Infinity, best: TBAcct | undefined;
+          for (const c of candidates) {
+            const sMag = Math.abs(c.snapshotBalance);
+            const yMag = Math.abs(c.yearSumBalance);
+            const score = Math.min(Math.abs(sMag - glMag), Math.abs(yMag - glMag));
+            if (score < bestScore) { bestScore = score; best = c; }
+          }
+          if (best && bestScore < Math.max(glMag, 1) * 10) {
+            tb = best; matchedBy = "leaf(disambig)"; matchByLeaf++;
           } else {
+            ambiguousLeaf++;
+          }
+        }
+      }
+
+      if (tb) {
+        matchedTbKeys.add(tb.fullPath);
+        // Re-derive classification from the matched TB side when we previously had OTHER
+        // or when GL leaf-lookup picked a side that conflicts with the chosen TB candidate.
+        if (acct.classification === "OTHER" && tb.side !== "OTHER") {
+          acct.classification = tb.side;
+        }
+        const isPL = acct.classification === "REVENUE" || acct.classification === "INCOME" ||
+                     acct.classification === "OTHER_INCOME" || acct.classification === "EXPENSE" ||
+                     acct.classification === "COST_OF_GOODS_SOLD" || acct.classification === "OTHER_EXPENSE" ||
+                     tb.side === "REVENUE" || tb.side === "EXPENSE";
+        // Pick TB axis by classification: BS uses end-of-period snapshot, P&L sums each
+        // year's YTD-final because monthly TBs reset every January.
+        const tbBalance = isPL ? tb.yearSumBalance : tb.snapshotBalance;
             ambiguousLeaf++;
           }
         }
