@@ -404,8 +404,14 @@ IMPORTANT: This spreadsheet may have monthly columns (Jan, Feb, Mar... or 2024-0
 - Look for rows like "Total Revenue", "Total Income", "Gross Profit", "Total Expenses", "Total Operating Expenses", "Net Income", "Net Operating Income", "Cost of Goods Sold", "Cost of Sales".
 - Revenue/Income values are typically positive. Expense and COGS values may be positive or negative depending on convention.
 
+ALSO extract the reporting period covered by this P&L:
+- "periodStart": first day of the earliest reporting month (YYYY-MM-DD). Look at the earliest monthly column header, or phrases like "For the period beginning …", "Year-to-date from …".
+- "periodEnd": last day of the latest reporting month (YYYY-MM-DD). Look at the latest monthly column header, or phrases like "as of …", "year ended …", "for the period ending …".
+- If only a month/year is available (e.g. "December 2024"), snap to first/last day of that month.
+- Return null for either if it truly cannot be determined.
+
 Return ONLY valid JSON (use null if a value cannot be found):
-{ "totalRevenue": number or null, "totalCogs": number or null, "grossProfit": number or null, "totalExpenses": number or null, "netIncome": number or null }
+{ "totalRevenue": number or null, "totalCogs": number or null, "grossProfit": number or null, "totalExpenses": number or null, "netIncome": number or null, "periodStart": "YYYY-MM-DD" or null, "periodEnd": "YYYY-MM-DD" or null }
       
 Spreadsheet data:\n${textContent.slice(0, 12000)}`;
   } else if (documentType === 'cash_flow') {
