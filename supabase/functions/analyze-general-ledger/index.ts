@@ -547,10 +547,25 @@ serve(async (req) => {
                      tb.side === "REVENUE" || tb.side === "EXPENSE";
         // BS uses end-of-period snapshot; P&L sums each year's YTD-final (monthly TBs reset every January).
         const tbBalance = isPL ? tb.yearSumBalance : tb.snapshotBalance;
-        const variance = acct.glBalance - tbBalance;
-        const absDiffSigned = Math.abs(variance);
-        const absDiffMag = Math.abs(Math.abs(acct.glBalance) - Math.abs(tbBalance));
-        const absDiff = Math.min(absDiffSigned, absDiffMag);
+
+        // ── Sign-aware comparison ──
+        // QuickBooks GL exports present revenue/liability/equity totals as positive
+        // magnitudes (debit-positive convention). The Trial Balance keeps the true
+        // double-entry sign (credits negative). For credit-natural accounts, the raw
+        // (gl − tb) doubles a value that is actually in agreement. Compute both the
+        // signed and the sign-collapsed variance, and surface whichever is smaller.
+        const creditNatural = acct.classification === "REVENUE" ||
+                              acct.classification === "INCOME" ||
+                              acct.classification === "OTHER_INCOME" ||
+                              acct.classification === "LIABILITY" ||
+                              acct.classification === "EQUITY";
+        const rawVariance = acct.glBalance - tbBalance;
+        const flippedVariance = acct.glBalance + tbBalance; // collapses sign-convention mirror
+        const effectiveVariance = creditNatural &&
+          Math.abs(flippedVariance) < Math.abs(rawVariance)
+            ? flippedVariance
+            : rawVariance;
+        const absDiff = Math.abs(effectiveVariance);
         const denom = Math.max(Math.abs(acct.glBalance), Math.abs(tbBalance), 1);
         const variancePct = absDiff / denom;
         const isMatch = absDiff < 50 || variancePct < 0.005;
@@ -558,7 +573,8 @@ serve(async (req) => {
           accountName: acct.name,
           glBalance: acct.glBalance,
           tbBalance,
-          variance, variancePct,
+          variance: effectiveVariance,
+          variancePct,
           status: isMatch ? "match" : "variance",
         };
         reconciliation.push(cmp);
@@ -567,7 +583,7 @@ serve(async (req) => {
           varianceCount++;
           if (absDiff > 1000 && variancePct > 0.05) materialVariances.push(cmp);
           if (varianceLogged < 25) {
-            console.log(`[ANALYZE-GL] VARIANCE (by ${matchedBy}, ${isPL ? "P&L" : "BS"}): ${acct.name} cls=${acct.classification} gl=${acct.glBalance.toFixed(2)} tb=${tbBalance.toFixed(2)}`);
+            console.log(`[ANALYZE-GL] VARIANCE (by ${matchedBy}, ${isPL ? "P&L" : "BS"}): ${acct.name} cls=${acct.classification} gl=${acct.glBalance.toFixed(2)} tb=${tbBalance.toFixed(2)} raw=${rawVariance.toFixed(2)} norm=${effectiveVariance.toFixed(2)}`);
             varianceLogged++;
           }
         }
