@@ -389,18 +389,24 @@ function buildLineItems(
   uploadedTotals: DerivedTotals | undefined | null
 ): ValidationLineItem[] {
   const defs = LINE_ITEM_DEFS[documentType] || [];
-  return defs.map(({ key, label }) => {
+  const OPTIONAL_KEYS = new Set(['totalOtherIncome', 'totalOtherExpense']);
+
+  return defs.flatMap(({ key, label }) => {
     const tbValue = (derivedTotals as Record<string, number>)[key] || 0;
     const rawUploaded = uploadedTotals?.[key as keyof DerivedTotals];
-    
+
+    if (OPTIONAL_KEYS.has(key) && Math.abs(tbValue) < 1 && (rawUploaded == null || Math.abs(rawUploaded as number) < 1)) {
+      return [];
+    }
+
     if (rawUploaded === null || rawUploaded === undefined) {
-      return { lineItem: label, uploadedValue: null, trialBalanceValue: tbValue, variance: null, variancePercent: null, status: 'extraction_failed' as const };
+      return [{ lineItem: label, uploadedValue: null, trialBalanceValue: tbValue, variance: null, variancePercent: null, status: 'extraction_failed' as const }];
     }
 
     const uploadedValue = rawUploaded as number;
     const variance = uploadedValue - tbValue;
     const variancePercent = tbValue !== 0 ? (variance / Math.abs(tbValue)) * 100 : 0;
-    return { lineItem: label, uploadedValue, trialBalanceValue: tbValue, variance, variancePercent, status: getVarianceStatus(variance, tbValue) };
+    return [{ lineItem: label, uploadedValue, trialBalanceValue: tbValue, variance, variancePercent, status: getVarianceStatus(variance, tbValue) }];
   });
 }
 
