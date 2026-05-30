@@ -143,10 +143,29 @@ serve(async (req) => {
       }
     }
 
-    const accounts = Array.from(acctMap.values());
-    console.log(`[ANALYZE-GL] Aggregated ${accounts.length} unique accounts`);
+    let accounts = Array.from(acctMap.values());
 
-    // ── Pull latest TB (monthly reports) and build leaf-name index from latest period ──
+    // ── Dedupe parent-rollup rows. If "X" and "X:Y" both exist with non-zero balances,
+    //    "X" is the rollup (QuickBooks GL emits both header and detail rows) → drop it. ──
+    {
+      const fqByLeafCount = new Map<string, number>();
+      for (const a of accounts) {
+        if (a.name.includes(":")) {
+          const leaf = a.name.split(":").pop()!.toLowerCase().trim();
+          fqByLeafCount.set(leaf, (fqByLeafCount.get(leaf) || 0) + 1);
+        }
+      }
+      const namesLower = new Set(accounts.map(a => a.name.toLowerCase()));
+      accounts = accounts.filter(a => {
+        // Drop bare "X" when a child "X:Y" exists
+        const hasChild = !a.name.includes(":") && Array.from(namesLower).some(n => n.startsWith(a.name.toLowerCase() + ":"));
+        return !hasChild;
+      });
+    }
+    console.log(`[ANALYZE-GL] Aggregated ${accounts.length} unique accounts (post-rollup dedupe)`);
+
+    // ── Pull latest TB and build CUMULATIVE YTD balance per account by summing
+    //    across ALL monthly reports, so it aligns with GL YTD sums (not just last month). ──
     const { data: tbRecords } = await supabase
       .from("processed_data").select("data, created_at, period_end")
       .eq("project_id", projectId).eq("data_type", "trial_balance")
@@ -157,15 +176,20 @@ serve(async (req) => {
     const tbByName = new Map<string, TBAcct>();
     const tbByAcctNum = new Map<string, TBAcct>();
     let tbHas = false;
+    let monthlyReportCount = 0;
 
     if (tbRecords && tbRecords.length > 0) {
       const tbData = tbRecords[0].data as Record<string, unknown>;
       const monthly = (tbData.monthlyReports as Array<Record<string, unknown>>) || [];
-      // Use the LAST monthly report (most recent period)
-      const lastReport = monthly[monthly.length - 1];
-      const rows = (((lastReport?.report as Record<string, unknown>)?.rows as Record<string, unknown>)?.row as Array<Record<string, unknown>>) || [];
+      monthlyReportCount = monthly.length;
 
-      const walk = (rs: Array<Record<string, unknown>>) => {
+      // Build per-account series: for each report (chronological), the {debit, credit}.
+      // Then collapse: BS accounts use LAST report's balance (point-in-time); P&L accounts
+      // sum across ALL monthly reports (YTD). Classification comes from COA lookup.
+      type Series = { name: string; acctId: string | null; perMonth: Array<{ debit: number; credit: number }> };
+      const series = new Map<string, Series>();
+
+      const walk = (rs: Array<Record<string, unknown>>, monthIdx: number) => {
         for (const r of rs) {
           const cd = (r.colData as Array<Record<string, unknown>>) || [];
           if (cd.length >= 2) {
@@ -174,21 +198,57 @@ serve(async (req) => {
             const debit = parseFloat(String(cd[1]?.value || "0").replace(/[,$]/g, "")) || 0;
             const credit = cd.length >= 3 ? (parseFloat(String(cd[2]?.value || "0").replace(/[,$]/g, "")) || 0) : 0;
             if (name && (debit !== 0 || credit !== 0)) {
-              const balance = debit - credit;
-              const t: TBAcct = { name, debit, credit, balance };
-              tbByName.set(name.toLowerCase(), t);
-              tbByLeaf.set(normName(name), t);
-              if (acctId) tbByAcctNum.set(acctId, t);
+              const key = name.toLowerCase();
+              let s = series.get(key);
+              if (!s) {
+                s = { name, acctId: acctId || null, perMonth: [] };
+                series.set(key, s);
+              }
+              while (s.perMonth.length <= monthIdx) s.perMonth.push({ debit: 0, credit: 0 });
+              s.perMonth[monthIdx].debit += debit;
+              s.perMonth[monthIdx].credit += credit;
               tbHas = true;
             }
           }
           const nested = (r.rows as Record<string, unknown>)?.row as Array<Record<string, unknown>>;
-          if (nested) walk(nested);
+          if (nested) walk(nested, monthIdx);
         }
       };
-      walk(rows);
+
+      monthly.forEach((report, idx) => {
+        const rows = (((report?.report as Record<string, unknown>)?.rows as Record<string, unknown>)?.row as Array<Record<string, unknown>>) || [];
+        walk(rows, idx);
+      });
+
+      const isBSClass = (c: string) => c === "ASSET" || c === "LIABILITY" || c === "EQUITY";
+
+      for (const [key, s] of series) {
+        // Look up classification via COA (name → leaf → acctNum)
+        const coa = coaByName.get(key) || coaByLeaf.get(normName(s.name)) ||
+                    (s.acctId ? coaByAcctNum.get(s.acctId) : undefined);
+        const cls = (coa?.classification || "OTHER").toUpperCase();
+        let debit = 0, credit = 0;
+        if (isBSClass(cls)) {
+          // Point-in-time: take last non-empty monthly snapshot
+          for (let i = s.perMonth.length - 1; i >= 0; i--) {
+            if (s.perMonth[i].debit !== 0 || s.perMonth[i].credit !== 0) {
+              debit = s.perMonth[i].debit;
+              credit = s.perMonth[i].credit;
+              break;
+            }
+          }
+        } else {
+          // P&L (or unknown): sum YTD
+          for (const m of s.perMonth) { debit += m.debit; credit += m.credit; }
+        }
+        const t: TBAcct = { name: s.name, debit, credit, balance: debit - credit };
+        tbByName.set(key, t);
+        tbByLeaf.set(normName(s.name), t);
+        if (s.acctId) tbByAcctNum.set(s.acctId, t);
+      }
     }
-    console.log(`[ANALYZE-GL] TB has ${tbByLeaf.size} accounts`);
+    console.log(`[ANALYZE-GL] TB has ${tbByLeaf.size} accounts (BS=point-in-time, P&L=YTD-sum across ${monthlyReportCount} monthly reports)`);
+    console.log(`[ANALYZE-GL] TB has ${tbByLeaf.size} accounts (cumulative YTD across ${monthlyReportCount} monthly reports)`);
 
     // ── Reconciliation ──
     const reconciliation: TBComparison[] = [];
@@ -207,11 +267,17 @@ serve(async (req) => {
 
       if (tb) {
         matchedTbKeys.add(tb.name.toLowerCase());
+        // Sign convention can differ between GL (debit-positive) and TB (credit-balance)
+        // especially for revenue/liability/equity accounts. Compare magnitudes for the
+        // match decision; preserve signed variance for display.
         const variance = acct.glBalance - tb.balance;
-        const absVar = Math.abs(variance);
+        const absDiffSigned = Math.abs(variance);
+        const absDiffMag = Math.abs(Math.abs(acct.glBalance) - Math.abs(tb.balance));
+        const absDiff = Math.min(absDiffSigned, absDiffMag);
         const denom = Math.max(Math.abs(acct.glBalance), Math.abs(tb.balance), 1);
-        const variancePct = absVar / denom;
-        const isMatch = absVar < 1 || variancePct < 0.005;
+        const variancePct = absDiff / denom;
+        // Treat <$50 absolute or <0.5% relative as match; <$500 absolute as immaterial
+        const isMatch = absDiff < 50 || variancePct < 0.005;
         const cmp: TBComparison = {
           accountName: acct.name,
           glBalance: acct.glBalance,
@@ -223,7 +289,7 @@ serve(async (req) => {
         if (isMatch) matchCount++;
         else {
           varianceCount++;
-          if (absVar > 1000 || variancePct > 0.05) materialVariances.push(cmp);
+          if (absDiff > 1000 && variancePct > 0.05) materialVariances.push(cmp);
         }
       } else if (tbHas) {
         missingInTB++;
@@ -251,21 +317,24 @@ serve(async (req) => {
     const accountTypeBreakdown: Record<string, number> = {};
     for (const a of accounts) accountTypeBreakdown[a.classification] = (accountTypeBreakdown[a.classification] || 0) + 1;
 
-    // ── Accounting identity: Assets − Liabilities − Equity = 0 ──
-    let sumAssets = 0, sumLiab = 0, sumEquity = 0, sumIncome = 0, sumExpense = 0;
+    // ── Accounting identity: Assets = Liabilities + Equity + (Revenue − Expense)
+    //    Handle both sign conventions: detect whether revenues sum positive (debit-positive
+    //    convention common in QB GL exports) or negative (true double-entry signed sum). ──
+    let sumAssets = 0, sumLiab = 0, sumEquity = 0, sumRevenue = 0, sumExpense = 0;
     for (const a of accounts) {
-      switch (a.classification) {
-        case "ASSET": sumAssets += a.glBalance; break;
-        case "LIABILITY": sumLiab += a.glBalance; break;
-        case "EQUITY": sumEquity += a.glBalance; break;
-        case "INCOME": sumIncome += a.glBalance; break;
-        case "EXPENSE": sumExpense += a.glBalance; break;
-      }
+      const c = a.classification;
+      if (c === "ASSET") sumAssets += a.glBalance;
+      else if (c === "LIABILITY") sumLiab += a.glBalance;
+      else if (c === "EQUITY") sumEquity += a.glBalance;
+      else if (c === "REVENUE" || c === "INCOME" || c === "OTHER_INCOME") sumRevenue += a.glBalance;
+      else if (c === "EXPENSE" || c === "COST_OF_GOODS_SOLD" || c === "OTHER_EXPENSE") sumExpense += a.glBalance;
     }
-    // Liabilities & Equity are typically credit-balances (negative in signed sum) → flip
+    // Normalize to positive magnitudes (credit-balance accounts may be signed negative).
     const liabAbs = Math.abs(sumLiab);
     const equityAbs = Math.abs(sumEquity);
-    const netIncome = Math.abs(sumIncome) - Math.abs(sumExpense);
+    const revenueAbs = Math.abs(sumRevenue);
+    const expenseAbs = Math.abs(sumExpense);
+    const netIncome = revenueAbs - expenseAbs;
     const accountingEquationDiff = sumAssets - liabAbs - equityAbs - netIncome;
 
     // ── Largest accounts by |balance| ──
@@ -290,10 +359,15 @@ serve(async (req) => {
         flags.push(`Suspense/clearing account "${a.name}" has non-zero balance (${a.glBalance.toFixed(2)})`);
       }
     }
-    // Round-number balances on large accounts (potential plug)
+    // Round-number balances — only flag on revenue/expense accounts where round numbers
+    // suggest manual journal plugs. Skip assets, liabilities (loan principals), equity,
+    // and any account whose name implies a loan/note/mortgage/LOC.
+    const loanLike = /loan|note|mortgage|line of credit|capital lease/i;
     for (const a of accounts) {
       const abs = Math.abs(a.glBalance);
-      if (abs >= 10000 && abs % 1000 === 0 && a.classification !== "ASSET") {
+      const c = a.classification;
+      const isPL = c === "REVENUE" || c === "INCOME" || c === "EXPENSE" || c === "COST_OF_GOODS_SOLD" || c === "OTHER_INCOME" || c === "OTHER_EXPENSE";
+      if (isPL && !loanLike.test(a.name) && abs >= 10000 && abs % 1000 === 0) {
         flags.push(`Round-number balance on ${a.name}: ${a.glBalance.toFixed(0)} — possible plug entry`);
       }
     }
