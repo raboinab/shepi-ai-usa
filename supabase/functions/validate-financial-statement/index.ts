@@ -111,6 +111,8 @@ function classifyISAccount(accountName: string, accountType: string): 'revenue' 
   // Name-based hard overrides for below-the-line items (catches QB's combined "Other expense (income)" type)
   if (name.includes('interest income') || name.includes('interest earned') || name.includes('dividend income') || name.includes('gain on') || name.includes('portfolio income')) return 'other_income';
   if (name.includes('interest expense') || name.includes('loss on') || name.includes('penalt') || name.includes('settlement')) return 'other_expense';
+  // QuickBooks reports Depreciation/Amortization below the line in "Other Expense", regardless of COA type
+  if (name.includes('depreciation') || name.includes('amortization') || name.includes('amortisation')) return 'other_expense';
 
   // Type-based: "Other income"
   if (type.includes('other income')) return 'other_income';
