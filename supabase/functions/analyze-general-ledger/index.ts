@@ -297,7 +297,7 @@ serve(async (req) => {
       .eq("project_id", projectId).eq("data_type", "trial_balance")
       .order("created_at", { ascending: false }).limit(1);
 
-    type TBAcct = { name: string; debit: number; credit: number; balance: number };
+    type TBAcct = { name: string; debit: number; credit: number; balance: number; snapshotIdx?: number };
     const tbByLeaf = new Map<string, TBAcct>();
     const tbByName = new Map<string, TBAcct>();
     const tbByAcctNum = new Map<string, TBAcct>();
