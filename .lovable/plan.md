@@ -1,56 +1,71 @@
-# Fix GL ↔ TB reconciliation in `analyze-general-ledger`
+# Fix GL detail parser column-detection bug in `analyze-general-ledger`
 
-## Root cause (confirmed against live data, project `fa07…`, `processed_data` id `ad99…`)
+## Root cause (confirmed against live data, project `fa07…`, processed_data id `779284ae`)
 
-I queried the actual `monthlyReports` array and traced "Decks and Patios" across all 36 months:
+The QuickBooks GL detail JSON has only **one money column per DATA row** (col 7 = Amount). There is no running balance column. But occasional non-money columns happen to contain a stray numeric string — e.g. a doc-num "1" — which the parser counts as a money column.
+
+For "Decks and Patios" (23 DATA rows):
 
 ```
-i=3   credit  300.30
-i=4   credit  300.30
-i=5   credit  300.30
-i=6   credit  300.30
-i=7   debit   606.09
-…
-i=35  debit  7363.81  (Job Expenses:Job Materials:Decks and Patios)
-i=35  credit 15314.13 (Landscaping Services:Job Materials:Decks and Patios)
+col  numeric_count   colsum
+0    0               0          (account name)
+1    0               0          (date)
+2    0               0          (txn type)
+3    1               1          ← stray "1" in doc-num field
+4    0               0
+5    0               0
+6    0               0          (split account name)
+7    23              13,036.85  ← real Amount column
 ```
 
-Three bugs, all in the TB ingestion side of the edge function:
+The current detection at lines 130–153 sorts all columns that had ≥1 numeric value and picks the **second-from-last** as `amountColIdx` and the **last** as `balanceColIdx`. So it picks:
 
-1. **Each monthly TB report is a YTD-cumulative snapshot** — values plateau across consecutive months (300.30 for 4 months in a row) and only step when new activity posts. The current P&L branch sums all 36 months → multiplies the true period total by ~36 (Decks TB shows −$1.67M; actual signed leaf ≈ −$15k). The earlier "sum YTD across months" assumption was wrong.
-2. **Same leaf name appears under multiple parent groups** in QBO TB output (`Landscaping Services:Job Materials:Decks and Patios` AND `Job Expenses:Job Materials:Decks and Patios`). GL reports the bare leaf "Decks and Patios". Today `series` is keyed by the full colon-delimited name, then `tbByLeaf.set(normName(s.name), t)` last-write-wins on the leaf — silently dropping one of the two halves and breaking the sign.
-3. **Name matching mismatch** — only 1/76 accounts match. GL uses leaves; TB has parent-prefixed paths; both sides also vary on punctuation (`(A/R)`, `&`, double spaces). Normalization needs to be symmetric on both sides.
+- `amountColIdx = 3` (1-of-23 hit rate, captures basically nothing)
+- `balanceColIdx = 7` (the real amount column, **mis-classified as running balance**)
 
-## Fix (edge function only — `supabase/functions/analyze-general-ledger/index.ts`, lines ~293–435)
+In the loop, `endingBalance` is overwritten on every row with col-7's value, so it ends up as the **last transaction's amount** (Decks: $103.55). The final preference rule at line 193 (`if balanceColIdx ≥ 0 && endingBalance ≠ 0 → glBalance = endingBalance`) then ships that single-transaction number as the account's GL balance.
 
-### 1. Treat monthly TB reports as YTD-cumulative snapshots (BS and P&L)
-- Replace the BS-vs-P&L branching with a single rule: use the **last populated monthly report** for every account regardless of classification.
-- A monthly TB run for month N in QBO contains end-of-month-N YTD balances; end-of-Dec-2025 IS the period total for P&L AND the snapshot for BS. No summing.
-- Keep the fallback walk-back to last non-empty month if the chosen slot is missing for a particular account.
-- Drop `looksMonotonic`, `bsNameRe`, and the YTD-sum branch — no longer needed.
+This explains every variance in the log:
 
-### 2. Aggregate by leaf with signed net (debit − credit)
-- After building `series` keyed by full path, build `tbByLeaf` by summing `debit − credit` across all series entries that share the same normalized leaf.
-- Result: `Decks and Patios` leaf TB balance = (revenue credit) + (expense debit) netted to one signed number, which can be compared to GL's leaf "Decks and Patios".
-- Keep `tbByName` (full path) and `tbByAcctNum` for first-pass exact matching; fall through to leaf aggregate.
+| Account | GL (now) | Real net sum of Amount col | TB |
+|---|---|---|---|
+| Decks and Patios | $103.55 | ~$13,037 | −$86,820 |
+| Labor | $148,371 | (last txn) | −$69,018 |
+| Office Expenses | $18 | (last txn) | $3,694 |
+| Other Income | $331,583 | (last txn) | −$6,607 |
 
-### 3. Symmetric name normalization
-- Introduce `normKey(s)` = `s.toLowerCase().replace(/\([^)]*\)/g, "").replace(/[^a-z0-9]+/g, " ").trim()`.
-- Apply on both GL side (`acct.name` and `acct.leaf`) and TB side (full path leaf and series key) so "Accounts Receivable (A/R)" matches "accounts receivable".
-- Match order per GL account: `acctNumber` → `normKey(full name)` → `normKey(leaf)`.
+(GL-vs-TB sign and magnitude beyond this are a separate sandbox-data question; the parser bug is the dominant error.)
 
-### 4. Diagnostics
-- Keep the per-variance `console.log` (capped 25). Add one extra log line per match: `matchedBy=acctNum|fullName|leaf`. Add a summary line: `matchCount/totalAccounts and TB-leaves-aggregated`.
+## Fix — `supabase/functions/analyze-general-ledger/index.ts`, lines 130–153
 
-## Out of scope
-- `qbToJson` ingestion (storage shape is correct; the analyzer was reading it wrong).
-- Frontend `src/lib/trialBalanceUtils.ts` (separate UI parser, not used by the edge function).
-- COA enrichment / classification side of the file.
-- `GeneralLedgerInsightsCard` UI — display layer is unchanged; only the numbers feeding it change.
+Require a money column to actually be **dense** before treating it as such. Concretely:
+
+1. After building `moneyColFreq`, drop any column whose hit rate is below a threshold:
+   ```
+   minHits = max(3, ceil(sampled * 0.5))
+   moneyIdxsSorted = [...moneyColFreq.entries()]
+       .filter(([, n]) => n >= minHits)
+       .map(([i]) => i)
+       .sort((a, b) => a - b)
+   ```
+2. Keep the existing branching (`length ≥ 2` ⇒ amount + balance; `length === 1` ⇒ amount only; `0` ⇒ leave both -1, glBalance defaults to 0).
+3. Additional safety on the "balance" branch: when `balanceColIdx` is selected, also require that the column be **monotonically related** to the amount column on the sample (i.e. actually behaves like a running balance). If not, downgrade to `balanceColIdx = -1` and treat the higher-index column as `amountColIdx`. This handles future QBO variants where some other dense numeric column appears.
+4. Update the comment block at lines 130–133 to reflect the new heuristic.
+
+No other functions or files need to change. The TB-side fix from the previous turn stays.
 
 ## Verification after deploy
-Re-run analysis on the existing deal and check the edge-function logs / UI:
-- `Matched Accounts` should jump from `1 / 76` to roughly `50+ / 76`.
-- `Decks and Patios` TB column should be in the −$15k range, not −$1.67M.
-- `Checking` TB stays ≈ $410,901 (Dec-2025 snapshot is correct; the GL-side $260k vs TB $411k is a real ingestion variance, not an analyzer bug — flag remains).
-- `A − L − E − NI` identity should drop substantially (revenue inflation removed).
+
+Re-run analysis on the existing deal. Edge-function log should show:
+
+- `[ANALYZE-GL] Parsed 76 accounts / 7691 txns` (unchanged).
+- The per-variance log lines should show `gl=` values in the thousands or tens-of-thousands range for the previously-truncated leaf accounts (Decks, Plants and Soil, Sprinklers, Fuel, Office Expenses), not in the $10–$200 range.
+- `matched=` count should jump materially above 1/76 — most P&L accounts will newly land within the existing match tolerance.
+- Any GL-vs-TB residuals after this fix are real data variances (or sandbox quirks), not parser bugs.
+
+## Out of scope
+
+- TB ingestion (already fixed last turn).
+- COA enrichment / classification (separate file; unaffected).
+- The GL ingestion pipeline (`qbToJson` / CSV parser) that produced `processed_data.data` — we just consume what's already stored.
+- Frontend display.
