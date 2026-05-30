@@ -1,57 +1,47 @@
-## What's happening
+## What went wrong
 
-On your validation card:
+My previous fix made it worse. TB equity jumped from $2,252,980 → $16,039,005 (gap is now -$13.3M, was +$526k).
 
-- **Total Assets** match exactly ($2,893,672 = $2,893,672) → no variance, so the Uploaded/Variance cells render blank (that's working as designed for a perfect match — but it looks empty/confusing).
-- **Total Liabilities** off by $1 → rounding, treated as match.
-- **Total Equity** off by **$526,104 (+23.4%)** → flagged "significant."
+Root cause: `deriveTotalsFromTrialBalance` sums IS account values across **every period key in `monthlyValues`** when `periodStart`/`periodEnd` aren't passed (line 134 → `getPeriodKeysInRange`). That produces **multi-year accumulated net income** (~$13.8M across all months in the TB), not the current-year YTD figure.
 
-Because Assets match and Liabilities match, the only way Equity can differ is if the TB-derived equity total is missing something. It is.
+I then added that whole number on top of equity. But the TB's Retained Earnings row at period-end already contains all prior closed years' earnings. So I double-counted every prior year and then some.
 
-## Root cause
+The original $526,104 gap was exactly **current fiscal-year YTD net income** — the uploaded seller's BS shows period-end equity = RE-closed-through-prior-FY + YTD earnings, while TB equity rows alone only reflect RE-closed-through-prior-FY.
 
-In `supabase/functions/validate-financial-statement/index.ts`, the `deriveTotalsFromTB` function (around lines 116–169) sums **only BS-type accounts** classified as equity (Retained Earnings, Common Stock, Owner's Equity, Distributions, etc.). It computes `netIncome = grossProfit - totalExpenses` on the same pass but **never adds it to `totalEquity`**.
+## The right fix
 
-A real balance sheet's equity = beginning retained earnings + **current-period net income** + other equity. The seller's uploaded BS includes the YTD earnings; ours doesn't. So:
+Roll in **only current-fiscal-year YTD net income**, not all-history net income.
 
-```
-$2,779,084 (uploaded equity)
-− $2,252,980 (TB equity rows only)
-= $526,104  ← exactly the YTD net income missing from the roll-up
-```
+Steps in `supabase/functions/validate-financial-statement/index.ts`:
 
-That's why the "Trial Balance-derived: Not balanced" warning also fires — the same $526k gap means Assets ≠ Liabilities + Equity on our side.
+1. **Pass fiscal year context into `deriveTotalsFromTrialBalance`.** The handler already loads `project.fiscal_year_end` (need to add to the select on line 365) and has `effectivePeriodEnd`. Pass both into the deriver.
 
-## The fix
+2. **Compute YTD start.** Given `fiscal_year_end` (e.g. "12-31") and `effectivePeriodEnd` (or latest TB month if missing), compute the first month of the current open fiscal year. Fallback: if no `fiscal_year_end`, use Jan 1 of the year of the latest TB period.
 
-Two small, surgical changes to `supabase/functions/validate-financial-statement/index.ts`:
+3. **Compute `ytdNetIncome` separately** by re-running the IS aggregation restricted to keys between YTD-start and periodEnd. Leave the existing `netIncome` (full-range) alone for the IS validation path — it's needed there.
 
-1. **Roll net income into TB equity** in `deriveTotalsFromTB`:
-   - After computing `netIncome`, set `totalEquity = totalEquity + netIncome` before returning.
-   - This matches GAAP period-end equity = book equity + YTD earnings closed to RE.
+4. **Roll only `ytdNetIncome` into equity**:
+   ```ts
+   const totalEquityWithYTD = totalEquity + ytdNetIncome;
+   return { ..., totalEquity: totalEquityWithYTD, netIncome /* unchanged */ };
+   ```
 
-2. **Re-evaluate `tbIsBalanced`** with the corrected equity (already uses `derivedTotals.totalEquity`, so it'll auto-correct once #1 lands).
+5. **Cap protection**: if `Math.abs(ytdNetIncome) > Math.abs(totalRevenue)` for the YTD slice, log a warning and skip the rollup — defensive against bad classification.
 
-Expected result after fix on this deal:
-- Total Equity: TB shows ~$2,779,084 → matches uploaded, variance ≈ $0.
-- `tbIsBalanced` flips to true.
-- Overall match score jumps from 67% → ~100%.
-- The "Trial Balance / Chart of Accounts mapping issue" info alert disappears.
+## Expected result on this deal
 
-## Small UX cleanup (optional, same card)
+- YTD slice (likely Jan–latest 2024 or 2025) → netIncome ≈ $526,104.
+- TB equity: $2,252,980 + $526,104 = $2,779,084 → matches uploaded.
+- Variance → $0, `tbIsBalanced` → true, score → ~100%.
 
-In `FinancialStatementValidationCard.tsx`, when a line item is a perfect match the **Uploaded** and **Variance** cells render as empty/blank, which is what you saw on the Total Assets row and made the table look broken. Two options:
+## Files
 
-- **A. Leave as-is** — current behavior, blanks mean "no variance worth showing."
-- **B. Always show Uploaded value**, and show "$0 (0.0%)" or a "—" in Variance for matches.
+- `supabase/functions/validate-financial-statement/index.ts` only.
+  - Add `fiscal_year_end` to project select.
+  - Add `computeYtdRange(fiscalYearEnd, periodEnd, availableKeys)` helper.
+  - Add `sumIsForKeyRange(accounts, keys)` helper (or parameterize the existing loop).
+  - Replace the unconditional `totalEquity + netIncome` with YTD-only rollup.
 
-I'd recommend **B** — it makes the table self-explanatory at a glance. Let me know if you want this included.
+No client, schema, or migration changes. Auto-redeploys; re-run validation on the existing upload — no re-upload needed.
 
-## Files to change
-
-- `supabase/functions/validate-financial-statement/index.ts` — add net income to TB equity in `deriveTotalsFromTB` (~2 lines).
-- *(optional)* `src/components/wizard/shared/FinancialStatementValidationCard.tsx` — always render uploaded value + explicit "$0" variance for matches (~5 lines).
-
-No DB migrations, no client logic changes beyond the optional UX tweak. After redeploy you can re-run the validation on the same uploaded CSV — no re-upload needed.
-
-Want me to ship just the equity fix, or include the UX cleanup too?
+Want me to ship it?

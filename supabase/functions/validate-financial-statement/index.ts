@@ -107,14 +107,62 @@ function classifyISAccount(accountName: string, accountType: string): 'revenue' 
   return 'expense';
 }
 
+/**
+ * Compute the start month key (YYYY-MM) of the current open fiscal year
+ * given fiscal_year_end (e.g. "12-31", "06-30") and the period-end we're reporting at.
+ * Falls back to Jan of periodEnd's year if fiscalYearEnd is missing/unparseable.
+ */
+function computeFiscalYtdStartKey(fiscalYearEnd: string | null | undefined, periodEndKey: string): string {
+  const [endYearStr, endMonthStr] = periodEndKey.split('-');
+  const endYear = parseInt(endYearStr, 10);
+  const endMonth = parseInt(endMonthStr, 10);
+
+  let fyEndMonth = 12;
+  if (fiscalYearEnd) {
+    const m = fiscalYearEnd.match(/(\d{1,2})[-\/](\d{1,2})/);
+    if (m) {
+      // Accept both MM-DD and YYYY-MM-DD style; first group treated as month if <=12
+      const a = parseInt(m[1], 10);
+      const b = parseInt(m[2], 10);
+      fyEndMonth = a <= 12 ? a : b;
+    }
+  }
+
+  // FY-start month = month after FY-end month
+  const fyStartMonth = (fyEndMonth % 12) + 1;
+  // If the periodEnd month is on/after fyStart, current FY started this calendar year; else last year.
+  const fyStartYear = endMonth >= fyStartMonth ? endYear : endYear - 1;
+  return `${fyStartYear}-${String(fyStartMonth).padStart(2, '0')}`;
+}
+
 function deriveTotalsFromTrialBalance(
   accounts: TrialBalanceAccount[],
   documentType: string,
   periodStart?: string | null,
-  periodEnd?: string | null
+  periodEnd?: string | null,
+  fiscalYearEnd?: string | null
 ): DerivedTotals {
   let totalAssets = 0, totalLiabilities = 0, totalEquity = 0;
   let totalRevenue = 0, totalCogs = 0, totalExpenses = 0;
+  // Parallel YTD-only IS accumulators for the current open fiscal year
+  let ytdRevenue = 0, ytdCogs = 0, ytdExpenses = 0;
+
+  // Determine YTD start key (only needed for BS validation rollup)
+  let ytdStartKey: string | null = null;
+  if (documentType === 'balance_sheet') {
+    // Use periodEnd if given, else latest period across all accounts
+    let referenceEndKey = periodEnd ? periodEnd.slice(0, 7) : null;
+    if (!referenceEndKey) {
+      for (const a of accounts) {
+        const k = getLatestPeriodKey(a.monthlyValues);
+        if (k && (!referenceEndKey || k > referenceEndKey)) referenceEndKey = k;
+      }
+    }
+    if (referenceEndKey) {
+      ytdStartKey = computeFiscalYtdStartKey(fiscalYearEnd, referenceEndKey);
+    }
+  }
+  const ytdEndKey = periodEnd ? periodEnd.slice(0, 7) : null;
 
   for (const account of accounts) {
     let value = 0;
@@ -145,37 +193,53 @@ function deriveTotalsFromTrialBalance(
     if (account.fsType === 'BS') {
       const bucket = classifyBSAccount(account.accountName, account.accountType);
       if (!bucket) continue;
-      // TB convention: assets carry their natural (positive) sign, liabilities & equity
-      // carry credit balances (negative). Flip to reporting (positive) sign for L & E.
       if (bucket === 'asset') totalAssets += value;
       else if (bucket === 'liability') totalLiabilities += -value;
       else totalEquity += -value;
     } else if (account.fsType === 'IS') {
       const bucket = classifyISAccount(account.accountName, account.accountType);
-      // Revenue stored as credit (negative) in many TBs → report positive
       if (bucket === 'revenue') totalRevenue += -value;
       else if (bucket === 'cogs') totalCogs += Math.abs(value);
       else if (bucket === 'expense') totalExpenses += Math.abs(value);
+
+      // YTD slice for equity rollup
+      if (ytdStartKey) {
+        const ytdKeys = Object.keys(account.monthlyValues).filter(k =>
+          k >= ytdStartKey! && (!ytdEndKey || k <= ytdEndKey)
+        );
+        const ytdValue = ytdKeys.reduce((sum, k) => sum + (account.monthlyValues[k] || 0), 0);
+        if (bucket === 'revenue') ytdRevenue += -ytdValue;
+        else if (bucket === 'cogs') ytdCogs += Math.abs(ytdValue);
+        else if (bucket === 'expense') ytdExpenses += Math.abs(ytdValue);
+      }
     }
   }
 
   const grossProfit = totalRevenue - totalCogs;
   const netIncome = grossProfit - totalExpenses;
+  const ytdNetIncome = (ytdRevenue - ytdCogs) - ytdExpenses;
 
-  // Roll current-period net income into equity for balance-sheet comparisons.
-  // A real balance sheet shows period-end equity = book equity + YTD earnings
-  // closed to retained earnings. TB equity rows alone exclude that — so without
-  // this roll-up, TB-derived equity is short by exactly net income and the
-  // sheet appears unbalanced even when it isn't.
-  const totalEquityWithNetIncome = totalEquity + netIncome;
+  // Roll only current-FY YTD net income into equity. TB Retained Earnings already
+  // contains all prior closed years; adding all-history netIncome would double-count.
+  let totalEquityAdjusted = totalEquity;
+  if (documentType === 'balance_sheet' && ytdStartKey) {
+    // Defensive: skip rollup if YTD net income exceeds YTD revenue (classification gone wrong)
+    if (Math.abs(ytdNetIncome) > Math.abs(ytdRevenue) * 2 && ytdRevenue !== 0) {
+      console.warn(`[validate-fs] Skipping equity YTD rollup: ytdNetIncome=${ytdNetIncome} vs ytdRevenue=${ytdRevenue}`);
+    } else {
+      totalEquityAdjusted = totalEquity + ytdNetIncome;
+      console.log(`[validate-fs] Equity rollup: base=${totalEquity} + ytdNI=${ytdNetIncome} (YTD from ${ytdStartKey} to ${ytdEndKey || 'latest'}) = ${totalEquityAdjusted}`);
+    }
+  }
 
   return {
-    totalAssets, totalLiabilities, totalEquity: totalEquityWithNetIncome,
+    totalAssets, totalLiabilities, totalEquity: totalEquityAdjusted,
     totalRevenue, totalCogs, grossProfit, totalExpenses, netIncome,
     operatingCashFlow: netIncome, investingCashFlow: 0, financingCashFlow: 0,
     netChangeInCash: netIncome,
   };
 }
+
 
 // --- Variance helpers ---
 
