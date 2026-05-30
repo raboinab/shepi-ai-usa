@@ -275,6 +275,37 @@ function deriveTotalsFromTrialBalance(
   }
   const ytdEndKey = periodEnd ? periodEnd.slice(0, 7) : null;
 
+  // Infer IS bucket for orphan parent accounts from their children.
+  // QB-style parent rows (e.g. "Maintenance and Repair") sometimes get parsed
+  // with fsType=BS and empty accountType because they weren't matched to the
+  // Chart of Accounts. If their children are IS-classified into a single
+  // bucket, treat the parent as that same bucket.
+  type IsBucket = 'revenue' | 'cogs' | 'expense' | 'other_income' | 'other_expense';
+  const parentBucketInference = new Map<string, IsBucket>();
+  {
+    const childBuckets = new Map<string, Set<IsBucket>>();
+    for (const a of accounts) {
+      const name = a.accountName || '';
+      const colonIdx = name.indexOf(':');
+      if (colonIdx === -1) continue;
+      const root = name.slice(0, colonIdx).trim();
+      if (!root) continue;
+      let b: IsBucket | null = null;
+      if (a.fsType === 'IS') {
+        b = classifyISAccount(a.accountName, a.accountType) as IsBucket | null;
+      }
+      if (b) {
+        if (!childBuckets.has(root)) childBuckets.set(root, new Set());
+        childBuckets.get(root)!.add(b);
+      }
+    }
+    for (const [root, buckets] of childBuckets) {
+      if (buckets.size === 1) {
+        parentBucketInference.set(root, [...buckets][0]);
+      }
+    }
+  }
+
   for (const account of accounts) {
     let value = 0;
 
