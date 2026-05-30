@@ -297,7 +297,7 @@ serve(async (req) => {
       .eq("project_id", projectId).eq("data_type", "trial_balance")
       .order("created_at", { ascending: false }).limit(1);
 
-    type TBAcct = { name: string; debit: number; credit: number; balance: number };
+    type TBAcct = { name: string; debit: number; credit: number; balance: number; snapshotIdx?: number };
     const tbByLeaf = new Map<string, TBAcct>();
     const tbByName = new Map<string, TBAcct>();
     const tbByAcctNum = new Map<string, TBAcct>();
@@ -341,46 +341,88 @@ serve(async (req) => {
         }
       };
 
+      // Track which report indices actually contain any rows at all (global "populated month" set).
+      const populatedReportIdxs: number[] = [];
       monthly.forEach((report, idx) => {
         const rows = (((report?.report as Record<string, unknown>)?.rows as Record<string, unknown>)?.row as Array<Record<string, unknown>>) || [];
+        if (rows.length > 0) populatedReportIdxs.push(idx);
         walk(rows, idx);
       });
+      const lastPopulatedIdx = populatedReportIdxs.length > 0
+        ? populatedReportIdxs[populatedReportIdxs.length - 1]
+        : -1;
 
       const isBSClass = (c: string) => c === "ASSET" || c === "LIABILITY" || c === "EQUITY";
+
+      // Heuristic BS detector for accounts where COA classification is missing.
+      // QuickBooks Trial Balance monthly slices store BS balances as snapshots; if we sum
+      // them as YTD we get 10–30× inflation (the bug behind Workbook Checking $411k vs
+      // GL $260k). Detect by (a) account-name keywords or (b) monotonic per-month series.
+      const bsNameRe = /\b(checking|savings|cash|bank|deposit|undeposited|payable|receivable|loan|note|mortgage|line of credit|equity|retained|capital|fixed asset|accumulated|inventory|prepaid|accrued|payroll liab|tax payable|credit card)\b/i;
+      const looksMonotonic = (vals: number[]): boolean => {
+        const nz = vals.filter(v => v !== 0);
+        if (nz.length < 3) return false;
+        let nondec = true, noninc = true;
+        for (let i = 1; i < nz.length; i++) {
+          if (nz[i] < nz[i - 1]) nondec = false;
+          if (nz[i] > nz[i - 1]) noninc = false;
+        }
+        return nondec || noninc;
+      };
 
       for (const [key, s] of series) {
         // Look up classification via COA (name → leaf → acctNum)
         const coa = coaByName.get(key) || coaByLeaf.get(normName(s.name)) ||
                     (s.acctId ? coaByAcctNum.get(s.acctId) : undefined);
-        const cls = (coa?.classification || "OTHER").toUpperCase();
+        let cls = (coa?.classification || "OTHER").toUpperCase();
+        let snapshotIdx = -1;
+
+        // Heuristic BS detection when COA classification is unknown.
+        if (!isBSClass(cls) && cls === "OTHER") {
+          const balances = s.perMonth.map(m => m.debit - m.credit);
+          if (bsNameRe.test(s.name) || looksMonotonic(balances)) {
+            cls = "ASSET"; // treat as BS for snapshot purposes; identity bucket recomputed later via COA
+          }
+        }
+
         let debit = 0, credit = 0;
         if (isBSClass(cls)) {
-          // Point-in-time: take last non-empty monthly snapshot
-          for (let i = s.perMonth.length - 1; i >= 0; i--) {
-            if (s.perMonth[i].debit !== 0 || s.perMonth[i].credit !== 0) {
-              debit = s.perMonth[i].debit;
-              credit = s.perMonth[i].credit;
-              break;
+          // Point-in-time: prefer the globally-last populated monthly report. Zero is
+          // a valid snapshot — only fall back to an earlier month if this slot is missing.
+          if (lastPopulatedIdx >= 0 && lastPopulatedIdx < s.perMonth.length) {
+            debit = s.perMonth[lastPopulatedIdx].debit;
+            credit = s.perMonth[lastPopulatedIdx].credit;
+            snapshotIdx = lastPopulatedIdx;
+          }
+          if (snapshotIdx < 0 || (debit === 0 && credit === 0 && s.perMonth.length > 0)) {
+            // Genuine "account didn't exist this month" fallback: walk back to last non-empty.
+            for (let i = Math.min(lastPopulatedIdx, s.perMonth.length - 1); i >= 0; i--) {
+              if (s.perMonth[i] && (s.perMonth[i].debit !== 0 || s.perMonth[i].credit !== 0)) {
+                debit = s.perMonth[i].debit;
+                credit = s.perMonth[i].credit;
+                snapshotIdx = i;
+                break;
+              }
             }
           }
         } else {
           // P&L (or unknown): sum YTD
           for (const m of s.perMonth) { debit += m.debit; credit += m.credit; }
         }
-        const t: TBAcct = { name: s.name, debit, credit, balance: debit - credit };
+        const t: TBAcct = { name: s.name, debit, credit, balance: debit - credit, snapshotIdx };
         tbByName.set(key, t);
         tbByLeaf.set(normName(s.name), t);
         if (s.acctId) tbByAcctNum.set(s.acctId, t);
       }
     }
-    console.log(`[ANALYZE-GL] TB has ${tbByLeaf.size} accounts (BS=point-in-time, P&L=YTD-sum across ${monthlyReportCount} monthly reports)`);
-    console.log(`[ANALYZE-GL] TB has ${tbByLeaf.size} accounts (cumulative YTD across ${monthlyReportCount} monthly reports)`);
+    console.log(`[ANALYZE-GL] TB has ${tbByLeaf.size} accounts (BS=point-in-time @ last populated month, P&L=YTD-sum across ${monthlyReportCount} monthly reports)`);
 
     // ── Reconciliation ──
     const reconciliation: TBComparison[] = [];
     const matchedTbKeys = new Set<string>();
     let matchCount = 0, varianceCount = 0, missingInTB = 0;
     const materialVariances: TBComparison[] = [];
+    let varianceLogged = 0;
 
     for (const acct of accounts) {
       // Skip zero-balance, zero-activity accounts
@@ -416,6 +458,10 @@ serve(async (req) => {
         else {
           varianceCount++;
           if (absDiff > 1000 && variancePct > 0.05) materialVariances.push(cmp);
+          if (varianceLogged < 25) {
+            console.log(`[ANALYZE-GL] VARIANCE: ${acct.name} cls=${acct.classification} gl=${acct.glBalance.toFixed(2)} tb=${tb.balance.toFixed(2)} (tbIdx=${tb.snapshotIdx ?? "n/a"})`);
+            varianceLogged++;
+          }
         }
       } else if (tbHas) {
         missingInTB++;
@@ -446,20 +492,22 @@ serve(async (req) => {
     // ── Accounting identity: Assets = Liabilities + Equity + (Revenue − Expense)
     //    Handle both sign conventions: detect whether revenues sum positive (debit-positive
     //    convention common in QB GL exports) or negative (true double-entry signed sum). ──
+    // Apply Math.abs per-account *before* summing so sign-convention drift between
+    // imports (one liability +500, another −300) doesn't net to 200 and mask the real $800.
     let sumAssets = 0, sumLiab = 0, sumEquity = 0, sumRevenue = 0, sumExpense = 0;
     for (const a of accounts) {
       const c = a.classification;
-      if (c === "ASSET") sumAssets += a.glBalance;
-      else if (c === "LIABILITY") sumLiab += a.glBalance;
-      else if (c === "EQUITY") sumEquity += a.glBalance;
-      else if (c === "REVENUE" || c === "INCOME" || c === "OTHER_INCOME") sumRevenue += a.glBalance;
-      else if (c === "EXPENSE" || c === "COST_OF_GOODS_SOLD" || c === "OTHER_EXPENSE") sumExpense += a.glBalance;
+      const v = a.glBalance;
+      if (c === "ASSET") sumAssets += v; // assets keep sign so contra-assets net correctly
+      else if (c === "LIABILITY") sumLiab += Math.abs(v);
+      else if (c === "EQUITY") sumEquity += Math.abs(v);
+      else if (c === "REVENUE" || c === "INCOME" || c === "OTHER_INCOME") sumRevenue += Math.abs(v);
+      else if (c === "EXPENSE" || c === "COST_OF_GOODS_SOLD" || c === "OTHER_EXPENSE") sumExpense += Math.abs(v);
     }
-    // Normalize to positive magnitudes (credit-balance accounts may be signed negative).
-    const liabAbs = Math.abs(sumLiab);
-    const equityAbs = Math.abs(sumEquity);
-    const revenueAbs = Math.abs(sumRevenue);
-    const expenseAbs = Math.abs(sumExpense);
+    const liabAbs = sumLiab;
+    const equityAbs = sumEquity;
+    const revenueAbs = sumRevenue;
+    const expenseAbs = sumExpense;
     const netIncome = revenueAbs - expenseAbs;
     const accountingEquationDiff = sumAssets - liabAbs - equityAbs - netIncome;
 

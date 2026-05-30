@@ -1,56 +1,40 @@
+## Fix GL↔TB reconciliation in `analyze-general-ledger`
 
-## What's actually wrong
+Three concrete bugs in the analyzer are causing low TB match rates and the Checking-style snapshot gaps. All fixes are in `supabase/functions/analyze-general-ledger/index.ts`.
 
-I queried the data for this project. The "8% reconciled / A−L−E−NI off by $14.5M" output isn't because the books are bad — it's because `supabase/functions/analyze-general-ledger/index.ts` has four bugs that compound. Fixing them turns this from a noisy red card into a real reconciliation.
+### 1. TB BS "last non-empty month" is the wrong snapshot
 
-### Bug 1 — TB comparison uses only the LAST monthly report
+QuickBooks `TrialBalance` reports for BS accounts return the **as-of period-end balance** for the report's end date — not period-only activity. Today we pick the *last month where `debit !== 0 || credit !== 0`*. For accounts that had no December movement (very common for parked equity/loan accounts) we silently fall back to an older month and compare a stale snapshot against the YTD GL ending balance. That alone explains a chunk of "variances".
 
-```ts
-const lastReport = monthly[monthly.length - 1];   // ← only December
-```
+**Fix:** for BS accounts, pick the snapshot from the **chronologically last monthly report that contains *any* rows**, not the last month where this specific account moved. Track the global "last populated report index" once across the walk, then read `s.perMonth[lastIdx]` (zero counts as a valid snapshot). Fall back to the previous non-empty month only if that slot is genuinely absent (account didn't exist yet).
 
-The GL side sums `amount_signed` across **all** canonical transactions (full YTD: 18,148 rows) and ends up holding cumulative YTD balances. The TB side then pulls just the December monthly report. So every non-trivial account is "in variance" because we're comparing YTD-to-date against one month of activity. That's why matched is 7/85 — only accounts that happened to have minimal activity outside December "match".
+### 2. Classification fallthrough sums BS accounts as P&L YTD
 
-**Fix:** For balance-sheet accounts use the cumulative ending balance through the latest period (sum debits/credits across all monthly reports per account, or pick the QuickBooks report whose `header.endPeriod === periodEnd`); for income/expense accounts use the YTD sum. Use a single per-account cumulative balance map keyed off the FY-end, not just the last month's slice.
+When the COA lookup misses (no `acctId`, leaf-name collision, or COA simply doesn't list the account), `cls` defaults to `"OTHER"` and the code routes the account through the **P&L YTD-sum** branch. For a BS account that means we sum 12–36 monthly snapshots and produce a number 10–30× too large — e.g. Checking $260k → ~$3M. This is almost certainly the source of the Workbook-level $411k Checking figure too.
 
-### Bug 2 — Accounting identity ignores REVENUE
+**Fix:** add a heuristic BS detector that runs when COA classification is missing:
+- account name matches `/checking|savings|cash|bank|deposit|undeposited|payable|receivable|loan|note|mortgage|line of credit|equity|retained|capital|fixed asset|accumulated|inventory|prepaid|accrued|payroll liab|tax payable|credit card/i`
+- OR the account's per-month series is monotonically non-decreasing/non-increasing across ≥3 months (snapshot signature, not flow)
+Treat those as BS → point-in-time. Otherwise keep the P&L YTD path.
 
-```ts
-case "INCOME": sumIncome += a.glBalance; break;
-```
+### 3. Identity-check double-counts when GL signs are mixed
 
-The COA classification used by QuickBooks (and by the breakdown the UI already renders) is **`REVENUE`**, not `INCOME`. All 16 revenue accounts fall through the switch and contribute zero. Combined with `Math.abs(sumIncome) - Math.abs(sumExpense)`, net income becomes pure `-Expense` (≈ −$3.3M) and the identity check is off by $14.5M.
+`Math.abs(sumLiab)` / `Math.abs(sumEquity)` / `Math.abs(sumRevenue)` is applied to the **already-summed** total. If one liability is signed +500 and another −300 (sign convention drift across imports), the net is 200 and `Math.abs` gives 200, masking the real $800 of liabilities. Apply `Math.abs` per-account before summing instead.
 
-**Fix:** Accept both `REVENUE` and `INCOME` (and `COST_OF_GOODS_SOLD` → expense bucket). Compute net income with signed values, then handle the convention that revenues sum to a credit (negative signed) or debit (positive signed) consistently — don't blindly `Math.abs` after the fact. Add a normalization step that detects the sign convention from the dataset (whether revenues are stored positive or negative in `amount_signed`) and applies it uniformly.
+### 4. Diagnostics
 
-### Bug 3 — Parent + leaf accounts are double-counted
+Add a one-line `console.log` per reconciled account when status="variance" with `{name, classification, glBalance, tbBalance, tbSourceMonthIdx}` so the next debugging pass can read the edge function log instead of guessing. Cap to first 25 to keep logs sane.
 
-Largest Accounts shows both `Savings:Savings` ($7.4M) **and** `Savings` ($2.3M); same for `Checking`. The GL has rollup parent rows and detail leaf rows; the aggregator keys by lowercase fully-qualified name so it treats them as separate accounts, inflating Assets.
+### Out of scope
 
-**Fix:** Dedupe by detecting parent-rollup rows. Two safe heuristics: (a) if an account name `X` is a strict prefix of another account `X:Y` with non-zero activity, treat `X` as the rollup and exclude it from the identity sum; (b) prefer COA-leaf matching (`coaByLeaf`) and skip accounts whose normalized name appears as the leaf of multiple distinct fully-qualified COA entries.
+- qbToJson ingestion shape (confirmed not the bug since the same `monthlyReports[]` payload feeds the Workbook correctly when classification resolves).
+- Frontend TB parser (`src/lib/trialBalanceUtils.ts`) — unchanged.
+- COA enrichment — unchanged; the heuristic above is the safety net for when COA is incomplete.
 
-### Bug 4 — Round-number plug flags on loan principals
+### Verification
 
-`Notes Payable: 100000` and `Loan Payable: 16000` get flagged as possible plug entries, but loan principals are *expected* to be round numbers and they're already classified as LIABILITY. The current check only excludes `ASSET`.
-
-**Fix:** Exclude LIABILITY accounts (and accounts whose name matches `/loan|note|mortgage|line of credit/i`) from the round-number-plug flag. Keep it focused on revenue/expense accounts where round numbers actually suggest manual journal plugs.
-
-### Bonus polish (cheap)
-
-- Reduce `reconciliationSummary.variances` denominator noise: drop accounts where both GL and TB are < $50 from "variance" → label "immaterial" instead, so the score reflects real disagreements.
-- When `periodStart === periodEnd` (every txn dated 12/31, like this project), don't render the period range as "2025-12-31 – 2025-12-31" — show "FY ending 2025-12-31" instead in `GeneralLedgerInsightsCard.tsx`.
-
-## Files
-
-- `supabase/functions/analyze-general-ledger/index.ts` — all four logic fixes
-- `src/components/wizard/sections/GeneralLedgerInsightsCard.tsx` — period-label cosmetic only
-
-## Expected result on this project
-
-After the fix, on the same data:
-- Matched accounts jumps from 7/85 to roughly the high-70s/85 (most accounts will reconcile once GL YTD is compared against the YTD-cumulative TB).
-- Identity check moves from "$14.5M off" to within a few thousand dollars (assuming the data is actually clean).
-- Largest Accounts no longer shows duplicate Savings/Checking rows.
-- Flags list drops the two loan-principal false positives.
-
-No edge-function secret changes, no DB migrations, no ingestion changes (the all-on-12/31 txn dates are an upstream issue but not the cause of the bad reconciliation here).
+After deploying, re-run the GL analysis on the same project and confirm via edge-function logs:
+- `glDetailSource: "processed_data"` still set
+- `matchCount` jumps materially above 1/76
+- `identityCheck.difference` drops below the previous $3.7M
+- Spot-check Checking: `tbBalance` should now ≈ $260k, not $411k
