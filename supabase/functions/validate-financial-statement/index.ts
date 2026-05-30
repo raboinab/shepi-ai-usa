@@ -383,6 +383,10 @@ function deriveTotalsFromTrialBalance(
 
 // --- Variance helpers ---
 
+function formatCurrencyForSummary(n: number): string {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
+}
+
 function getVarianceStatus(variance: number, baseValue: number): 'match' | 'minor' | 'significant' {
   if (variance === 0) return 'match';
   const absVariance = Math.abs(variance);
