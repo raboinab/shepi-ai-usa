@@ -529,7 +529,10 @@ serve(async (req) => {
       for (const [lk, t] of tbByLeaf) {
         if (matchedTbKeys.has(lk)) continue;
         const covered = accounts.some(a => normKey(a.leaf) === lk || normKey(leafOf(a.name)) === lk);
-        if (!covered && Math.abs(t.balance) > 0.01) missingInGL.push({ name: t.name, balance: t.balance });
+        // For missing-in-GL we don't know the class, so report whichever axis is non-zero
+        // (prefer snapshot, fall back to yearSum). This is informational only.
+        const bal = Math.abs(t.snapshotBalance) > 0.01 ? t.snapshotBalance : t.yearSumBalance;
+        if (!covered && Math.abs(bal) > 0.01) missingInGL.push({ name: t.name, balance: bal });
       }
     }
 
