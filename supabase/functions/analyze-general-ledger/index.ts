@@ -290,21 +290,24 @@ serve(async (req) => {
     const accountTypeBreakdown: Record<string, number> = {};
     for (const a of accounts) accountTypeBreakdown[a.classification] = (accountTypeBreakdown[a.classification] || 0) + 1;
 
-    // ── Accounting identity: Assets − Liabilities − Equity = 0 ──
-    let sumAssets = 0, sumLiab = 0, sumEquity = 0, sumIncome = 0, sumExpense = 0;
+    // ── Accounting identity: Assets = Liabilities + Equity + (Revenue − Expense)
+    //    Handle both sign conventions: detect whether revenues sum positive (debit-positive
+    //    convention common in QB GL exports) or negative (true double-entry signed sum). ──
+    let sumAssets = 0, sumLiab = 0, sumEquity = 0, sumRevenue = 0, sumExpense = 0;
     for (const a of accounts) {
-      switch (a.classification) {
-        case "ASSET": sumAssets += a.glBalance; break;
-        case "LIABILITY": sumLiab += a.glBalance; break;
-        case "EQUITY": sumEquity += a.glBalance; break;
-        case "INCOME": sumIncome += a.glBalance; break;
-        case "EXPENSE": sumExpense += a.glBalance; break;
-      }
+      const c = a.classification;
+      if (c === "ASSET") sumAssets += a.glBalance;
+      else if (c === "LIABILITY") sumLiab += a.glBalance;
+      else if (c === "EQUITY") sumEquity += a.glBalance;
+      else if (c === "REVENUE" || c === "INCOME" || c === "OTHER_INCOME") sumRevenue += a.glBalance;
+      else if (c === "EXPENSE" || c === "COST_OF_GOODS_SOLD" || c === "OTHER_EXPENSE") sumExpense += a.glBalance;
     }
-    // Liabilities & Equity are typically credit-balances (negative in signed sum) → flip
+    // Normalize to positive magnitudes (credit-balance accounts may be signed negative).
     const liabAbs = Math.abs(sumLiab);
     const equityAbs = Math.abs(sumEquity);
-    const netIncome = Math.abs(sumIncome) - Math.abs(sumExpense);
+    const revenueAbs = Math.abs(sumRevenue);
+    const expenseAbs = Math.abs(sumExpense);
+    const netIncome = revenueAbs - expenseAbs;
     const accountingEquationDiff = sumAssets - liabAbs - equityAbs - netIncome;
 
     // ── Largest accounts by |balance| ──
@@ -329,10 +332,15 @@ serve(async (req) => {
         flags.push(`Suspense/clearing account "${a.name}" has non-zero balance (${a.glBalance.toFixed(2)})`);
       }
     }
-    // Round-number balances on large accounts (potential plug)
+    // Round-number balances — only flag on revenue/expense accounts where round numbers
+    // suggest manual journal plugs. Skip assets, liabilities (loan principals), equity,
+    // and any account whose name implies a loan/note/mortgage/LOC.
+    const loanLike = /loan|note|mortgage|line of credit|capital lease/i;
     for (const a of accounts) {
       const abs = Math.abs(a.glBalance);
-      if (abs >= 10000 && abs % 1000 === 0 && a.classification !== "ASSET") {
+      const c = a.classification;
+      const isPL = c === "REVENUE" || c === "INCOME" || c === "EXPENSE" || c === "COST_OF_GOODS_SOLD" || c === "OTHER_INCOME" || c === "OTHER_EXPENSE";
+      if (isPL && !loanLike.test(a.name) && abs >= 10000 && abs % 1000 === 0) {
         flags.push(`Round-number balance on ${a.name}: ${a.glBalance.toFixed(0)} — possible plug entry`);
       }
     }
