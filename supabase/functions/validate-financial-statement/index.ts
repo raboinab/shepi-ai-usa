@@ -858,6 +858,26 @@ serve(async (req) => {
     }
 
 
+    // Build diagnostics (only meaningful for income_statement)
+    let diagnostics: {
+      tbBreakdown: TBBreakdownItem[];
+      uploadedBreakdown: NonNullable<DerivedTotals['lineDetails']>;
+      missingAccounts: MissingAccount[];
+    } | undefined;
+    if (documentType === 'income_statement') {
+      const tbBreakdown: TBBreakdownItem[] = [];
+      // Re-derive once more with breakdownOut populated (cheap, in-memory).
+      deriveTotalsFromTrialBalance(accounts, documentType, effectivePeriodStart, effectivePeriodEnd, fiscalYearEnd, tbBreakdown);
+      tbBreakdown.sort((a, b) => Math.abs(b.totalInScope) - Math.abs(a.totalInScope));
+      const uploadedBreakdown = (uploadedTotals.lineDetails || []).slice(0, 100);
+      const missingAccounts = computeMissingAccounts(uploadedBreakdown, accounts);
+      diagnostics = { tbBreakdown: tbBreakdown.slice(0, 80), uploadedBreakdown, missingAccounts };
+      if (missingAccounts.length > 0) {
+        const totalMissing = missingAccounts.reduce((s, m) => s + Math.abs(m.uploadedAmount), 0);
+        summary += ` Detected ${missingAccounts.length} uploaded line item(s) with no matching TB account (${formatCurrencyForSummary(totalMissing)} unmatched).`;
+      }
+    }
+
     const result = {
       documentType,
       documentName,
@@ -869,6 +889,7 @@ serve(async (req) => {
       extractionFailed: false,
       summary,
       derivedTotals,
+      diagnostics,
     };
 
     if (documentId) {
