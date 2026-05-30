@@ -459,6 +459,9 @@ function deriveTotalsFromTrialBalance(
 
     // BS deltas → working-capital, capex, financing buckets
     let ocfAcc = 0, icfAcc = 0, fcfAcc = 0, cashDelta = 0;
+    let hasAccumDep = false;
+    const cfBreakdown: Array<{ name: string; type: string; delta: number; cashImpact: number; routedTo: string }> = [];
+
     for (const a of accounts) {
       if (a.fsType !== 'BS') continue;
       const bucket = classifyBSAccount(a.accountName, a.accountType);
@@ -470,36 +473,56 @@ function deriveTotalsFromTrialBalance(
 
       const name = (a.accountName || '').toLowerCase();
       const type = (a.accountType || '').toLowerCase();
+      let routedTo = 'skipped';
 
       if (bucket === 'asset') {
         const isCash = type.includes('bank') || type.includes('cash') ||
-          /\b(cash|petty cash|money market|checking|savings)\b/.test(name);
-        if (isCash) { cashDelta += delta; continue; }
+          /\b(cash|petty cash|money market|checking|savings|undeposited funds|clearing)\b/.test(name);
+        if (isCash) {
+          cashDelta += delta;
+          routedTo = 'cash';
+          cfBreakdown.push({ name: a.accountName, type: a.accountType || '', delta, cashImpact, routedTo });
+          continue;
+        }
+        if (/accumulated depreciation|accumulated amortization/.test(name)) hasAccumDep = true;
         const isLongTerm = type.includes('fixed') || type.includes('intangible') ||
           type.includes('other asset') ||
-          /\b(equipment|building|vehicle|furniture|machinery|land|property|goodwill|patent|trademark|accumulated depreciation)\b/.test(name);
-        if (isLongTerm) icfAcc += cashImpact;
-        else ocfAcc += cashImpact;
+          /\b(equipment|building|vehicle|furniture|machinery|land|property|goodwill|patent|trademark|accumulated depreciation|accumulated amortization)\b/.test(name);
+        if (isLongTerm) { icfAcc += cashImpact; routedTo = 'ICF'; }
+        else { ocfAcc += cashImpact; routedTo = 'OCF(WC-asset)'; }
       } else if (bucket === 'liability') {
-        const isDebt = /loan|note|line of credit|credit card|long.?term|mortgage|bond/.test(name) ||
-          type.includes('loan') || type.includes('credit card') ||
-          type.includes('long term') || type.includes('notes payable');
-        if (isDebt) fcfAcc += cashImpact;
-        else ocfAcc += cashImpact;
+        // Strict debt detection: only explicit loans/notes/mortgages/lines of credit/bonds → FCF.
+        // Credit cards are operating AP for most SMBs, route to OCF working capital.
+        const isDebt = /\b(loan|note payable|notes payable|line of credit|long.?term debt|mortgage|bond)\b/.test(name) ||
+          type.includes('loan') || type.includes('long term') || type.includes('notes payable');
+        if (isDebt) { fcfAcc += cashImpact; routedTo = 'FCF(debt)'; }
+        else { ocfAcc += cashImpact; routedTo = 'OCF(WC-liab)'; }
       } else if (bucket === 'equity') {
-        // Retained earnings movement is captured by Net Income; don't double-count.
+        // Retained earnings / net income movements are captured via NI; don't double-count.
+        // Skip rollup/parent buckets that don't represent real cash movements.
         if (name.includes('retained earnings') || name.includes('net income') ||
-            name.includes('opening balance equity')) continue;
-        fcfAcc += cashImpact;
+            name.includes('opening balance equity') ||
+            name === 'equity' || name === 'owners equity' || name === "owner's equity" ||
+            name === 'total equity') {
+          cfBreakdown.push({ name: a.accountName, type: a.accountType || '', delta, cashImpact, routedTo: 'skipped(equity-rollup)' });
+          continue;
+        }
+        fcfAcc += cashImpact; routedTo = 'FCF(equity)';
       }
+      cfBreakdown.push({ name: a.accountName, type: a.accountType || '', delta, cashImpact, routedTo });
     }
 
+    // Only back D&A out of ICF if Accumulated Depreciation actually appeared in the TB
+    // (otherwise the fixed-asset delta already excludes the non-cash piece).
+    const icfAdjustment = hasAccumDep ? -dna : 0;
+
     operatingCashFlow = netIncome + dna + ocfAcc;
-    investingCashFlow = icfAcc - dna; // back out accumulated-dep effect so ICF ≈ -CapEx
+    investingCashFlow = icfAcc + icfAdjustment;
     financingCashFlow = fcfAcc;
     netChangeInCash = operatingCashFlow + investingCashFlow + financingCashFlow;
 
-    console.log(`[validate-fs CF] period=${startKey || '?'}..${endKey || '?'} NI=${netIncome} D&A=${dna} ΔWC=${ocfAcc} OCF=${operatingCashFlow} ICF=${investingCashFlow} FCF=${financingCashFlow} Net=${netChangeInCash} actualΔCash=${cashDelta}`);
+    console.log(`[validate-fs CF] period=${startKey || '?'}..${endKey || '?'} NI=${netIncome} D&A=${dna} hasAccumDep=${hasAccumDep} ΔWC=${ocfAcc} OCF=${operatingCashFlow} ICF=${investingCashFlow} FCF=${financingCashFlow} Net=${netChangeInCash} actualΔCash=${cashDelta} reconciliationGap=${netChangeInCash - cashDelta}`);
+    console.log(`[validate-fs CF breakdown] ${JSON.stringify(cfBreakdown)}`);
   }
 
   return {
