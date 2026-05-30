@@ -31,7 +31,9 @@ interface DerivedTotals {
   investingCashFlow?: number;
   financingCashFlow?: number;
   netChangeInCash?: number;
+  asOfDate?: string | null;
 }
+
 
 interface ValidationLineItem {
   lineItem: string;
