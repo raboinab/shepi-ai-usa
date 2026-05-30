@@ -886,7 +886,9 @@ export const DocumentUploadSection = ({
     for (const docType of verificationTypes) {
       const doc = documents.find(d => d.account_type === docType && (d as any).validation_result);
       if (doc && (doc as any).validation_result) {
-        setFinancialValidationResults(prev => ({ ...prev, [docType]: (doc as any).validation_result as FinancialStatementValidationResult }));
+        const stored = (doc as any).validation_result as FinancialStatementValidationResult;
+        // Always trust the slot's docType over whatever was stored on the result payload
+        setFinancialValidationResults(prev => ({ ...prev, [docType]: { ...stored, documentType: docType as FinancialStatementValidationResult['documentType'] } }));
       }
     }
   }, [documents]);
