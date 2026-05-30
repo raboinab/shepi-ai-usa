@@ -273,14 +273,21 @@ serve(async (req) => {
     }
 
     // Add COA accounts that have no GL activity but have a current balance
-    for (const [, coa] of coaByName) {
-      const k = coa.name.toLowerCase();
-      if (!acctMap.has(k) && Math.abs(coa.balance) > 0.01) {
-        acctMap.set(k, {
-          name: coa.name, leaf: normName(coa.name),
-          acctNumber: coa.acctNum, classification: coa.classification,
-          glBalance: coa.balance, glActivity: 0, txnCount: 0,
-        });
+    {
+      const haveAcctIds = new Set(Array.from(acctMap.values()).map(a => a.acctNumber).filter(Boolean) as string[]);
+      const haveNames = new Set(Array.from(acctMap.values()).map(a => a.name.toLowerCase()));
+      for (const [, coa] of coaByName) {
+        const k = coa.name.toLowerCase();
+        if (haveNames.has(k)) continue;
+        if (coa.acctNum && haveAcctIds.has(coa.acctNum)) continue;
+        if (Math.abs(coa.balance) > 0.01) {
+          const mapKey = coa.acctNum ? `id:${coa.acctNum}` : `name:${k}`;
+          acctMap.set(mapKey, {
+            name: coa.name, leaf: normName(coa.name),
+            acctNumber: coa.acctNum, classification: coa.classification,
+            glBalance: coa.balance, glActivity: 0, txnCount: 0,
+          });
+        }
       }
     }
 
