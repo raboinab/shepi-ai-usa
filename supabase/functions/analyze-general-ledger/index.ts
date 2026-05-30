@@ -492,20 +492,22 @@ serve(async (req) => {
     // ── Accounting identity: Assets = Liabilities + Equity + (Revenue − Expense)
     //    Handle both sign conventions: detect whether revenues sum positive (debit-positive
     //    convention common in QB GL exports) or negative (true double-entry signed sum). ──
+    // Apply Math.abs per-account *before* summing so sign-convention drift between
+    // imports (one liability +500, another −300) doesn't net to 200 and mask the real $800.
     let sumAssets = 0, sumLiab = 0, sumEquity = 0, sumRevenue = 0, sumExpense = 0;
     for (const a of accounts) {
       const c = a.classification;
-      if (c === "ASSET") sumAssets += a.glBalance;
-      else if (c === "LIABILITY") sumLiab += a.glBalance;
-      else if (c === "EQUITY") sumEquity += a.glBalance;
-      else if (c === "REVENUE" || c === "INCOME" || c === "OTHER_INCOME") sumRevenue += a.glBalance;
-      else if (c === "EXPENSE" || c === "COST_OF_GOODS_SOLD" || c === "OTHER_EXPENSE") sumExpense += a.glBalance;
+      const v = a.glBalance;
+      if (c === "ASSET") sumAssets += v; // assets keep sign so contra-assets net correctly
+      else if (c === "LIABILITY") sumLiab += Math.abs(v);
+      else if (c === "EQUITY") sumEquity += Math.abs(v);
+      else if (c === "REVENUE" || c === "INCOME" || c === "OTHER_INCOME") sumRevenue += Math.abs(v);
+      else if (c === "EXPENSE" || c === "COST_OF_GOODS_SOLD" || c === "OTHER_EXPENSE") sumExpense += Math.abs(v);
     }
-    // Normalize to positive magnitudes (credit-balance accounts may be signed negative).
-    const liabAbs = Math.abs(sumLiab);
-    const equityAbs = Math.abs(sumEquity);
-    const revenueAbs = Math.abs(sumRevenue);
-    const expenseAbs = Math.abs(sumExpense);
+    const liabAbs = sumLiab;
+    const equityAbs = sumEquity;
+    const revenueAbs = sumRevenue;
+    const expenseAbs = sumExpense;
     const netIncome = revenueAbs - expenseAbs;
     const accountingEquationDiff = sumAssets - liabAbs - equityAbs - netIncome;
 
