@@ -481,16 +481,19 @@ STRUCTURE NOTES
 
 EXTRACTION RULES
 - totalRevenue: the printed "Total Income" or "Total Revenue" row from the operating Income section. If no such subtotal exists, SUM every detail row inside the Income section (stop at "Cost of Goods Sold" / "Gross Profit").
-- totalCogs: "Total Cost of Goods Sold" / "Total COGS" / "Cost of Sales". 0 if the section is empty.
+- totalCogs: SUM of all rows in the "Cost of Goods Sold" section AND any "Job Expenses" / "Job Costs" / "Cost of Labor" / "Job Materials" rows (QuickBooks treats these as cost of services). Use the printed "Total Cost of Goods Sold" / "Total Job Expenses" subtotals if present.
 - grossProfit: the printed "Gross Profit" row, or totalRevenue − totalCogs.
-- totalExpenses: the printed "Total Expenses" / "Total Operating Expenses" row from the operating Expenses section. If ambiguous or missing, SUM every detail row in the Expenses section (between Gross Profit and Net Operating Income).
-- netIncome: the printed "Net Income" row (the very last bottom-line, AFTER Other Income/Expense). If only "Net Operating Income" exists, return that. If neither is printed, compute grossProfit − totalExpenses.
+- totalExpenses: the printed "Total Expenses" / "Total Operating Expenses" row from the operating Expenses section, EXCLUDING any Job Expenses / Job Costs already counted in totalCogs. If ambiguous, SUM every detail row in the Expenses section (between Gross Profit and Net Operating Income), excluding Job Expenses.
+- netOperatingIncome: the printed "Net Operating Income" row, or grossProfit − totalExpenses.
+- totalOtherIncome: SUM of rows in the "Other Income" section (below Net Operating Income). 0 if no such section.
+- totalOtherExpense: SUM of rows in the "Other Expense" section. 0 if no such section.
+- netIncome: the printed "Net Income" row (true bottom-line, AFTER Other Income/Expense). If not printed, compute netOperatingIncome + totalOtherIncome − totalOtherExpense.
 - periodStart: first day of earliest reporting month (YYYY-MM-DD) from the earliest monthly column header.
 - periodEnd: last day of latest reporting month (YYYY-MM-DD) from the latest monthly column header.
 - If only a month/year is shown, snap to first/last day of that month. Return null only if truly unknown.
 
 Return ONLY valid JSON (no markdown):
-{ "totalRevenue": number or null, "totalCogs": number or null, "grossProfit": number or null, "totalExpenses": number or null, "netIncome": number or null, "periodStart": "YYYY-MM-DD" or null, "periodEnd": "YYYY-MM-DD" or null }
+{ "totalRevenue": number or null, "totalCogs": number or null, "grossProfit": number or null, "totalExpenses": number or null, "netOperatingIncome": number or null, "totalOtherIncome": number or null, "totalOtherExpense": number or null, "netIncome": number or null, "periodStart": "YYYY-MM-DD" or null, "periodEnd": "YYYY-MM-DD" or null }
 
 Spreadsheet data:\n${textContent.slice(0, 12000)}`;
   } else if (documentType === 'cash_flow') {
