@@ -313,7 +313,8 @@ function deriveTotalsFromTrialBalance(
   }
 
   const grossProfit = totalRevenue - totalCogs;
-  const netIncome = grossProfit - totalExpenses;
+  const operatingIncome = grossProfit - totalExpenses;
+  const netIncome = operatingIncome + otherIncome - otherExpense;
   const ytdNetIncome = (ytdRevenue - ytdCogs) - ytdExpenses;
 
   // Roll only current-FY YTD net income into equity. TB Retained Earnings already
