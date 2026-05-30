@@ -474,7 +474,7 @@ ALSO extract the "as-of date" of the balance sheet. Look for phrases like "As of
 Return ONLY valid JSON:
       { "totalAssets": number or null, "totalLiabilities": number or null, "totalEquity": number or null, "asOfDate": "YYYY-MM-DD" or null }
 
-      Spreadsheet data:\n${textContent.slice(0, 12000)}`;
+      Spreadsheet data:\n${textContent.slice(0, 32000)}`;
 
   } else if (documentType === 'income_statement') {
     prompt = `Extract totals from this Income Statement / Profit & Loss spreadsheet (often a QuickBooks "Profit and Loss by Month" export).
@@ -501,12 +501,12 @@ EXTRACTION RULES
 Return ONLY valid JSON (no markdown):
 { "totalRevenue": number or null, "totalCogs": number or null, "grossProfit": number or null, "totalExpenses": number or null, "netOperatingIncome": number or null, "totalOtherIncome": number or null, "totalOtherExpense": number or null, "netIncome": number or null, "periodStart": "YYYY-MM-DD" or null, "periodEnd": "YYYY-MM-DD" or null }
 
-Spreadsheet data:\n${textContent.slice(0, 12000)}`;
+Spreadsheet data:\n${textContent.slice(0, 32000)}`;
   } else if (documentType === 'cash_flow') {
     prompt = `Extract the following totals from this Cash Flow Statement spreadsheet data. If there are monthly columns, use the "Total" column or sum all months. Return ONLY valid JSON:
       { "operatingCashFlow": number or null, "investingCashFlow": number or null, "financingCashFlow": number or null, "netChangeInCash": number or null }
       
-      Spreadsheet data:\n${textContent.slice(0, 12000)}`;
+      Spreadsheet data:\n${textContent.slice(0, 32000)}`;
   }
 
   if (!prompt) return null;
