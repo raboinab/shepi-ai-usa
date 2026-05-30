@@ -119,29 +119,37 @@ serve(async (req) => {
         if (!acctName) continue;
 
         const childRows = section.rows?.row || [];
-        let firstAmountColIdx = -1;
-        let lastBalanceColIdx = -1;
+        let amountColIdx = -1;
+        let balanceColIdx = -1;
         let beginningBalance = 0;
         let endingBalance = 0;
         let txnCount = 0;
         let activity = 0;
+        let netSum = 0;
 
-        // Convention: the last two money columns in each DATA row are [Amount, Balance].
-        // Detect from the first row with two money cells.
+        // Detect column layout. QB GL detail uses one of two shapes:
+        //   (a) [..., Amount, Balance] — two trailing money columns; Balance is the running balance
+        //   (b) [..., Amount]          — one trailing money column; no Balance, derive from running sum
+        // Scan a handful of rows to count distinct money column indices.
+        const moneyColFreq = new Map<number, number>();
+        let sampled = 0;
         for (const r of childRows) {
           if (r.type !== "DATA") continue;
           const cd = r.colData || [];
-          const moneyIdxs: number[] = [];
           for (let i = 0; i < cd.length; i++) {
-            if (parseMoney(cd[i]?.value) !== null) moneyIdxs.push(i);
+            if (parseMoney(cd[i]?.value) !== null) {
+              moneyColFreq.set(i, (moneyColFreq.get(i) || 0) + 1);
+            }
           }
-          if (moneyIdxs.length >= 2) {
-            lastBalanceColIdx = moneyIdxs[moneyIdxs.length - 1];
-            firstAmountColIdx = moneyIdxs[moneyIdxs.length - 2];
-            break;
-          } else if (moneyIdxs.length === 1 && lastBalanceColIdx === -1) {
-            lastBalanceColIdx = moneyIdxs[0];
-          }
+          if (++sampled >= 30) break;
+        }
+        const moneyIdxsSorted = [...moneyColFreq.keys()].sort((a, b) => a - b);
+        if (moneyIdxsSorted.length >= 2) {
+          balanceColIdx = moneyIdxsSorted[moneyIdxsSorted.length - 1];
+          amountColIdx = moneyIdxsSorted[moneyIdxsSorted.length - 2];
+        } else if (moneyIdxsSorted.length === 1) {
+          amountColIdx = moneyIdxsSorted[0];
+          balanceColIdx = -1; // no running balance — derive via sum
         }
 
         for (const r of childRows) {
@@ -150,18 +158,23 @@ serve(async (req) => {
           const label = (cd[0]?.value || "").trim().toLowerCase();
           const isBeginning = label === "beginning balance";
 
-          if (lastBalanceColIdx >= 0) {
-            const rb = parseMoney(cd[lastBalanceColIdx]?.value);
-            if (rb !== null) {
-              if (isBeginning) beginningBalance = rb;
-              else endingBalance = rb;
-            }
+          if (isBeginning) {
+            // Beginning balance row: the running balance sits in whichever money col it can find
+            const bb = balanceColIdx >= 0 ? parseMoney(cd[balanceColIdx]?.value)
+                                          : (amountColIdx >= 0 ? parseMoney(cd[amountColIdx]?.value) : null);
+            if (bb !== null) beginningBalance = bb;
+            continue;
           }
 
-          if (isBeginning) continue;
-
-          let amt: number | null = null;
-          if (firstAmountColIdx >= 0) amt = parseMoney(cd[firstAmountColIdx]?.value);
+          const amt = amountColIdx >= 0 ? parseMoney(cd[amountColIdx]?.value) : null;
+          if (amt !== null) {
+            netSum += amt;
+            activity += Math.abs(amt);
+          }
+          if (balanceColIdx >= 0) {
+            const rb = parseMoney(cd[balanceColIdx]?.value);
+            if (rb !== null) endingBalance = rb;
+          }
 
           let txnDate: string | null = null;
           for (const c of cd) {
@@ -172,13 +185,13 @@ serve(async (req) => {
             if (!periodStart || txnDate < periodStart) periodStart = txnDate;
             if (!periodEnd || txnDate > periodEnd) periodEnd = txnDate;
           }
-
-          if (amt !== null) activity += Math.abs(amt);
           txnCount += 1;
         }
 
-        // Ending balance from QB running balance is the truth; fall back to net activity.
-        const glBalance = endingBalance !== 0 ? endingBalance : (beginningBalance !== 0 ? beginningBalance : 0);
+        // glBalance preference: explicit running balance > beginning + net > net alone
+        let glBalance: number;
+        if (balanceColIdx >= 0 && endingBalance !== 0) glBalance = endingBalance;
+        else glBalance = beginningBalance + netSum;
 
         const key = acctName.toLowerCase();
         const coa = coaByName.get(key) || coaByLeaf.get(normName(acctName)) ||
