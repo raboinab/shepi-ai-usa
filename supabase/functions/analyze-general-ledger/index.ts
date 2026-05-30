@@ -599,10 +599,19 @@ serve(async (req) => {
     console.log(`[ANALYZE-GL] Reconciliation: matched=${matchCount}/${accounts.length} (BS=${matchBS}, P&L=${matchPL}), variances=${varianceCount}, missingInTB=${missingInTB}`);
 
     // TB accounts not matched to any GL row.
+    // Also suppress TB rows whose leaf was already matched against a GL account in agreement,
+    // which happens when QB exports duplicate the same leaf under multiple parent rollups.
+    const matchedLeavesInAgreement = new Set<string>();
+    for (const cmp of reconciliation) {
+      if (cmp.status === "match" && cmp.tbBalance !== null) {
+        matchedLeavesInAgreement.add(normKey(leafOf(cmp.accountName)));
+      }
+    }
     const missingInGL: { name: string; balance: number }[] = [];
     if (tbHas) {
       for (const [, t] of tbById) {
         if (matchedTbKeys.has(t.fullPath)) continue;
+        if (matchedLeavesInAgreement.has(normKey(leafOf(t.fullPath)))) continue;
         const bal = Math.abs(t.snapshotBalance) > 0.01 ? t.snapshotBalance : t.yearSumBalance;
         if (Math.abs(bal) > 0.01) missingInGL.push({ name: t.fullPath, balance: bal });
       }
