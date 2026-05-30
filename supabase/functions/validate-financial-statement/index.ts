@@ -491,17 +491,18 @@ function deriveTotalsFromTrialBalance(
         if (isLongTerm) { icfAcc += cashImpact; routedTo = 'ICF'; }
         else { ocfAcc += cashImpact; routedTo = 'OCF(WC-asset)'; }
       } else if (bucket === 'liability') {
-        // Strict debt detection: only explicit loans/notes/mortgages/lines of credit/bonds → FCF.
-        // Credit cards are operating AP for most SMBs, route to OCF working capital.
-        const isDebt = /\b(loan|note payable|notes payable|line of credit|long.?term debt|mortgage|bond)\b/.test(name) ||
-          type.includes('loan') || type.includes('long term') || type.includes('notes payable');
-        if (isDebt) { fcfAcc += cashImpact; routedTo = 'FCF(debt)'; }
+        // FCF debt = long-term liabilities only. Current-liability "Loan Payable"
+        // and credit cards are operating, route to OCF working capital.
+        const isLongTermLiab = type.includes('long term') || type.includes('long-term') ||
+          type.includes('notes payable') ||
+          /\b(long.?term debt|mortgage|bond)\b/.test(name) ||
+          (/\bnotes? payable\b/.test(name) && !type.includes('current'));
+        if (isLongTermLiab) { fcfAcc += cashImpact; routedTo = 'FCF(debt)'; }
         else { ocfAcc += cashImpact; routedTo = 'OCF(WC-liab)'; }
       } else if (bucket === 'equity') {
-        // Retained earnings / net income movements are captured via NI; don't double-count.
-        // Skip rollup/parent buckets that don't represent real cash movements.
+        // Skip only retained earnings / NI (captured via NI) and pure rollup parents.
+        // Opening Balance Equity, owner contributions/distributions ARE real cash movements.
         if (name.includes('retained earnings') || name.includes('net income') ||
-            name.includes('opening balance equity') ||
             name === 'equity' || name === 'owners equity' || name === "owner's equity" ||
             name === 'total equity') {
           cfBreakdown.push({ name: a.accountName, type: a.accountType || '', delta, cashImpact, routedTo: 'skipped(equity-rollup)' });
