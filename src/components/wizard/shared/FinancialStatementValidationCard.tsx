@@ -21,7 +21,7 @@ export interface ValidationDiagnostics {
 }
 
 export interface FinancialStatementValidationResult {
-  documentType: 'balance_sheet' | 'income_statement';
+  documentType: 'balance_sheet' | 'income_statement' | 'cash_flow';
   documentName: string;
   overallScore: number | null;
   lineItems: ValidationLineItem[];
@@ -109,7 +109,9 @@ function BalanceCheckAlert({ label, isBalanced }: { label: string; isBalanced: b
 export function FinancialStatementValidationCard({ result, onDismiss }: FinancialStatementValidationCardProps) {
   const documentTypeLabel = result.documentType === 'balance_sheet'
     ? 'Balance Sheet'
-    : 'Income Statement (P&L)';
+    : result.documentType === 'cash_flow'
+      ? 'Cash Flow Statement'
+      : 'Income Statement (P&L)';
 
   // Extraction totally failed — show warning only
   if (result.extractionFailed) {

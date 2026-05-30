@@ -1,73 +1,47 @@
-## The bug
+## Two issues to address
 
-For Cash Flow Statement validation, the TB-derived "Operating Cash Flow / Investing Cash Flow / Financing Cash Flow / Net Change in Cash" values are stubs:
+### 1. Wrong heading on Cash Flow validation card (cosmetic, certain bug)
 
-```ts
-// supabase/functions/validate-financial-statement/index.ts:423
-operatingCashFlow: netIncome, investingCashFlow: 0, financingCashFlow: 0,
-netChangeInCash: netIncome,
-```
+`FinancialStatementValidationCard.tsx` line 110-112 only branches between `balance_sheet` and "Income Statement (P&L)" — `cash_flow` falls through to the P&L label. That's why the card title reads **"Income Statement (P&L) Validation Results"** for your Cash Flow upload.
 
-So every uploaded Cash Flow Statement compares against Net Income on one row and zero on the others. That's why this project shows 0% match, OCF off by +10%, ICF/FCF reading as `-` (no TB value), and Net Change off by +10%.
+**Fix:** extend the ternary so `cash_flow` → "Cash Flow Statement". One line.
 
-## Fix
+### 2. CF derivation still has significant variance (real bug)
 
-Derive a real **indirect-method** cash flow from the Trial Balance over the document's reporting period, using the BS deltas already present in TB plus the IS activity we already compute. Scope: only the `cash_flow` document path in `deriveTotalsFromTrialBalance`. No schema changes, no AI prompt changes, no UI changes.
+The four buckets are now populated (no more zero stubs), but values disagree with the uploaded CFS by 13–60%:
 
-### What gets computed
+| Bucket | TB-derived | Uploaded | Δ |
+|---|---|---|---|
+| OCF | $2,103,157 | $2,378,513 | +$275k |
+| ICF | -$34,523 | -$13,495 | -$21k |
+| FCF | $29,000 | $15,095 | +$14k |
+| Net | $2,097,634 | $2,380,113 | +$282k |
 
-Period = `[periodStartKey, periodEndKey]` from the uploaded statement (same YTD slice logic already used for the equity rollup).
+Likely classification edge cases in `deriveTotalsFromTrialBalance` (lines 460–502):
 
-1. **Period Net Income** — sum of IS bucket activity (revenue − cogs − expenses + other_income − other_expense) restricted to the period slice. We already produce `ytdNetIncome` for the equity rollup; generalize it to any period window and reuse.
+- **Credit card balances** are currently routed to FCF (treated as debt). For most SMBs, operating credit card AP belongs in OCF working capital. Likely cause of the FCF and OCF gaps.
+- **D&A back-out from ICF** assumes Accumulated Depreciation is bundled inside the fixed-asset rows. If the TB shows AccumDep as a separate contra-asset *and* the IS shows the same D&A expense, we subtract twice (or not at all, depending on how the TB labels rows). Likely cause of the ICF gap.
+- **Cash equivalents** (money market, undeposited funds) may not match all the regexes, leaking into OCF working-capital deltas.
+- **Owner draws / distributions** vs "retained earnings" — we exclude retained earnings but not other equity-suffixed accounts that are actually rollups.
 
-2. **BS deltas over the period** — for each BS account, `delta = balance(periodEnd) − balance(periodStart − 1)`. Classify each account into a CF bucket:
-   - `cash` → tracked separately, drives the check figure
-   - `current_asset_noncash` (AR, inventory, prepaid, other current asset) → OCF, sign: `−Δ`
-   - `current_liability_noninterest` (AP, accrued, other current liab; exclude lines containing "loan", "note", "line of credit", "credit card") → OCF, sign: `+Δ`
-   - `fixed_asset` / `intangible` → ICF, sign: `−Δ` (CapEx and intangible additions)
-   - `other_noncurrent_asset` → ICF, sign: `−Δ`
-   - `debt_liability` (long-term liabilities + current-liability rows whose name matches debt keywords) → FCF, sign: `+Δ`
-   - `equity` (excluding retained earnings movement, which is captured by Net Income) → FCF, sign: `+Δ`
-   - Retained earnings movement is intentionally excluded — it's already represented by Net Income.
+### Plan
 
-3. **Non-cash addback** — Depreciation/amortization expense for the period (sum of IS accounts whose name matches `/deprec|amort/i`) is added back into OCF. We already have `calcDepreciationExpense` in `src/lib/calculations.ts`; port the same matching rule into the edge function (it can't import frontend code).
+1. **UI:** add `cash_flow` → "Cash Flow Statement" in `documentTypeLabel`.
 
-4. **Totals**
-   - `operatingCashFlow = netIncome + D&A + Σ(current_asset Δ with −) + Σ(current_liab_noninterest Δ with +)`
-   - `investingCashFlow = Σ(fixed/intangible/other_noncurrent_asset Δ with −)`
-   - `financingCashFlow = Σ(debt Δ with +) + Σ(equity Δ with +)`
-   - `netChangeInCash = OCF + ICF + FCF` (should reconcile to actual ΔCash; we'll log the gap as a sanity check, not surface it)
+2. **Edge function `validate-financial-statement/index.ts`:**
+   - Route credit-card liabilities to OCF (working capital), not FCF. Keep only explicit loans/notes/mortgages/lines of credit/bonds in FCF.
+   - Smarter D&A handling: detect whether Accumulated Depreciation appears as a TB row. If yes → keep current `icfAcc - dna` adjustment. If no → don't subtract (ICF already excludes the non-cash piece because it isn't in the TB).
+   - Broaden cash-detection regex to include "money market", "undeposited funds", "clearing".
+   - Exclude "owner equity"/"distributions"/"draws"/"contributions" rollup parents from FCF when their children already account for the movement (parent inference, same pattern as the existing IS parent-bucket logic).
+   - Add structured diagnostic logging: per-bucket list of `{accountName, delta, cashImpact, routedTo}` so the next variance investigation takes one log read instead of guesswork.
 
-### Classification rules (in the edge function)
+3. **No frontend logic changes beyond the label.** No new line items. No CFS-from-direct-method. No schema changes.
 
-Add a small helper next to the existing `classifyBSAccount`:
+### Out of scope
+- Surfacing the per-account CF breakdown in the UI (logs only for now).
+- Reconciling `netChangeInCash` to actual ΔCash from the TB as a hard check.
+- Direct-method CF.
 
-```ts
-function classifyCFBucket(accountName: string, accountType: string, bucket: BsBucket):
-  'current_asset_noncash' | 'cash' | 'fixed_asset' | 'other_asset' |
-  'current_liab_op' | 'debt' | 'equity' | null
-```
-
-Keyed off the existing `bucket` ('asset' | 'liability' | 'equity') plus name/type heuristics already used elsewhere in the file (cash/AR/inventory/prepaid/fixed/intangible for assets; loan|note|line of credit|credit card|long.?term for debt; everything else under liability → operating).
-
-### Output shape
-
-`deriveTotalsFromTrialBalance` returns the same `DerivedTotals` shape — only the four CF fields change from stubs to real numbers. No frontend changes needed; `LINE_ITEM_DEFS.cash_flow` already lists the four rows.
-
-## Files touched
-
-- `supabase/functions/validate-financial-statement/index.ts` — generalize the YTD slice into a `slicePeriod()` helper, add `classifyCFBucket`, replace the four stub lines with computed values. ~80 lines added.
-- Edge function gets redeployed automatically.
-
-## Verify
-
-Re-run validation on this project's uploaded Cash Flow Statement. Expected:
-- OCF, ICF, FCF, Net Change in Cash all populated from TB.
-- Variances should drop to near-zero on this Sandbox file (QuickBooks indirect-method CF uses the same rules). Any residual variance > 1% gets surfaced via the existing "Why don't these match?" panel logic, unchanged.
-
-## Out of scope
-
-- No new line items beyond the four already shown.
-- No direct-method CF.
-- No changes to balance sheet or income statement validation paths.
-- No "missing accounts" detector changes (the existing one already runs for all doc types).
+### Files
+- `src/components/wizard/shared/FinancialStatementValidationCard.tsx` — label fix.
+- `supabase/functions/validate-financial-statement/index.ts` — classification refinements + logging.
