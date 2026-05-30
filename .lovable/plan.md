@@ -1,56 +1,46 @@
-## Diagnosis (now confirmed from the CSV)
+# Fix: Parent accounts with direct postings dropped from TB totals
 
-Two things going on, only one is a code issue:
+## The bug
 
-1. **Depreciation override was correct.** The CSV puts Depreciation ($21,028.15) in the **Other Expense** section, not Operating Expenses. The current edge function classification (Depreciation → `other_expense`) matches the CSV exactly. Keep it.
+In this project's Trial Balance, `Maintenance and Repair` is a parent row that has **both** direct postings (~$19,172 of YTD-converted activity over 2023-2025) **and** three child accounts (`:Building Repairs`, `:Computer Repairs`, `:Equipment Repairs`).
 
-2. **The $19,172 gap is a missing TB account.** The CSV has a `Maintenance and Repair` **parent** account with $19,171.98 of direct postings, plus three child accounts (Building Repairs, Computer Repairs, Equipment Repairs). The TB for this project only contains the three children — the parent's direct postings are not in the TB at all. The variance is exactly $19,171.98.
+- The uploaded QuickBooks P&L correctly includes the parent's direct postings as a separate line ($19,171.98).
+- The TB-derived calculation drops them, producing the $19,172 Operating Expenses gap and the false "missing account" callout.
 
-This is a data-completeness issue with the seller's TB, not a validator bug. The validator is correctly flagging a real gap. We can make that gap easier to diagnose without forcing the user to download the CSV and grep for it.
+The parent row is present in the TB CSV — so the bug is in either (a) the TB parser zeroing parents that have children, or (b) `classifyISAccount` returning `null` for the parent row's `accountName`/`accountType` combination.
 
-## Plan: make completeness gaps self-diagnosing
+## Diagnose first (one short script, no code changes)
 
-All changes in `supabase/functions/validate-financial-statement/index.ts` and `src/components/wizard/shared/FinancialStatementValidationCard.tsx`.
+1. Query the parsed `trial_balance_accounts` (or equivalent) rows for this project where `account_name ILIKE '%maintenance and repair%'`. Confirm:
+   - Does a row exist for the parent (`Maintenance and Repair`, no colon)?
+   - If yes, are its `monthlyValues` populated or zeroed?
+   - What's its `accountType` / `fsType`?
+2. Pipe that exact `accountName` + `accountType` into `classifyISAccount` and see what bucket comes back.
 
-### 1. Edge function — emit a `missingAccounts` diagnostic
+This tells us whether the fix belongs in the parser or the classifier.
 
-After the AI returns `lineDetails` (already extracted), compute for each variance > $1,000 (or > 0.5% of revenue) which uploaded line items have **no matching TB account by name**. Matching:
+## Fix path A — parser drops parents that have children
 
-- Normalize: lowercase, strip punctuation, strip the leading `Total for ` prefix.
-- Compare against `account.accountName` (and the leaf of `:` paths).
-- Account is "missing" when no TB account matches AND no parent path matches.
+If the parent row exists but its `monthlyValues` are empty/zero, update the TB ingestion to keep parent direct postings even when child accounts share the path prefix. The display layer can still nest them; the numeric totals must include the parent's own line.
 
-Persist into `validation_result.missingAccounts`: array of `{ label, section, uploadedAmount, suspectedBucket }`.
+## Fix path B — classifier returns null for the parent
 
-### 2. Edge function — emit a `tbBreakdown` and `uploadedBreakdown`
+If the parent's `accountType` (e.g. `Expense` / `Expenses`) is what's failing the classifier, broaden `classifyISAccount` so a row with `accountType` matching `/expense/i` and no override falls through to the `expense` bucket, instead of returning `null`. Same treatment for revenue/COGS parents.
 
-Two arrays inside `validation_result.diagnostics`:
+## Adjust the "missing accounts" detector
 
-- `tbBreakdown`: every IS account that contributed to a bucket → `{ accountName, accountType, bucket, totalInScope }`.
-- `uploadedBreakdown`: the AI's `lineDetails` (capped at 80 rows), already typed `{ label, amount, section }`.
+Currently it flags any uploaded P&L row whose label doesn't appear in `tbBreakdown`. After the fix above, `Maintenance and Repair` will appear in the breakdown and will stop showing as missing. Also tighten the matcher so a parent label matches a TB row whose `accountName` ends with that exact segment (already partly there — verify it works once the parent is in the breakdown).
 
-Cheap, no extra AI calls.
+## Verify
 
-### 3. UI — add a collapsible "Diagnostic" section
+Re-run validation on this project. Expected:
+- Operating Expenses TB-derived: $774,058 (matches uploaded).
+- Net Operating Income variance: $0.
+- Net Income variance: $0.
+- "Why don't these match?" panel: no missing accounts.
 
-In `FinancialStatementValidationCard`, when `result.diagnostics` is present and any line has `status === 'significant'`, render a collapsible `<Accordion>` titled **"Why don't these match?"** with:
+## Out of scope
 
-- A "Missing TB accounts" callout (red, dismissible) listing every entry in `missingAccounts` with the uploaded amount and a one-line explanation: *"This line item exists in the uploaded P&L but has no matching account in your Trial Balance. Add it to the TB to close the gap."*
-- Two side-by-side tables (uploaded vs TB) sorted by `Math.abs(amount)` desc, with rows highlighted when an uploaded label has no TB match (or vice versa).
-
-No new dependencies — uses existing `Accordion`, `Table`, `Alert`.
-
-### 4. Re-validate
-
-Deploy and re-run on document `f74670b2-…`. Expected diagnostic surface:
-
-- `missingAccounts` = `[{ label: "Maintenance and Repair", section: "expenses", uploadedAmount: 19171.98, suspectedBucket: "expense" }]`
-- The UI shows: *"Your TB is missing this account. Add it to close a $19,172 variance."*
-- Match score stays ~75% because the variance is real, but it's now actionable instead of mysterious.
-
-### Out of scope
-
-- No automatic TB mutation. The user (or wizard) must add the missing account themselves.
-- No schema migration — `validation_result` is `jsonb`.
-- No changes to BS path (still 100%).
-- No new AI calls or prompt changes.
+- No schema migrations.
+- No changes to the AI prompt or `lineDetails` extraction.
+- No Balance Sheet path changes.
