@@ -347,10 +347,15 @@ async function extractTotalsViaAI(
 
   let prompt = '';
   if (documentType === 'balance_sheet') {
-    prompt = `Extract the following totals from this Balance Sheet spreadsheet data. Look for rows labeled "Total Assets", "Total Liabilities", "Total Equity" or similar. If there are monthly columns, use the LAST (most recent) month's value OR find a "Total" column. Return ONLY valid JSON:
-      { "totalAssets": number or null, "totalLiabilities": number or null, "totalEquity": number or null }
-      
+    prompt = `Extract the following totals from this Balance Sheet spreadsheet data. Look for rows labeled "Total Assets", "Total Liabilities", "Total Equity" or similar. If there are monthly columns, use the LAST (most recent) month's value OR find a "Total" column.
+
+ALSO extract the "as-of date" of the balance sheet. Look for phrases like "As of YYYY-MM-DD", "Balance Sheet as of …", or a date in a column header. Return it as YYYY-MM-DD. If the only date available is a month/year (e.g. "December 2024"), return the last day of that month (e.g. "2024-12-31"). If no date can be found, return null.
+
+Return ONLY valid JSON:
+      { "totalAssets": number or null, "totalLiabilities": number or null, "totalEquity": number or null, "asOfDate": "YYYY-MM-DD" or null }
+
       Spreadsheet data:\n${textContent.slice(0, 12000)}`;
+
   } else if (documentType === 'income_statement') {
     prompt = `Extract the following totals from this Income Statement / Profit & Loss spreadsheet data. 
 IMPORTANT: This spreadsheet may have monthly columns (Jan, Feb, Mar... or 2024-01, 2024-02, etc.) with a "Total" column at the end. 
