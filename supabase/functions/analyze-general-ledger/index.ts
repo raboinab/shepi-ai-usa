@@ -582,17 +582,13 @@ serve(async (req) => {
     console.log(`[ANALYZE-GL] Match attempts: id=${matchById}, fullPath=${matchByFullPath}, leaf=${matchByLeaf}, ambiguous-leaf=${ambiguousLeaf}, missingInTB=${missingInTB}`);
     console.log(`[ANALYZE-GL] Reconciliation: matched=${matchCount}/${accounts.length} (BS=${matchBS}, P&L=${matchPL}), variances=${varianceCount}, missingInTB=${missingInTB}`);
 
-    // Accounts in TB but not in GL — iterate leaf aggregates to avoid double-counting
-    // the multi-parent leaves (e.g. revenue+expense halves of "Decks and Patios").
+    // Accounts in TB but not matched to any GL row (by stable id).
     const missingInGL: { name: string; balance: number }[] = [];
     if (tbHas) {
-      for (const [lk, t] of tbByLeaf) {
-        if (matchedTbKeys.has(lk)) continue;
-        const covered = accounts.some(a => normKey(a.leaf) === lk || normKey(leafOf(a.name)) === lk);
-        // For missing-in-GL we don't know the class, so report whichever axis is non-zero
-        // (prefer snapshot, fall back to yearSum). This is informational only.
+      for (const [, t] of tbById) {
+        if (matchedTbIds.has(t.id)) continue;
         const bal = Math.abs(t.snapshotBalance) > 0.01 ? t.snapshotBalance : t.yearSumBalance;
-        if (!covered && Math.abs(bal) > 0.01) missingInGL.push({ name: t.name, balance: bal });
+        if (Math.abs(bal) > 0.01) missingInGL.push({ name: t.fullPath, balance: bal });
       }
     }
 
