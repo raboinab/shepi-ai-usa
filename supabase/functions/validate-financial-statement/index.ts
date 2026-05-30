@@ -37,6 +37,22 @@ interface DerivedTotals {
   asOfDate?: string | null;
   periodStart?: string | null;
   periodEnd?: string | null;
+  /** AI-extracted detail rows, only populated for income_statement. Excludes subtotals/headers. */
+  lineDetails?: { label: string; amount: number; section: 'income' | 'cogs' | 'expenses' | 'other_income' | 'other_expense' }[];
+}
+
+interface TBBreakdownItem {
+  accountName: string;
+  accountType: string;
+  bucket: 'revenue' | 'cogs' | 'expense' | 'other_income' | 'other_expense';
+  totalInScope: number;
+}
+
+interface MissingAccount {
+  label: string;
+  section: string;
+  uploadedAmount: number;
+  suspectedBucket: string;
 }
 
 
