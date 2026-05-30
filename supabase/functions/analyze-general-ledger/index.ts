@@ -301,17 +301,27 @@ serve(async (req) => {
     }
     console.log(`[ANALYZE-GL] Aggregated ${accounts.length} unique accounts (post-rollup dedupe)`);
 
-    // ── Pull latest TB. Each entry in `monthlyReports` is a QuickBooks Trial Balance
-    //    run dated to the end of that month — it is YTD-CUMULATIVE, NOT a per-month
-    //    movement. End-of-Dec-2025 IS the period total for P&L AND the snapshot for BS.
-    //    Therefore: take the LAST populated monthly report for every account. Do not sum
-    //    across months (that previously multiplied P&L values by ~36×). ──
+    // ── Pull latest TB. Each entry in `monthlyReports` is a single-MONTH QuickBooks TB
+    //    (startDate = first of month, endDate = last of month). The values inside behave
+    //    differently by account class:
+    //      • Balance Sheet (asset/liability/equity): true end-of-month balance →
+    //        use the LAST populated month overall ("snapshot").
+    //      • Revenue / Expense: YTD-cumulative within a calendar year, RESETS each
+    //        January. For a multi-year period we sum the LAST populated month of EACH
+    //        calendar year touched ("yearSum").
+    //    We compute both per series and pick at match time based on classification. ──
     const { data: tbRecords } = await supabase
       .from("processed_data").select("data, created_at, period_end")
       .eq("project_id", projectId).eq("data_type", "trial_balance")
       .order("created_at", { ascending: false }).limit(1);
 
-    type TBAcct = { name: string; debit: number; credit: number; balance: number; snapshotIdx?: number };
+    type TBAcct = {
+      name: string;
+      snapshotDebit: number; snapshotCredit: number;
+      yearSumDebit: number;  yearSumCredit: number;
+      snapshotBalance: number; // snapshotDebit - snapshotCredit
+      yearSumBalance: number;  // yearSumDebit  - yearSumCredit
+    };
     const tbByLeaf = new Map<string, TBAcct>();
     const tbByName = new Map<string, TBAcct>();
     const tbByAcctNum = new Map<string, TBAcct>();
@@ -328,6 +338,15 @@ serve(async (req) => {
       const tbData = tbRecords[0].data as Record<string, unknown>;
       const monthly = (tbData.monthlyReports as Array<Record<string, unknown>>) || [];
       monthlyReportCount = monthly.length;
+
+      // Map each monthIdx → calendar year (from monthly[idx].year, fall back to endDate).
+      const monthYear: number[] = monthly.map((m) => {
+        const y = Number((m as Record<string, unknown>).year);
+        if (Number.isFinite(y) && y > 1900) return y;
+        const ed = String((m as Record<string, unknown>).endDate || "");
+        const ey = parseInt(ed.slice(0, 4), 10);
+        return Number.isFinite(ey) ? ey : 0;
+      });
 
       // Build per-account series keyed by full colon-delimited path.
       type Series = { name: string; acctId: string | null; perMonth: Array<{ debit: number; credit: number }> };
@@ -369,56 +388,85 @@ serve(async (req) => {
         ? populatedReportIdxs[populatedReportIdxs.length - 1]
         : -1;
 
-      // For every series: take the last-populated month's snapshot.
-      // Fall back to walk-back if that slot is empty for this specific account.
+      // Distinct years across the period, ordered.
+      const yearsPresent = [...new Set(monthYear.filter((y) => y > 0))].sort((a, b) => a - b);
+
       const fullPathTB: TBAcct[] = [];
       for (const [, s] of series) {
-        let debit = 0, credit = 0, snapshotIdx = -1;
+        // ── snapshot: value at lastPopulatedIdx, walk back if empty for this account.
+        let sDebit = 0, sCredit = 0;
         if (lastPopulatedIdx >= 0 && lastPopulatedIdx < s.perMonth.length) {
-          debit = s.perMonth[lastPopulatedIdx].debit;
-          credit = s.perMonth[lastPopulatedIdx].credit;
-          snapshotIdx = lastPopulatedIdx;
+          sDebit = s.perMonth[lastPopulatedIdx].debit;
+          sCredit = s.perMonth[lastPopulatedIdx].credit;
         }
-        if (snapshotIdx < 0 || (debit === 0 && credit === 0)) {
+        if (sDebit === 0 && sCredit === 0) {
           for (let i = Math.min(lastPopulatedIdx, s.perMonth.length - 1); i >= 0; i--) {
-            if (s.perMonth[i] && (s.perMonth[i].debit !== 0 || s.perMonth[i].credit !== 0)) {
-              debit = s.perMonth[i].debit;
-              credit = s.perMonth[i].credit;
-              snapshotIdx = i;
-              break;
+            const slot = s.perMonth[i];
+            if (slot && (slot.debit !== 0 || slot.credit !== 0)) {
+              sDebit = slot.debit; sCredit = slot.credit; break;
             }
           }
         }
-        const t: TBAcct = { name: s.name, debit, credit, balance: debit - credit, snapshotIdx };
+
+        // ── yearSum: for each calendar year, take the highest monthIdx in that year
+        //    where this series has any value (the YTD-final for the year), and sum.
+        let ySumDr = 0, ySumCr = 0;
+        for (const yr of yearsPresent) {
+          let bestIdx = -1;
+          for (let i = 0; i < s.perMonth.length; i++) {
+            if (monthYear[i] !== yr) continue;
+            const slot = s.perMonth[i];
+            if (slot && (slot.debit !== 0 || slot.credit !== 0)) bestIdx = i;
+          }
+          if (bestIdx >= 0) {
+            ySumDr += s.perMonth[bestIdx].debit;
+            ySumCr += s.perMonth[bestIdx].credit;
+          }
+        }
+
+        const t: TBAcct = {
+          name: s.name,
+          snapshotDebit: sDebit, snapshotCredit: sCredit,
+          yearSumDebit: ySumDr,  yearSumCredit: ySumCr,
+          snapshotBalance: sDebit - sCredit,
+          yearSumBalance:  ySumDr - ySumCr,
+        };
         fullPathTB.push(t);
-        // Full-path lookup: exact lowercased name and normKey'd full path.
         tbByName.set(s.name.toLowerCase(), t);
         tbByName.set(normKey(s.name), t);
         if (s.acctId) tbByAcctNum.set(s.acctId, t);
       }
 
-      // Aggregate by normalized LEAF with signed net (debit - credit), so a leaf that
-      // appears under multiple parent groups (e.g. "Decks and Patios" as both
-      // Landscaping Services:... revenue AND Job Expenses:... expense) nets correctly.
-      const leafAgg = new Map<string, { name: string; debit: number; credit: number }>();
+      // Aggregate by normalized LEAF with signed net, summing both snapshot and yearSum
+      // separately so multi-parent leaves (e.g. "Decks and Patios" appearing under
+      // both revenue and expense parents) net correctly on either axis.
+      type LeafAgg = { name: string; sDr: number; sCr: number; yDr: number; yCr: number };
+      const leafAgg = new Map<string, LeafAgg>();
       for (const t of fullPathTB) {
         const lk = normKey(leafOf(t.name));
         if (!lk) continue;
-        const cur = leafAgg.get(lk) || { name: leafOf(t.name), debit: 0, credit: 0 };
-        cur.debit += t.debit;
-        cur.credit += t.credit;
+        const cur = leafAgg.get(lk) || { name: leafOf(t.name), sDr: 0, sCr: 0, yDr: 0, yCr: 0 };
+        cur.sDr += t.snapshotDebit; cur.sCr += t.snapshotCredit;
+        cur.yDr += t.yearSumDebit;  cur.yCr += t.yearSumCredit;
         leafAgg.set(lk, cur);
       }
       for (const [lk, agg] of leafAgg) {
-        tbByLeaf.set(lk, { name: agg.name, debit: agg.debit, credit: agg.credit, balance: agg.debit - agg.credit });
+        tbByLeaf.set(lk, {
+          name: agg.name,
+          snapshotDebit: agg.sDr, snapshotCredit: agg.sCr,
+          yearSumDebit:  agg.yDr, yearSumCredit:  agg.yCr,
+          snapshotBalance: agg.sDr - agg.sCr,
+          yearSumBalance:  agg.yDr - agg.yCr,
+        });
       }
     }
-    console.log(`[ANALYZE-GL] TB ingested: ${monthlyReportCount} monthly reports, ${tbByName.size} full-path entries, ${tbByLeaf.size} leaf aggregates (last-populated-month snapshot)`);
+    console.log(`[ANALYZE-GL] TB ingested: ${monthlyReportCount} monthly reports, ${tbByName.size} full-path entries, ${tbByLeaf.size} leaf aggregates (snapshot for BS, yearSum for P&L)`);
 
     // ── Reconciliation ──
     const reconciliation: TBComparison[] = [];
     const matchedTbKeys = new Set<string>();
     let matchCount = 0, varianceCount = 0, missingInTB = 0;
+    let matchBS = 0, matchPL = 0;
     const materialVariances: TBComparison[] = [];
     let varianceLogged = 0;
 
@@ -436,27 +484,31 @@ serve(async (req) => {
         matchedTbKeys.add(tb.name.toLowerCase());
         matchedTbKeys.add(normKey(tb.name));
         matchedTbKeys.add(normKey(leafOf(tb.name)));
-        const variance = acct.glBalance - tb.balance;
+        // Pick TB axis by classification: BS uses end-of-period snapshot, P&L sums each
+        // year's YTD-final because monthly TBs reset every January.
+        const isPL = acct.classification === "REVENUE" || acct.classification === "EXPENSE";
+        const tbBalance = isPL ? tb.yearSumBalance : tb.snapshotBalance;
+        const variance = acct.glBalance - tbBalance;
         const absDiffSigned = Math.abs(variance);
-        const absDiffMag = Math.abs(Math.abs(acct.glBalance) - Math.abs(tb.balance));
+        const absDiffMag = Math.abs(Math.abs(acct.glBalance) - Math.abs(tbBalance));
         const absDiff = Math.min(absDiffSigned, absDiffMag);
-        const denom = Math.max(Math.abs(acct.glBalance), Math.abs(tb.balance), 1);
+        const denom = Math.max(Math.abs(acct.glBalance), Math.abs(tbBalance), 1);
         const variancePct = absDiff / denom;
         const isMatch = absDiff < 50 || variancePct < 0.005;
         const cmp: TBComparison = {
           accountName: acct.name,
           glBalance: acct.glBalance,
-          tbBalance: tb.balance,
+          tbBalance,
           variance, variancePct,
           status: isMatch ? "match" : "variance",
         };
         reconciliation.push(cmp);
-        if (isMatch) matchCount++;
+        if (isMatch) { matchCount++; if (isPL) matchPL++; else matchBS++; }
         else {
           varianceCount++;
           if (absDiff > 1000 && variancePct > 0.05) materialVariances.push(cmp);
           if (varianceLogged < 25) {
-            console.log(`[ANALYZE-GL] VARIANCE (by ${matchedBy}): ${acct.name} cls=${acct.classification} gl=${acct.glBalance.toFixed(2)} tb=${tb.balance.toFixed(2)}`);
+            console.log(`[ANALYZE-GL] VARIANCE (by ${matchedBy}, ${isPL ? "P&L" : "BS"}): ${acct.name} cls=${acct.classification} gl=${acct.glBalance.toFixed(2)} tb=${tbBalance.toFixed(2)}`);
             varianceLogged++;
           }
         }
@@ -468,7 +520,7 @@ serve(async (req) => {
         });
       }
     }
-    console.log(`[ANALYZE-GL] Reconciliation: matched=${matchCount}/${accounts.length}, variances=${varianceCount}, missingInTB=${missingInTB}`);
+    console.log(`[ANALYZE-GL] Reconciliation: matched=${matchCount}/${accounts.length} (BS=${matchBS}, P&L=${matchPL}), variances=${varianceCount}, missingInTB=${missingInTB}`);
 
     // Accounts in TB but not in GL — iterate leaf aggregates to avoid double-counting
     // the multi-parent leaves (e.g. revenue+expense halves of "Decks and Patios").
@@ -477,7 +529,10 @@ serve(async (req) => {
       for (const [lk, t] of tbByLeaf) {
         if (matchedTbKeys.has(lk)) continue;
         const covered = accounts.some(a => normKey(a.leaf) === lk || normKey(leafOf(a.name)) === lk);
-        if (!covered && Math.abs(t.balance) > 0.01) missingInGL.push({ name: t.name, balance: t.balance });
+        // For missing-in-GL we don't know the class, so report whichever axis is non-zero
+        // (prefer snapshot, fall back to yearSum). This is informational only.
+        const bal = Math.abs(t.snapshotBalance) > 0.01 ? t.snapshotBalance : t.yearSumBalance;
+        if (!covered && Math.abs(bal) > 0.01) missingInGL.push({ name: t.name, balance: bal });
       }
     }
 
