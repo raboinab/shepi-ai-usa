@@ -453,22 +453,27 @@ Return ONLY valid JSON:
       Spreadsheet data:\n${textContent.slice(0, 12000)}`;
 
   } else if (documentType === 'income_statement') {
-    prompt = `Extract the following totals from this Income Statement / Profit & Loss spreadsheet data. 
-IMPORTANT: This spreadsheet may have monthly columns (Jan, Feb, Mar... or 2024-01, 2024-02, etc.) with a "Total" column at the end. 
-- If there is a "Total" column, use those values.
-- If there is NO "Total" column, SUM all the monthly values for each row.
-- Look for rows like "Total Revenue", "Total Income", "Gross Profit", "Total Expenses", "Total Operating Expenses", "Net Income", "Net Operating Income", "Cost of Goods Sold", "Cost of Sales".
-- Revenue/Income values are typically positive. Expense and COGS values may be positive or negative depending on convention.
+    prompt = `Extract totals from this Income Statement / Profit & Loss spreadsheet (often a QuickBooks "Profit and Loss by Month" export).
 
-ALSO extract the reporting period covered by this P&L:
-- "periodStart": first day of the earliest reporting month (YYYY-MM-DD). Look at the earliest monthly column header, or phrases like "For the period beginning …", "Year-to-date from …".
-- "periodEnd": last day of the latest reporting month (YYYY-MM-DD). Look at the latest monthly column header, or phrases like "as of …", "year ended …", "for the period ending …".
-- If only a month/year is available (e.g. "December 2024"), snap to first/last day of that month.
-- Return null for either if it truly cannot be determined.
+STRUCTURE NOTES
+- The file typically has monthly columns plus a Total column. Prefer the Total column; if absent, sum monthly values.
+- QuickBooks P&Ls have these sections in order: Income, Cost of Goods Sold, Gross Profit, Expenses, Net Operating Income, Other Income, Other Expense, Net Other Income, Net Income.
+- "Total Income" / "Total Revenue" refers ONLY to the operating Income section — DO NOT include Other Income.
+- "Total Expenses" / "Total Operating Expenses" refers ONLY to the operating Expenses section — DO NOT include Other Expense, COGS, interest, depreciation, or taxes as separate below-the-line items.
 
-Return ONLY valid JSON (use null if a value cannot be found):
+EXTRACTION RULES
+- totalRevenue: the printed "Total Income" or "Total Revenue" row from the operating Income section. If no such subtotal exists, SUM every detail row inside the Income section (stop at "Cost of Goods Sold" / "Gross Profit").
+- totalCogs: "Total Cost of Goods Sold" / "Total COGS" / "Cost of Sales". 0 if the section is empty.
+- grossProfit: the printed "Gross Profit" row, or totalRevenue − totalCogs.
+- totalExpenses: the printed "Total Expenses" / "Total Operating Expenses" row from the operating Expenses section. If ambiguous or missing, SUM every detail row in the Expenses section (between Gross Profit and Net Operating Income).
+- netIncome: the printed "Net Income" row (the very last bottom-line, AFTER Other Income/Expense). If only "Net Operating Income" exists, return that. If neither is printed, compute grossProfit − totalExpenses.
+- periodStart: first day of earliest reporting month (YYYY-MM-DD) from the earliest monthly column header.
+- periodEnd: last day of latest reporting month (YYYY-MM-DD) from the latest monthly column header.
+- If only a month/year is shown, snap to first/last day of that month. Return null only if truly unknown.
+
+Return ONLY valid JSON (no markdown):
 { "totalRevenue": number or null, "totalCogs": number or null, "grossProfit": number or null, "totalExpenses": number or null, "netIncome": number or null, "periodStart": "YYYY-MM-DD" or null, "periodEnd": "YYYY-MM-DD" or null }
-      
+
 Spreadsheet data:\n${textContent.slice(0, 12000)}`;
   } else if (documentType === 'cash_flow') {
     prompt = `Extract the following totals from this Cash Flow Statement spreadsheet data. If there are monthly columns, use the "Total" column or sum all months. Return ONLY valid JSON:
