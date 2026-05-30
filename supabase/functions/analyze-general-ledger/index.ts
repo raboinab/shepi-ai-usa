@@ -483,27 +483,31 @@ serve(async (req) => {
         matchedTbKeys.add(tb.name.toLowerCase());
         matchedTbKeys.add(normKey(tb.name));
         matchedTbKeys.add(normKey(leafOf(tb.name)));
-        const variance = acct.glBalance - tb.balance;
+        // Pick TB axis by classification: BS uses end-of-period snapshot, P&L sums each
+        // year's YTD-final because monthly TBs reset every January.
+        const isPL = acct.classification === "REVENUE" || acct.classification === "EXPENSE";
+        const tbBalance = isPL ? tb.yearSumBalance : tb.snapshotBalance;
+        const variance = acct.glBalance - tbBalance;
         const absDiffSigned = Math.abs(variance);
-        const absDiffMag = Math.abs(Math.abs(acct.glBalance) - Math.abs(tb.balance));
+        const absDiffMag = Math.abs(Math.abs(acct.glBalance) - Math.abs(tbBalance));
         const absDiff = Math.min(absDiffSigned, absDiffMag);
-        const denom = Math.max(Math.abs(acct.glBalance), Math.abs(tb.balance), 1);
+        const denom = Math.max(Math.abs(acct.glBalance), Math.abs(tbBalance), 1);
         const variancePct = absDiff / denom;
         const isMatch = absDiff < 50 || variancePct < 0.005;
         const cmp: TBComparison = {
           accountName: acct.name,
           glBalance: acct.glBalance,
-          tbBalance: tb.balance,
+          tbBalance,
           variance, variancePct,
           status: isMatch ? "match" : "variance",
         };
         reconciliation.push(cmp);
-        if (isMatch) matchCount++;
+        if (isMatch) { matchCount++; if (isPL) matchPL++; else matchBS++; }
         else {
           varianceCount++;
           if (absDiff > 1000 && variancePct > 0.05) materialVariances.push(cmp);
           if (varianceLogged < 25) {
-            console.log(`[ANALYZE-GL] VARIANCE (by ${matchedBy}): ${acct.name} cls=${acct.classification} gl=${acct.glBalance.toFixed(2)} tb=${tb.balance.toFixed(2)}`);
+            console.log(`[ANALYZE-GL] VARIANCE (by ${matchedBy}, ${isPL ? "P&L" : "BS"}): ${acct.name} cls=${acct.classification} gl=${acct.glBalance.toFixed(2)} tb=${tbBalance.toFixed(2)}`);
             varianceLogged++;
           }
         }
@@ -515,7 +519,7 @@ serve(async (req) => {
         });
       }
     }
-    console.log(`[ANALYZE-GL] Reconciliation: matched=${matchCount}/${accounts.length}, variances=${varianceCount}, missingInTB=${missingInTB}`);
+    console.log(`[ANALYZE-GL] Reconciliation: matched=${matchCount}/${accounts.length} (BS=${matchBS}, P&L=${matchPL}), variances=${varianceCount}, missingInTB=${missingInTB}`);
 
     // Accounts in TB but not in GL — iterate leaf aggregates to avoid double-counting
     // the multi-parent leaves (e.g. revenue+expense halves of "Decks and Patios").
