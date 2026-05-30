@@ -440,8 +440,8 @@ async function parseXlsxFromStorage(
     for (const sheetName of workbook.SheetNames.slice(0, 3)) { // max 3 sheets
       const sheet = workbook.Sheets[sheetName];
       const json = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' }) as unknown[][];
-      // Limit to 200 rows
-      const rows = json.slice(0, 200);
+      // Limit to 600 rows (QB P&L exports can have many detail lines + section subtotals)
+      const rows = json.slice(0, 600);
       if (rows.length > 0) {
         sheets.push(`Sheet: ${sheetName}\n` + rows.map(r => (r as unknown[]).join('\t')).join('\n'));
       }
