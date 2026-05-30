@@ -204,9 +204,13 @@ serve(async (req) => {
         if (balanceColIdx >= 0 && endingBalance !== 0) glBalance = endingBalance;
         else glBalance = beginningBalance + netSum;
 
-        const key = acctName.toLowerCase();
-        const coa = coaByName.get(key) || coaByLeaf.get(normName(acctName)) ||
-                    (acctId ? coaByAcctNum.get(acctId) : undefined);
+        // Key on stable QB acctId so leaves that exist on both sides of the chart
+        // (e.g. "Decks and Patios" under Income AND under Expenses) stay separate.
+        // Fall back to a name-based key only if QB omitted the id.
+        const key = acctId ? `id:${acctId}` : `name:${acctName.toLowerCase()}`;
+        const coa = (acctId ? coaByAcctNum.get(acctId) : undefined) ||
+                    coaByName.get(acctName.toLowerCase()) ||
+                    coaByLeaf.get(normName(acctName));
 
         acctMap.set(key, {
           name: acctName,
