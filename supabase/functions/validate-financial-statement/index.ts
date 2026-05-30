@@ -443,6 +443,62 @@ function buildLineItems(
   });
 }
 
+// --- Diagnostics: detect uploaded line items with no matching TB account ---
+
+function normalizeAccountLabel(s: string): string {
+  return (s || '')
+    .toLowerCase()
+    .replace(/^\s*total\s+for\s+/i, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+/** For each uploaded detail row, check whether a TB account (or any path segment) matches by name. */
+function computeMissingAccounts(
+  uploadedLines: NonNullable<DerivedTotals['lineDetails']>,
+  tbAccounts: TrialBalanceAccount[]
+): MissingAccount[] {
+  // Build a set of normalized TB names: full path AND each ":"-separated segment.
+  const tbNames = new Set<string>();
+  for (const a of tbAccounts) {
+    if (a.fsType !== 'IS') continue;
+    const name = a.accountName || '';
+    tbNames.add(normalizeAccountLabel(name));
+    for (const seg of name.split(':')) {
+      tbNames.add(normalizeAccountLabel(seg));
+    }
+  }
+
+  const missing: MissingAccount[] = [];
+  const SECTION_TO_BUCKET: Record<string, string> = {
+    income: 'revenue',
+    cogs: 'cogs',
+    expenses: 'expense',
+    other_income: 'other_income',
+    other_expense: 'other_expense',
+  };
+  for (const row of uploadedLines || []) {
+    if (!row?.label || typeof row.amount !== 'number' || row.amount === 0) continue;
+    const norm = normalizeAccountLabel(row.label);
+    if (!norm) continue;
+    // Skip obvious subtotals / headers the AI may have leaked through.
+    if (/^(total|gross profit|net (operating |other )?income|net loss|income|expenses|cost of goods sold)$/.test(norm)) continue;
+    if (tbNames.has(norm)) continue;
+    // Try last segment in case the AI included an indented sub-path.
+    const parts = norm.split(' ');
+    if (parts.length > 1 && tbNames.has(parts[parts.length - 1])) continue;
+    missing.push({
+      label: row.label,
+      section: row.section,
+      uploadedAmount: row.amount,
+      suspectedBucket: SECTION_TO_BUCKET[row.section] || 'expense',
+    });
+  }
+  // Sort by absolute amount desc, cap at 20.
+  missing.sort((a, b) => Math.abs(b.uploadedAmount) - Math.abs(a.uploadedAmount));
+  return missing.slice(0, 20);
+}
+
 // --- XLSX parsing: download file from storage and convert to text for AI ---
 
 async function parseXlsxFromStorage(
