@@ -14,6 +14,12 @@ export interface ValidationLineItem {
   status: 'match' | 'minor' | 'significant' | 'extraction_failed';
 }
 
+export interface ValidationDiagnostics {
+  tbBreakdown: Array<{ accountName: string; accountType: string; bucket: string; totalInScope: number }>;
+  uploadedBreakdown: Array<{ label: string; amount: number; section: string }>;
+  missingAccounts: Array<{ label: string; section: string; uploadedAmount: number; suspectedBucket: string }>;
+}
+
 export interface FinancialStatementValidationResult {
   documentType: 'balance_sheet' | 'income_statement';
   documentName: string;
@@ -24,6 +30,7 @@ export interface FinancialStatementValidationResult {
   tbIsBalanced?: boolean;
   extractionFailed?: boolean;
   summary?: string;
+  diagnostics?: ValidationDiagnostics;
 }
 
 interface FinancialStatementValidationCardProps {
