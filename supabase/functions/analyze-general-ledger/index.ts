@@ -75,60 +75,173 @@ serve(async (req) => {
       }
     }
 
-    // ── Pull canonical GL transactions for the period (paginated to bypass PostgREST default 1000-row cap) ──
-    type GlTxn = { account_name: string | null; account_number: string | null; amount_signed: number | null; amount_abs: number | null; txn_date: string | null };
-    const txns: GlTxn[] = [];
-    const PAGE = 1000;
-    let from = 0;
-    while (true) {
-      const { data: page, error: pageErr } = await supabase
-        .from("canonical_transactions")
-        .select("account_name, account_number, amount_signed, amount_abs, txn_date")
-        .eq("project_id", projectId)
-        .eq("source_type", "general_ledger")
-        .order("txn_date", { ascending: true })
-        .range(from, from + PAGE - 1);
-      if (pageErr) {
-        console.error("[ANALYZE-GL] GL txn fetch error:", pageErr);
-        break;
-      }
-      if (!page || page.length === 0) break;
-      txns.push(...(page as GlTxn[]));
-      if (page.length < PAGE || txns.length >= 200000) break;
-      from += PAGE;
-    }
-    console.log(`[ANALYZE-GL] Found ${txns.length} GL transactions`);
-
-    // ── Aggregate by account ──
+    // ── Prefer parsing GL detail straight from processed_data (QuickBooks GeneralLedger JSON).
+    //    The legacy canonical_transactions rows on some projects have txn_date stuck on the
+    //    period-end and empty raw_payload, so they're unreliable for real period/date analysis.
+    //    Fall back to canonical_transactions only when processed_data has no GL report. ──
     const acctMap = new Map<string, AccountInfo>();
     let periodStart: string | null = null, periodEnd: string | null = null;
+    let txnCountTotal = 0;
+    let glDetailSource: "processed_data" | "canonical_transactions" = "processed_data";
 
-    for (const t of txns) {
-      const name = (t.account_name || "Unknown").trim();
-      const key = name.toLowerCase();
-      const signed = Number(t.amount_signed || 0);
-      const abs = Number(t.amount_abs || Math.abs(signed));
-      const date = (t.txn_date || "").substring(0, 10);
-      if (date) {
-        if (!periodStart || date < periodStart) periodStart = date;
-        if (!periodEnd || date > periodEnd) periodEnd = date;
+    const { data: glProcessed } = await supabase
+      .from("processed_data").select("data, period_start, period_end, created_at")
+      .eq("project_id", projectId).eq("data_type", "general_ledger")
+      .order("created_at", { ascending: false }).limit(1);
+
+    type ColData = { value?: string; id?: string | null };
+    type GlRow = { type?: string; colData?: ColData[]; rows?: { row?: GlRow[] }; header?: { colData?: ColData[] }; summary?: { colData?: ColData[] } };
+
+    const parseMoney = (v: string | undefined | null): number | null => {
+      if (v === undefined || v === null) return null;
+      const cleaned = String(v).replace(/[,$\s]/g, "");
+      if (!/^-?\d+(\.\d+)?$/.test(cleaned)) return null;
+      return parseFloat(cleaned);
+    };
+    const parseDate = (v: string | undefined | null): string | null => {
+      if (!v) return null;
+      const s = String(v).trim();
+      const m1 = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      if (m1) return `${m1[3]}-${m1[1]}-${m1[2]}`;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+      return null;
+    };
+
+    if (glProcessed && glProcessed.length > 0) {
+      const gl = glProcessed[0].data as Record<string, unknown>;
+      const sections = ((gl.rows as { row?: GlRow[] })?.row || []) as GlRow[];
+
+      for (const section of sections) {
+        if (section.type !== "SECTION") continue;
+        const hdr = section.header?.colData || [];
+        const acctName = (hdr[0]?.value || "").trim();
+        const acctId = (hdr[0]?.id || "").toString().trim() || null;
+        if (!acctName) continue;
+
+        const childRows = section.rows?.row || [];
+        let firstAmountColIdx = -1;
+        let lastBalanceColIdx = -1;
+        let beginningBalance = 0;
+        let endingBalance = 0;
+        let txnCount = 0;
+        let activity = 0;
+
+        // Convention: the last two money columns in each DATA row are [Amount, Balance].
+        // Detect from the first row with two money cells.
+        for (const r of childRows) {
+          if (r.type !== "DATA") continue;
+          const cd = r.colData || [];
+          const moneyIdxs: number[] = [];
+          for (let i = 0; i < cd.length; i++) {
+            if (parseMoney(cd[i]?.value) !== null) moneyIdxs.push(i);
+          }
+          if (moneyIdxs.length >= 2) {
+            lastBalanceColIdx = moneyIdxs[moneyIdxs.length - 1];
+            firstAmountColIdx = moneyIdxs[moneyIdxs.length - 2];
+            break;
+          } else if (moneyIdxs.length === 1 && lastBalanceColIdx === -1) {
+            lastBalanceColIdx = moneyIdxs[0];
+          }
+        }
+
+        for (const r of childRows) {
+          if (r.type !== "DATA") continue;
+          const cd = r.colData || [];
+          const label = (cd[0]?.value || "").trim().toLowerCase();
+          const isBeginning = label === "beginning balance";
+
+          if (lastBalanceColIdx >= 0) {
+            const rb = parseMoney(cd[lastBalanceColIdx]?.value);
+            if (rb !== null) {
+              if (isBeginning) beginningBalance = rb;
+              else endingBalance = rb;
+            }
+          }
+
+          if (isBeginning) continue;
+
+          let amt: number | null = null;
+          if (firstAmountColIdx >= 0) amt = parseMoney(cd[firstAmountColIdx]?.value);
+
+          let txnDate: string | null = null;
+          for (const c of cd) {
+            const d = parseDate(c?.value);
+            if (d) { txnDate = d; break; }
+          }
+          if (txnDate) {
+            if (!periodStart || txnDate < periodStart) periodStart = txnDate;
+            if (!periodEnd || txnDate > periodEnd) periodEnd = txnDate;
+          }
+
+          if (amt !== null) activity += Math.abs(amt);
+          txnCount += 1;
+        }
+
+        // Ending balance from QB running balance is the truth; fall back to net activity.
+        const glBalance = endingBalance !== 0 ? endingBalance : (beginningBalance !== 0 ? beginningBalance : 0);
+
+        const key = acctName.toLowerCase();
+        const coa = coaByName.get(key) || coaByLeaf.get(normName(acctName)) ||
+                    (acctId ? coaByAcctNum.get(acctId) : undefined);
+
+        acctMap.set(key, {
+          name: acctName,
+          leaf: normName(acctName),
+          acctNumber: acctId || coa?.acctNum || null,
+          classification: (coa?.classification || "OTHER").toUpperCase(),
+          glBalance,
+          glActivity: activity,
+          txnCount,
+        });
+        txnCountTotal += txnCount;
       }
-      const coa = coaByName.get(key) || coaByLeaf.get(normName(name)) ||
-                  (t.account_number ? coaByAcctNum.get(String(t.account_number)) : undefined);
-      let acc = acctMap.get(key);
-      if (!acc) {
-        acc = {
-          name,
-          leaf: normName(name),
-          acctNumber: (t.account_number as string) || coa?.acctNum || null,
-          classification: coa?.classification || "OTHER",
-          glBalance: 0, glActivity: 0, txnCount: 0,
-        };
-        acctMap.set(key, acc);
+      console.log(`[ANALYZE-GL] Parsed ${acctMap.size} accounts / ${txnCountTotal} txns from processed_data GL detail`);
+    }
+
+    // Fallback: legacy canonical_transactions path
+    if (acctMap.size === 0) {
+      glDetailSource = "canonical_transactions";
+      type GlTxn = { account_name: string | null; account_number: string | null; amount_signed: number | null; amount_abs: number | null; txn_date: string | null };
+      const PAGE = 1000;
+      let from = 0;
+      const txns: GlTxn[] = [];
+      while (true) {
+        const { data: page, error: pageErr } = await supabase
+          .from("canonical_transactions")
+          .select("account_name, account_number, amount_signed, amount_abs, txn_date")
+          .eq("project_id", projectId).eq("source_type", "general_ledger")
+          .order("txn_date", { ascending: true })
+          .range(from, from + PAGE - 1);
+        if (pageErr) { console.error("[ANALYZE-GL] GL txn fetch error:", pageErr); break; }
+        if (!page || page.length === 0) break;
+        txns.push(...(page as GlTxn[]));
+        if (page.length < PAGE || txns.length >= 200000) break;
+        from += PAGE;
       }
-      acc.glBalance += signed;
-      acc.glActivity += abs;
-      acc.txnCount += 1;
+      for (const t of txns) {
+        const name = (t.account_name || "Unknown").trim();
+        const key = name.toLowerCase();
+        const signed = Number(t.amount_signed || 0);
+        const abs = Number(t.amount_abs || Math.abs(signed));
+        const date = (t.txn_date || "").substring(0, 10);
+        if (date) {
+          if (!periodStart || date < periodStart) periodStart = date;
+          if (!periodEnd || date > periodEnd) periodEnd = date;
+        }
+        const coa = coaByName.get(key) || coaByLeaf.get(normName(name)) ||
+                    (t.account_number ? coaByAcctNum.get(String(t.account_number)) : undefined);
+        let acc = acctMap.get(key);
+        if (!acc) {
+          acc = { name, leaf: normName(name), acctNumber: (t.account_number as string) || coa?.acctNum || null,
+                  classification: coa?.classification || "OTHER", glBalance: 0, glActivity: 0, txnCount: 0 };
+          acctMap.set(key, acc);
+        }
+        acc.glBalance += signed;
+        acc.glActivity += abs;
+        acc.txnCount += 1;
+      }
+      txnCountTotal = txns.length;
+      console.log(`[ANALYZE-GL] Fallback: aggregated ${acctMap.size} accounts from ${txns.length} canonical_transactions rows`);
     }
 
     // Add COA accounts that have no GL activity but have a current balance
