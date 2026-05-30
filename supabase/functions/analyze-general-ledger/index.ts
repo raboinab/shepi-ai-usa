@@ -466,6 +466,7 @@ serve(async (req) => {
     const reconciliation: TBComparison[] = [];
     const matchedTbKeys = new Set<string>();
     let matchCount = 0, varianceCount = 0, missingInTB = 0;
+    let matchBS = 0, matchPL = 0;
     const materialVariances: TBComparison[] = [];
     let varianceLogged = 0;
 
