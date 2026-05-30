@@ -46,7 +46,7 @@ interface CpaApplication {
   firm_affiliation: string | null;
   side_work_permitted: boolean | null;
   conflicts_disclosure: string | null;
-  linkedin_url: string | null;
+  
   referral_source: string | null;
   status: Status;
   reviewed_at: string | null;
@@ -261,7 +261,7 @@ export default function AdminCpaApplications() {
                       : "No"
                   }
                 />
-                <Detail label="LinkedIn" value={selected.linkedin_url} link />
+                
                 <Detail label="Referral source" value={selected.referral_source} />
                 <Detail label="QoE background" value={selected.qoe_background} multiline />
                 <Detail

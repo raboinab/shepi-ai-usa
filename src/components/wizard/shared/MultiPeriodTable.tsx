@@ -134,7 +134,10 @@ export function MultiPeriodTable({
     onAccountsChange(updatedAccounts);
   }, [accounts, onAccountsChange]);
 
-  const getBalanceCheck = (periodId: string) => calculateBalanceCheck(displayAccounts, periodId);
+  // Balance check uses the raw (cumulative-YTD for IS) accounts so that
+  // BS_ending + IS_YTD = 0 per period — matching the workbook's TB tab.
+  // displayAccounts (monthly-IS) would yield a wrong, non-zero check.
+  const getBalanceCheck = (periodId: string) => calculateBalanceCheck(accounts, periodId);
 
   return (
     <div className="border border-border rounded-lg overflow-hidden relative">
@@ -367,7 +370,7 @@ export function MultiPeriodTable({
             <div className="flex sticky left-0 z-10 bg-muted/40 shadow-[4px_0_6px_-4px_hsl(var(--border)/0.4)]">
               <div className="w-16 px-2 py-2.5 text-xs font-semibold border-r border-border"></div>
               <div className="w-20 px-2 py-2.5 text-xs font-semibold border-r border-border"></div>
-              <div className="w-48 px-2 py-2.5 text-xs font-semibold border-r border-border">Income Statement Total</div>
+              <div className="w-48 px-2 py-2.5 text-xs font-semibold border-r border-border">Income Statement Total (YTD)</div>
               <div className="w-44 px-2 py-2.5 border-r border-border"></div>
               <div className="w-36 px-2 py-2.5 border-r border-border"></div>
               <div className="w-36 px-2 py-2.5 border-r border-border border-r-2"></div>

@@ -200,7 +200,8 @@ function enrichCoaAccounts(data: unknown): unknown {
     };
   });
 
-  console.log(`[enrichCoaAccounts] Enriched ${enriched.length} accounts (${correctionCount} subtype-corrected)`);
+  const unapplied = enriched.filter((a: any) => /unapplied/i.test(a.name || a.Name || a.accountName || ''));
+  console.log(`[enrichCoaAccounts] Enriched ${enriched.length} accounts (in=${accounts.length}, ${correctionCount} subtype-corrected, unapplied=${unapplied.length})`);
 
   if (Array.isArray(data)) {
     return enriched;
@@ -507,6 +508,43 @@ serve(async (req) => {
 
     const category = doc.category || doc.account_type;
     console.log(`[process-quickbooks-file] Processing: ${doc.name}, category: ${category}`);
+
+    // COA-first invariant: refuse to process Trial Balance uploads before COA exists.
+    // Without a COA the TB account resolver has nothing to match against and silently
+    // mis-links accounts that share a leaf name.
+    if (category === 'trial_balance') {
+      const { count: coaCount, error: coaCountError } = await supabase
+        .from('processed_data')
+        .select('id', { count: 'exact', head: true })
+        .eq('project_id', doc.project_id)
+        .eq('data_type', 'chart_of_accounts');
+
+      if (coaCountError) {
+        console.error('[process-quickbooks-file] COA precheck failed:', coaCountError);
+      } else if (!coaCount || coaCount === 0) {
+        console.warn(`[process-quickbooks-file] BLOCKED trial_balance ingest: no COA for project ${doc.project_id}`);
+        await supabase
+          .from('documents')
+          .update({
+            processing_status: 'failed',
+            parsed_summary: {
+              error: 'coa_required',
+              message: 'Upload Chart of Accounts before Trial Balance.',
+            },
+          })
+          .eq('id', documentId);
+
+        return new Response(
+          JSON.stringify({
+            error: 'coa_required',
+            message: 'Upload Chart of Accounts before Trial Balance — accounts cannot be classified without it.',
+            documentId,
+          }),
+          { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+    }
+
 
     // 2. Check if qbToJson API is configured
     if (!qbToJsonApiUrl || !qbToJsonApiKey) {

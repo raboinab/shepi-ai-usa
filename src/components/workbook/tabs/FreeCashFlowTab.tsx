@@ -18,48 +18,46 @@ export function FreeCashFlowTab({ dealData }: TabProps) {
 
     const columns = buildStandardColumns(dealData, "Free Cash Flow", { labelWidth: 280 });
 
-    // Calculate change in NWC per period (with prior-period support)
+    const cfg = dealData.deal.nwcConfig;
+    const methodLabel = calc.nwcMethodLabel(cfg?.method);
+    const nwcOf = (p: string) => calc.calcNWCByMethod(tb, p, cfg);
+
+    // Calculate change in NWC per period (with prior-period support) — uses active method
     const calcNWCChange = (p: string): number => {
       const { periods, priorBalances } = dealData.deal;
       const idx = periods.findIndex(pp => pp.id === p);
       if (idx < 0) return 0;
       if (idx === 0) {
-        // Use prior balances if available
         if (priorBalances && Object.keys(priorBalances).length > 0) {
-          let priorNWC = 0;
-          for (const e of tb) {
-            if (e.fsType !== 'BS') continue;
-            const isNWCNonCash = (calc.sumByLineItem([e], "Accounts receivable", "__test__") !== 0
-              || calc.sumByLineItem([e], "Other current assets", "__test__") !== 0
-              || calc.sumByLineItem([e], "Current liabilities", "__test__") !== 0
-              || calc.sumByLineItem([e], "Other current liabilities", "__test__") !== 0)
-              && calc.sumByLineItem([e], "Cash and cash equivalents", "__test__") === 0;
-            if (isNWCNonCash) priorNWC += priorBalances[e.accountId] ?? 0;
-          }
-          return priorNWC !== 0 ? calc.calcNWCExCash(tb, p) - priorNWC : 0;
+          // Synthesize a prior-period TB column and run calcNWCByMethod on it.
+          const synthPeriod = "__prior__";
+          const synthTB = tb.map(e => ({
+            ...e,
+            balances: { ...e.balances, [synthPeriod]: priorBalances[e.accountId] ?? 0 },
+          }));
+          const priorNWC = calc.calcNWCByMethod(synthTB, synthPeriod, cfg);
+          return priorNWC !== 0 ? nwcOf(p) - priorNWC : 0;
         }
         return 0;
       }
-      return calc.calcNWCExCash(tb, p) - calc.calcNWCExCash(tb, periods[idx - 1].id);
+      return nwcOf(p) - nwcOf(periods[idx - 1].id);
     };
 
     const rows: GridRow[] = [
-      // Adjusted EBITDA: stored negative in TB when profitable → negate for display (with reclass overlay)
       { id: "adj-ebitda", type: "data", cells: { label: "Adjusted EBITDA", ...npc(p => {
         const isReclass = calc.sumReclassImpact(rc, "Revenue", p) + calc.sumReclassImpact(rc, "Cost of Goods Sold", p) + calc.sumReclassImpact(rc, "Operating expenses", p) + calc.sumReclassImpact(rc, "Payroll & Related", p) + calc.sumReclassImpact(rc, "Other expense (income)", p);
         return calc.calcAdjustedEBITDA(tb, adj, p, ab) + isReclass;
       }) } },
-      // NWC increase = cash used = display as negative deduction
-      { id: "nwc-change", type: "data", cells: { label: "Change in NWC", ...pc(p => -calcNWCChange(p)) } },
+      { id: "nwc-change", type: "data", cells: { label: `Change in NWC (${methodLabel})`, ...pc(p => -calcNWCChange(p)) } },
       { id: "capex", type: "data", editable: true, cells: { label: "Capital Expenditures", ...pc(_ => 0) } },
       { id: "taxes", type: "data", editable: true, cells: { label: "Estimated Taxes", ...pc(p => -calc.calcIncomeTaxExpense(tb, p, ab.taxes)) } },
       { id: "s1", type: "spacer", cells: {} },
-      // FCF = Adj EBITDA - ΔNWC - Taxes (with reclass overlay)
       { id: "fcf", type: "total", cells: { label: "Free Cash Flow", ...pc(p => {
         const isReclass = calc.sumReclassImpact(rc, "Revenue", p) + calc.sumReclassImpact(rc, "Cost of Goods Sold", p) + calc.sumReclassImpact(rc, "Operating expenses", p) + calc.sumReclassImpact(rc, "Payroll & Related", p) + calc.sumReclassImpact(rc, "Other expense (income)", p);
         return -(calc.calcAdjustedEBITDA(tb, adj, p, ab) + isReclass) - calcNWCChange(p) - calc.calcIncomeTaxExpense(tb, p, ab.taxes);
       }) } },
     ];
+
 
     return { columns, rows, frozenColumns: 1 };
   }, [dealData]);

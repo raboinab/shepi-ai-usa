@@ -15,6 +15,7 @@ import { isTBCacheIncomplete } from "@/lib/loadTrialBalanceFromProcessedData";
 import { CoaAccount } from "@/lib/chartOfAccountsUtils";
 import { CoreDataGuideBanner } from "@/components/wizard/shared/CoreDataGuideBanner";
 import { DocumentChecklistReference } from "@/components/wizard/shared/DocumentChecklistReference";
+import { useCoaReadiness } from "@/hooks/useCoaReadiness";
 
 interface TrialBalanceSectionProps {
   projectId: string;
@@ -548,7 +549,11 @@ export const TrialBalanceSection = ({
   const isQBUser = (wizardData?.chartOfAccounts as Record<string, unknown>)?.syncSource === "quickbooks";
   const settings = (wizardData?.settings as Record<string, unknown>) || {};
   const coreDataGuideComplete = settings.coreDataGuideComplete === true;
-  const coaLocked = coaAccounts.length === 0 && !isQBUser;
+  // COA must actually exist (rows in wizard_data or processed_data).
+  // A stale `syncSource === "quickbooks"` flag is NOT sufficient — that
+  // previously let users upload TB before COA finished syncing.
+  const coaReadiness = useCoaReadiness(projectId, wizardData);
+  const coaLocked = !coaReadiness.ready && !coaReadiness.loading;
 
   const handleDismissGuide = () => {
     onSave?.({

@@ -33,7 +33,7 @@ const whatYouGet = [
 
 const whatWeAsk = [
   "Active, unrestricted CPA license in any US state",
-  "You carry your own professional liability (E&O) coverage as required by your state board or employer",
+  
   "If you have a day job at a CPA firm: you've checked that side work is permitted (or you're independent)",
   "You disclose independence conflicts before accepting any engagement",
   "You meet our response time and quality standards (we'll show you what those are at onboarding)",
@@ -106,8 +106,8 @@ export default function CpaPartners() {
 
       <p className="text-sm text-muted-foreground mt-10">
         Questions before applying? Email{" "}
-        <a href="mailto:partners@shepi.ai" className="text-primary hover:underline">
-          partners@shepi.ai
+        <a href="mailto:hello@shepi.ai" className="text-primary hover:underline">
+          hello@shepi.ai
         </a>{" "}
         or read our <Link to="/compare/ai-qoe-vs-traditional" className="text-primary hover:underline">DIY vs. DFY vs. Traditional comparison</Link> to see where Network CPAs fit.
       </p>

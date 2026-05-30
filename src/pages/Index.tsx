@@ -296,9 +296,9 @@ const Index = () => {
               Your Due Diligence Shepherd
             </p>
             <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-serif font-bold text-primary-foreground mb-6 leading-tight text-center">
-              AI-Assisted
+              Intelligent
               <br />
-              Quality of Earnings Analysis
+              Quality of Earnings Platform
             </h1>
             <p className="text-xl md:text-2xl text-primary-foreground/80 mb-4 max-w-3xl mx-auto">
               From raw financials to lender-ready conclusions — in hours, not weeks.
@@ -634,7 +634,7 @@ const Index = () => {
               <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mb-6">
                 <Bot className="w-6 h-6 text-primary" />
               </div>
-              <h3 className="text-xl font-bold text-foreground mb-3">AI-Assisted Insights</h3>
+              <h3 className="text-xl font-bold text-foreground mb-3">Intelligent Insights</h3>
               <p className="text-muted-foreground mb-4">Let AI help you identify anomalies, suggest adjustments, and validate your analysis against source documents.</p>
               <ul className="space-y-2 text-sm text-muted-foreground">
                 <li className="flex items-center gap-2">

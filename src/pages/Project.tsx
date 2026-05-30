@@ -23,6 +23,7 @@ import { AIChatPanel } from "@/components/wizard/AIChatPanel";
 import { InsightsView } from "@/components/insights/InsightsView";
 import { QuickBooksButton } from "@/components/QuickBooksButton";
 import { DfyStatusBanner } from "@/components/DfyStatusBanner";
+import { DocumentIntakePanel } from "@/components/dfy/DocumentIntakePanel";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,6 +48,10 @@ export interface ProjectData {
   current_phase: number;
   current_section: number;
   service_tier?: string;
+  firm_name?: string | null;
+  firm_logo_path?: string | null;
+  prepared_by_line?: string | null;
+  professional_use_acknowledged_at?: string | null;
 }
 
 const Project = () => {
@@ -150,6 +155,10 @@ const Project = () => {
       fiscal_year_end: dataToSave.fiscal_year_end,
       periods: dataToSave.periods as Json,
       status: dataToSave.current_phase > 1 ? "in-progress" : "draft",
+      firm_name: dataToSave.firm_name ?? null,
+      firm_logo_path: dataToSave.firm_logo_path ?? null,
+      prepared_by_line: dataToSave.prepared_by_line ?? null,
+      professional_use_acknowledged_at: dataToSave.professional_use_acknowledged_at ?? null,
     }).eq("id", project.id);
 
     // If a newer save started while we were awaiting, discard this result
@@ -484,6 +493,11 @@ const Project = () => {
       </header>
 
       <DfyStatusBanner projectId={project.id} serviceTier={project.service_tier || 'diy'} />
+      {project.service_tier === 'done_for_you' && (
+        <div className="px-4 pb-4">
+          <DocumentIntakePanel projectId={project.id} viewerRole="client" />
+        </div>
+      )}
       <div className="flex flex-1 overflow-hidden">
         {viewMode === "wizard" && (
           <>

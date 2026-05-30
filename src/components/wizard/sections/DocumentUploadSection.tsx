@@ -12,7 +12,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
-import { Upload, FileText, Loader2, CheckCircle2, AlertCircle, Trash2, RefreshCw, Sparkles, ShieldCheck, Info, Scale, Check, ChevronsUpDown, Clock } from "lucide-react";
+import { Upload, FileText, Loader2, CheckCircle2, AlertCircle, Trash2, RefreshCw, Sparkles, ShieldCheck, Info, Scale, Check, ChevronsUpDown, Clock, Lock, ArrowRight } from "lucide-react";
+import { useCoaReadiness } from "@/hooks/useCoaReadiness";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
@@ -44,6 +45,17 @@ import { DocumentChecklistReference } from "../shared/DocumentChecklistReference
 import { FinancialStatementValidationCard, type FinancialStatementValidationResult } from "../shared/FinancialStatementValidationCard";
 import { Spinner } from "@/components/ui/spinner";
 import { getUploadErrorMessage, logUploadError } from "@/lib/uploadErrorLogger";
+import { resetDocumentArtifacts, describeReset } from "@/lib/documentReset";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface DocumentUploadSectionProps {
   projectId: string;
@@ -52,6 +64,7 @@ interface DocumentUploadSectionProps {
   updateData: (data: Record<string, unknown>) => void;
   fullWizardData?: Record<string, unknown>;
   initialDocType?: string | null;
+  onNavigate?: (phase: number, section: number) => void;
 }
 
 interface Document {
@@ -290,7 +303,7 @@ const DOCUMENT_COVERAGE_CONFIG: Record<string, DocumentCoverageConfig> = {
   
   // Monthly/Quarterly (financials)
   trial_balance: { type: 'monthly', label: 'Period Coverage', description: 'Trial balance for each reporting period' },
-  balance_sheet: { type: 'monthly', label: 'Period Coverage', description: 'Balance sheet for each reporting period' },
+  balance_sheet: { type: 'point-in-time', label: 'As-of Date', description: 'Balance sheet snapshot as of the reporting date' },
   income_statement: { type: 'monthly', label: 'Period Coverage', description: 'P&L for each reporting period' },
   cash_flow: { type: 'monthly', label: 'Period Coverage', description: 'Cash flow for each reporting period' },
   
@@ -381,7 +394,9 @@ export const DocumentUploadSection = ({
   updateData,
   fullWizardData = {},
   initialDocType,
+  onNavigate,
 }: DocumentUploadSectionProps) => {
+  const coaReadiness = useCoaReadiness(projectId, fullWizardData);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -408,6 +423,8 @@ export const DocumentUploadSection = ({
     result: ValidationResult;
     selectedType: string;
   } | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Document | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   
   // Financial statement validation state
   const [financialValidationResults, setFinancialValidationResults] = useState<Record<string, FinancialStatementValidationResult | null>>({});
@@ -1454,6 +1471,14 @@ export const DocumentUploadSection = ({
       return;
     }
 
+    // COA-first invariant: block Trial Balance uploads when COA isn't ready.
+    // Mirrors the gate in TrialBalanceSection so the Documents tab can't bypass it.
+    if (selectedType === "trial_balance" && !coaReadiness.ready) {
+      toast.error("Upload your Chart of Accounts first — Trial Balance accounts can't be classified without it.");
+      return;
+    }
+
+
     const requiresInstitution = REQUIRES_INSTITUTION.includes(selectedType);
     
     if (requiresInstitution && !selectedInstitution) {
@@ -1489,8 +1514,8 @@ export const DocumentUploadSection = ({
       
       setIsValidating(false);
       
-      // If validation returned a mismatch, show dialog
-      if (result && !result.isValid && result.suggestedType) {
+      // If validation returned invalid, show dialog so user must confirm or change
+      if (result && !result.isValid) {
         setPendingValidation({
           file,
           result,
@@ -1499,9 +1524,11 @@ export const DocumentUploadSection = ({
         setValidationDialogOpen(true);
         return;
       }
-      
+
       // Validation passed or was skipped - proceed
-      toast.success("Document validated", { icon: <ShieldCheck className="h-4 w-4 text-green-500" /> });
+      if (result?.isValid) {
+        toast.success("Document validated", { icon: <ShieldCheck className="h-4 w-4 text-green-500" /> });
+      }
     }
     
     // Proceed with upload
@@ -1534,38 +1561,26 @@ export const DocumentUploadSection = ({
     setPendingValidation(null);
   };
 
-  const handleDelete = async (docId: string, filePath: string) => {
+  const handleDelete = async (doc: Document) => {
+    setIsDeleting(true);
     try {
-      // 1. Delete derived processed_data (analysis results, parsed data)
-      await supabase
-        .from("processed_data")
-        .delete()
-        .eq("source_document_id", docId);
-
-      // 2. Delete canonical_transactions linked to this document
-      await supabase
-        .from("canonical_transactions")
-        .delete()
-        .eq("source_document_id", docId);
-
-      // 3. Delete file from storage
-      await supabase.storage.from("documents").remove([filePath]);
-
-      // 4. Delete document record
-      const { error } = await supabase
-        .from("documents")
-        .delete()
-        .eq("id", docId);
-
-      if (error) throw error;
-
-      toast.success("Document deleted");
+      await resetDocumentArtifacts({
+        id: doc.id,
+        file_path: doc.file_path,
+        project_id: projectId,
+        account_type: doc.account_type,
+      });
+      toast.success("Document deleted — you can re-upload");
+      setPendingDelete(null);
       fetchDocuments();
     } catch (error) {
       console.error("Delete error:", error);
       toast.error("Failed to delete document");
+    } finally {
+      setIsDeleting(false);
     }
   };
+
 
   const handleRefresh = async (docId: string) => {
     toast.info("Refreshing document status...");
@@ -2183,6 +2198,29 @@ export const DocumentUploadSection = ({
                   </>
                 )}
 
+                {/* COA-first gate: block Trial Balance uploads without a Chart of Accounts */}
+                {type.value === "trial_balance" && !coaReadiness.ready && !coaReadiness.loading && (
+                  <Alert variant="destructive" className="bg-muted/40 border-border text-foreground">
+                    <Lock className="h-4 w-4" />
+                    <AlertDescription className="flex flex-col gap-2">
+                      <span className="font-medium">Chart of Accounts required</span>
+                      <span className="text-sm text-muted-foreground">
+                        Upload or sync your Chart of Accounts first so Trial Balance accounts can be classified with the correct FS Type and Category.
+                      </span>
+                      {onNavigate && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-2 self-start"
+                          onClick={() => onNavigate(2, 1)}
+                        >
+                          Go to Chart of Accounts <ArrowRight className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </AlertDescription>
+                  </Alert>
+                )}
+
                 <div className="space-y-2">
                   <Label>Files</Label>
                   <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
@@ -2231,7 +2269,7 @@ export const DocumentUploadSection = ({
 
                 <Button
                   onClick={handleUpload}
-                  disabled={uploading || isValidating || !selectedFiles || (type.value === "cim" && parsingCim) || (type.value === "tax_return" && !selectedTaxYear)}
+                  disabled={uploading || isValidating || !selectedFiles || (type.value === "cim" && parsingCim) || (type.value === "tax_return" && !selectedTaxYear) || (type.value === "trial_balance" && !coaReadiness.ready)}
                   className="w-full"
                 >
                   {isValidating ? (
@@ -2375,7 +2413,7 @@ export const DocumentUploadSection = ({
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                onClick={() => handleDelete(doc.id, doc.file_path as string)}
+                                onClick={() => setPendingDelete(doc)}
                               >
                                 <Trash2 className="w-4 h-4 text-destructive" />
                               </Button>
@@ -2421,6 +2459,39 @@ export const DocumentUploadSection = ({
           onCancel={handleCancelValidation}
         />
       )}
+
+      <AlertDialog open={!!pendingDelete} onOpenChange={(open) => !open && !isDeleting && setPendingDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this document?</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <span className="block">
+                {pendingDelete?.name ? <strong>{pendingDelete.name}</strong> : "This document"} will be removed.
+              </span>
+              <span className="block">
+                {pendingDelete ? describeReset({ id: pendingDelete.id, account_type: pendingDelete.account_type }) : ""}
+              </span>
+              <span className="block text-xs text-muted-foreground">
+                Existing adjustments are not deleted; re-run discovery if you want them refreshed against a new document.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                if (pendingDelete) handleDelete(pendingDelete);
+              }}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting ? "Deleting…" : "Delete & reset"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
+
   );
 };

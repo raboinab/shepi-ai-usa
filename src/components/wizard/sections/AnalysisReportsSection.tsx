@@ -4,19 +4,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { PieChart, BarChart3, Percent } from "lucide-react";
 import type { DealData } from "@/lib/workbook-types";
 import * as calc from "@/lib/calculations";
-import { SpreadsheetReportViewer } from "../shared/SpreadsheetReportViewer";
-
-interface RawDataReport {
-  rawData?: string[][];
-  syncedAt?: string;
-}
+import { WorkbookTabView } from "@/components/workbook/WorkbookTabView";
 
 interface AnalysisReportsSectionProps {
   dealData: DealData | null;
-  nwcReportData: RawDataReport;
 }
 
-export const AnalysisReportsSection = ({ dealData, nwcReportData }: AnalysisReportsSectionProps) => {
+export const AnalysisReportsSection = ({ dealData }: AnalysisReportsSectionProps) => {
   const tb = dealData?.trialBalance || [];
   const lastPeriod = dealData?.deal.periods[dealData.deal.periods.length - 1];
   const pid = lastPeriod?.id || "";
@@ -115,12 +109,7 @@ export const AnalysisReportsSection = ({ dealData, nwcReportData }: AnalysisRepo
         </TabsList>
 
         <TabsContent value="nwc" className="mt-6">
-          <SpreadsheetReportViewer
-            rawData={nwcReportData?.rawData || []}
-            title="Net Working Capital Analysis"
-            syncedAt={nwcReportData?.syncedAt}
-            skipEmptyRows
-          />
+          <WorkbookTabView tabId="nwc-analysis" dealData={dealData} />
         </TabsContent>
 
         <TabsContent value="common" className="mt-6">

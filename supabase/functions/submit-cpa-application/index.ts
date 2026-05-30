@@ -143,8 +143,8 @@ serve(async (req) => {
           method: "POST",
           headers: { Authorization: `Bearer ${resendKey}`, "Content-Type": "application/json" },
           body: JSON.stringify({
-            from: "shepi Network <partners@shepi.ai>",
-            to: ["partners@shepi.ai"],
+            from: "shepi <hello@shepi.ai>",
+            to: ["hello@shepi.ai"],
             reply_to: d.email,
             subject: `CPA application: ${d.full_name} (${d.state_of_licensure})`,
             html: adminHtml,
@@ -154,7 +154,7 @@ serve(async (req) => {
           method: "POST",
           headers: { Authorization: `Bearer ${resendKey}`, "Content-Type": "application/json" },
           body: JSON.stringify({
-            from: "shepi Network <partners@shepi.ai>",
+            from: "shepi <hello@shepi.ai>",
             to: [d.email],
             subject: "We received your shepi Network application",
             html: confirmHtml,

@@ -94,6 +94,12 @@ export async function generatePDF(options: GenerateReportOptions): Promise<void>
 
   const container = createSlideContainer();
 
+  // Ensure custom fonts (Fraunces, Inter Tight) are ready before snapshotting.
+  if (typeof document !== "undefined" && (document as Document & { fonts?: { ready?: Promise<unknown> } }).fonts?.ready) {
+    try { await (document as Document & { fonts: { ready: Promise<unknown> } }).fonts.ready; } catch { /* noop */ }
+  }
+
+
   try {
     for (let i = 0; i < slides.length; i++) {
       const slide = slides[i];

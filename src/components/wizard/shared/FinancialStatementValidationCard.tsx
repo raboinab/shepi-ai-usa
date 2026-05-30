@@ -193,11 +193,19 @@ export function FinancialStatementValidationCard({ result, onDismiss }: Financia
             {result.tbIsBalanced !== undefined && (
               <BalanceCheckAlert label="Trial Balance-derived" isBalanced={result.tbIsBalanced} />
             )}
+            {result.isBalanced === true && result.tbIsBalanced === false && (
+              <Alert>
+                <Info className="h-4 w-4" />
+                <AlertDescription>
+                  The uploaded balance sheet balances on its own. The variances above point to a Trial Balance / Chart of Accounts mapping issue (often: an account classified into the wrong type, or sign conventions). Review the Trial Balance section before treating these as real differences.
+                </AlertDescription>
+              </Alert>
+            )}
           </div>
         )}
 
         {/* Summary message */}
-        {result.summary && (
+        {result.summary && !(result.isBalanced === true && result.tbIsBalanced === false) && (
           <Alert>
             <Info className="h-4 w-4" />
             <AlertDescription>{result.summary}</AlertDescription>

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { FinancialTable } from "../shared/FinancialTable";
 import { SummaryCard } from "../shared/SummaryCard";
 import { FixedAssetsImportDialog } from "../shared/FixedAssetsImportDialog";
+import { WorkbookTabView } from "@/components/workbook/WorkbookTabView";
 import { Building, TrendingDown, Wrench, DollarSign, Download, Edit3, FileSpreadsheet, Info, ChevronDown } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
@@ -12,6 +13,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import type { DealData } from "@/lib/workbook-types";
 
 interface FixedAssetsData {
   assets: Record<string, unknown>[];
@@ -28,6 +30,7 @@ interface FixedAssetsSectionProps {
   projectId: string;
   periods?: string[];
   balanceSheetData?: BalanceSheetData;
+  dealData?: DealData | null;
 }
 
 const defaultData: FixedAssetsData = {
@@ -63,7 +66,8 @@ export const FixedAssetsSection = ({
   updateData, 
   projectId, 
   periods = [],
-  balanceSheetData 
+  balanceSheetData,
+  dealData,
 }: FixedAssetsSectionProps) => {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [showGuidance, setShowGuidance] = useState(false);
@@ -320,6 +324,11 @@ export const FixedAssetsSection = ({
           </p>
         </CardContent>
       </Card>
+
+      <section className="space-y-3">
+        <h3 className="text-lg font-serif font-semibold">Workbook view — Fixed Assets</h3>
+        <WorkbookTabView tabId="fixed-assets" dealData={dealData ?? null} />
+      </section>
 
       <FixedAssetsImportDialog
         open={importDialogOpen}

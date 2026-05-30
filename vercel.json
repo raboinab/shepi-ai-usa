@@ -6,7 +6,7 @@
   "rewrites": [
     {
       "source": "/((?!static-loader-data/|assets/|.*\\.(?:json|js|css|svg|png|jpg|jpeg|gif|webp|ico|woff|woff2|ttf|otf|map|xml|txt|pdf|xlsx)$).*)",
-      "destination": "/spa-shell.html"
+      "destination": "/spa-shell"
     }
   ],
   "headers": [
@@ -19,7 +19,7 @@
       ]
     },
     {
-      "source": "/spa-shell.html",
+      "source": "/spa-shell(.html)?",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
       ]

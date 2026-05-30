@@ -24,7 +24,7 @@ const schema = z.object({
   side_work_permitted: z.boolean().optional(),
   qoe_background: z.string().trim().max(4000).optional().or(z.literal("")),
   conflicts_disclosure: z.string().trim().max(4000).optional().or(z.literal("")),
-  linkedin_url: z.string().trim().max(500).optional().or(z.literal("")),
+  
   referral_source: z.string().trim().max(500).optional().or(z.literal("")),
 });
 
@@ -41,7 +41,7 @@ const initial: FormState = {
   side_work_permitted: false,
   qoe_background: "",
   conflicts_disclosure: "",
-  linkedin_url: "",
+  
   referral_source: "",
 };
 
@@ -91,7 +91,7 @@ export function CpaApplicationForm() {
     } catch (err: any) {
       toast({
         title: "Couldn't submit",
-        description: err?.message ?? "Please try again or email partners@shepi.ai.",
+        description: err?.message ?? "Please try again or email hello@shepi.ai.",
         variant: "destructive",
       });
     } finally {
@@ -137,9 +137,6 @@ export function CpaApplicationForm() {
         </Field>
         <Field label="Current firm (if any)" error={errors.firm_affiliation}>
           <Input value={form.firm_affiliation ?? ""} onChange={(e) => set("firm_affiliation", e.target.value)} maxLength={200} />
-        </Field>
-        <Field label="LinkedIn URL" error={errors.linkedin_url}>
-          <Input placeholder="https://linkedin.com/in/…" value={form.linkedin_url ?? ""} onChange={(e) => set("linkedin_url", e.target.value)} maxLength={500} />
         </Field>
       </div>
 

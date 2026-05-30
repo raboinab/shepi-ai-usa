@@ -1,0 +1,1 @@
+INSERT INTO public.user_credits (user_id, credits_remaining, total_credits_purchased) VALUES ('894774d8-2d8a-40de-b5ad-a5c8ec6a9d93', 100, 100) ON CONFLICT (user_id) DO UPDATE SET credits_remaining = EXCLUDED.credits_remaining + 100, total_credits_purchased = EXCLUDED.total_credits_purchased + 100

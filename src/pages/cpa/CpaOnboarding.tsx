@@ -11,12 +11,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { useToast } from "@/hooks/use-toast";
 import { CheckCircle2, Upload, FileText, Trash2 } from "lucide-react";
 
-const US_STATES = [
-  "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS",
-  "KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY",
-  "NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY","DC",
-];
-
 const INDUSTRIES = [
   "SaaS / Software",
   "E-commerce / Retail",
@@ -34,7 +28,6 @@ const INDUSTRIES = [
 
 const DOC_TYPES = [
   { value: "w9", label: "W-9" },
-  { value: "liability_insurance", label: "Liability Insurance Certificate" },
   { value: "license_verification", label: "License Verification" },
   { value: "other", label: "Other" },
 ];
@@ -47,13 +40,9 @@ interface CpaProfile {
   phone: string | null;
   state_of_licensure: string;
   license_number: string;
-  states_served: string[];
   industries: string[];
   bio: string | null;
   years_experience: number | null;
-  linkedin_url: string | null;
-  liability_covered: boolean;
-  liability_expires_at: string | null;
   w9_on_file: boolean;
   background_check_status: string;
   max_concurrent_engagements: number;
@@ -72,11 +61,9 @@ interface OnboardingDoc {
 export default function CpaOnboarding() {
   const { toast } = useToast();
   const qc = useQueryClient();
-  const [statesServed, setStatesServed] = useState<string[]>([]);
   const [industries, setIndustries] = useState<string[]>([]);
   const [bio, setBio] = useState("");
   const [phone, setPhone] = useState("");
-  const [linkedin, setLinkedin] = useState("");
   const [maxEngagements, setMaxEngagements] = useState(3);
   const [uploadType, setUploadType] = useState("w9");
   const [uploading, setUploading] = useState(false);
@@ -92,9 +79,35 @@ export default function CpaOnboarding() {
         .eq("user_id", u.user.id)
         .maybeSingle();
       if (error) throw error;
-      return (data ?? null) as unknown as CpaProfile | null;
+      if (data) return data as unknown as CpaProfile;
+
+      // Defensive fallback: user has cpa role but no profile row (e.g.
+      // role was granted manually). Create a stub so onboarding works.
+      const fullName =
+        (u.user.user_metadata as Record<string, unknown> | null)?.full_name as
+          | string
+          | undefined;
+      const { data: created, error: insErr } = await supabase
+        .from("cpa_profiles" as any)
+        .insert({
+          user_id: u.user.id,
+          full_name: fullName ?? u.user.email ?? "CPA",
+          email: u.user.email ?? "",
+          license_number: "",
+          state_of_licensure: "",
+          industries: [],
+          active: true,
+        })
+        .select("*")
+        .single();
+      if (insErr) {
+        console.warn("[cpa-onboarding] stub create failed", insErr);
+        return null;
+      }
+      return created as unknown as CpaProfile;
     },
   });
+
 
   const { data: docs } = useQuery({
     queryKey: ["cpa-onboarding-docs"],
@@ -110,11 +123,9 @@ export default function CpaOnboarding() {
 
   useEffect(() => {
     if (profile) {
-      setStatesServed(profile.states_served ?? []);
       setIndustries(profile.industries ?? []);
       setBio(profile.bio ?? "");
       setPhone(profile.phone ?? "");
-      setLinkedin(profile.linkedin_url ?? "");
       setMaxEngagements(profile.max_concurrent_engagements ?? 3);
     }
   }, [profile]);
@@ -123,11 +134,9 @@ export default function CpaOnboarding() {
     mutationFn: async (markComplete: boolean) => {
       if (!profile) throw new Error("Profile not found");
       const patch: Record<string, unknown> = {
-        states_served: statesServed,
         industries,
         bio: bio.trim() || null,
         phone: phone.trim() || null,
-        linkedin_url: linkedin.trim() || null,
         max_concurrent_engagements: maxEngagements,
       };
       if (markComplete) patch.onboarding_completed_at = new Date().toISOString();
@@ -173,12 +182,6 @@ export default function CpaOnboarding() {
           .update({ w9_on_file: true })
           .eq("id", profile.id);
       }
-      if (uploadType === "liability_insurance") {
-        await supabase
-          .from("cpa_profiles" as any)
-          .update({ liability_covered: true })
-          .eq("id", profile.id);
-      }
 
       qc.invalidateQueries({ queryKey: ["cpa-onboarding-docs"] });
       qc.invalidateQueries({ queryKey: ["cpa-profile-self"] });
@@ -201,13 +204,11 @@ export default function CpaOnboarding() {
     if (!profile) return [];
     return [
       { label: "Confirm contact info", done: !!profile.phone || phone.trim().length > 0 },
-      { label: "Add at least one state served", done: statesServed.length > 0 },
       { label: "Add at least one industry", done: industries.length > 0 },
       { label: "Short professional bio", done: (profile.bio ?? bio).trim().length >= 80 },
       { label: "W-9 on file", done: profile.w9_on_file },
-      { label: "Liability insurance on file", done: profile.liability_covered },
     ];
-  }, [profile, phone, statesServed, industries, bio]);
+  }, [profile, phone, industries, bio]);
 
   const completion = checklist.length
     ? Math.round((checklist.filter((c) => c.done).length / checklist.length) * 100)
@@ -230,7 +231,7 @@ export default function CpaOnboarding() {
             <CardDescription>
               We haven't created your CPA profile. An admin will activate your account shortly
               after approving your application. If you think this is a mistake, email
-              partners@shepi.ai.
+              hello@shepi.ai.
             </CardDescription>
           </CardHeader>
         </Card>
@@ -301,14 +302,6 @@ export default function CpaOnboarding() {
               />
             </div>
             <div>
-              <Label>LinkedIn URL</Label>
-              <Input
-                value={linkedin}
-                onChange={(e) => setLinkedin(e.target.value)}
-                placeholder="https://linkedin.com/in/..."
-              />
-            </div>
-            <div>
               <Label>Max concurrent engagements</Label>
               <Input
                 type="number"
@@ -328,36 +321,6 @@ export default function CpaOnboarding() {
               placeholder="2–4 sentences. Industry focus, years in QoE, notable deal sizes."
             />
             <p className="text-xs text-muted-foreground mt-1">{bio.length} characters</p>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>States served</CardTitle>
-          <CardDescription>
-            Pick every state where you're comfortable reviewing engagements.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap gap-2">
-            {US_STATES.map((s) => {
-              const active = statesServed.includes(s);
-              return (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => setStatesServed((prev) => toggle(prev, s))}
-                  className={`px-3 py-1 rounded-full text-xs border transition-colors ${
-                    active
-                      ? "bg-primary text-primary-foreground border-primary"
-                      : "bg-background hover:bg-muted border-border"
-                  }`}
-                >
-                  {s}
-                </button>
-              );
-            })}
           </div>
         </CardContent>
       </Card>
@@ -393,8 +356,7 @@ export default function CpaOnboarding() {
         <CardHeader>
           <CardTitle>Documents</CardTitle>
           <CardDescription>
-            W-9 is required for payouts. Liability insurance certificate is required to claim
-            engagements.
+            W-9 is required for payouts.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

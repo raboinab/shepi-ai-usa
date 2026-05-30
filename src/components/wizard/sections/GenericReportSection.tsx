@@ -1,45 +1,35 @@
-import { Card, CardContent } from "@/components/ui/card";
-import { SpreadsheetReportViewer } from "../shared/SpreadsheetReportViewer";
-import { ReportDashboardHeader } from "../shared/ReportDashboardHeader";
-import { FileSpreadsheet } from "lucide-react";
+import { useMemo } from "react";
 import type { DealData } from "@/lib/workbook-types";
 import { getReportDashboard } from "@/lib/reportDashboardMetrics";
-import { useMemo } from "react";
-
-interface ReportData {
-  rawData?: string[][];
-  syncedAt?: string;
-  source?: string;
-}
+import { ReportDashboardHeader } from "../shared/ReportDashboardHeader";
+import { WorkbookTabView, REPORT_TYPE_TO_TAB_ID } from "@/components/workbook/WorkbookTabView";
 
 interface GenericReportSectionProps {
   title: string;
   description?: string;
-  data: ReportData | Record<string, unknown>;
+  data?: unknown; // legacy, unused — kept for callsite compatibility
   emptyMessage?: string;
   dealData?: DealData | null;
   reportType?: string;
 }
 
 /**
- * Generic report section that displays spreadsheet data using SpreadsheetReportViewer.
- * When dealData and reportType are provided, renders a dashboard header with summary cards + charts.
+ * Generic report section — renders the corresponding workbook tab so the
+ * wizard and workbook always show identical numbers. Wizard-only chrome
+ * (title, description, dashboard cards) is preserved.
  */
 export const GenericReportSection = ({
   title,
   description,
-  data,
-  emptyMessage = "This report requires trial balance data. Complete the Core Data Entry steps to populate this report.",
   dealData,
   reportType,
 }: GenericReportSectionProps) => {
-  const reportData = data as ReportData;
-  const hasRawData = reportData?.rawData && reportData.rawData.length > 0;
-
   const dashboard = useMemo(() => {
     if (!dealData || !reportType) return null;
     return getReportDashboard(reportType as any, dealData);
   }, [dealData, reportType]);
+
+  const tabId = reportType ? REPORT_TYPE_TO_TAB_ID[reportType] : undefined;
 
   return (
     <div className="space-y-4">
@@ -52,21 +42,12 @@ export const GenericReportSection = ({
 
       {dashboard && <ReportDashboardHeader config={dashboard} />}
 
-      {hasRawData ? (
-        <SpreadsheetReportViewer
-          rawData={reportData.rawData!}
-          syncedAt={reportData.syncedAt}
-        />
+      {tabId ? (
+        <WorkbookTabView tabId={tabId} dealData={dealData ?? null} />
       ) : (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-            <FileSpreadsheet className="w-12 h-12 text-muted-foreground/50 mb-4" />
-            <p className="text-muted-foreground">{emptyMessage}</p>
-            <p className="text-sm text-muted-foreground/70 mt-2">
-              Enter your Chart of Accounts and Trial Balance to generate this report automatically.
-            </p>
-          </CardContent>
-        </Card>
+        <div className="rounded-md border border-border bg-card p-6 text-sm text-muted-foreground">
+          No workbook tab is configured for this report.
+        </div>
       )}
     </div>
   );

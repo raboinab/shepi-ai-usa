@@ -79,6 +79,27 @@ export interface FiscalYear {
 // Deal / Project Metadata
 // ============================================
 
+export type NWCMethod = 'reported' | 'operating' | 'transaction' | 'normalized' | 'component';
+
+/** NWC method configuration persisted alongside deal parameters and read by every
+ * Working Capital / NWC Analysis / Free Cash Flow grid. */
+export interface NWCConfig {
+  method: NWCMethod;
+  /** Transaction method: per-bucket exclusion toggles applied on top of Operating. */
+  transactionInclusions?: {
+    excludeCash?: boolean;          // default true
+    excludeShortTermDebt?: boolean; // default true
+    excludeIncomeTaxes?: boolean;   // default true
+    excludeOwnerBalances?: boolean; // default true
+  };
+  /** Normalized method: per-period adjustment overlay rows. */
+  normalizationAdjustments?: Array<{
+    id: string;
+    label: string;
+    periodValues: Record<string, number>;
+  }>;
+}
+
 export interface DealInfo {
   projectId: string;
   projectName: string;
@@ -94,7 +115,14 @@ export interface DealInfo {
   priorPeriodId?: string;
   /** Derived ending balances for the prior period, keyed by accountId. Computed as TB[first] − GL activity[first]. */
   priorBalances?: Record<string, number>;
+  /** Professional/CPA firm branding for deliverables when set on the project */
+  firmName?: string;
+  firmLogoUrl?: string;
+  preparedByLine?: string;
+  /** Working capital method config — drives every NWC calculation in the app. */
+  nwcConfig?: NWCConfig;
 }
+
 
 // ============================================
 // DealData

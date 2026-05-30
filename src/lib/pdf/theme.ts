@@ -1,42 +1,44 @@
 /**
- * PDF Slide-Deck Theme Constants
- * Colors, spacing, and brand settings matching the diligence report style.
+ * PDF Slide-Deck Theme Constants — Navy Trust palette.
+ * Shared with in-app workbook tokens in src/index.css so screen + PDF + XLSX align.
  */
 
 export const PDF_COLORS = {
-  // Primary palette
-  darkBlue: "#264A66",
-  midBlue: "#3A6D8C",
-  lightBlue: "#4A7FA3",
-  teal: "#4A7FA3",
-  gold: "#C4AB8E",
+  // Navy Trust palette
+  darkBlue: "#0F1B3D",   // deep navy — headers, cover, accents
+  midBlue: "#264A66",    // section headers
+  lightBlue: "#4A7FA3",  // interactive / link accent
+  teal: "#C9A84C",       // (kept name for compatibility) — now gold accent
+  gold: "#C9A84C",
+  sand: "#E2D4BE",       // warm sand — highlight rows
+  cream: "#F5F2EC",      // page rule / soft surfaces
 
   // Neutrals
-  white: "#ffffff",
-  offWhite: "#F5F2EC",
-  lightGray: "#E2D4BE",
-  midGray: "#6c757d",
-  darkGray: "#343a40",
-  black: "#000000",
+  white: "#FFFFFF",
+  offWhite: "#FAF7F1",   // zebra alt row
+  lightGray: "#E8E2D5",
+  midGray: "#7A7466",
+  darkGray: "#2A2A2A",
+  black: "#0A0A0A",
 
   // Status
-  green: "#28a745",
-  red: "#dc3545",
-  amber: "#ffc107",
+  green: "#1E7A4D",
+  red: "#B23A3A",
+  amber: "#C9A84C",
 } as const;
 
 export const PDF_FONTS = {
-  heading: "'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif",
-  body: "'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif",
+  heading: "'Fraunces', 'Lora', Georgia, 'Times New Roman', serif",
+  body: "'Inter Tight', 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif",
   mono: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
 } as const;
 
 export const SLIDE_DIMENSIONS = {
   width: 1920,
   height: 1080,
-  padding: 60,
-  headerHeight: 80,
-  footerHeight: 50,
+  padding: 72,
+  headerHeight: 64,
+  footerHeight: 44,
 } as const;
 
 /** Content area after accounting for padding + header + footer */

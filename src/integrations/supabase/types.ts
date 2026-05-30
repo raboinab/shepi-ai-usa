@@ -995,6 +995,42 @@ export type Database = {
         }
         Relationships: []
       }
+      cpa_nudges: {
+        Row: {
+          claim_id: string | null
+          created_at: string
+          email_id: string | null
+          id: string
+          message: string | null
+          missing_keys: Json
+          project_id: string
+          sent_by_system: boolean
+          sent_by_user_id: string | null
+        }
+        Insert: {
+          claim_id?: string | null
+          created_at?: string
+          email_id?: string | null
+          id?: string
+          message?: string | null
+          missing_keys?: Json
+          project_id: string
+          sent_by_system?: boolean
+          sent_by_user_id?: string | null
+        }
+        Update: {
+          claim_id?: string | null
+          created_at?: string
+          email_id?: string | null
+          id?: string
+          message?: string | null
+          missing_keys?: Json
+          project_id?: string
+          sent_by_system?: boolean
+          sent_by_user_id?: string | null
+        }
+        Relationships: []
+      }
       cpa_onboarding_documents: {
         Row: {
           cpa_user_id: string
@@ -1403,6 +1439,51 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      email_send_log: {
+        Row: {
+          created_at: string
+          error: string | null
+          event_type: string
+          function_name: string | null
+          id: string
+          payload: Json
+          related_project_id: string | null
+          related_user_id: string | null
+          resend_id: string | null
+          status: string
+          subject: string | null
+          to_email: string
+        }
+        Insert: {
+          created_at?: string
+          error?: string | null
+          event_type: string
+          function_name?: string | null
+          id?: string
+          payload?: Json
+          related_project_id?: string | null
+          related_user_id?: string | null
+          resend_id?: string | null
+          status: string
+          subject?: string | null
+          to_email: string
+        }
+        Update: {
+          created_at?: string
+          error?: string | null
+          event_type?: string
+          function_name?: string | null
+          id?: string
+          payload?: Json
+          related_project_id?: string | null
+          related_user_id?: string | null
+          resend_id?: string | null
+          status?: string
+          subject?: string | null
+          to_email?: string
+        }
+        Relationships: []
       }
       entity_nodes: {
         Row: {
@@ -2012,6 +2093,98 @@ export type Database = {
           },
         ]
       }
+      project_document_requirements: {
+        Row: {
+          created_at: string
+          id: string
+          is_custom: boolean
+          label: string
+          marked_na: boolean
+          marked_na_reason: string | null
+          notes: string | null
+          project_id: string
+          requested_by_user_id: string | null
+          requirement_key: string
+          tier: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_custom?: boolean
+          label: string
+          marked_na?: boolean
+          marked_na_reason?: string | null
+          notes?: string | null
+          project_id: string
+          requested_by_user_id?: string | null
+          requirement_key: string
+          tier?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_custom?: boolean
+          label?: string
+          marked_na?: boolean
+          marked_na_reason?: string | null
+          notes?: string | null
+          project_id?: string
+          requested_by_user_id?: string | null
+          requirement_key?: string
+          tier?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      project_document_reviews: {
+        Row: {
+          created_at: string
+          document_id: string | null
+          id: string
+          project_id: string
+          rejection_reason: string | null
+          requirement_id: string
+          reviewed_at: string | null
+          reviewed_by_user_id: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          document_id?: string | null
+          id?: string
+          project_id: string
+          rejection_reason?: string | null
+          requirement_id: string
+          reviewed_at?: string | null
+          reviewed_by_user_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          document_id?: string | null
+          id?: string
+          project_id?: string
+          rejection_reason?: string | null
+          requirement_id?: string
+          reviewed_at?: string | null
+          reviewed_by_user_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_document_reviews_requirement_id_fkey"
+            columns: ["requirement_id"]
+            isOneToOne: false
+            referencedRelation: "project_document_requirements"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       project_narratives: {
         Row: {
           content: Json
@@ -2154,6 +2327,8 @@ export type Database = {
           credit_expires_at: string | null
           current_phase: number | null
           current_section: number | null
+          firm_logo_path: string | null
+          firm_name: string | null
           fiscal_year_end: string | null
           funded_by_credit: boolean
           google_sheet_id: string | null
@@ -2162,6 +2337,8 @@ export type Database = {
           industry: string | null
           name: string
           periods: Json | null
+          prepared_by_line: string | null
+          professional_use_acknowledged_at: string | null
           service_tier: string
           status: string | null
           target_company: string | null
@@ -2176,6 +2353,8 @@ export type Database = {
           credit_expires_at?: string | null
           current_phase?: number | null
           current_section?: number | null
+          firm_logo_path?: string | null
+          firm_name?: string | null
           fiscal_year_end?: string | null
           funded_by_credit?: boolean
           google_sheet_id?: string | null
@@ -2184,6 +2363,8 @@ export type Database = {
           industry?: string | null
           name: string
           periods?: Json | null
+          prepared_by_line?: string | null
+          professional_use_acknowledged_at?: string | null
           service_tier?: string
           status?: string | null
           target_company?: string | null
@@ -2198,6 +2379,8 @@ export type Database = {
           credit_expires_at?: string | null
           current_phase?: number | null
           current_section?: number | null
+          firm_logo_path?: string | null
+          firm_name?: string | null
           fiscal_year_end?: string | null
           funded_by_credit?: boolean
           google_sheet_id?: string | null
@@ -2206,6 +2389,8 @@ export type Database = {
           industry?: string | null
           name?: string
           periods?: Json | null
+          prepared_by_line?: string | null
+          professional_use_acknowledged_at?: string | null
           service_tier?: string
           status?: string | null
           target_company?: string | null

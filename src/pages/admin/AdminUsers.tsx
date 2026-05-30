@@ -88,21 +88,31 @@ export default function AdminUsers() {
         const { error } = await supabase.from('user_roles').delete()
           .eq('user_id', userId).eq('role', 'cpa');
         if (error) throw error;
+        return { granted: false, sentEmail: false };
       } else {
-        const { error } = await supabase.from('user_roles').insert({
-          user_id: userId, role: 'cpa',
+        const { data, error } = await supabase.functions.invoke('grant-cpa-role', {
+          body: { user_id: userId },
         });
         if (error) throw error;
+        if (data?.error) throw new Error(data.error);
+        return { granted: true, sentEmail: !!data?.sent_email };
       }
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['admin-cpa-roles'] });
-      toast({ title: 'CPA role updated' });
+      toast({
+        title: result.granted
+          ? result.sentEmail
+            ? 'CPA role granted — welcome email sent'
+            : 'CPA role granted'
+          : 'CPA role revoked',
+      });
     },
     onError: (err) => {
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
     },
   });
+
 
   // Fetch engagement stats
   const { data: users, isLoading } = useQuery({

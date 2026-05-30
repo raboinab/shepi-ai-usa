@@ -398,6 +398,76 @@ export function calcNWCExCash(entries: TrialBalanceEntry[], periodId: string): n
 }
 
 // ============================================
+// NWC Method dispatcher
+// ============================================
+// Five canonical NWC definitions per the diligence taxonomy. All five route
+// through this single function so the wizard, workbook tabs, PDF, and XLSX
+// export render a consistent number once the user picks a method.
+import type { NWCConfig, NWCMethod } from "./workbook-types";
+
+const DEFAULT_NWC_METHOD: NWCMethod = "operating";
+
+/** Compute Net Working Capital for a single period using the selected method. */
+export function calcNWCByMethod(
+  entries: TrialBalanceEntry[],
+  periodId: string,
+  config?: NWCConfig | null,
+): number {
+  const method = config?.method ?? DEFAULT_NWC_METHOD;
+
+  switch (method) {
+    case "reported":
+      return calcNetWorkingCapital(entries, periodId);
+
+    case "operating":
+    // Component currently aliases to operating until sub-line-item tags
+    // (Inventory, Prepaids, AP, Accrued, Deferred Revenue) are added to the COA.
+    case "component":
+      return calcNWCExCash(entries, periodId);
+
+    case "transaction": {
+      // Start from operating, then apply transaction inclusion toggles.
+      const inc = config?.transactionInclusions ?? {};
+      let v = calcNWCExCash(entries, periodId);
+      // The toggles below subtract additional non-operating buckets when their
+      // "exclude" flag is on. Today the COA does not tag these buckets
+      // separately from "Other current liabilities", so these flags are
+      // placeholders that take effect once sub-tags are introduced.
+      // We retain the toggles so persisted dealParameters stay forward-compatible.
+      if (inc.excludeShortTermDebt) v += 0;
+      if (inc.excludeIncomeTaxes) v += 0;
+      if (inc.excludeOwnerBalances) v += 0;
+      return v;
+    }
+
+    case "normalized": {
+      const base = calcNWCExCash(entries, periodId);
+      const overlays = config?.normalizationAdjustments ?? [];
+      const sum = overlays.reduce(
+        (acc, row) => acc + (row.periodValues?.[periodId] ?? 0),
+        0,
+      );
+      return base + sum;
+    }
+
+    default:
+      return calcNWCExCash(entries, periodId);
+  }
+}
+
+/** Human-readable label for each NWC method. Used in row labels and PDF/XLSX headers. */
+export function nwcMethodLabel(method: NWCMethod | undefined): string {
+  switch (method ?? DEFAULT_NWC_METHOD) {
+    case "reported": return "Reported";
+    case "operating": return "Operating";
+    case "transaction": return "Transaction";
+    case "normalized": return "Normalized";
+    case "component": return "Component";
+  }
+}
+
+
+// ============================================
 // Margins
 // ============================================
 

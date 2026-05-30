@@ -64,6 +64,20 @@ export default {
           cream: 'hsl(var(--shepi-cream))',
           tan: 'hsl(var(--shepi-tan))',
           light: 'hsl(var(--shepi-light))'
+        },
+        // Workbook / Navy Trust tokens
+        workbook: {
+          navy: 'hsl(var(--workbook-navy))',
+          'navy-fg': 'hsl(var(--workbook-navy-fg))',
+          mid: 'hsl(var(--workbook-mid))',
+          accent: 'hsl(var(--workbook-accent))',
+          gold: 'hsl(var(--workbook-gold))',
+          sand: 'hsl(var(--workbook-sand))',
+          cream: 'hsl(var(--workbook-cream))',
+          paper: 'hsl(var(--workbook-paper))',
+          zebra: 'hsl(var(--workbook-zebra))',
+          rule: 'hsl(var(--workbook-rule-soft))',
+          'rule-strong': 'hsl(var(--workbook-rule-strong))'
         }
       },
       borderRadius: {
@@ -95,6 +109,7 @@ export default {
       },
       fontFamily: {
         sans: [
+          'Inter Tight',
           'Inter',
           'ui-sans-serif',
           'system-ui',
@@ -109,6 +124,7 @@ export default {
         ],
         serif: [
           'Lora',
+          'Fraunces',
           'ui-serif',
           'Georgia',
           'Cambria',
@@ -117,6 +133,7 @@ export default {
           'serif'
         ],
         mono: [
+          'JetBrains Mono',
           'Space Mono',
           'ui-monospace',
           'SFMono-Regular',

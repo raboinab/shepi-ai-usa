@@ -10,10 +10,11 @@ import type { ProjectData } from "@/pages/Project";
 import { Period } from "@/lib/periodUtils";
 import type { QoeLedgerAdjustment } from "@/types/qoeLedger";
 import { computeSign } from "@/lib/qoeAdjustmentTaxonomy";
-import { projectToDealData } from "@/lib/projectToDealAdapter";
+import { projectToDealData, loadDealDataWithPriorBalances } from "@/lib/projectToDealAdapter";
 import { buildWizardReports } from "@/lib/wizardReportBuilder";
 import * as calc from "@/lib/calculations";
 import { Spinner } from "@/components/ui/spinner";
+import type { DealData } from "@/lib/workbook-types";
 
 // Lazy-loaded section components
 const ProjectSetupSection = lazy(() => import("./sections/ProjectSetupSection").then(m => ({ default: m.ProjectSetupSection })));
@@ -271,12 +272,13 @@ export const WizardContent = ({
 
   const { periods, fiscalYearEnd } = getPeriodData(project);
 
-  // Only compute DealData and wizard reports for phases that need them (5+)
-  const needsReports = (project.current_phase ?? 1) >= 5;
+  // DealData powers both Phase 5 reports AND any earlier section that renders
+  // a WorkbookTabView (e.g. Payroll in 3-8). Always compute.
+  const needsReports = true;
   
-  const { dealData, wizardReports } = useMemo(() => {
+  const { dealData: baseDealData, wizardReports } = useMemo(() => {
     if (!needsReports) {
-      return { dealData: null, wizardReports: {} };
+      return { dealData: null as DealData | null, wizardReports: {} as Record<string, unknown> };
     }
     try {
       const dd = projectToDealData({
@@ -290,12 +292,35 @@ export const WizardContent = ({
         periods: (project.periods as unknown as Period[]) ?? null,
         wizard_data: project.wizard_data as Record<string, unknown> | null,
       });
-      return { dealData: dd, wizardReports: buildWizardReports(dd) };
+      return { dealData: dd as DealData | null, wizardReports: buildWizardReports(dd) };
     } catch (e) {
       console.warn("Failed to build wizard reports:", e);
-      return { dealData: null, wizardReports: {} };
+      return { dealData: null as DealData | null, wizardReports: {} as Record<string, unknown> };
     }
   }, [needsReports, project.id, project.wizard_data, project.periods]);
+
+  // Async prior-balance enrichment — mirrors what Workbook page does so the
+  // wizard's Phase-5 sections render identical numbers to the workbook tabs.
+  const [dealData, setDealData] = useState<DealData | null>(baseDealData);
+  useEffect(() => {
+    setDealData(baseDealData);
+    if (!needsReports || !baseDealData) return;
+    let cancelled = false;
+    loadDealDataWithPriorBalances({
+      id: project.id,
+      name: project.name,
+      client_name: project.client_name ?? null,
+      target_company: project.target_company ?? null,
+      industry: project.industry ?? null,
+      transaction_type: project.transaction_type ?? null,
+      fiscal_year_end: project.fiscal_year_end ?? null,
+      periods: (project.periods as unknown as Period[]) ?? null,
+      wizard_data: project.wizard_data as Record<string, unknown> | null,
+    })
+      .then((enriched) => { if (!cancelled) setDealData(enriched); })
+      .catch((e) => console.warn("Prior-balance enrichment failed:", e));
+    return () => { cancelled = true; };
+  }, [baseDealData, needsReports, project.id]);
 
   // Always use freshly computed reports — never serve stale wizard_data cache
   const getReportData = (key: string) => {
@@ -359,6 +384,7 @@ export const WizardContent = ({
             updateData={(data) => updateWizardData("documentUpload", data)}
             fullWizardData={project.wizard_data as Record<string, unknown>}
             initialDocType={pendingDocType}
+            onNavigate={onNavigate}
           />
         );
       }
@@ -380,16 +406,17 @@ export const WizardContent = ({
               onOpenGuide={openGuide}
                isDemo={isDemo}
                mockProposals={isDemo ? (project.wizard_data.discoveryProposals as any) : undefined}
+               dealData={dealData}
             />
          );
       case "3-3":
         return <JournalEntriesSection projectId={project.id} data={(project.wizard_data.journalEntries as any) || { entries: [], totalCount: 0 }} onUpdate={(data) => updateWizardData("journalEntries", data as unknown as Record<string, unknown>)} onGuideContextChange={onGuideContextChange} />;
       case "3-4":
-        return <ARAgingSection projectId={project.id} data={(project.wizard_data.arAging as any) || {}} updateData={(data) => updateWizardData("arAging", data as unknown as Record<string, unknown>)} periods={periods} />;
+        return <ARAgingSection projectId={project.id} data={(project.wizard_data.arAging as any) || {}} updateData={(data) => updateWizardData("arAging", data as unknown as Record<string, unknown>)} periods={periods} dealData={dealData} />;
       case "3-5":
-        return <APAgingSection projectId={project.id} data={(project.wizard_data.apAging as any) || {}} updateData={(data) => updateWizardData("apAging", data as unknown as Record<string, unknown>)} periods={periods} />;
+        return <APAgingSection projectId={project.id} data={(project.wizard_data.apAging as any) || {}} updateData={(data) => updateWizardData("apAging", data as unknown as Record<string, unknown>)} periods={periods} dealData={dealData} />;
       case "3-6":
-        return <FixedAssetsSection data={(project.wizard_data.fixedAssets as any) || {}} updateData={(data) => updateWizardData("fixedAssets", data as unknown as Record<string, unknown>)} projectId={project.id} />;
+        return <FixedAssetsSection data={(project.wizard_data.fixedAssets as any) || {}} updateData={(data) => updateWizardData("fixedAssets", data as unknown as Record<string, unknown>)} projectId={project.id} dealData={dealData} />;
       case "3-7":
         return <InventorySection data={(project.wizard_data.inventory as any) || {}} updateData={(data) => updateWizardData("inventory", data as unknown as Record<string, unknown>)} />;
       case "3-8":
@@ -404,10 +431,11 @@ export const WizardContent = ({
               const tbData = (project.wizard_data.trialBalance as Record<string, unknown>) || {};
               updateWizardData("trialBalance", { ...tbData, accounts });
             }}
+            dealData={dealData}
           />
         );
       case "3-9":
-        return <SupplementarySection data={(project.wizard_data.supplementary as any) || {}} updateData={(data) => updateWizardData("supplementary", data as unknown as Record<string, unknown>)} projectId={project.id} />;
+        return <SupplementarySection data={(project.wizard_data.supplementary as any) || {}} updateData={(data) => updateWizardData("supplementary", data as unknown as Record<string, unknown>)} projectId={project.id} dealData={dealData} />;
       case "3-10":
         return <MaterialContractsSection data={(project.wizard_data.materialContracts as any) || {}} updateData={(data) => updateWizardData("materialContracts", data as unknown as Record<string, unknown>)} projectId={project.id} />;
       case "3-11":
@@ -415,9 +443,9 @@ export const WizardContent = ({
 
       // Phase 4: Customer & Vendor
       case "4-1":
-        return <TopCustomersSection projectId={project.id} data={(project.wizard_data.topCustomers as any) || {}} updateData={(data) => updateWizardData("topCustomers", data as unknown as Record<string, unknown>)} />;
+        return <TopCustomersSection projectId={project.id} data={(project.wizard_data.topCustomers as any) || {}} updateData={(data) => updateWizardData("topCustomers", data as unknown as Record<string, unknown>)} dealData={dealData} />;
       case "4-2":
-        return <TopVendorsSection projectId={project.id} data={(project.wizard_data.topVendors as any) || {}} updateData={(data) => updateWizardData("topVendors", data as unknown as Record<string, unknown>)} />;
+        return <TopVendorsSection projectId={project.id} data={(project.wizard_data.topVendors as any) || {}} updateData={(data) => updateWizardData("topVendors", data as unknown as Record<string, unknown>)} dealData={dealData} />;
 
       // Phase 5: Reports (expanded with all spreadsheet tabs)
       case "5-1":
@@ -513,11 +541,11 @@ export const WizardContent = ({
       case "6-1":
         return <QoEExecutiveSummarySection dealData={dealData} wizardData={project.wizard_data as Record<string, unknown>} project={project} />;
       case "6-2":
-        return <FinancialReportsSection incomeStatementData={getReportData("incomeStatement")} balanceSheetData={getReportData("balanceSheet")} cashFlowData={getReportData("freeCashFlow")} />;
+        return <FinancialReportsSection dealData={dealData} />;
       case "6-3":
-        return <AnalysisReportsSection dealData={dealData} nwcReportData={getReportData("nwcAnalysis")} />;
+        return <AnalysisReportsSection dealData={dealData} />;
       case "6-4":
-        return <ExportCenterSection data={(project.wizard_data.exportCenter as any) || {}} updateData={(data) => updateWizardData("exportCenter", data as unknown as Record<string, unknown>)} wizardData={project.wizard_data} projectId={project.id} projectName={project.name} computedReports={wizardReports} dealData={dealData} onNavigateToInsights={onSwitchToInsights} isDemo={isDemo} />;
+        return <ExportCenterSection data={(project.wizard_data.exportCenter as any) || {}} updateData={(data) => updateWizardData("exportCenter", data as unknown as Record<string, unknown>)} wizardData={project.wizard_data} projectId={project.id} projectName={project.name} computedReports={wizardReports as any} dealData={dealData} onNavigateToInsights={onSwitchToInsights} isDemo={isDemo} />;
 
       default:
         return null;

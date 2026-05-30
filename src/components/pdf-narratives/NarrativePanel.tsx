@@ -92,7 +92,7 @@ export function NarrativePanel({ projectId, grids, attentionItems }: Props) {
           AI Analyst Commentary
         </CardTitle>
         <p className="text-sm text-muted-foreground">
-          Generate Kyle/AKB-style narrative for each slide. Numbers are auto-verified against your data;
+          Generate analyst-style commentary for each slide. Numbers are auto-verified against your data;
           unverified figures are stripped. Edit freely before exporting.
         </p>
       </CardHeader>
