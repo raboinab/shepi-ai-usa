@@ -337,7 +337,11 @@ function deriveTotalsFromTrialBalance(
 
   return {
     totalAssets, totalLiabilities, totalEquity: totalEquityAdjusted,
-    totalRevenue, totalCogs, grossProfit, totalExpenses, netIncome,
+    totalRevenue, totalCogs, grossProfit, totalExpenses,
+    netOperatingIncome: operatingIncome,
+    totalOtherIncome: otherIncome,
+    totalOtherExpense: otherExpense,
+    netIncome,
     operatingCashFlow: netIncome, investingCashFlow: 0, financingCashFlow: 0,
     netChangeInCash: netIncome,
   };
