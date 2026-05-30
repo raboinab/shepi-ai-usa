@@ -1,66 +1,57 @@
-## Goal
+## What's happening
 
-Introduce a single **NWC Method** toggle in Shepi. The user picks one of five methods, and every downstream calculation (Working Capital tab, NWC Analysis tab, Deal Parameters peg, Free Cash Flow change-in-NWC, PDF Working Capital slide, and workbook XLSX export) uses that method.
+On your validation card:
 
-The five methods follow the taxonomy you laid out:
+- **Total Assets** match exactly ($2,893,672 = $2,893,672) → no variance, so the Uploaded/Variance cells render blank (that's working as designed for a perfect match — but it looks empty/confusing).
+- **Total Liabilities** off by $1 → rounding, treated as match.
+- **Total Equity** off by **$526,104 (+23.4%)** → flagged "significant."
 
-1. **Reported** — Total Current Assets − Total Current Liabilities (book)
-2. **Operating** — excludes cash, short-term debt, income taxes payable
-3. **Transaction** — Operating with configurable inclusions/exclusions per LOI
-4. **Normalized** — Transaction + user-entered normalization adjustments (seasonality, one-time items)
-5. **Component** — AR + Inventory + Prepaids − AP − Accrued Expenses − Deferred Revenue
+Because Assets match and Liabilities match, the only way Equity can differ is if the TB-derived equity total is missing something. It is.
 
-## Scope
+## Root cause
 
-### 1. Data model
+In `supabase/functions/validate-financial-statement/index.ts`, the `deriveTotalsFromTB` function (around lines 116–169) sums **only BS-type accounts** classified as equity (Retained Earnings, Common Stock, Owner's Equity, Distributions, etc.). It computes `netIncome = grossProfit - totalExpenses` on the same pass but **never adds it to `totalEquity`**.
 
-- Add `nwcMethod: 'reported' | 'operating' | 'transaction' | 'normalized' | 'component'` to `DealParameters` in `src/lib/nwcDataUtils.ts`. Default `'operating'`.
-- Add `transactionInclusions` (record of line-item keys → boolean) for the Transaction method's exclude toggles (cash, short-term debt, income taxes payable, owner-related balances).
-- Add `normalizationAdjustments: Array<{ id, label, periodValues: Record<periodId, number> }>` for Normalized method.
-- Persist via existing `dealParameters` save path (no schema migration — these live in the same `dealParameters` JSON column already used).
+A real balance sheet's equity = beginning retained earnings + **current-period net income** + other equity. The seller's uploaded BS includes the YTD earnings; ours doesn't. So:
 
-### 2. Calculation layer (`src/lib/calculations.ts`)
+```
+$2,779,084 (uploaded equity)
+− $2,252,980 (TB equity rows only)
+= $526,104  ← exactly the YTD net income missing from the roll-up
+```
 
-Add one entry point: `calcNWCByMethod(entries, periodId, method, params) → number`. Internally it composes the existing primitives:
+That's why the "Trial Balance-derived: Not balanced" warning also fires — the same $526k gap means Assets ≠ Liabilities + Equity on our side.
 
-- `reported` → `calcNetWorkingCapital`
-- `operating` → `calcNWCExCash` minus short-term debt and income taxes payable buckets (read from `Other current liabilities` sub-rows when tagged; fall back to `calcNWCExCash` if not tagged)
-- `transaction` → operating with user `transactionInclusions` applied
-- `normalized` → transaction + sum of `normalizationAdjustments[period]`
-- `component` → AR + Inventory + Prepaids − AP − Accrued − Deferred Revenue, using COA sub-line-item tags
+## The fix
 
-Component requires sub-tags that the current 5-bucket COA does not expose individually. **Decision needed (see Open Questions):** introduce sub-line-item tags or treat `component` as currently equivalent to `operating` until sub-tags exist.
+Two small, surgical changes to `supabase/functions/validate-financial-statement/index.ts`:
 
-### 3. UI — Method selector
+1. **Roll net income into TB equity** in `deriveTotalsFromTB`:
+   - After computing `netIncome`, set `totalEquity = totalEquity + netIncome` before returning.
+   - This matches GAAP period-end equity = book equity + YTD earnings closed to RE.
 
-New component `src/components/wizard/shared/NWCMethodSelector.tsx`: segmented control with the 5 options, short description tooltip per method, and a "Configure" affordance that opens:
+2. **Re-evaluate `tbIsBalanced`** with the corrected equity (already uses `derivedTotals.totalEquity`, so it'll auto-correct once #1 lands).
 
-- **Transaction method:** checkbox list of items to exclude (Cash, Short-term debt, Income taxes payable, Owner loans).
-- **Normalized method:** editable table of adjustment rows × periods (replaces the current free-text "Additional NWC adjustments" row in the NWC Analysis grid).
+Expected result after fix on this deal:
+- Total Equity: TB shows ~$2,779,084 → matches uploaded, variance ≈ $0.
+- `tbIsBalanced` flips to true.
+- Overall match score jumps from 67% → ~100%.
+- The "Trial Balance / Chart of Accounts mapping issue" info alert disappears.
 
-Place the selector at the top of `NWCFCFSection.tsx`, above the summary cards.
+## Small UX cleanup (optional, same card)
 
-### 4. Downstream wiring
+In `FinancialStatementValidationCard.tsx`, when a line item is a perfect match the **Uploaded** and **Variance** cells render as empty/blank, which is what you saw on the Total Assets row and made the table look broken. Two options:
 
-- **Summary cards** in `NWCFCFSection.tsx`: "Current NWC" reflects the active method; add a small method badge.
-- **WorkingCapitalTab.tsx**: replace the hardcoded "Net Working Capital" / "NWC ex. Cash" rows with a single "Net Working Capital ({method})" row and the % of Revenue ratio using that value.
-- **NWCAnalysisTab.tsx**: re-label the "reported → adjusted" flow to match the selected method, and route the "Normal NWC adjustments" block to the Normalized adjustments store.
-- **DealParametersCard.tsx**: peg averages (T3M / T6M / T12M) are recomputed against the selected NWC method via `calcNWCByMethod`, not from the legacy `extractNWCMetrics` scraper.
-- **FreeCashFlowTab.tsx**: "Change in NWC" line uses the selected method.
-- **PDF (`src/lib/pdf/pdfWorker.ts`) + workbook XLSX builders**: Working Capital slide / tab header shows the method name and uses its values; narratives reference the chosen definition.
+- **A. Leave as-is** — current behavior, blanks mean "no variance worth showing."
+- **B. Always show Uploaded value**, and show "$0 (0.0%)" or a "—" in Variance for matches.
 
-### 5. Tests
+I'd recommend **B** — it makes the table self-explanatory at a glance. Let me know if you want this included.
 
-Add unit tests in `src/lib/nwcDataUtils.test.ts` and `calculations.test.ts` covering each method against a fixed mock trial balance, plus a regression test that switching method does not mutate trial balance data.
+## Files to change
 
-## Open questions
+- `supabase/functions/validate-financial-statement/index.ts` — add net income to TB equity in `deriveTotalsFromTB` (~2 lines).
+- *(optional)* `src/components/wizard/shared/FinancialStatementValidationCard.tsx` — always render uploaded value + explicit "$0" variance for matches (~5 lines).
 
-1. **Component method line items.** The current Chart of Accounts only has `Cash / AR / Other current assets / Current liabilities / Other current liabilities`. Component requires AR / Inventory / Prepaids / AP / Accrued / Deferred Revenue separately. Two options: (a) add sub-line-item tags to the COA so users classify accounts at a finer grain (bigger change, touches Trial Balance import / COA mapping UI); or (b) ship Component as "equivalent to Operating" with a "Requires sub-classification — coming soon" badge until the COA is expanded.
-2. **Method scope.** Should the chosen method also drive the **homepage / marketing copy and guides** (e.g. `/guides/WorkingCapitalAnalysis`), or only the in-app calculations? I'd recommend in-app only for this pass; we can update the guide separately.
-3. **Demo PDF/XLSX.** After this change the demo assets in `/public/demo/` will be out of date — should I regenerate them as part of this work (per the project memory note about `scripts/generate-demo-pdf.ts` / `generate-demo-workbook.ts`)?
+No DB migrations, no client logic changes beyond the optional UX tweak. After redeploy you can re-run the validation on the same uploaded CSV — no re-upload needed.
 
-## Out of scope
-
-- No changes to CPA review workflow, DFY messaging, or marketing claims.
-- No new database tables; reuses existing `dealParameters` JSON.
-- No CPA-attestation-style language added to the report.
+Want me to ship just the equity fix, or include the UX cleanup too?
