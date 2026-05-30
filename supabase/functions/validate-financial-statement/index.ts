@@ -677,6 +677,14 @@ serve(async (req) => {
       }
     }
 
+    if (documentType === 'income_statement') {
+      if (isPeriodScoped) {
+        summary += ` (Scoped to ${effectivePeriodStart || 'earliest'} → ${effectivePeriodEnd || 'latest'}.)`;
+      } else if (!effectivePeriodStart && !effectivePeriodEnd) {
+        summary += ` Note: could not determine the P&L reporting period — derived TB values may span a different range than the uploaded document.`;
+      }
+    }
+
 
     const result = {
       documentType,
