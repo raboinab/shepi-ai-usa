@@ -466,7 +466,7 @@ serve(async (req) => {
 
     console.log(`[validate-fs] Deriving totals for ${documentType}, periodStart=${effectivePeriodStart}, periodEnd=${effectivePeriodEnd}, accounts=${accounts.length}`);
 
-    const derivedTotals = deriveTotalsFromTrialBalance(accounts, documentType, effectivePeriodStart, effectivePeriodEnd);
+    const derivedTotals = deriveTotalsFromTrialBalance(accounts, documentType, effectivePeriodStart, effectivePeriodEnd, (project as { fiscal_year_end?: string | null }).fiscal_year_end);
     let uploadedTotals = extractedTotals as DerivedTotals | undefined;
 
     // --- Extraction pipeline: try multiple sources ---
