@@ -426,7 +426,7 @@ serve(async (req) => {
     // Fetch project TB data
     const { data: project, error: projectError } = await supabase
       .from("projects")
-      .select("wizard_data, periods")
+      .select("wizard_data, periods, fiscal_year_end")
       .eq("id", projectId)
       .single();
 
