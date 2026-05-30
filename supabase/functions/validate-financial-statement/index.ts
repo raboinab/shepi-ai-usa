@@ -256,8 +256,10 @@ function deriveTotalsFromTrialBalance(
         // not monthly movements. For BS equity rollup, use the reporting endpoint only.
         value = getPointInTimeValue(account.monthlyValues, periodEnd);
       } else {
-        const filteredKeys = getPeriodKeysInRange(account.monthlyValues, periodStart, periodEnd);
-        value = filteredKeys.reduce((sum, k) => sum + (account.monthlyValues[k] || 0), 0);
+        // QB IS rows are cumulative YTD; convert to monthly activity before summing.
+        const monthly = convertIsYtdToMonthlyActivity(account.monthlyValues, parseFiscalYearEndMonth(fiscalYearEnd));
+        const filteredKeys = getPeriodKeysInRange(monthly, periodStart, periodEnd);
+        value = filteredKeys.reduce((sum, k) => sum + (monthly[k] || 0), 0);
       }
     } else {
       if (account.fsType === 'BS') {
