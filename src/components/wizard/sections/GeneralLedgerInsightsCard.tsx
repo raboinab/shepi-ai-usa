@@ -282,6 +282,7 @@ export const GeneralLedgerInsightsCard = ({ analysisData, documentName, classNam
                           <TableCell className="text-center">
                             {r.status === "match" && <CheckCircle2 className="w-4 h-4 text-green-600 mx-auto" />}
                             {r.status === "variance" && <XCircle className="w-4 h-4 text-destructive mx-auto" />}
+                            {r.status === "structural_variance" && <Scale className="w-4 h-4 text-muted-foreground mx-auto" />}
                             {r.status === "missing_in_tb" && <Scale className="w-4 h-4 text-muted-foreground mx-auto" />}
                           </TableCell>
                         </TableRow>
