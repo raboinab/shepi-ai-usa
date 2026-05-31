@@ -276,7 +276,15 @@ export const GeneralLedgerInsightsCard = ({ analysisData, documentName, classNam
                     <TableBody>
                       {recon.map((r, i) => (
                         <TableRow key={i}>
-                          <TableCell className="text-sm">{r.accountName}</TableCell>
+                          <TableCell className="text-sm">
+                            {r.accountName}
+                            {r.glBalanceSource === "tb_inferred" && (
+                              <span
+                                className="ml-1 text-muted-foreground cursor-help"
+                                title="GL opening balance was missing from the QuickBooks export; ending balance taken from Trial Balance."
+                              >*</span>
+                            )}
+                          </TableCell>
                           <TableCell className="text-right text-sm">{fmt(r.glBalance)}</TableCell>
                           <TableCell className="text-right text-sm">{fmt(r.tbBalance)}</TableCell>
                           <TableCell className="text-right text-sm">{r.variance != null ? fmt(r.variance) : "-"}</TableCell>
