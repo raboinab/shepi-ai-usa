@@ -28,7 +28,7 @@ interface TBComparison {
   tbBalance: number | null;
   variance: number | null;
   variancePct: number | null;
-  status: "match" | "variance" | "missing_in_tb";
+  status: "match" | "variance" | "structural_variance" | "missing_in_tb";
 }
 
 serve(async (req) => {
