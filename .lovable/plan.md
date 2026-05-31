@@ -1,25 +1,42 @@
-## What I found
+## Goal
 
-- The payroll extraction itself is working: `processed_data` has the latest payroll row for project `fa0768ca-96f9-4ded-b498-f64ca5be3ede`, with 7 extracted line items across salary/wages, owner compensation, and payroll taxes.
-- The edge function logs show successful storage, not a model failure.
-- The likely break is frontend wiring: the Project/Wizard and Workbook pages build `DealData` from `projects.wizard_data`, but the uploaded payroll register lives in `processed_data`. The helper that merges `processed_data` payroll fallback exists, but the shared hook using it is not currently used anywhere.
+Make uploaded Fixed Asset Registers flow into the workbook/PDF automatically — same pattern we use for payroll — so the wizard import click is no longer required for assets to appear. Wizard import still works for editing/overriding.
 
-## Plan
+## How it works today
 
-1. **Centralize payroll fallback enrichment**
-   - Add payroll fallback loading into `loadDealDataWithPriorBalances(project)` so every caller that builds `DealData` gets the latest payroll extraction from `processed_data`.
-   - Keep the existing `projectToDealData()` synchronous adapter unchanged for places that intentionally need a pure transform.
+1. User uploads a Fixed Asset Register on the wizard.
+2. `process-fixed-assets` edge function parses it and writes a `processed_data` row (`data_type='fixed_assets'`) with `data.extractedData.assets[]`.
+3. Workbook/PDF read from `dealData.fixedAssets`, which `projectToDealAdapter` populates **only from `wizard_data.fixedAssets`**.
+4. `wizard_data.fixedAssets` is only filled when the user clicks "Import" in `FixedAssetsImportDialog` inside the wizard.
 
-2. **Fix the wizard payroll section**
-   - Update `WizardContent`’s async enrichment path so the Payroll section receives `dealData.payrollFallback` after the latest processed payroll record loads.
-   - This should make the summary cards, source badges, workbook payroll grid, and register detail render off the extracted payroll register.
+So: upload alone → invisible in workbook. Upload + click Import in wizard → visible everywhere.
 
-3. **Fix the standalone workbook page**
-   - Because `Workbook.tsx` already uses `loadDealDataWithPriorBalances`, the centralized enrichment should make `/project/:id/workbook` payroll fallback work without duplicating code.
+For project `fa0768ca…` I verified you did click Import — both `processed_data` and `wizard_data.fixedAssets` show 5 assets, so the Fixed Assets tab will render.
 
-4. **Clean up unused path**
-   - Remove or simplify the unused `useProjectDealData` hook if it becomes redundant, or leave it only if another near-term caller needs the live insert subscription.
+## What changes (Option A)
 
-5. **Validate**
-   - Re-check the payroll record query and run targeted tests/search validation for the affected payroll fallback paths.
-   - Confirm there are no OpenAI/Gemini model references reintroduced in the payroll function path.
+Mirror the payroll fallback pattern inside `loadDealDataWithPriorBalances`:
+
+1. **New helper** `src/lib/fixedAssetsFallback.ts`
+   - `fetchLatestFixedAssetsFallback(projectId)` — selects the most recent `processed_data` row where `data_type='fixed_assets'`, maps `data.extractedData.assets[]` into `FixedAssetEntry[]` (reusing the same field aliases as `adaptFixedAssets`, plus `accumDepreciation` and `nbv = cost - accumDepreciation` when missing). Returns `[]` if nothing found.
+
+2. **Enrichment in `loadDealDataWithPriorBalances`** (`src/lib/projectToDealAdapter.ts`)
+   - Add `fetchLatestFixedAssetsFallback(project.id)` to the existing `Promise.all` next to payroll fallback.
+   - After resolving: `if (dealData.fixedAssets.length === 0 && fallback.length > 0) dealData.fixedAssets = fallback;`
+   - Critically: only merge when `wizard_data.fixedAssets` is empty, so a user who imported and then hand-edited in the wizard never gets overwritten by a stale upload.
+
+3. **No UI changes.** `FixedAssetsTab`, `BSDetailedTab`, the PDF slide, and the XLSX builder all already read `dealData.fixedAssets` — they light up automatically.
+
+4. **Wizard import dialog stays.** It remains the canonical way to edit/override and to persist into `wizard_data` (which beats the fallback).
+
+## Out of scope
+
+- No changes to extraction, edge function, or wizard import UI.
+- No live realtime subscription for assets (payroll has one because of multiple consumers; here a page refresh after upload is sufficient and matches everything except payroll). Can be added later if needed.
+
+## Validation
+
+- Existing project `fa0768ca…` still renders 5 assets (wizard path).
+- Create a quick test project: upload a fixed asset CSV, do NOT click Import, open `/project/:id/workbook` → Fixed Assets tab should now show rows.
+- Re-run `src/lib/workbook-grid-builders.test.ts` smoke suite.
+
