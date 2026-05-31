@@ -28,7 +28,7 @@ interface TBComparison {
   tbBalance: number | null;
   variance: number | null;
   variancePct: number | null;
-  status: "match" | "variance" | "missing_in_tb";
+  status: "match" | "variance" | "structural_variance" | "missing_in_tb";
 }
 
 serve(async (req) => {
@@ -490,8 +490,21 @@ serve(async (req) => {
     let matchCount = 0, varianceCount = 0, missingInTB = 0;
     let matchBS = 0, matchPL = 0;
     let matchByFullPath = 0, matchByLeaf = 0, ambiguousLeaf = 0;
+    let structuralCount = 0;
     const materialVariances: TBComparison[] = [];
+    const structuralVariances: TBComparison[] = [];
     let varianceLogged = 0;
+
+    // Build set of TB paths that are parents (i.e. have child rows in the TB).
+    // QuickBooks TB parent rows roll up child balances; the GL parent row only carries
+    // direct postings to the parent. Comparing these directly is structurally invalid.
+    const tbParentPaths = new Set<string>();
+    for (const [, t] of tbByFullPath) {
+      const parts = t.fullPath.split(":");
+      for (let i = 1; i < parts.length; i++) {
+        tbParentPaths.add(normKey(parts.slice(0, i).join(":")));
+      }
+    }
 
     for (const acct of accounts) {
       // Skip zero-balance, zero-activity accounts
@@ -569,16 +582,32 @@ serve(async (req) => {
         const denom = Math.max(Math.abs(acct.glBalance), Math.abs(tbBalance), 1);
         const variancePct = absDiff / denom;
         const isMatch = absDiff < 50 || variancePct < 0.005;
+        // Detect parent-vs-rollup structural mismatch: matched TB row is a parent
+        // (has child rows in TB), and its magnitude dwarfs the GL parent's direct postings.
+        const isStructural = !isMatch &&
+          tbParentPaths.has(normKey(tb.fullPath)) &&
+          Math.abs(tbBalance) > Math.max(Math.abs(acct.glBalance) * 3, 1000);
         const cmp: TBComparison = {
           accountName: acct.name,
           glBalance: acct.glBalance,
           tbBalance,
           variance: effectiveVariance,
           variancePct,
-          status: isMatch ? "match" : "variance",
+          status: isMatch ? "match" : (isStructural ? "structural_variance" : "variance"),
         };
         reconciliation.push(cmp);
         if (isMatch) { matchCount++; if (isPL) matchPL++; else matchBS++; }
+        else if (isStructural) {
+          structuralCount++;
+          structuralVariances.push(cmp);
+          // Count toward matched for the headline reconciliation rate — child accounts
+          // reconcile separately; the parent's rollup discrepancy isn't a data failure.
+          matchCount++; if (isPL) matchPL++; else matchBS++;
+          if (varianceLogged < 25) {
+            console.log(`[ANALYZE-GL] STRUCTURAL (by ${matchedBy}, ${isPL ? "P&L" : "BS"}): ${acct.name} gl=${acct.glBalance.toFixed(2)} tb=${tbBalance.toFixed(2)} (TB parent rollup)`);
+            varianceLogged++;
+          }
+        }
         else {
           varianceCount++;
           if (absDiff > 1000 && variancePct > 0.05) materialVariances.push(cmp);
@@ -596,14 +625,14 @@ serve(async (req) => {
       }
     }
     console.log(`[ANALYZE-GL] Match attempts: fullPath=${matchByFullPath}, leaf=${matchByLeaf}, ambiguous-leaf=${ambiguousLeaf}, missingInTB=${missingInTB}`);
-    console.log(`[ANALYZE-GL] Reconciliation: matched=${matchCount}/${accounts.length} (BS=${matchBS}, P&L=${matchPL}), variances=${varianceCount}, missingInTB=${missingInTB}`);
+    console.log(`[ANALYZE-GL] Reconciliation: matched=${matchCount}/${accounts.length} (BS=${matchBS}, P&L=${matchPL}), structural=${structuralCount}, variances=${varianceCount}, missingInTB=${missingInTB}`);
 
     // TB accounts not matched to any GL row.
     // Also suppress TB rows whose leaf was already matched against a GL account in agreement,
     // which happens when QB exports duplicate the same leaf under multiple parent rollups.
     const matchedLeavesInAgreement = new Set<string>();
     for (const cmp of reconciliation) {
-      if (cmp.status === "match" && cmp.tbBalance !== null) {
+      if ((cmp.status === "match" || cmp.status === "structural_variance") && cmp.tbBalance !== null) {
         matchedLeavesInAgreement.add(normKey(leafOf(cmp.accountName)));
       }
     }
@@ -698,11 +727,13 @@ serve(async (req) => {
       reconciliation: reconciliation.slice(0, 60),
       reconciliationSummary: {
         matched: matchCount,
+        structural: structuralCount,
         variances: varianceCount,
         missingInTB,
         missingInGL: missingInGL.length,
       },
       materialVariances: materialVariances.sort((a, b) => Math.abs(b.variance!) - Math.abs(a.variance!)).slice(0, 20),
+      structuralVariances: structuralVariances.sort((a, b) => Math.abs(b.tbBalance!) - Math.abs(a.tbBalance!)).slice(0, 20),
       missingInTBList: reconciliation.filter(r => r.status === "missing_in_tb").slice(0, 30).map(r => ({ name: r.accountName, balance: r.glBalance })),
       missingInGLList: missingInGL.slice(0, 30),
       flags: [...new Set(flags)].slice(0, 25),

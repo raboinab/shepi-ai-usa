@@ -1,70 +1,90 @@
-## What's actually wrong (and what isn't)
+## Read of the current state
 
-Reconciliation jumped from 1% → 83% after the last fixes. The matcher is now finding the right TB row for nearly every GL account. The remaining 11 "material variances" are not real data discrepancies — they're sign-convention artifacts and a small TB-duplication issue.
+Reconciliation is now correctly at 83% with all sign-mirror false positives gone. The 11 remaining material variances split into two buckets that should be treated differently:
 
-### Evidence from the screen
+### Bucket A — Genuine balance-sheet cutoff differences (4)
 
-Look at the matched-but-variant rows:
+| Account | GL | TB | Variance |
+|---|---|---|---|
+| Savings | $1,852,556 | $2,306,033 | −$453,477 |
+| Checking | $259,800 | $410,901 | −$151,101 |
+| Undeposited Funds | $267,757 | $338,139 | −$70,382 |
+| Accounts Receivable | −$300 | −$174,896 | $174,596 |
 
-| Account | GL | TB | "Variance" | What it really is |
-|---|---|---|---|---|
-| Other Income | $331,583 | -$98,222 | $429,805 | Same number, opposite sign → revenue credit convention |
-| Landscaping Services | $30 | -$210,171 | $210,201 | TB has parent rollup; GL only has the bare parent line |
-| Accounts Payable (A/P) | $75,810 | -$84,558 | $160,368 | Liability credit convention |
-| Discounts given | $169,580 | -$169,580 | $339,159 | Exact mirror |
-| Fees Billed | $116,464 | -$116,464 | $232,928 | Exact mirror |
-| Sales of Product Income | $243,479 | -$243,479 | $486,957 | Exact mirror |
-| Labor (revenue side) | $148,371 | -$148,371 | $296,741 | Exact mirror |
-| Loan Payable | $4,000 | -$4,000 | $8,000 | Exact mirror |
-| Notes Payable | $25,000 | -$25,000 | $50,000 | Exact mirror |
+These are real and should keep flagging. They indicate the GL detail report and the TB were pulled at different cutoff points, or there are entries in the TB that didn't make it into the GL export. This is exactly what a reconciliation tool is *supposed* to surface.
 
-QuickBooks GL exports almost always present revenue, liability, and equity totals as positive magnitudes (debit-positive). The Trial Balance keeps the true double-entry sign (credits negative). Today we do `glBalance - tbBalance` for every account, which **doubles** these values instead of agreeing them.
+### Bucket B — Parent-vs-rollup structural mismatches (6)
 
-### What needs to change
+| Account | GL (parent only) | TB (rollup) |
+|---|---|---|
+| Landscaping Services | $30 | −$210,171 |
+| Pest Control Services | $70 | −$179,716 |
+| Fountains and Garden Lighting | $45 | −$151,591 |
+| Other Income | $331,583 | −$98,222 |
+| Design income | $263 | −$119,170 |
+| Services | $104 | −$85,785 |
 
-`supabase/functions/analyze-general-ledger/index.ts`, reconciliation loop only — no UI, schema, or GL-parsing changes.
+These are NOT data errors. QuickBooks' TB rolls child balances up into the parent total (e.g. `Landscaping Services` TB row = sum of all its sub-services). The GL parent row shows only direct postings to the parent ($30 of uncategorized billings), and the children are listed separately. We're correctly matching parent-to-parent, but those numbers are structurally incomparable.
 
-1. **Add a sign-aware comparison helper**
+The seventh structural row is A/P ($75,810 vs −$84,558, normalized variance −$8,748) — this looks like a small genuine cutoff difference, not a rollup. Keep it flagged.
 
-   Before computing `variance`, normalize both sides to the natural balance side of the account:
+### Plus one cosmetic issue
 
-   ```ts
-   const naturalSign = (cls: string): 1 | -1 =>
-     (cls === "REVENUE" || cls === "INCOME" || cls === "OTHER_INCOME" ||
-      cls === "LIABILITY" || cls === "EQUITY") ? -1 : 1; // credit-natural → -1
-   
-   // Bring both sides into "positive = increase in the natural direction"
-   const sign = naturalSign(acct.classification);
-   const glNorm = Math.abs(acct.glBalance) * (acct.glBalance >= 0 ? 1 : -1) * sign;
-   const tbNorm = tbBalance * sign;
-   const variance = glNorm - tbNorm;
-   ```
+`Mastercard` ($75 vs −$710, −$635) and `Board of Equalization Payable` ($4 vs −$321, −$317) are non-material — below the existing $1,000 threshold — so they don't appear in Material Variances anyway. No change needed.
 
-   Actually simpler and safer: if `sign === -1` and the two numbers have opposite signs AND `|gl| ≈ |tb|`, treat as a match. Concretely: compute `variance = acct.glBalance - tbBalance` as today, but for credit-natural classifications **also** compute `varianceFlipped = acct.glBalance + tbBalance` and use whichever has the smaller absolute value. This preserves any real discrepancy while collapsing the pure sign-convention case to ~$0.
+## The fix
 
-2. **Preserve display values**
-   Keep `glBalance` and `tbBalance` on the comparison row exactly as parsed (so the UI still shows `$331,583` and `-$98,222` for users who want to see raw TB values). Only the `variance` / `variancePct` / `status` fields use the normalized comparison.
+Single edge function change: `supabase/functions/analyze-general-ledger/index.ts`, reconciliation loop only.
 
-3. **Re-tighten the material-variance threshold**
-   With sign collapse in place, drop `materialVariances` items whose normalized variance falls below the existing $1,000 / 5% floor. The "Savings $-453k", "Checking $-151k", "Undeposited Funds $-70k", "Accounts Receivable $174k" rows are real balance-sheet timing/cutoff differences and will correctly remain flagged.
+### 1. Detect parent-rollup mismatch
 
-4. **TB-only "missing from GL" cleanup**
-   The list currently shows entries like `Landscaping Services:Job Materials:Plants and Soil` even though GL has a matched `Plants and Soil` leaf. That's because the leaf matcher consumed one TB series and left the same-leaf series under a different parent dangling. Fix: when emitting `missingInGL`, additionally skip any TB series whose **leaf** already has a matched GL counterpart with `|glBalance| ≈ |tbBalance|` (within the same match tolerance). Real orphans like `Retained Earnings`, `Equipment Rental`, and `Landscaping Services:Labor:Installation` will still surface.
+After matching a GL account to a TB account, check whether the matched TB row is a **parent rollup** — i.e. there exist other entries in `tbByFullPath` whose path starts with `${tb.fullPath}:` and carry non-trivial balances. Track these prefixes once at the top of the reconciliation loop:
 
-5. **Logging**
-   Update the variance log line to print both raw and normalized variance so future regressions are obvious:
-   `gl=331583 tb=-98222 raw=429805 norm=0` → instantly tells us it's a sign collapse, not a real gap.
+```ts
+const tbParentPaths = new Set<string>();
+for (const [path] of tbByFullPath) {
+  const parts = path.split(":");
+  for (let i = 1; i < parts.length; i++) {
+    tbParentPaths.add(parts.slice(0, i).join(":"));
+  }
+}
+```
 
-### Expected outcome
+When a matched TB row's normalized fullPath is in `tbParentPaths` AND `Math.abs(tbBalance) > Math.abs(glBalance) * 3` (or similar tolerance), treat the comparison as a **structural variance**, not a data variance.
 
-- Reconciliation rate climbs from 83% to ~95%+
-- Material Variances drops from 11 → roughly 3 (Savings, Checking, A/R, Undeposited Funds — the real cutoff issues)
-- "In TB but missing from GL" shrinks from 8 → ~3 (the genuinely orphan TB rows)
-- No UI changes required; the reconciliation table re-renders from the same shape
+### 2. New status, separate UI bucket
 
-### Out of scope
+Add a fourth status to `TBComparison`:
 
-- GL parser changes (already correct)
-- TB ingestion logic (already correct, 75 unique leaves matched)
-- Adding a manual classification override UI
-- Touching the Flags or Overview tabs
+```ts
+status: "match" | "variance" | "structural_variance" | "missing_in_tb";
+```
+
+- Excluded from `materialVariances` regardless of magnitude
+- Counted toward `matchCount` for the reconciliation percentage (the underlying child accounts already match, so the parent's rollup discrepancy isn't a true reconciliation failure)
+- Returned in the response payload as `structuralVariances: TBComparison[]` so the UI can render them in a separate, lower-severity section ("Parent accounts shown at rollup vs. direct-posting level")
+
+### 3. UI surface (minimal)
+
+`src/components/[wherever the reconciliation tab lives]` — add a collapsible section below "Material Variances" titled **"Structural differences"** with a one-line tooltip: *"These TB parent accounts include child rollups not posted directly to the parent in the GL. The child accounts reconcile separately."* Render the same column shape (Account / GL / TB / Variance) but in muted styling.
+
+If discovering the exact component path during build is faster than guessing, do that first.
+
+### 4. Reconciliation percentage
+
+With Bucket B reclassified as matches, expect the rate to climb from 83% to ~91% (62 + 6 = 68 / 75). Bucket A's 4 real variances remain genuine.
+
+## Out of scope
+
+- Trying to reconstruct GL parent totals by summing children (the child accounts have different classification paths in GL vs TB; the arithmetic wouldn't tie cleanly and would hide real differences)
+- Touching the TB ingester, GL parser, or any of the matching logic that's now working
+- Adding a manual override / "ignore this account" UI
+- Changing how `Mastercard` / `Board of Equalization` (immaterial small variances) are displayed
+
+## Open question
+
+Do you want structural-variance rows to:
+**(a)** count as matches (reconciliation % goes up), or
+**(b)** be excluded from both numerator and denominator (so the % reflects only "comparable" accounts)?
+
+I'd recommend (a) — they aren't reconciliation failures, just presentation differences. But it's your call.
