@@ -1,41 +1,18 @@
-## Plan
+## Problem
 
-The remaining 91% result is not primarily a structural-classification problem. The logs show the GL parser is reading many P&L parent accounts as the **last transaction amount** instead of the full-period total:
+On the Journal Entries upload step, clicking "Run Journal Entry Analysis" finishes successfully on the server (edge function logs confirm 3,099 entries processed and two `journal_entry_analysis` rows were written to `processed_data` for project `fa0768ca-…`), but the UI keeps showing the "Ready to analyze Journal Entry" empty state.
 
-```text
-Design income GL=262.50 vs TB=-119,169.86
-Services GL=103.55 vs TB=-85,784.95
-Pest Control Services GL=70.00 vs TB=-179,716.11
-Fountains and Garden Lighting GL=45.00 vs TB=-151,591.40
-```
+Root cause: the `AnalysisRunButton` for JE in `src/components/wizard/sections/DocumentUploadSection.tsx` (around line 1989) is not given an `onComplete` callback, so after the function returns, `jeAnalysis` state never re-fetches. The General Ledger button right above it correctly passes `onComplete={fetchGLAnalysis}` — JE just missed the wiring.
 
-That happens because the parser’s “money column density” heuristic mistakes the numeric invoice/document number column for a money column, then treats the actual Amount column as a running Balance column. For GL rows that do not include a Balance value, this makes `glBalance` become the final transaction amount.
+## Fix
 
-## Implementation steps
+1. In `DocumentUploadSection.tsx`, add `onComplete={fetchJEAnalysis}` to the JE `AnalysisRunButton` (mirroring the GL pattern).
+2. No edge-function or DB changes — the analysis itself works and the insights card already renders correctly when `jeAnalysis` is populated.
 
-1. **Update `supabase/functions/analyze-general-ledger/index.ts`**
-   - Read the QuickBooks GL report column metadata (`data.columns.column`) before parsing account sections.
-   - Prefer explicit `ColKey` / title matching for `Amount` and `Balance` columns:
-     - amount: `subt_nat_amount` or title `Amount`
-     - balance: `rbal_nat_amount` or title `Balance`
-   - Account section row `colData` includes the account label at index `0`, so report columns should map with a `+1` offset.
-   - Only use the existing density heuristic as a fallback when metadata is missing.
+## Note on shepi.ai
 
-2. **Make Balance detection safe**
-   - If the mapped Balance column is absent from detail rows, treat it as unavailable instead of using Amount as Balance.
-   - Derive `glBalance` from `beginningBalance + netSum` for those accounts.
+The site at `shepi.ai` is the published build, which is older than the preview. After this fix, a republish is required for production users to benefit. The preview will reflect the fix immediately.
 
-3. **Keep the existing structural variance logic intact**
-   - The current parent/rollup and cross-namespace structural checks can remain, but after GL balances are summed correctly, the five remaining P&L rows should become sign-normalized matches instead of material variances.
-   - Avoid further loosening structural classification so real variances are not hidden.
+## Files touched
 
-4. **Validate with the reported project**
-   - Deploy/re-run `analyze-general-ledger` for project `fa0768ca-96f9-4ded-b498-f64ca5be3ede`.
-   - Confirm logs show these accounts using full-period GL totals, not final transaction amounts.
-   - Confirm material variances drop and reconciliation rises from 91% toward the expected high-90s.
-
-## Expected result
-
-- The five listed material variances should reconcile or stop appearing as material variances.
-- `Structural differences` should no longer need to absorb rows caused by parser error.
-- Reconciliation score should increase substantially without masking actual GL/TB mismatches.
+- `src/components/wizard/sections/DocumentUploadSection.tsx` — one-line prop addition.

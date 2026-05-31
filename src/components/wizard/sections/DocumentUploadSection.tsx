@@ -1993,6 +1993,7 @@ export const DocumentUploadSection = ({
                   label="Journal Entry"
                   hasDocuments={filteredDocs.length > 0}
                   hasAnalysis={jeAnalysis.length > 0}
+                  onComplete={fetchJEAnalysis}
                 />
               </div>
             )}
