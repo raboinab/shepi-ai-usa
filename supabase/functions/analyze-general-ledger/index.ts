@@ -113,6 +113,39 @@ serve(async (req) => {
       const gl = glProcessed[0].data as Record<string, unknown>;
       const sections = ((gl.rows as { row?: GlRow[] })?.row || []) as GlRow[];
 
+      // ── Resolve Amount / Balance column indices from QB report column metadata.
+      //    Report `columns.column[i]` maps to a section DATA row's `colData[i+1]`
+      //    because each detail row prepends the account label at index 0.
+      //    Without this, the density heuristic confuses numeric doc-num / memo
+      //    columns for money columns and misclassifies the real Amount column as
+      //    Balance — making glBalance equal the last transaction's amount instead
+      //    of the period total. ──
+      let metaAmountIdx = -1;
+      let metaBalanceIdx = -1;
+      {
+        const cols = ((gl.columns as { column?: Array<Record<string, unknown>> })?.column) || [];
+        for (let i = 0; i < cols.length; i++) {
+          const c = cols[i] as Record<string, unknown>;
+          const title = String(c.colTitle || "").toLowerCase().trim();
+          const md = (c.metaData as Array<Record<string, unknown>>) || [];
+          let colKey = "";
+          for (const m of md) {
+            if (String(m.name || "").toLowerCase() === "colkey") {
+              colKey = String(m.value || "").toLowerCase();
+              break;
+            }
+          }
+          const detailIdx = i + 1; // +1 for prepended account label in DATA rows
+          if (colKey === "subt_nat_amount" || (metaAmountIdx < 0 && title === "amount")) {
+            metaAmountIdx = detailIdx;
+          }
+          if (colKey === "rbal_nat_amount" || (metaBalanceIdx < 0 && title === "balance")) {
+            metaBalanceIdx = detailIdx;
+          }
+        }
+      }
+      console.log(`[ANALYZE-GL] Column metadata: amountIdx=${metaAmountIdx}, balanceIdx=${metaBalanceIdx}`);
+
       for (const section of sections) {
         if (section.type !== "SECTION") continue;
         const hdr = section.header?.colData || [];
@@ -129,40 +162,54 @@ serve(async (req) => {
         let activity = 0;
         let netSum = 0;
 
-        // Detect column layout. QB GL detail uses one of two shapes:
-        //   (a) [..., Amount, Balance] — two trailing dense money columns
-        //   (b) [..., Amount]          — one dense money column; derive balance from running sum
-        // Require columns to be DENSE (>=50% of sampled DATA rows numeric) before treating them as
-        // money. Otherwise stray numerics in doc-num / memo string columns get picked, and the
-        // real Amount column ends up mis-classified as Balance — in which case glBalance becomes
-        // the LAST transaction's amount instead of the period total.
-        const moneyColFreq = new Map<number, number>();
-        let sampled = 0;
-        for (const r of childRows) {
-          if (r.type !== "DATA") continue;
-          const cd = r.colData || [];
-          for (let i = 0; i < cd.length; i++) {
-            if (parseMoney(cd[i]?.value) !== null) {
-              moneyColFreq.set(i, (moneyColFreq.get(i) || 0) + 1);
+        // Prefer metadata-derived indices. Validate Balance is actually populated
+        // in this section (QB sometimes omits trailing Balance entirely); otherwise
+        // treat balance as unavailable and derive from beginning + net.
+        if (metaAmountIdx >= 0) {
+          amountColIdx = metaAmountIdx;
+          if (metaBalanceIdx >= 0) {
+            let balanceSeen = 0, balSampled = 0;
+            for (const r of childRows) {
+              if (r.type !== "DATA") continue;
+              const cd = r.colData || [];
+              if (cd.length > metaBalanceIdx && parseMoney(cd[metaBalanceIdx]?.value) !== null) {
+                balanceSeen++;
+              }
+              if (++balSampled >= 30) break;
             }
+            balanceColIdx = balanceSeen >= Math.max(2, Math.ceil(balSampled * 0.3)) ? metaBalanceIdx : -1;
           }
-          if (++sampled >= 30) break;
-        }
-        const minHits = Math.max(3, Math.ceil(sampled * 0.5));
-        let moneyIdxsSorted = [...moneyColFreq.entries()]
-          .filter(([, n]) => n >= minHits)
-          .map(([i]) => i)
-          .sort((a, b) => a - b);
-        // Tiny sections (<3 DATA rows) can't meet the density floor — fall back to any numeric col.
-        if (moneyIdxsSorted.length === 0 && moneyColFreq.size > 0) {
-          moneyIdxsSorted = [...moneyColFreq.keys()].sort((a, b) => a - b);
-        }
-        if (moneyIdxsSorted.length >= 2) {
-          balanceColIdx = moneyIdxsSorted[moneyIdxsSorted.length - 1];
-          amountColIdx = moneyIdxsSorted[moneyIdxsSorted.length - 2];
-        } else if (moneyIdxsSorted.length === 1) {
-          amountColIdx = moneyIdxsSorted[0];
-          balanceColIdx = -1; // no running balance — derive via sum
+        } else {
+          // Fallback: density heuristic when column metadata is missing.
+          //   (a) [..., Amount, Balance] — two trailing dense money columns
+          //   (b) [..., Amount]          — one dense money column; derive balance from running sum
+          const moneyColFreq = new Map<number, number>();
+          let sampled = 0;
+          for (const r of childRows) {
+            if (r.type !== "DATA") continue;
+            const cd = r.colData || [];
+            for (let i = 0; i < cd.length; i++) {
+              if (parseMoney(cd[i]?.value) !== null) {
+                moneyColFreq.set(i, (moneyColFreq.get(i) || 0) + 1);
+              }
+            }
+            if (++sampled >= 30) break;
+          }
+          const minHits = Math.max(3, Math.ceil(sampled * 0.5));
+          let moneyIdxsSorted = [...moneyColFreq.entries()]
+            .filter(([, n]) => n >= minHits)
+            .map(([i]) => i)
+            .sort((a, b) => a - b);
+          if (moneyIdxsSorted.length === 0 && moneyColFreq.size > 0) {
+            moneyIdxsSorted = [...moneyColFreq.keys()].sort((a, b) => a - b);
+          }
+          if (moneyIdxsSorted.length >= 2) {
+            balanceColIdx = moneyIdxsSorted[moneyIdxsSorted.length - 1];
+            amountColIdx = moneyIdxsSorted[moneyIdxsSorted.length - 2];
+          } else if (moneyIdxsSorted.length === 1) {
+            amountColIdx = moneyIdxsSorted[0];
+            balanceColIdx = -1;
+          }
         }
 
         let beginningRowSeenButEmpty = false;
