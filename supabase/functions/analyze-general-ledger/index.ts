@@ -632,7 +632,7 @@ serve(async (req) => {
     // which happens when QB exports duplicate the same leaf under multiple parent rollups.
     const matchedLeavesInAgreement = new Set<string>();
     for (const cmp of reconciliation) {
-      if (cmp.status === "match" && cmp.tbBalance !== null) {
+      if ((cmp.status === "match" || cmp.status === "structural_variance") && cmp.tbBalance !== null) {
         matchedLeavesInAgreement.add(normKey(leafOf(cmp.accountName)));
       }
     }
