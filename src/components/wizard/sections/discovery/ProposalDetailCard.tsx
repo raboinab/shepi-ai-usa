@@ -343,7 +343,7 @@ export function ProposalDetailCard({
       {/* ── Period Breakdown (compact badges below metrics) ── */}
       {Object.keys(proposal.proposed_period_values || {}).length > 0 && (
         <div className="flex flex-wrap gap-2">
-          {Object.entries(proposal.proposed_period_values).map(([period, amount]) => (
+          {Object.entries(proposal.proposed_period_values || {}).map(([period, amount]) => (
             <Badge key={period} variant="outline" className="text-xs font-mono">
               {period}: {fmt(amount)}
             </Badge>
