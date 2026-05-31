@@ -47,6 +47,13 @@ export class SectionErrorBoundary extends Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
+      const message = this.state.error?.message || "Unknown error";
+      const componentStack = (this.state.errorInfo?.componentStack || "")
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .slice(0, 10)
+        .join("\n");
       return (
         <Card className="border-destructive/30 bg-destructive/5">
           <CardContent className="py-8">
@@ -54,7 +61,7 @@ export class SectionErrorBoundary extends Component<Props, State> {
               <div className="rounded-md bg-destructive/10 p-2 text-destructive">
                 <AlertTriangle className="h-5 w-5" />
               </div>
-              <div className="flex-1 space-y-3">
+              <div className="flex-1 space-y-3 min-w-0">
                 <div>
                   <h3 className="text-base font-semibold">
                     {this.props.title || "This section is temporarily unavailable"}
@@ -63,6 +70,15 @@ export class SectionErrorBoundary extends Component<Props, State> {
                     {this.props.message || "A rendering error occurred in this section. The rest of the page is still available."}
                   </p>
                 </div>
+                <pre className="text-xs font-mono bg-background/60 border rounded p-2 overflow-auto max-h-64 whitespace-pre-wrap break-words">
+                  <span className="text-destructive font-semibold">Error: {message}</span>
+                  {componentStack && (
+                    <>
+                      {"\n\n"}
+                      <span className="text-muted-foreground">{componentStack}</span>
+                    </>
+                  )}
+                </pre>
                 <div className="flex flex-wrap gap-2">
                   <Button size="sm" variant="outline" onClick={this.handleReset}>
                     <RotateCcw className="mr-2 h-4 w-4" />
