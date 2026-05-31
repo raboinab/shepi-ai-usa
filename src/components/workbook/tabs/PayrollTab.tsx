@@ -140,5 +140,5 @@ export function PayrollTab({ dealData }: TabProps) {
     return { columns, rows, frozenColumns: 4 };
   }, [dealData]);
 
-  return <SpreadsheetGrid data={gridData} />;
+  return <SpreadsheetGrid data={fallbackGrid ?? gridData} />;
 }
