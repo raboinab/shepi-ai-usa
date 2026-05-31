@@ -2755,6 +2755,53 @@ export type Database = {
         }
         Relationships: []
       }
+      unified_connections: {
+        Row: {
+          connection_id: string
+          created_at: string
+          id: string
+          metadata: Json
+          nango_provider: string
+          project_id: string
+          provider: string
+          status: string
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          connection_id: string
+          created_at?: string
+          id?: string
+          metadata?: Json
+          nango_provider: string
+          project_id: string
+          provider: string
+          status?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          connection_id?: string
+          created_at?: string
+          id?: string
+          metadata?: Json
+          nango_provider?: string
+          project_id?: string
+          provider?: string
+          status?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "unified_connections_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       upload_errors: {
         Row: {
           context: string

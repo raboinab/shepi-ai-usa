@@ -177,17 +177,35 @@ export function projectToDealData(project: ProjectRecord): DealData {
 
 /**
  * Async wrapper that calls projectToDealData then enriches with priorBalances
- * derived from canonical_transactions GL activity.
+ * derived from canonical_transactions GL activity, and merges the latest
+ * uploaded payroll register (processed_data) as a payroll fallback.
  */
 export async function loadDealDataWithPriorBalances(project: ProjectRecord): Promise<DealData> {
   const dealData = projectToDealData(project);
-  const priorBalances = await derivePriorBalances(
-    project.id,
-    dealData.trialBalance,
-    dealData.deal.periods
-  );
+  const [priorBalances, payrollFallback, fixedAssetsFallback, debtFallback] = await Promise.all([
+    derivePriorBalances(project.id, dealData.trialBalance, dealData.deal.periods),
+    // Lazy import to avoid a static cycle with payrollFallback → workbook-types
+    import("./payrollFallback").then(m => m.fetchLatestPayrollFallback(project.id)).catch(() => null),
+    import("./fixedAssetsFallback").then(m => m.fetchLatestFixedAssetsFallback(project.id)).catch(() => []),
+    import("./debtFallback").then(m => m.fetchLatestDebtFallback(project.id)).catch(() => []),
+  ]);
   if (Object.keys(priorBalances).length > 0) {
     dealData.deal.priorBalances = priorBalances;
+  }
+  if (payrollFallback) {
+    dealData.payrollFallback = payrollFallback;
+  }
+  // Only merge fixed-assets fallback when wizard import hasn't populated anything,
+  // so a user-edited wizard list is never overwritten by a stale upload.
+  if (dealData.fixedAssets.length === 0 && fixedAssetsFallback.length > 0) {
+    dealData.fixedAssets = fixedAssetsFallback;
+  }
+  // Same pattern for debt schedule — only fill if wizard supplementary is empty.
+  if ((dealData.supplementary?.debtSchedule?.length ?? 0) === 0 && debtFallback.length > 0) {
+    dealData.supplementary = {
+      debtSchedule: debtFallback,
+      leaseObligations: dealData.supplementary?.leaseObligations ?? [],
+    };
   }
   return dealData;
 }

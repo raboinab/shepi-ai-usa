@@ -3,6 +3,7 @@ import { SpreadsheetGrid } from "../SpreadsheetGrid";
 import type { DealData, GridData, GridRow } from "@/lib/workbook-types";
 import * as calc from "@/lib/calculations";
 import { periodCells, entryCells, marginCells } from "../shared/tabHelpers";
+import { buildPayrollFallbackGrid } from "@/lib/workbook-grid-builders";
 
 interface TabProps { dealData: DealData; onDataChange?: (data: DealData) => void; }
 
@@ -11,11 +12,25 @@ interface TabProps { dealData: DealData; onDataChange?: (data: DealData) => void
  * - Sub-items: Officer's salary, Salary and wages, Payroll taxes, Benefits
  * - % of total Wages section
  * - Check to Operating Expenses tab
+ *
+ * Falls back to the uploaded payroll register (dealData.payrollFallback)
+ * when no TB accounts are classified as "Payroll & Related" yet.
  */
 export function PayrollTab({ dealData }: TabProps) {
+  const tb = dealData.trialBalance;
+  const entries = calc.getEntriesByLineItem(tb, "Payroll & Related");
+  const tbHasData = entries.some(e =>
+    dealData.deal.periods.some(p => Math.abs(e.balances[p.id] || 0) > 0.01)
+  );
+
+  const fallbackGrid = useMemo(
+    () => (!tbHasData && dealData.payrollFallback)
+      ? buildPayrollFallbackGrid(dealData, dealData.payrollFallback)
+      : null,
+    [tbHasData, dealData]
+  );
+
   const gridData = useMemo((): GridData => {
-    const tb = dealData.trialBalance;
-    const entries = calc.getEntriesByLineItem(tb, "Payroll & Related");
     const pc = (fn: (p: string) => number) => periodCells(dealData, fn);
     const mc = (numFn: (p: string) => number, denFn: (p: string) => number) => marginCells(dealData, numFn, denFn);
 
@@ -125,5 +140,5 @@ export function PayrollTab({ dealData }: TabProps) {
     return { columns, rows, frozenColumns: 4 };
   }, [dealData]);
 
-  return <SpreadsheetGrid data={gridData} />;
+  return <SpreadsheetGrid data={fallbackGrid ?? gridData} />;
 }

@@ -1,91 +1,77 @@
-# Fix TB ingestion: P&L is YTD-within-year and resets each January
+## Goal
 
-## What re-ran
+When a user uploads a Journal Entries file (Excel or CSV) under the Journal Entries doc type, parse the rows into the same shape QuickBooks sync produces, store as `data_type = 'journal_entries'` in `processed_data`, and let the existing `useAutoLoadJournalEntries` hook populate the wizard viewer automatically — without touching the QuickBooks path.
 
-Yes — Edge Function logs show two `Complete: 78 accounts, 2 flags, score=1, matched=1/76` calls in the last few minutes. The previous GL-parser fix is live and working (Decks $13,037, Plants $15,993, Sprinklers $24,891 are now real period totals instead of last-txn fragments). But `matched` is still 1/76 because **the TB side is now under-reported**, so almost every account fails the variance tolerance.
+## Diagnosis (why it's empty today)
 
-## Root cause (confirmed against `processed_data` id `ad998424…`)
+- `JournalEntriesSection` only renders entries from `wizardData.journalEntries.entries`, which is hydrated by `useAutoLoadJournalEntries` from `processed_data` rows with `data_type = 'journal_entries'`.
+- Only `complete-qb-sync/index.ts:359` ever writes that data type. Uploaded JE Excel/CSV files are sent to `analyze-journal-entries`, which writes `journal_entry_analysis` (the insights card) — never `journal_entries`.
+- Confirmed on project `fa0768ca…`: only `journal_entry_analysis` rows exist; no `journal_entries`. Empty-state copy reflects this ("after a QuickBooks sync").
 
-Each entry in `monthlyReports[]` is a **single-month** QuickBooks TB run (`startDate` = first of month, `endDate` = last of month, e.g. Dec 1 2025 → Dec 31 2025). 36 reports cover Jan 2023 → Dec 2025.
+## Changes
 
-The values inside each monthly TB behave differently by account class:
+### 1. New edge function: `supabase/functions/process-journal-entries/index.ts`
 
-- **Balance Sheet (Asset / Liability / Equity)** — true end-of-month balance. Example: month 35 Checking = $410,901, which IS the period-end. Last populated month is the right answer.
-- **Revenue / Expense** — YTD-cumulative within a calendar year, RESET each January. Confirmed for "Other Income":
+Deterministic parser (no AI — JE files are tabular and can be large/many rows).
 
+- Accept `{ documentId, projectId }`, look up the document row, download the file from storage.
+- For `.xlsx` / `.xls`: parse with `xlsx` via `npm:xlsx@0.18.5` (already in use elsewhere if present, else add). For `.csv`: parse with simple line/quote-aware split.
+- Detect header row (case-insensitive). Required columns (any of these aliases):
+  - JE id: `je #`, `entry #`, `num`, `journal #`, `transaction id`
+  - Date: `date`, `txn date`, `transaction date`
+  - Account: `account`, `account name`
+  - Debit: `debit`, `debit amount`
+  - Credit: `credit`, `credit amount`
+  - Optional: `memo`, `description`, `account id`, `adj` / `adjustment`
+- Group rows by JE id (+ date as fallback). For each group, build:
   ```
-  May–Nov 2023:   credit  $5,420.14  ← YTD plateau
-  Dec 2023:       credit  $7,570.44  ← full year 2023
-  Jan–Oct 2024:   (empty / 0)
-  Nov–Dec 2024:   credit $21,633.84  ← full year 2024
-  Jan–May 2025:   (empty)
-  Jun–Jul 2025:   credit $56,312.95
-  Aug–Dec 2025:   credit $69,017.69  ← full year 2025
+  { id, txnDate (YYYY-MM-DD), totalAmount (sum of debits), isAdjustment, memo, lines: [{accountName, accountId, amount, postingType: "DEBIT"|"CREDIT"}] }
   ```
+- Sort entries by `txnDate` desc.
+- Write a `processed_data` row exactly matching the shape `transformQBJournalEntriesToWizard` expects when called via `useAutoLoadProcessedData` — i.e., the hook passes `data` straight into the transform. Simplest: store the already-wizard-shaped payload `{ data: rawEntries, count }` where `rawEntries` use the same field names the QB transform reads (`id`, `txnDate`, `line[].journalEntryLineDetail.accountRef.{name,value}`, `line[].amount`, `line[].journalEntryLineDetail.postingType`, `privateNote`, `adjustment`). This keeps a single transform path.
+- Insert with `source_type: 'upload_parse'`, `data_type: 'journal_entries'`, `validation_status: 'pending'`.
+- Fire-and-forget call to `embed-project-data` with `data_types: ['journal_entries']`.
+- Standard CORS + error handling mirroring `process-debt-schedule`.
 
-  Correct full-period TB for Other Income = Dec23 + Dec24 + Dec25 = **$98,221.97**. The analyzer currently reports `$6,607` (one slot of one month) and the previous "sum-all-months" code would have reported ~$300k (~3× year inflation).
+### 2. Wire upload to the new function
 
-The current code (lines 304–415) always uses `lastPopulatedIdx` globally — fine for BS, wrong for P&L. That's why every revenue/expense line shows variance.
-
-## Fix — `supabase/functions/analyze-general-ledger/index.ts`
-
-### 1. Build BOTH a snapshot AND a year-sum per series (lines 372–398)
-
-For each series, compute two TB values from `perMonth[]`:
-- `snapshot` — value at `lastPopulatedIdx` with walk-back fallback (current logic).
-- `yearSum` — sum of the **last populated month within each calendar year** the series touched. Year boundaries derive from the `monthly[idx].year` field which is already present in the data.
-
-Carry both on the `TBAcct` so reconciliation can pick the right one per match.
+In `src/components/wizard/sections/DocumentUploadSection.tsx` (around line 1180, alongside `debt_schedule`), add a branch:
 
 ```ts
-type TBAcct = {
-  name: string;
-  snapshotDebit: number; snapshotCredit: number;
-  yearSumDebit: number;  yearSumCredit: number;
-  snapshotBalance: number;  // snapshotDebit - snapshotCredit
-  yearSumBalance: number;   // yearSumDebit  - yearSumCredit
-};
+} else if (docType === "journal_entries") {
+  await supabase.from('documents').update({ processing_status: "processing" }).eq('id', insertedDoc.id);
+  const { error } = await supabase.functions.invoke('process-journal-entries', {
+    body: { documentId: insertedDoc.id, projectId },
+  });
+  if (error) {
+    await supabase.from('documents').update({ processing_status: "failed" }).eq('id', insertedDoc.id);
+    toast.error("Failed to parse journal entries");
+  } else {
+    await supabase.from('documents').update({ processing_status: "completed" }).eq('id', insertedDoc.id);
+    toast.success("Journal entries parsed — open the Journal Entries section to view.");
+  }
+}
 ```
 
-Year-sum algorithm: for each unique `year` value in `monthly`, find the highest `monthIdx` in that year where `perMonth[idx].debit !== 0 || credit !== 0`; add that slot. Accounts with no activity in a year contribute 0 for that year.
+The existing `analyze-journal-entries` insights run (triggered by the `AnalysisRunButton` in DocumentUploadSection.tsx:1989) stays untouched — uploads now both populate the viewer and feed the analyzer.
 
-### 2. Leaf aggregation operates on both values (lines 400–414)
+### 3. Empty-state copy refresh
 
-`leafAgg` sums `snapshotDebit/Credit` and `yearSumDebit/Credit` separately so the leaf bucket exposes both.
+Update `JournalEntriesSection.tsx` empty-state to: "No journal entries yet. Connect QuickBooks or upload a JE Excel/CSV in the Documents section." Keep it short.
 
-### 3. Pick the right value at match time (lines 435–445)
+### 4. No DB / schema changes
 
-The GL `acct.classification` is already known here (`ASSET | LIABILITY | EQUITY | REVENUE | EXPENSE | OTHER`).
+`processed_data` already supports `data_type = 'journal_entries'`. No migration needed.
 
-```ts
-const isPL = acct.classification === "REVENUE" || acct.classification === "EXPENSE";
-const tbBalance = isPL ? tb.yearSumBalance : tb.snapshotBalance;
-```
+## Validation
 
-Then variance compares `acct.glBalance` to that picked `tbBalance`. Material-variance and match logic unchanged.
+- On project `fa0768ca…`, re-upload `Sandbox Company_US_2_Debt Schedule.csv`-style JE file → confirm a new `processed_data` row with `data_type = 'journal_entries'` appears.
+- Reload wizard → Adjustments → Journal Entries: rows render in the table with debit/credit totals.
+- QB sync path: confirm `complete-qb-sync` still writes the same data_type and the viewer keeps showing QB rows (last-write-wins, which is the existing behavior for that section).
+- `analyze-journal-entries` insights card still renders independently in the Documents section.
 
-### 4. Update the comment block at lines 304–308
+## Out of scope
 
-State the actual behavior (single-month TB; P&L resets each January; sum each year's last populated month for P&L; last-populated-month overall for BS).
-
-### 5. Logging
-
-Update the summary log to also print P&L vs BS match counts so future regressions are obvious:
-
-```
-[ANALYZE-GL] TB ingested: 36 monthly reports, N full-path, M leaf
-[ANALYZE-GL] Reconciliation: matched=X/Y (BS=a, P&L=b), variances=Z, missingInTB=W
-```
-
-## Expected outcome after deploy
-
-- `Other Income` TB → ~$98,222 (vs current −$6,607) and GL $331k — closer but still variance (likely a separate `qbToJson` issue for income side; out of scope).
-- `Labor` TB → ~$148k (matches GL $148k).
-- `Decks and Patios` TB → ~$13k (matches GL $13k).
-- `matched` count jumps materially. Whatever residual variance remains is real data drift between the GL and TB ingestion pipelines, not an analyzer bug.
-
-## Out of scope (separate issue if remaining)
-
-- Sign convention on the income side (revenue accounts in QBO carry a credit balance; the analyzer treats `balance = debit - credit`, which yields negative — that's fine for BS but P&L variance should compare absolute magnitudes; the existing `absDiffMag` branch already does this).
-- The `qbToJson` ingestion pipeline that produces `processed_data`.
-- COA enrichment, frontend, scoring.
+- No changes to QuickBooks sync, `process-debt-schedule`, payroll/fixed-assets fallbacks, or the analyzer.
+- No new RLS, no schema changes.
+- No PDF support for JE (already disabled in the upload picker).

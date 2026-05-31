@@ -295,7 +295,7 @@ const Index = () => {
             <p className="text-lg md:text-xl text-primary-foreground/70 font-medium tracking-wide mb-4">
               Your Due Diligence Shepherd
             </p>
-            <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-serif font-bold text-primary-foreground mb-6 leading-tight text-center">
+            <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-serif font-bold text-primary-foreground mb-6 leading-snug text-center">
               Intelligent
               <br />
               Quality of Earnings Platform

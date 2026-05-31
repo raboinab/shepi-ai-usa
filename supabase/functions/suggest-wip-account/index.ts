@@ -94,7 +94,7 @@ Pick the account whose NAME and (if present) CATEGORY most clearly matches the s
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "openai/gpt-4o-mini",
+        model: "anthropic/claude-sonnet-4",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },

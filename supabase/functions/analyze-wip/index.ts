@@ -120,7 +120,7 @@ Be conservative. Empty findings array is acceptable for a clean schedule.`;
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "openai/gpt-4o-mini",
+        model: "anthropic/claude-sonnet-4",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },

@@ -528,7 +528,7 @@ export function buildPayrollGrid(dealData: DealData): GridData {
 }
 
 /** Build payroll grid from processed payroll register data (fallback when TB has no Payroll line items) */
-function buildPayrollFallbackGrid(dealData: DealData, fb: import("./workbook-types").PayrollFallbackData): GridData {
+export function buildPayrollFallbackGrid(dealData: DealData, fb: import("./workbook-types").PayrollFallbackData): GridData {
   const periods = dealData.deal.periods;
   const aggPeriods = dealData.deal.aggregatePeriods;
   const totalRevenue = (p: string) => calc.calcRevenue(dealData.trialBalance, p);

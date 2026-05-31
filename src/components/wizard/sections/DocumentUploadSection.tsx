@@ -1213,6 +1213,21 @@ export const DocumentUploadSection = ({
                 await supabase.from('documents').update({ processing_status: "failed" }).eq('id', insertedDoc.id);
                 toast.error("Failed to process debt schedule");
               }
+            } else if (docType === "journal_entries") {
+              await supabase.from('documents').update({ processing_status: "processing" }).eq('id', insertedDoc.id);
+              try {
+                const { error: jeError } = await supabase.functions.invoke('process-journal-entries', {
+                  body: { documentId: insertedDoc.id, projectId },
+                });
+                if (jeError) throw jeError;
+                await supabase.from('documents').update({ processing_status: "completed" }).eq('id', insertedDoc.id);
+                toast.success("Journal entries parsed — open the Journal Entries section to view.", { duration: 5000 });
+              } catch (jeErr) {
+                console.warn("Journal entry processing failed:", jeErr);
+                await supabase.from('documents').update({ processing_status: "failed" }).eq('id', insertedDoc.id);
+                toast.error("Failed to parse journal entries");
+              }
+
             } else if (docType === "material_contract") {
               await supabase.from('documents').update({ processing_status: "processing" }).eq('id', insertedDoc.id);
               
@@ -1993,6 +2008,7 @@ export const DocumentUploadSection = ({
                   label="Journal Entry"
                   hasDocuments={filteredDocs.length > 0}
                   hasAnalysis={jeAnalysis.length > 0}
+                  onComplete={fetchJEAnalysis}
                 />
               </div>
             )}
