@@ -1,23 +1,33 @@
-## Root cause
+## What the logs show
 
-`src/hooks/useDiscoveryProposals.ts` (lines 293–332) creates a realtime channel named `discovery-job-${currentJobId}` and re-runs whenever `job?.id` or `job?.status` changes. When status flips queued → running for the same job, the effect re-runs: cleanup calls `removeChannel`, but `supabase.channel(name)` is name-keyed and reuses an existing already-`subscribe()`-d channel from the registry before removal settles. Adding the new `.on('postgres_changes', …)` on that already-subscribed channel throws:
+Job `0f8afaa8-2909-4acb-978f-a36b2e84580a` (project `fa0768ca…`) is **already `completed` at 100%** in `analysis_jobs`. No error. The UI showing "Running… 40%" is a stale snapshot held by the client — the realtime `postgres_changes` notification for the final status update never reached this tab.
 
-> cannot add `postgres_changes` callbacks for realtime:discovery-job-7922e84a-… after `subscribe()`
+Recent history on the same project confirms the pattern:
+- `0f8afaa8…` — completed, UI stuck at 40%
+- `3b8cbe6a…` — completed, previously shown stuck at 80%
+- `7922e84a…` — completed, previously caused the "cannot add postgres_changes callbacks after subscribe()" crash
 
-This kills the render and the section boundary catches it.
+The earlier session already patched `src/hooks/useDiscoveryProposals.ts` (unique channel nonce, dropped `job?.status` from deps). That fix is in source but **not in the deployed bundle** (`DDAdjustmentsSection-CL-tBoEn.js` is pre-fix), so production clients still hit the broken subscription path and miss terminal updates.
 
-## Fix
+## Plan
 
-In `useDiscoveryProposals.ts`:
+### 1. Publish the app
+The realtime-subscription fix already lives in `src/hooks/useDiscoveryProposals.ts`. Publishing rebuilds the bundle and ships it to `shepi.ai`. This alone resolves the "cannot add postgres_changes callbacks" crash and the missed-update issue for new sessions.
 
-1. Make the channel name unique per effect run: `discovery-job-${currentJobId}-${nonce}` where `nonce` is generated inside the effect (e.g. `crypto.randomUUID().slice(0,8)` or `Date.now()`). This guarantees no collision with a residual channel in the realtime registry.
-2. Drop `job?.status` from the dependency array — re-subscribing on every status change is unnecessary churn; `job?.id` change is the only signal that matters for the channel lifecycle. The handler already updates state correctly for every payload.
-3. Keep the existing cleanup (`supabase.removeChannel(channel)`).
+### 2. Add a polling safety net in `useDiscoveryProposals.ts`
+Realtime delivery can still drop a message (tab backgrounded, websocket hiccup, mobile network). Add a lightweight poll while a job is `queued` or `running`:
 
-That's the whole fix — one file, ~3 lines.
+- Every 5s, re-fetch the current job row from `analysis_jobs` by id.
+- Stop polling as soon as status is `completed`, `failed`, or `cancelled`.
+- Same setState path as the realtime handler, so no duplicate logic.
+
+This guarantees the UI converges to the terminal state even if the realtime event is lost.
+
+### 3. No worker / no DB changes
+The worker is fine — every recent job completed. No migration, no edge function change.
 
 ## Out of scope
 
-- The stuck `7922e84a…` worker job (still `running` at 20%) — separate worker problem.
-- Bridge / proposal rendering — was never the issue.
-- Removing the inline error pre-block from `SectionErrorBoundary` — leave it; it's been useful and harmless.
+- Removing the inline error pre-block from `SectionErrorBoundary` — keep it.
+- The old `finding_group` schema-cache errors from May 19 — already resolved.
+- Any change to `trigger-discovery` — not the source of the issue.
