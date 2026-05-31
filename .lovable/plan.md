@@ -1,66 +1,43 @@
-## What we know
+## Problem
 
-- Project `fa0768ca…` has **11 saved proposals** (all in non-`proposed` statuses) and **1 stuck `running` discovery job** queued at 18:05:57 sitting at `progress=20%` with no updates.
-- The user's "Something went wrong" is `AppErrorBoundary` swallowing a render error somewhere inside the wizard. The discovery section is rendered via `DDAdjustmentsSection.tsx:843` and keyed off `job.id` + `proposals.length`, so a malformed value on the in-flight job is a very plausible trigger.
-- No runtime-error stack was captured in this snapshot, so we can't pinpoint the exact line yet — but the boundary today is app-wide, which is why the user "can't get to the tab".
+The AI Discovery section is still hitting the section error boundary on `/project/fa0768ca…`. The defensive null guards I added earlier didn't catch the real culprit. The 14 saved proposals look clean in the DB (no null `proposed_amount`, no null `proposed_period_values`, all statuses are valid strings), and a fresh job (`7922e84a…`) is sitting `running` at 20% — but neither of those should crash render.
 
-## Goal
-
-1. Unblock the page **right now** so the user can navigate to the tab.
-2. Make sure a single bad proposal/job can't blank the whole app again.
-3. Capture the real stack so we can patch the underlying render bug in a follow-up.
+Without the actual error message or a console-log dump we're guessing. The fastest path to a real fix is to make the boundary's fallback show the error message inline (instead of hiding it behind "Copy error details").
 
 ## Plan
 
-### Step 1 — Kill the stuck job (one-off DB write)
+**1. Surface the real error in `SectionErrorBoundary`**
 
-Run a single migration / SQL command to mark the stale job failed:
+Change `src/components/system/SectionErrorBoundary.tsx` so the fallback renders, inline:
+- `this.state.error?.message` in a monospaced `<pre>` block
+- the first ~10 lines of `this.state.errorInfo?.componentStack` (so we can see which child threw)
+- keep the existing "Reset section" and "Copy error details" buttons
 
-```sql
-update public.analysis_jobs
-set status = 'failed',
-    error_message = 'Manually expired: worker stalled at 20% for >30min',
-    updated_at = now()
-where id = '8a03c39e-123f-4eb1-8b54-6b876b9917c9';
+This is a tiny, low-risk change scoped to the fallback UI only. No business logic touched.
+
+**2. You reload the page and paste what shows**
+
+Once the inline error is visible, paste the message + component stack back into chat. With the real stack I can pinpoint the throwing component in one round-trip instead of guessing at more defensive coercions.
+
+**3. (Likely follow-up, not in this plan)** Patch whatever the stack reveals — almost certainly a single field access in `ProposalDetailCard`, `CpaReviewBadge`, or the bridge-summary computation. I'll propose that as a separate plan once we have the error text.
+
+## Out of scope
+
+- Not touching the stuck `7922e84a…` job yet — it's not what's crashing render (running jobs render the progress bar fine).
+- Not changing `useDiscoveryProposals` or proposal data.
+- Worker stall debugging (why jobs hang at 20%) is a separate workstream.
+
+## Technical notes
+
+Files changed: `src/components/system/SectionErrorBoundary.tsx` only.
+
+```text
+[AlertTriangle] AI Discovery is temporarily unavailable
+A proposal or analysis job failed to render…
+
+Error: <message here>
+  at ProposalDetailCard (DiscoveryProposalsSection.tsx:377)
+  at … (first ~10 lines of component stack)
+
+[Reset section]  [Copy error details]
 ```
-
-Effect: `useDiscoveryProposals` will pick a non-running latest job, stop polling, and render with the 11 existing proposals.
-
-### Step 2 — Section-level error boundary around Discovery
-
-Add a small reusable `<SectionErrorBoundary>` (own file, class component, same shape as `AppErrorBoundary` but scoped) and wrap the `<DiscoveryProposalsSection>` JSX inside `DDAdjustmentsSection.tsx:843-868` with it. The fallback UI is a compact card:
-
-- Heading "AI Discovery is temporarily unavailable"
-- One-line message
-- "Reset Discovery" button — clears `jobIdRef` via a reset() callback and re-mounts the section
-- "Copy error details" link that exposes the stack so we can fix it
-- `console.error(error, errorInfo)` so the next message gives us a real stack via `read_runtime_errors`
-
-This is the same pattern we already use elsewhere; it's purely frontend, no new deps, no design tokens to touch beyond the existing `Card` + `Alert` components.
-
-### Step 3 — Defensive guards we know are cheap (only if scope allows in same pass)
-
-In `DiscoveryProposalsSection.tsx`:
-
-- `formatCurrency(proposal.proposed_amount)` (line 366) — coerce `null/undefined → 0` explicitly inside `formatCurrency` so a null `proposed_amount` never throws.
-- `Object.entries(proposal.proposed_period_values)` (ProposalDetailCard:346) — fall back to `{}` if the field is null at runtime even when the type says otherwise.
-- `proposals.map(...)` ordering — already defensive.
-
-These are 3-line changes and the most likely culprits for a render-time TypeError on an in-flight proposal row.
-
-### Step 4 — Follow-up after the user re-opens the tab
-
-The new boundary will catch and console.error the real stack. In the next loop I'll pull `read_runtime_errors`, identify the exact crashing line, and patch it. No speculative refactor here.
-
-## Files touched
-
-- `supabase/migrations/<ts>_expire_stuck_discovery_job.sql` (Step 1 — one-off)
-- `src/components/system/SectionErrorBoundary.tsx` (new, ~80 lines)
-- `src/components/wizard/sections/DDAdjustmentsSection.tsx` (wrap the tab content, ~5 line diff)
-- `src/components/wizard/sections/DiscoveryProposalsSection.tsx` + `discovery/ProposalDetailCard.tsx` (defensive null guards, ~5 line diff)
-
-## Out of scope this pass
-
-- The overlap-dedupe "$0 / $2,855" plan from earlier — paused until the page renders again.
-- Debugging the Python discovery worker (why it stalled at 20%) — separate from the frontend crash.
-- Backfilling `support_json.dedupe` on existing proposals.
