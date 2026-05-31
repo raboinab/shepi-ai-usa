@@ -1,42 +1,30 @@
-## Goal
+# Fix Debt Schedule Upload — CSV/text files failing
 
-Make uploaded Fixed Asset Registers flow into the workbook/PDF automatically — same pattern we use for payroll — so the wizard import click is no longer required for assets to appear. Wizard import still works for editing/overriding.
+## What's broken
+The Debt Schedule upload for project `fa0768ca…` failed with:
+> "I don't see any document attached to your message"
 
-## How it works today
+That's the model's reply, not a real failure to attach. `process-debt-schedule` always sends the uploaded file as `image_url: { url: fileBase64 }`. Claude Sonnet can read PDFs/images that way, but a base64 CSV passed through the image channel is opaque to it — so it asks for the file, JSON parse fails, status flips to **Failed**.
 
-1. User uploads a Fixed Asset Register on the wizard.
-2. `process-fixed-assets` edge function parses it and writes a `processed_data` row (`data_type='fixed_assets'`) with `data.extractedData.assets[]`.
-3. Workbook/PDF read from `dealData.fixedAssets`, which `projectToDealAdapter` populates **only from `wizard_data.fixedAssets`**.
-4. `wizard_data.fixedAssets` is only filled when the user clicks "Import" in `FixedAssetsImportDialog` inside the wizard.
+The Fixed Asset Register works because `process-fixed-assets` already branches: PDFs/images → `image_url`, CSV/Excel/text → decoded as text in a `text` part. Debt schedule was never updated to match.
 
-So: upload alone → invisible in workbook. Upload + click Import in wizard → visible everywhere.
+## Fix
+Mirror the fixed-assets pattern inside `supabase/functions/process-debt-schedule/index.ts`.
 
-For project `fa0768ca…` I verified you did click Import — both `processed_data` and `wizard_data.fixedAssets` show 5 assets, so the Fixed Assets tab will render.
+1. **Detect file type** from `fileName` extension (`.csv`, `.txt`, `.tsv` → text; `.xlsx`/`.xls` → text via SheetJS decode if needed, else fall back to text; `.pdf`/images → image_url as today).
+2. **For text files**, strip the `data:*;base64,` prefix from `fileBase64`, `atob` it, `TextDecoder().decode(...)`, truncate to ~100KB, and send as a single `{ type: "text", text: "<prompt>\n\n<csv contents>" }` user message.
+3. **For PDFs/images**, keep the existing `image_url` path unchanged.
+4. **Keep** the system prompt, JSON parsing, `processed_data` insert, embed-project-data trigger, and CORS exactly as-is.
 
-## What changes (Option A)
-
-Mirror the payroll fallback pattern inside `loadDealDataWithPriorBalances`:
-
-1. **New helper** `src/lib/fixedAssetsFallback.ts`
-   - `fetchLatestFixedAssetsFallback(projectId)` — selects the most recent `processed_data` row where `data_type='fixed_assets'`, maps `data.extractedData.assets[]` into `FixedAssetEntry[]` (reusing the same field aliases as `adaptFixedAssets`, plus `accumDepreciation` and `nbv = cost - accumDepreciation` when missing). Returns `[]` if nothing found.
-
-2. **Enrichment in `loadDealDataWithPriorBalances`** (`src/lib/projectToDealAdapter.ts`)
-   - Add `fetchLatestFixedAssetsFallback(project.id)` to the existing `Promise.all` next to payroll fallback.
-   - After resolving: `if (dealData.fixedAssets.length === 0 && fallback.length > 0) dealData.fixedAssets = fallback;`
-   - Critically: only merge when `wizard_data.fixedAssets` is empty, so a user who imported and then hand-edited in the wizard never gets overwritten by a stale upload.
-
-3. **No UI changes.** `FixedAssetsTab`, `BSDetailedTab`, the PDF slide, and the XLSX builder all already read `dealData.fixedAssets` — they light up automatically.
-
-4. **Wizard import dialog stays.** It remains the canonical way to edit/override and to persist into `wizard_data` (which beats the fallback).
-
-## Out of scope
-
-- No changes to extraction, edge function, or wizard import UI.
-- No live realtime subscription for assets (payroll has one because of multiple consumers; here a page refresh after upload is sufficient and matches everything except payroll). Can be added later if needed.
+No client changes — `DocumentUploadSection.tsx` keeps sending `{ documentId, fileBase64, fileName, projectId }`.
 
 ## Validation
+1. Redeploy `process-debt-schedule`.
+2. On project `fa0768ca…`, click **Retry** on the failed CSV. Expect status → Validated/Pending and a new `processed_data` row with `data_type='debt_schedule'`.
+3. Confirm the Workbook **Debt** tab now populates (existing `dealData.debt` pipeline already reads from wizard + processed_data fallback per the payroll/fixed-assets pattern — verify after retry; if Debt has no fallback hook yet we can add one in a follow-up, but that's out of scope for this fix).
+4. Re-upload a PDF debt schedule to confirm the image path still works.
 
-- Existing project `fa0768ca…` still renders 5 assets (wizard path).
-- Create a quick test project: upload a fixed asset CSV, do NOT click Import, open `/project/:id/workbook` → Fixed Assets tab should now show rows.
-- Re-run `src/lib/workbook-grid-builders.test.ts` smoke suite.
-
+## Out of scope
+- Adding a `debtFallback` to `loadDealDataWithPriorBalances` (separate task if needed — wizard import already merges debt today).
+- Touching `process-fixed-assets` / `process-payroll-document`.
+- Changing the AI model or prompt.
