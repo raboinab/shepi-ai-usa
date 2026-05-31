@@ -592,9 +592,11 @@ serve(async (req) => {
         // Also fire the inference path when a BS account's GL parent shows only
         // token postings against a sizeable TB ending balance — same QB defect, just
         // expressed without a Beginning Balance row we could detect.
+        const beginningEmpty = (acct as AccountInfo).beginningRowSeenButEmpty === true;
         const tinyGlVsLargeTb = !isPL &&
           Math.abs(acct.glBalance) < Math.max(Math.abs(tbBalance) * 0.05, 500) &&
           Math.abs(tbBalance) > 1000;
+
         if (!isPL && (beginningEmpty || tinyGlVsLargeTb)) {
           const cmp: TBComparison = {
             accountName: acct.name,
