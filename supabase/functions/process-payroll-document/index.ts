@@ -131,8 +131,23 @@ serve(async (req) => {
       
       fileContent = `data:${mimeType};base64,${base64Data}`;
       contentType = 'image';
+    } else if (['xlsx', 'xls', 'xlsm', 'xlsb'].includes(fileType)) {
+      // Parse Excel binary into CSV text (one block per sheet) before sending to AI
+      try {
+        const workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array' });
+        const parts: string[] = [];
+        for (const name of workbook.SheetNames) {
+          const csv = XLSX.utils.sheet_to_csv(workbook.Sheets[name]);
+          if (csv.trim()) parts.push(`### Sheet: ${name}\n${csv}`);
+        }
+        fileContent = parts.join('\n\n').slice(0, 120000);
+        console.log(`Parsed XLSX: ${workbook.SheetNames.length} sheet(s), ${fileContent.length} chars`);
+      } catch (e) {
+        console.error('Failed to parse XLSX:', e);
+        fileContent = 'Unable to parse Excel file';
+      }
     } else {
-      // For CSV/Excel, decode as text
+      // For CSV/text, decode as text
       try {
         fileContent = new TextDecoder().decode(new Uint8Array(arrayBuffer));
       } catch {
