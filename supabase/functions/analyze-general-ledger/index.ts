@@ -582,16 +582,32 @@ serve(async (req) => {
         const denom = Math.max(Math.abs(acct.glBalance), Math.abs(tbBalance), 1);
         const variancePct = absDiff / denom;
         const isMatch = absDiff < 50 || variancePct < 0.005;
+        // Detect parent-vs-rollup structural mismatch: matched TB row is a parent
+        // (has child rows in TB), and its magnitude dwarfs the GL parent's direct postings.
+        const isStructural = !isMatch &&
+          tbParentPaths.has(normKey(tb.fullPath)) &&
+          Math.abs(tbBalance) > Math.max(Math.abs(acct.glBalance) * 3, 1000);
         const cmp: TBComparison = {
           accountName: acct.name,
           glBalance: acct.glBalance,
           tbBalance,
           variance: effectiveVariance,
           variancePct,
-          status: isMatch ? "match" : "variance",
+          status: isMatch ? "match" : (isStructural ? "structural_variance" : "variance"),
         };
         reconciliation.push(cmp);
         if (isMatch) { matchCount++; if (isPL) matchPL++; else matchBS++; }
+        else if (isStructural) {
+          structuralCount++;
+          structuralVariances.push(cmp);
+          // Count toward matched for the headline reconciliation rate — child accounts
+          // reconcile separately; the parent's rollup discrepancy isn't a data failure.
+          matchCount++; if (isPL) matchPL++; else matchBS++;
+          if (varianceLogged < 25) {
+            console.log(`[ANALYZE-GL] STRUCTURAL (by ${matchedBy}, ${isPL ? "P&L" : "BS"}): ${acct.name} gl=${acct.glBalance.toFixed(2)} tb=${tbBalance.toFixed(2)} (TB parent rollup)`);
+            varianceLogged++;
+          }
+        }
         else {
           varianceCount++;
           if (absDiff > 1000 && variancePct > 0.05) materialVariances.push(cmp);
