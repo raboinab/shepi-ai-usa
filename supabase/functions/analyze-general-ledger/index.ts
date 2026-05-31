@@ -515,6 +515,18 @@ serve(async (req) => {
         tbParentPaths.add(normKey(parts.slice(0, i).join(":")));
       }
     }
+    // Symmetric: a path may also be a parent on the GL side (QB GL detail expands
+    // sub-accounts as siblings; the parent row carries only direct postings).
+    const glParentPaths = new Set<string>();
+    for (const a of accounts) {
+      const fp = (a as AccountInfo & { fullPath?: string }).fullPath || a.name;
+      const parts = fp.split(":");
+      for (let i = 1; i < parts.length; i++) {
+        glParentPaths.add(normKey(parts.slice(0, i).join(":")));
+      }
+    }
+    const parentPaths = new Set<string>([...tbParentPaths, ...glParentPaths]);
+
 
     for (const acct of accounts) {
       // Skip zero-balance, zero-activity accounts
