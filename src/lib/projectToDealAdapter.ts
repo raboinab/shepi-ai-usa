@@ -177,17 +177,21 @@ export function projectToDealData(project: ProjectRecord): DealData {
 
 /**
  * Async wrapper that calls projectToDealData then enriches with priorBalances
- * derived from canonical_transactions GL activity.
+ * derived from canonical_transactions GL activity, and merges the latest
+ * uploaded payroll register (processed_data) as a payroll fallback.
  */
 export async function loadDealDataWithPriorBalances(project: ProjectRecord): Promise<DealData> {
   const dealData = projectToDealData(project);
-  const priorBalances = await derivePriorBalances(
-    project.id,
-    dealData.trialBalance,
-    dealData.deal.periods
-  );
+  const [priorBalances, payrollFallback] = await Promise.all([
+    derivePriorBalances(project.id, dealData.trialBalance, dealData.deal.periods),
+    // Lazy import to avoid a static cycle with payrollFallback → workbook-types
+    import("./payrollFallback").then(m => m.fetchLatestPayrollFallback(project.id)).catch(() => null),
+  ]);
   if (Object.keys(priorBalances).length > 0) {
     dealData.deal.priorBalances = priorBalances;
+  }
+  if (payrollFallback) {
+    dealData.payrollFallback = payrollFallback;
   }
   return dealData;
 }
