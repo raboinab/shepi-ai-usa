@@ -101,8 +101,9 @@ export const JournalEntriesSection = ({ projectId, data, onUpdate, onGuideContex
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
             <BookOpen className="w-10 h-10 mx-auto mb-3 opacity-40" />
-            <p>No journal entries available yet.</p>
-            <p className="text-sm mt-1">Journal entries will appear here after a QuickBooks sync.</p>
+            <p>No journal entries yet.</p>
+            <p className="text-sm mt-1">Connect QuickBooks or upload a JE Excel/CSV in the Documents section.</p>
+
           </CardContent>
         </Card>
       </div>
