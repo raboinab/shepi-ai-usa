@@ -1,9 +1,9 @@
 import { SummaryCard } from "../shared/SummaryCard";
 import { PayrollClassificationHelper, TrialBalanceAccount } from "../shared/PayrollClassificationHelper";
 import { WorkbookTabView } from "@/components/workbook/WorkbookTabView";
-import { Users, DollarSign, Briefcase, TrendingUp } from "lucide-react";
+import { Users, DollarSign, Briefcase, TrendingUp, Info } from "lucide-react";
 import { Period } from "@/lib/periodUtils";
-import type { DealData } from "@/lib/workbook-types";
+import type { DealData, PayrollFallbackData } from "@/lib/workbook-types";
 
 interface PayrollSectionProps {
   data?: { rawData?: string[][]; syncedAt?: string };
@@ -23,7 +23,7 @@ const parseSheetNumber = (value: string | undefined | null): number => {
   return isNaN(num) ? 0 : (isNegative ? -num : num);
 };
 
-const extractMetrics = (rawData: string[][] | undefined) => {
+const extractMetricsFromRawData = (rawData: string[][] | undefined) => {
   if (!rawData || rawData.length === 0) {
     return { totalPayroll: 0, payrollTaxRate: 0, benefitRate: 0, ownerComp: 0 };
   }
@@ -46,13 +46,42 @@ const extractMetrics = (rawData: string[][] | undefined) => {
   };
 };
 
+const sumItems = (items: Array<{ monthlyValues: Record<string, number> }> | undefined) =>
+  (items || []).reduce(
+    (s, it) => s + Object.values(it.monthlyValues || {}).reduce((a, b) => a + (b || 0), 0),
+    0
+  );
+
+const extractMetricsFromFallback = (fb: PayrollFallbackData) => {
+  const salaryWages = sumItems(fb.salaryWages);
+  const payrollTaxes = sumItems(fb.payrollTaxes);
+  const benefits = sumItems(fb.benefits);
+  const ownerComp = sumItems(fb.ownerCompensation);
+  const totalPayroll = salaryWages + payrollTaxes + benefits + ownerComp;
+  const base = salaryWages + ownerComp;
+  return {
+    totalPayroll,
+    payrollTaxRate: base > 0 ? (payrollTaxes / base) * 100 : 0,
+    benefitRate: base > 0 ? (benefits / base) * 100 : 0,
+    ownerComp,
+  };
+};
+
 export const PayrollSection = ({
   data,
   trialBalanceAccounts = [],
   onTrialBalanceChange,
   dealData,
 }: PayrollSectionProps) => {
-  const metrics = extractMetrics(data?.rawData);
+  const hasRawData = !!(data?.rawData && data.rawData.length > 0);
+  const fallback = dealData?.payrollFallback;
+  const usingFallback = !hasRawData && !!fallback;
+
+  const metrics = hasRawData
+    ? extractMetricsFromRawData(data!.rawData)
+    : fallback
+    ? extractMetricsFromFallback(fallback)
+    : { totalPayroll: 0, payrollTaxRate: 0, benefitRate: 0, ownerComp: 0 };
 
   return (
     <div className="space-y-6">
@@ -62,6 +91,16 @@ export const PayrollSection = ({
           Payroll expenses aggregated from Trial Balance accounts classified as "Payroll & Related"
         </p>
       </div>
+
+      {usingFallback && (
+        <div className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+          <Info className="h-4 w-4 mt-0.5 text-muted-foreground flex-shrink-0" />
+          <p className="text-muted-foreground">
+            Showing extracted payroll from your uploaded payroll register.
+            Classify Trial Balance accounts as "Payroll & Related" below to use TB data instead.
+          </p>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <SummaryCard title="Total Payroll (LTM)" value={metrics.totalPayroll} icon={DollarSign} />

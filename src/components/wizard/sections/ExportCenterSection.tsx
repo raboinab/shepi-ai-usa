@@ -429,19 +429,9 @@ export const ExportCenterSection = ({ data, updateData, wizardData, projectId, p
         evidenceByProposal = evidenceByTitle;
 
         // Inject payroll fallback into dealData if TB payroll is empty
-        if (payrollData?.data && dealData) {
-          const extracted = (payrollData.data as Record<string, unknown>)?.extractedData as Record<string, unknown> | undefined;
-          if (extracted) {
-            dealData = {
-              ...dealData,
-              payrollFallback: {
-                salaryWages: (extracted.salaryWages as Array<{ name: string; monthlyValues: Record<string, number> }>) || [],
-                ownerCompensation: (extracted.ownerCompensation as Array<{ name: string; monthlyValues: Record<string, number> }>) || [],
-                payrollTaxes: (extracted.payrollTaxes as Array<{ name: string; monthlyValues: Record<string, number> }>) || [],
-                benefits: (extracted.benefits as Array<{ name: string; monthlyValues: Record<string, number> }>) || [],
-              },
-            };
-          }
+        if (payrollData && dealData) {
+          const fb = buildPayrollFallbackFromProcessedData(payrollData);
+          if (fb) dealData = { ...dealData, payrollFallback: fb };
         }
 
         const categoryRationale: Record<string, string> = {
