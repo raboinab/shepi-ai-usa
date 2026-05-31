@@ -490,8 +490,21 @@ serve(async (req) => {
     let matchCount = 0, varianceCount = 0, missingInTB = 0;
     let matchBS = 0, matchPL = 0;
     let matchByFullPath = 0, matchByLeaf = 0, ambiguousLeaf = 0;
+    let structuralCount = 0;
     const materialVariances: TBComparison[] = [];
+    const structuralVariances: TBComparison[] = [];
     let varianceLogged = 0;
+
+    // Build set of TB paths that are parents (i.e. have child rows in the TB).
+    // QuickBooks TB parent rows roll up child balances; the GL parent row only carries
+    // direct postings to the parent. Comparing these directly is structurally invalid.
+    const tbParentPaths = new Set<string>();
+    for (const [, t] of tbByFullPath) {
+      const parts = t.fullPath.split(":");
+      for (let i = 1; i < parts.length; i++) {
+        tbParentPaths.add(normKey(parts.slice(0, i).join(":")));
+      }
+    }
 
     for (const acct of accounts) {
       // Skip zero-balance, zero-activity accounts
