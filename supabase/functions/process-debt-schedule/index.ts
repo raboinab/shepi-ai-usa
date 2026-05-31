@@ -95,10 +95,7 @@ Set confidence to:
           { role: "system", content: systemPrompt },
           {
             role: "user",
-            content: [
-              { type: "text", text: userPrompt },
-              { type: "image_url", image_url: { url: fileBase64 } },
-            ],
+            content: buildUserContent(fileBase64, fileName, userPrompt),
           },
         ],
         temperature: 0.1,
