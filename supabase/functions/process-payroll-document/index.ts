@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.87.1";
+import * as XLSX from "npm:xlsx@0.18.5";
 
 import { aiFetch, ensureZdrEnabled } from "../_shared/zdrGuard.ts";
 const corsHeaders = {
