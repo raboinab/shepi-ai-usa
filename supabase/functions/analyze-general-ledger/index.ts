@@ -165,6 +165,7 @@ serve(async (req) => {
           balanceColIdx = -1; // no running balance — derive via sum
         }
 
+        let beginningRowSeenButEmpty = false;
         for (const r of childRows) {
           if (r.type !== "DATA") continue;
           const cd = r.colData || [];
@@ -175,7 +176,13 @@ serve(async (req) => {
             // Beginning balance row: the running balance sits in whichever money col it can find
             const bb = balanceColIdx >= 0 ? parseMoney(cd[balanceColIdx]?.value)
                                           : (amountColIdx >= 0 ? parseMoney(cd[amountColIdx]?.value) : null);
-            if (bb !== null) beginningBalance = bb;
+            if (bb !== null) {
+              beginningBalance = bb;
+            } else {
+              // QB sent the row but stripped the value — flag so we can backfill from TB later
+              const anyNumeric = cd.some((c: Record<string, unknown>) => parseMoney((c as { value?: string })?.value) !== null);
+              if (!anyNumeric) beginningRowSeenButEmpty = true;
+            }
             continue;
           }
 
@@ -222,6 +229,7 @@ serve(async (req) => {
           glBalance,
           glActivity: activity,
           txnCount,
+          beginningRowSeenButEmpty: beginningRowSeenButEmpty && balanceColIdx < 0,
         });
         txnCountTotal += txnCount;
       }
