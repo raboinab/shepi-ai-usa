@@ -21,6 +21,7 @@ interface TBComparison {
   variance: number | null;
   variancePct?: number | null;
   status: "match" | "variance" | "structural_variance" | "missing_in_tb";
+  glBalanceSource?: "gl" | "tb_inferred";
 }
 
 export interface GLAnalysisData {
