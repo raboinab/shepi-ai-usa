@@ -662,8 +662,15 @@ serve(async (req) => {
         // EITHER side (TB rolls up or GL expands children as siblings), and the TB
         // rollup magnitude dwarfs the GL parent's direct postings.
         const isStructural = !isMatch &&
-          (parentPaths.has(normKey(tb.fullPath)) || parentPaths.has(normKey(fullPath))) &&
-          Math.abs(tbBalance) > Math.max(Math.abs(acct.glBalance) * 3, 1000);
+          (
+            parentPaths.has(normKey(tb.fullPath)) ||
+            parentPaths.has(normKey(fullPath)) ||
+            isCrossNamespaceRollup(tb)
+          ) &&
+          (() => {
+            const a = Math.abs(tbBalance), b = Math.abs(acct.glBalance);
+            return Math.max(a, b) > Math.max(Math.min(a, b) * 3, 1000);
+          })();
 
         const cmp: TBComparison = {
           accountName: acct.name,
