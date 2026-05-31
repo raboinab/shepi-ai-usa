@@ -1,77 +1,93 @@
-# Make uploaded payroll data flow into the Payroll section + Workbook
+# Treat Trial Balance + Payroll Register as complementary sources
 
-## What's actually happening
+## The insight
 
-For project `fa0768ca-...`, the latest payroll upload **succeeded end-to-end**:
+- **Trial Balance** = source of truth for the books. Reconciles to the P&L. Usually 3–6 summary accounts.
+- **Payroll Register** = higher-fidelity detail. Per-employee, per-tax-type, per-benefit. Almost always more granular than TB.
 
-- `process-payroll-document` parsed the XLSX (4 sheets, 32,849 chars)
-- Extracted 6 line items with high confidence
-- Stored them in `processed_data` with `data_type = 'payroll'`
+Today the system treats them as either/or (TB if classified + non-zero, else register fallback). That throws away analytical value when both exist, and gives users no signal about coverage or variance.
 
-But both surfaces still look empty because the extracted data is **never fed into the rendering paths**:
-
-1. **Wizard → Payroll section** (`src/components/wizard/sections/PayrollSection.tsx`)
-   - Reads `data.rawData` (only populated by a workbook sync) for summary cards
-   - Renders `<WorkbookTabView tabId="payroll" dealData={dealData} />`, which calls `buildPayrollGrid(dealData)`
-   - `buildPayrollGrid` falls back to `dealData.payrollFallback` when TB has nothing classified as Payroll & Related — but **nothing sets `payrollFallback`** on the live `dealData` (it's only assembled inside `ExportCenterSection` at export time)
-2. **Documents → Payroll Reports tile** — the `PayrollInsightsCard` is already wired through the realtime subscription, so this should appear after a fresh upload. If both surfaces are empty after a page reload, the realtime fetch is racing the render — `fetchPayrollAnalysis` runs on mount but only sets state if rows exist.
+A real QoE finding pattern: *"Per payroll register: $1.21M wages. Per TB Salaries & Wages: $1.18M. Variance: $30K (2.5%) — investigate timing or unrecorded accrual."*
 
 ## Goal
 
-When a payroll file is extracted (or already exists in `processed_data`), automatically populate the Workbook's Payroll tab so:
-- Wizard Payroll section's summary cards + WorkbookTabView grid show real numbers
-- Documents page insights card shows up reliably on reload
-- Workbook page's Payroll tab also lights up — no manual "sync" needed
-- Export Center continues to work unchanged
+Surface both sources in the Payroll wizard section with a clear reconciliation, while preserving the workbook's accounting integrity (TB stays the official roll-up).
 
 ## Approach
 
-Lift the existing `payrollFallback` assembly out of `ExportCenterSection` into a small shared helper, then inject it into `dealData` as soon as it's loaded for the project.
+### 1. Source state in `PayrollSection`
 
-### 1. New helper: `src/lib/payrollFallback.ts`
+Compute three booleans up front:
+- `tbHasPayroll` — any TB account classified as `Payroll & Related` with non-zero balances (existing `buildPayrollGrid` check, lifted into the section)
+- `registerHasData` — `dealData.payrollFallback` present with any non-empty category
+- `unclassifiedPayrollSuspects` — TB accounts whose name matches payroll keywords (salar, wage, payroll tax, FICA, 401k, benefit) but aren't classified yet
 
-- `buildPayrollFallbackFromProcessedData(record)` — takes a `processed_data` row's `data.extractedData` and returns a `PayrollFallbackData` object (the exact mapping currently inlined at `ExportCenterSection.tsx:432-445`).
-- `fetchLatestPayrollFallback(projectId)` — queries `processed_data` for the newest `data_type='payroll'` row and returns the fallback (or `null`).
+Render different surfaces based on these.
 
-### 2. Wire it into `useProjectDealData` (`src/hooks/useProjectDealData.ts`)
+### 2. Source badge row (always visible at top of section)
 
-After the initial `dealData` is loaded, fire `fetchLatestPayrollFallback(projectId)` and merge the result into state:
+Two pills side-by-side:
 ```
-setDealData(prev => prev ? { ...prev, payrollFallback } : prev)
+[ Trial Balance: 4 accounts · $1.18M LTM ]   [ Payroll Register: Sandbox Co Payroll.xlsx · $1.21M LTM ]
 ```
-Also subscribe to `processed_data` inserts for this project (filtered by `data_type='payroll'`) so a fresh upload re-merges without a page reload.
+Each pill:
+- Green tint when present + non-zero
+- Muted with "Not provided" + small "Add" link when missing (links to classification helper or Documents page)
+- Tooltip explains the role
 
-This single change makes the Payroll WorkbookTabView, the standalone Workbook page, and any other consumer of `dealData` render the data automatically.
+### 3. Reconciliation card (only when both sources exist)
 
-### 3. Update `PayrollSection` summary cards (`src/components/wizard/sections/PayrollSection.tsx`)
+A compact table comparing the two sources at the **category level**:
 
-Today `extractMetrics` only reads `data.rawData`. Extend it (or add a second path) so when `dealData.payrollFallback` is present it computes Total Payroll / Tax Rate / Benefit Rate / Owner Comp from the fallback categories. The grid below already renders via `WorkbookTabView` once step 2 lands.
+```
+Category           Per Register      Per TB           Variance        % Var
+Salaries & Wages   $890K             $870K            $20K            2.3%
+Payroll Taxes      $112K             $108K            $4K             3.7%
+Benefits           $145K             $140K            $5K             3.5%
+Owner Comp         $60K              $60K             $0              0.0%
+TOTAL              $1,207K           $1,178K          $29K            2.5%
+```
 
-### 4. Simplify `ExportCenterSection`
+- Color the variance cell amber if >3%, red if >10%
+- One-line interpretation: *"Variances of <3% are normal timing differences. Larger gaps often indicate unrecorded accruals or misclassification."*
 
-Replace the inlined block at lines 431-445 with `buildPayrollFallbackFromProcessedData(payrollData)` so we have one source of truth.
+Implementation: compute TB category totals via the existing `calc` helpers + `subAccount1 === 'Payroll & Related'` classification; register totals from `payrollFallback`. Sum across LTM period set.
 
-### 5. Quick UX hint
+### 4. Detailed register breakdown (when register exists)
 
-In `PayrollSection`, if `payrollFallback` is being used (no TB Payroll classification yet), show a small muted note: *"Showing extracted payroll from your uploaded report. Classify Trial Balance accounts as 'Payroll & Related' to use TB data instead."* — clarifies why the data appeared without a sync.
+Collapsible card below the workbook grid: lists the register's individual line items grouped by category (Salaries & Wages, Owner Comp, Payroll Taxes, Benefits). This is the value-add the register provides over TB.
+
+### 5. Workbook grid: keep current behavior
+
+`buildPayrollGrid` continues to prefer TB when classified+non-zero, falls back to register otherwise. No change — this is the right behavior for an accounting roll-up that reconciles to the P&L.
+
+Add a small footnote under the grid: *"Workbook shows Trial Balance roll-up when available. See reconciliation above for register comparison."*
+
+### 6. Smart empty states
+
+- **Neither source**: prominent dual CTA — *"Classify Trial Balance payroll accounts"* (opens classification helper) **OR** *"Upload a payroll register"* (links to Documents → Payroll Reports)
+- **TB only, with unclassified suspects**: yellow hint — *"3 TB accounts may be payroll-related but aren't classified: Salaries Expense, Payroll Tax Exp, 401k Match. [Review classifications]"*
+- **Register only**: amber hint — *"No Trial Balance accounts classified as Payroll & Related. Workbook is using the register as fallback — classify TB accounts to enable reconciliation."*
 
 ## Out of scope
 
+- No change to `buildPayrollGrid` precedence (keeps TB-primary for the workbook/PDF)
 - No DB schema changes
-- No edge-function changes (process-payroll-document already stores the right shape)
-- Not changing the cross-validation flag logic
-- Not touching the workbook grid builder itself — the fallback path already exists, we're just feeding it
+- No edge function changes
+- Not building a period-by-period reconciliation chart (LTM totals only for v1)
+- Not auto-classifying TB accounts (suspects are surfaced as a hint, user still confirms)
 
 ## Files touched
 
-- `src/lib/payrollFallback.ts` (new)
-- `src/hooks/useProjectDealData.ts`
-- `src/components/wizard/sections/PayrollSection.tsx`
-- `src/components/wizard/sections/ExportCenterSection.tsx` (refactor only)
+- `src/components/wizard/sections/PayrollSection.tsx` — main rework
+- `src/components/wizard/shared/PayrollReconciliationCard.tsx` (new) — reconciliation table
+- `src/components/wizard/shared/PayrollSourceBadges.tsx` (new) — source pills
+- `src/components/wizard/shared/PayrollRegisterDetail.tsx` (new) — collapsible register breakdown
+- `src/lib/payrollReconciliation.ts` (new) — pure helpers: `sumTbPayrollByCategory(dealData)`, `sumRegisterByCategory(fallback)`, `computeVariances(tb, reg)`
 
 ## Verification
 
-1. Reload the project — Payroll wizard section shows summary cards + populated grid sourced from the existing `processed_data` row
-2. Workbook page → Payroll tab renders the same grid
-3. Re-upload a payroll XLSX — UI updates without manual refresh via realtime
-4. Classify a TB account as "Payroll & Related" → TB path takes precedence over fallback (existing `buildPayrollGrid` logic)
+1. Project with only register (current state for `fa0768ca…`): register pill green, TB pill muted with "Classify accounts" link, amber hint shown, workbook grid renders from register
+2. Project with only TB classified: TB pill green, register pill muted with upload link, no reconciliation card
+3. Project with both: both pills green, reconciliation card shows category-level variance, both detail panels available
+4. Project with neither: dual CTA empty state
