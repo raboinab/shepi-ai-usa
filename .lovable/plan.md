@@ -1,30 +1,36 @@
-# Fix Debt Schedule Upload — CSV/text files failing
+# Debt Schedule Auto-Fallback (mirror payroll / fixed assets)
 
-## What's broken
-The Debt Schedule upload for project `fa0768ca…` failed with:
-> "I don't see any document attached to your message"
+## Goal
+After a Debt Schedule CSV/PDF is uploaded and parsed by `process-debt-schedule`, it should appear in the workbook's **Supplementary** tab automatically — no need to open the wizard and click **Import from Documents**. Wizard import stays available to edit/override.
 
-That's the model's reply, not a real failure to attach. `process-debt-schedule` always sends the uploaded file as `image_url: { url: fileBase64 }`. Claude Sonnet can read PDFs/images that way, but a base64 CSV passed through the image channel is opaque to it — so it asks for the file, JSON parse fails, status flips to **Failed**.
+## Changes
 
-The Fixed Asset Register works because `process-fixed-assets` already branches: PDFs/images → `image_url`, CSV/Excel/text → decoded as text in a `text` part. Debt schedule was never updated to match.
+### 1. New file: `src/lib/debtFallback.ts`
+- Export `fetchLatestDebtFallback(projectId): Promise<SupplementaryDebtItem[]>`.
+- Query `processed_data` for the most recent row with `project_id = projectId` and `data_type = 'debt_schedule'`, ordered by `created_at desc`, limit 1.
+- Map `data.debts[]` (shape from `process-debt-schedule`: `lender`, `facilityType`, `currentBalance`, `interestRate`, `maturityDate`, optional `monthlyPayment`) into `SupplementaryDebtItem` shape used by `dealData.supplementary.debtSchedule` (matching what `DebtScheduleImportDialog` produces and what `adaptSupplementary` consumes — `lender` concatenated with facility type, `balance` = `currentBalance`, `interestRate`, `maturityDate`, `type` = `facilityType`).
+- Return `[]` on no row, parse error, or query failure.
 
-## Fix
-Mirror the fixed-assets pattern inside `supabase/functions/process-debt-schedule/index.ts`.
+### 2. Update `src/lib/projectToDealAdapter.ts`
+- Add a third entry to the existing `Promise.all` in `loadDealDataWithPriorBalances` for `debtFallback` (lazy import like the others).
+- After `adaptSupplementary` runs and `dealData.supplementary` is populated, add:
+  ```
+  if ((dealData.supplementary?.debtSchedule?.length ?? 0) === 0 && debtFallback.length > 0) {
+    dealData.supplementary = {
+      debtSchedule: debtFallback,
+      leaseObligations: dealData.supplementary?.leaseObligations ?? [],
+    };
+  }
+  ```
+- Never overwrite a non-empty wizard-edited debt list.
 
-1. **Detect file type** from `fileName` extension (`.csv`, `.txt`, `.tsv` → text; `.xlsx`/`.xls` → text via SheetJS decode if needed, else fall back to text; `.pdf`/images → image_url as today).
-2. **For text files**, strip the `data:*;base64,` prefix from `fileBase64`, `atob` it, `TextDecoder().decode(...)`, truncate to ~100KB, and send as a single `{ type: "text", text: "<prompt>\n\n<csv contents>" }` user message.
-3. **For PDFs/images**, keep the existing `image_url` path unchanged.
-4. **Keep** the system prompt, JSON parsing, `processed_data` insert, embed-project-data trigger, and CORS exactly as-is.
-
-No client changes — `DocumentUploadSection.tsx` keeps sending `{ documentId, fileBase64, fileName, projectId }`.
+## What does NOT change
+- `process-debt-schedule` edge function (already fixed for CSVs last round).
+- `DebtScheduleImportDialog` — still works for manual import/override.
+- `SupplementaryTab.tsx` — already renders `dealData.supplementary.debtSchedule`, no UI changes needed.
+- Lease obligations — no fallback (no upload source for them).
 
 ## Validation
-1. Redeploy `process-debt-schedule`.
-2. On project `fa0768ca…`, click **Retry** on the failed CSV. Expect status → Validated/Pending and a new `processed_data` row with `data_type='debt_schedule'`.
-3. Confirm the Workbook **Debt** tab now populates (existing `dealData.debt` pipeline already reads from wizard + processed_data fallback per the payroll/fixed-assets pattern — verify after retry; if Debt has no fallback hook yet we can add one in a follow-up, but that's out of scope for this fix).
-4. Re-upload a PDF debt schedule to confirm the image path still works.
-
-## Out of scope
-- Adding a `debtFallback` to `loadDealDataWithPriorBalances` (separate task if needed — wizard import already merges debt today).
-- Touching `process-fixed-assets` / `process-payroll-document`.
-- Changing the AI model or prompt.
+1. On project `fa0768ca…`, reload the workbook → **Supplementary** tab should show the parsed debt rows (lender, balance, rate, maturity) without touching the wizard.
+2. Edit a row via the wizard's Supplementary section and save → fallback must NOT clobber the edits on next reload (wizard data takes priority).
+3. Delete wizard supplementary data → fallback should re-populate from the uploaded CSV on next load.
