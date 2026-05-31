@@ -95,7 +95,7 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-const formatCurrency = (num: number | null) => {
+const formatCurrency = (num: number | null | undefined) => {
   if (num == null) return "—";
   return new Intl.NumberFormat("en-US", {
     style: "currency",
