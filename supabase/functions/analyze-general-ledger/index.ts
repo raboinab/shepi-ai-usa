@@ -639,11 +639,13 @@ serve(async (req) => {
         const denom = Math.max(Math.abs(acct.glBalance), Math.abs(tbBalance), 1);
         const variancePct = absDiff / denom;
         const isMatch = absDiff < 50 || variancePct < 0.005;
-        // Detect parent-vs-rollup structural mismatch: matched TB row is a parent
-        // (has child rows in TB), and its magnitude dwarfs the GL parent's direct postings.
+        // Detect parent-vs-rollup structural mismatch: matched row is a parent on
+        // EITHER side (TB rolls up or GL expands children as siblings), and the TB
+        // rollup magnitude dwarfs the GL parent's direct postings.
         const isStructural = !isMatch &&
-          tbParentPaths.has(normKey(tb.fullPath)) &&
+          (parentPaths.has(normKey(tb.fullPath)) || parentPaths.has(normKey(fullPath))) &&
           Math.abs(tbBalance) > Math.max(Math.abs(acct.glBalance) * 3, 1000);
+
         const cmp: TBComparison = {
           accountName: acct.name,
           glBalance: acct.glBalance,
