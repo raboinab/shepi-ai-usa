@@ -30,6 +30,42 @@ interface ExtractionResult {
   extractedAt: string;
 }
 
+const TEXT_EXTENSIONS = new Set(["csv", "tsv", "txt", "json", "xml"]);
+
+function buildUserContent(fileBase64: string, fileName: string, userPrompt: string): unknown[] {
+  const ext = (fileName.split(".").pop() || "").toLowerCase();
+  if (TEXT_EXTENSIONS.has(ext)) {
+    // Strip data URL prefix if present, then base64-decode to text
+    const b64 = fileBase64.includes(",") ? fileBase64.split(",", 2)[1] : fileBase64;
+    let text = "";
+    try {
+      const bin = atob(b64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      text = new TextDecoder().decode(bytes);
+    } catch (e) {
+      console.error("Failed to decode text file:", e);
+      text = "[Unable to decode file as text]";
+    }
+    if (text.length > 100_000) {
+      text = text.substring(0, 100_000) + "\n\n[TRUNCATED — file exceeds 100KB]";
+    }
+    return [
+      {
+        type: "text",
+        text: `${userPrompt}\n\nDocument contents (${ext.toUpperCase()}):\n\n${text}`,
+      },
+    ];
+  }
+  // PDFs / images — pass through as image_url (data URL)
+  return [
+    { type: "text", text: userPrompt },
+    { type: "image_url", image_url: { url: fileBase64 } },
+  ];
+}
+
+
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
