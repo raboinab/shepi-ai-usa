@@ -1,43 +1,23 @@
-## Problem
+## Root cause
 
-The AI Discovery section is still hitting the section error boundary on `/project/fa0768ca…`. The defensive null guards I added earlier didn't catch the real culprit. The 14 saved proposals look clean in the DB (no null `proposed_amount`, no null `proposed_period_values`, all statuses are valid strings), and a fresh job (`7922e84a…`) is sitting `running` at 20% — but neither of those should crash render.
+`src/hooks/useDiscoveryProposals.ts` (lines 293–332) creates a realtime channel named `discovery-job-${currentJobId}` and re-runs whenever `job?.id` or `job?.status` changes. When status flips queued → running for the same job, the effect re-runs: cleanup calls `removeChannel`, but `supabase.channel(name)` is name-keyed and reuses an existing already-`subscribe()`-d channel from the registry before removal settles. Adding the new `.on('postgres_changes', …)` on that already-subscribed channel throws:
 
-Without the actual error message or a console-log dump we're guessing. The fastest path to a real fix is to make the boundary's fallback show the error message inline (instead of hiding it behind "Copy error details").
+> cannot add `postgres_changes` callbacks for realtime:discovery-job-7922e84a-… after `subscribe()`
 
-## Plan
+This kills the render and the section boundary catches it.
 
-**1. Surface the real error in `SectionErrorBoundary`**
+## Fix
 
-Change `src/components/system/SectionErrorBoundary.tsx` so the fallback renders, inline:
-- `this.state.error?.message` in a monospaced `<pre>` block
-- the first ~10 lines of `this.state.errorInfo?.componentStack` (so we can see which child threw)
-- keep the existing "Reset section" and "Copy error details" buttons
+In `useDiscoveryProposals.ts`:
 
-This is a tiny, low-risk change scoped to the fallback UI only. No business logic touched.
+1. Make the channel name unique per effect run: `discovery-job-${currentJobId}-${nonce}` where `nonce` is generated inside the effect (e.g. `crypto.randomUUID().slice(0,8)` or `Date.now()`). This guarantees no collision with a residual channel in the realtime registry.
+2. Drop `job?.status` from the dependency array — re-subscribing on every status change is unnecessary churn; `job?.id` change is the only signal that matters for the channel lifecycle. The handler already updates state correctly for every payload.
+3. Keep the existing cleanup (`supabase.removeChannel(channel)`).
 
-**2. You reload the page and paste what shows**
-
-Once the inline error is visible, paste the message + component stack back into chat. With the real stack I can pinpoint the throwing component in one round-trip instead of guessing at more defensive coercions.
-
-**3. (Likely follow-up, not in this plan)** Patch whatever the stack reveals — almost certainly a single field access in `ProposalDetailCard`, `CpaReviewBadge`, or the bridge-summary computation. I'll propose that as a separate plan once we have the error text.
+That's the whole fix — one file, ~3 lines.
 
 ## Out of scope
 
-- Not touching the stuck `7922e84a…` job yet — it's not what's crashing render (running jobs render the progress bar fine).
-- Not changing `useDiscoveryProposals` or proposal data.
-- Worker stall debugging (why jobs hang at 20%) is a separate workstream.
-
-## Technical notes
-
-Files changed: `src/components/system/SectionErrorBoundary.tsx` only.
-
-```text
-[AlertTriangle] AI Discovery is temporarily unavailable
-A proposal or analysis job failed to render…
-
-Error: <message here>
-  at ProposalDetailCard (DiscoveryProposalsSection.tsx:377)
-  at … (first ~10 lines of component stack)
-
-[Reset section]  [Copy error details]
-```
+- The stuck `7922e84a…` worker job (still `running` at 20%) — separate worker problem.
+- Bridge / proposal rendering — was never the issue.
+- Removing the inline error pre-block from `SectionErrorBoundary` — leave it; it's been useful and harmless.
