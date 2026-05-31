@@ -222,6 +222,30 @@ export const GeneralLedgerInsightsCard = ({ analysisData, documentName, classNam
                     </Table>
                   </div>
                 )}
+                {analysisData.structuralVariances && analysisData.structuralVariances.length > 0 && (
+                  <div className="space-y-1">
+                    <div className="text-sm font-medium text-muted-foreground" title="These TB parent accounts include child rollups not posted directly to the parent in the GL. The child accounts reconcile separately.">
+                      Structural differences ({analysisData.structuralVariances.length})
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      TB shows the parent rollup (parent + children summed); GL shows only direct postings to the parent. Underlying child accounts reconcile separately.
+                    </p>
+                    <Table>
+                      <TableHeader>
+                        <TableRow><TableHead>Account</TableHead><TableHead className="text-right">GL (parent)</TableHead><TableHead className="text-right">TB (rollup)</TableHead></TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {analysisData.structuralVariances.map((r, i) => (
+                          <TableRow key={i} className="text-muted-foreground">
+                            <TableCell className="text-sm">{r.accountName}</TableCell>
+                            <TableCell className="text-right text-sm">{fmt(r.glBalance)}</TableCell>
+                            <TableCell className="text-right text-sm">{fmt(r.tbBalance)}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
                 {analysisData.missingInTBList && analysisData.missingInTBList.length > 0 && (
                   <div className="space-y-1">
                     <div className="text-sm font-medium">In GL but missing from TB ({analysisData.missingInTBList.length})</div>
