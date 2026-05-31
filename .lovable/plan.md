@@ -1,90 +1,88 @@
-## Read of the current state
+## You were right — the "cutoff difference" theory was wrong
 
-Reconciliation is now correctly at 83% with all sign-mirror false positives gone. The 11 remaining material variances split into two buckets that should be treated differently:
+Both exports were pulled within 3 minutes of each other on Mar 4. Those balance-sheet variances are a real parser bug.
 
-### Bucket A — Genuine balance-sheet cutoff differences (4)
+## What the raw data actually shows
 
-| Account | GL | TB | Variance |
-|---|---|---|---|
-| Savings | $1,852,556 | $2,306,033 | −$453,477 |
-| Checking | $259,800 | $410,901 | −$151,101 |
-| Undeposited Funds | $267,757 | $338,139 | −$70,382 |
-| Accounts Receivable | −$300 | −$174,896 | $174,596 |
+I queried the GL JSON stored in `processed_data` for this project. For every balance-sheet account (Savings, Checking, A/R, Undeposited Funds, A/P, Original Cost), QuickBooks emits a `Beginning Balance` row at the top of the account section that looks like this:
 
-These are real and should keep flagging. They indicate the GL detail report and the TB were pulled at different cutoff points, or there are entries in the TB that didn't make it into the GL export. This is exactly what a reconciliation tool is *supposed* to surface.
-
-### Bucket B — Parent-vs-rollup structural mismatches (6)
-
-| Account | GL (parent only) | TB (rollup) |
-|---|---|---|
-| Landscaping Services | $30 | −$210,171 |
-| Pest Control Services | $70 | −$179,716 |
-| Fountains and Garden Lighting | $45 | −$151,591 |
-| Other Income | $331,583 | −$98,222 |
-| Design income | $263 | −$119,170 |
-| Services | $104 | −$85,785 |
-
-These are NOT data errors. QuickBooks' TB rolls child balances up into the parent total (e.g. `Landscaping Services` TB row = sum of all its sub-services). The GL parent row shows only direct postings to the parent ($30 of uncategorized billings), and the children are listed separately. We're correctly matching parent-to-parent, but those numbers are structurally incomparable.
-
-The seventh structural row is A/P ($75,810 vs −$84,558, normalized variance −$8,748) — this looks like a small genuine cutoff difference, not a rollup. Keep it flagged.
-
-### Plus one cosmetic issue
-
-`Mastercard` ($75 vs −$710, −$635) and `Board of Equalization Payable` ($4 vs −$321, −$317) are non-material — below the existing $1,000 threshold — so they don't appear in Material Variances anyway. No change needed.
-
-## The fix
-
-Single edge function change: `supabase/functions/analyze-general-ledger/index.ts`, reconciliation loop only.
-
-### 1. Detect parent-rollup mismatch
-
-After matching a GL account to a TB account, check whether the matched TB row is a **parent rollup** — i.e. there exist other entries in `tbByFullPath` whose path starts with `${tb.fullPath}:` and carry non-trivial balances. Track these prefixes once at the top of the reconciliation loop:
-
-```ts
-const tbParentPaths = new Set<string>();
-for (const [path] of tbByFullPath) {
-  const parts = path.split(":");
-  for (let i = 1; i < parts.length; i++) {
-    tbParentPaths.add(parts.slice(0, i).join(":"));
-  }
+```json
+{
+  "type": "DATA",
+  "colData": [
+    {"value": "Beginning Balance"},
+    {"value": ""}, {"value": ""}, {"value": ""},
+    {"value": ""}, {"value": ""}, {"value": ""}, {"value": ""}
+  ]
 }
 ```
 
-When a matched TB row's normalized fullPath is in `tbParentPaths` AND `Math.abs(tbBalance) > Math.abs(glBalance) * 3` (or similar tolerance), treat the comparison as a **structural variance**, not a data variance.
+**All eight `value` fields are empty strings.** QB knows there's a beginning balance — it sends the row — but it doesn't populate any of the amount cells. Our parser reads it correctly, finds no number, and silently leaves `beginningBalance = 0`.
 
-### 2. New status, separate UI bucket
+That explains the variance exactly:
 
-Add a fourth status to `TBComparison`:
+| Account | GL (parser) | TB (Dec 2025 snapshot) | Implied opening |
+|---|---|---|---|
+| Savings | $1,852,556 | $2,306,033 | ~$453,477 |
+| Checking | $259,800 | $410,901 | ~$151,101 |
+| A/R | −$300 | −$174,896 | ~$174,596 |
+| Undeposited Funds | $267,757 | $338,139 | ~$70,382 |
 
-```ts
-status: "match" | "variance" | "structural_variance" | "missing_in_tb";
+In every case, GL = TB − missing opening balance. The parser is summing only in-period transactions and treating opening as $0.
+
+(Bonus weirdness: the QB-provided `Total for <Account>` summary row also reads `0.00` for these accounts, which is clearly bogus given hundreds of real transactions. We're not relying on it, so it doesn't matter, but it confirms QB's GL JSON export for this realm has some empty-value quirks.)
+
+## Why the existing fallback didn't catch it
+
+The parser tries `endingBalance` from a running-balance column first, then falls back to `beginningBalance + netSum`. For this export there's only one money column (no running balance), so it falls back. But `beginningBalance` is 0 because the value cells are empty → it returns just `netSum`, which is the period change, not the ending balance.
+
+## The fix
+
+Single edge function change: `supabase/functions/analyze-general-ledger/index.ts`, GL parser only.
+
+### 1. Detect "Beginning Balance row was present but empty"
+
+Track a new flag per account: `beginningRowSeenButEmpty: boolean`. Set it when we see a row whose label is `beginning balance` AND `parseMoney` returns null on every column. This is the signal that QB intended to include an opening balance but the export stripped the value.
+
+### 2. Backfill opening balance from the Trial Balance
+
+The TB ingester already builds monthly per-account series keyed by `acctId` / `fullPath`. The **first populated month's** snapshot ending balance, minus that month's net change, equals the GL period's opening balance. In practice, using the Dec-of-prior-year snapshot — or equivalently the Jan snapshot minus January's net activity — is close enough for reconciliation purposes.
+
+For this dataset, monthly TB index 0 = January 2023 snapshot. We can compute opening balance as:
+
+```
+openingBalance ≈ tb.monthly[0].snapshotBalance - (sum of January 2023 GL txns for this account)
 ```
 
-- Excluded from `materialVariances` regardless of magnitude
-- Counted toward `matchCount` for the reconciliation percentage (the underlying child accounts already match, so the parent's rollup discrepancy isn't a true reconciliation failure)
-- Returned in the response payload as `structuralVariances: TBComparison[]` so the UI can render them in a separate, lower-severity section ("Parent accounts shown at rollup vs. direct-posting level")
+But that's fragile. A cleaner alternative: extend the TB ingester to also accept a **prior-period snapshot** (Dec 31, 2022) if the user uploads one, OR just use `tb.monthly[0].snapshotBalance` minus the January change as the opening.
 
-### 3. UI surface (minimal)
+Pragmatic choice for this fix: when `beginningRowSeenButEmpty === true` and a matching TB account exists, set `glBalance = tb.snapshotBalance` (the Dec 2025 ending balance from TB) and record `glBalanceSource = "tb_inferred"`. This eliminates the false variance and is honest about what we did — these accounts simply can't be independently verified from the GL alone when QB ships empty opening rows.
 
-`src/components/[wherever the reconciliation tab lives]` — add a collapsible section below "Material Variances" titled **"Structural differences"** with a one-line tooltip: *"These TB parent accounts include child rollups not posted directly to the parent in the GL. The child accounts reconcile separately."* Render the same column shape (Account / GL / TB / Variance) but in muted styling.
+### 3. Surface the inference in the UI
 
-If discovering the exact component path during build is faster than guessing, do that first.
+Add an optional `glBalanceSource: "gl" | "tb_inferred"` to `TBComparison`. When `tb_inferred`, render the row in the matched section with a small footnote indicator (e.g. an asterisk + tooltip: *"GL opening balance was missing from the QuickBooks export; ending balance taken from Trial Balance for these accounts."*). Do NOT count these as either matches or variances in the headline reconciliation rate — they should be a third bucket like "verified via TB only."
 
-### 4. Reconciliation percentage
+### 4. Flag persistent emptiness
 
-With Bucket B reclassified as matches, expect the rate to climb from 83% to ~91% (62 + 6 = 68 / 75). Bucket A's 4 real variances remain genuine.
+If `beginningRowSeenButEmpty` AND we couldn't find a matching TB account, surface it as a flag: *"Account 'X' has missing opening balance in GL detail and no TB to cross-reference."* These would remain true variances.
 
-## Out of scope
+## Expected outcome
 
-- Trying to reconstruct GL parent totals by summing children (the child accounts have different classification paths in GL vs TB; the arithmetic wouldn't tie cleanly and would hide real differences)
-- Touching the TB ingester, GL parser, or any of the matching logic that's now working
-- Adding a manual override / "ignore this account" UI
-- Changing how `Mastercard` / `Board of Equalization` (immaterial small variances) are displayed
+- The 4 BS variances disappear from "Material Variances"
+- They appear in a new "Verified via TB" row group (or just as matches with an asterisk)
+- The 3 remaining true issues stay flagged: A/P ($-8,748 — real cutoff/timing), plus any structural rollups already handled
+- Reconciliation rate climbs from 83% / 91% (with last change) to ~96%+
 
 ## Open question
 
-Do you want structural-variance rows to:
-**(a)** count as matches (reconciliation % goes up), or
-**(b)** be excluded from both numerator and denominator (so the % reflects only "comparable" accounts)?
+Two paths for #2 above — which do you want?
 
-I'd recommend (a) — they aren't reconciliation failures, just presentation differences. But it's your call.
+**(a) Conservative inference**: When opening balance is missing, accept TB's ending as the GL's ending, mark as `tb_inferred`. Eliminates false flags but means we're not independently verifying these 4 accounts. *(I recommend this — the empty rows are a QB export defect, not a data quality issue worth flagging.)*
+
+**(b) Strict mode**: Keep flagging them as variances but add a clear "Opening balance missing from GL export" annotation so users know it's a QB export limitation, not a real reconciliation failure. Slower path to a clean dashboard but more transparent.
+
+## Out of scope
+
+- Re-parsing the original GL file to look for opening balances embedded elsewhere (the JSON cells are genuinely empty)
+- Asking the user to re-export — this is a QB defect that may not be fixable on their end
+- Touching the TB ingester or matching logic — both are working correctly
