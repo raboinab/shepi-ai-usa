@@ -32,8 +32,9 @@ export interface GLAnalysisData {
   accountTypeBreakdown?: Record<string, number>;
   largestAccounts?: { name: string; type: string; balance: number }[];
   reconciliation?: TBComparison[];
-  reconciliationSummary?: { matched: number; variances: number; missingInTB: number; missingInGL: number };
+  reconciliationSummary?: { matched: number; structural?: number; variances: number; missingInTB: number; missingInGL: number };
   materialVariances?: TBComparison[];
+  structuralVariances?: TBComparison[];
   missingInTBList?: { name: string; balance: number }[];
   missingInGLList?: { name: string; balance: number }[];
   identityCheck?: { assets: number; liabilities: number; equity: number; netIncome: number; difference: number; balanced: boolean };
