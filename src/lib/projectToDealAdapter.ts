@@ -182,16 +182,22 @@ export function projectToDealData(project: ProjectRecord): DealData {
  */
 export async function loadDealDataWithPriorBalances(project: ProjectRecord): Promise<DealData> {
   const dealData = projectToDealData(project);
-  const [priorBalances, payrollFallback] = await Promise.all([
+  const [priorBalances, payrollFallback, fixedAssetsFallback] = await Promise.all([
     derivePriorBalances(project.id, dealData.trialBalance, dealData.deal.periods),
     // Lazy import to avoid a static cycle with payrollFallback → workbook-types
     import("./payrollFallback").then(m => m.fetchLatestPayrollFallback(project.id)).catch(() => null),
+    import("./fixedAssetsFallback").then(m => m.fetchLatestFixedAssetsFallback(project.id)).catch(() => []),
   ]);
   if (Object.keys(priorBalances).length > 0) {
     dealData.deal.priorBalances = priorBalances;
   }
   if (payrollFallback) {
     dealData.payrollFallback = payrollFallback;
+  }
+  // Only merge fixed-assets fallback when wizard import hasn't populated anything,
+  // so a user-edited wizard list is never overwritten by a stale upload.
+  if (dealData.fixedAssets.length === 0 && fixedAssetsFallback.length > 0) {
+    dealData.fixedAssets = fixedAssetsFallback;
   }
   return dealData;
 }
