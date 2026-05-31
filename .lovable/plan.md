@@ -1,77 +1,66 @@
+## What we know
+
+- Project `fa0768ca…` has **11 saved proposals** (all in non-`proposed` statuses) and **1 stuck `running` discovery job** queued at 18:05:57 sitting at `progress=20%` with no updates.
+- The user's "Something went wrong" is `AppErrorBoundary` swallowing a render error somewhere inside the wizard. The discovery section is rendered via `DDAdjustmentsSection.tsx:843` and keyed off `job.id` + `proposals.length`, so a malformed value on the in-flight job is a very plausible trigger.
+- No runtime-error stack was captured in this snapshot, so we can't pinpoint the exact line yet — but the boundary today is app-wide, which is why the user "can't get to the tab".
+
 ## Goal
 
-When a user uploads a Journal Entries file (Excel or CSV) under the Journal Entries doc type, parse the rows into the same shape QuickBooks sync produces, store as `data_type = 'journal_entries'` in `processed_data`, and let the existing `useAutoLoadJournalEntries` hook populate the wizard viewer automatically — without touching the QuickBooks path.
+1. Unblock the page **right now** so the user can navigate to the tab.
+2. Make sure a single bad proposal/job can't blank the whole app again.
+3. Capture the real stack so we can patch the underlying render bug in a follow-up.
 
-## Diagnosis (why it's empty today)
+## Plan
 
-- `JournalEntriesSection` only renders entries from `wizardData.journalEntries.entries`, which is hydrated by `useAutoLoadJournalEntries` from `processed_data` rows with `data_type = 'journal_entries'`.
-- Only `complete-qb-sync/index.ts:359` ever writes that data type. Uploaded JE Excel/CSV files are sent to `analyze-journal-entries`, which writes `journal_entry_analysis` (the insights card) — never `journal_entries`.
-- Confirmed on project `fa0768ca…`: only `journal_entry_analysis` rows exist; no `journal_entries`. Empty-state copy reflects this ("after a QuickBooks sync").
+### Step 1 — Kill the stuck job (one-off DB write)
 
-## Changes
+Run a single migration / SQL command to mark the stale job failed:
 
-### 1. New edge function: `supabase/functions/process-journal-entries/index.ts`
-
-Deterministic parser (no AI — JE files are tabular and can be large/many rows).
-
-- Accept `{ documentId, projectId }`, look up the document row, download the file from storage.
-- For `.xlsx` / `.xls`: parse with `xlsx` via `npm:xlsx@0.18.5` (already in use elsewhere if present, else add). For `.csv`: parse with simple line/quote-aware split.
-- Detect header row (case-insensitive). Required columns (any of these aliases):
-  - JE id: `je #`, `entry #`, `num`, `journal #`, `transaction id`
-  - Date: `date`, `txn date`, `transaction date`
-  - Account: `account`, `account name`
-  - Debit: `debit`, `debit amount`
-  - Credit: `credit`, `credit amount`
-  - Optional: `memo`, `description`, `account id`, `adj` / `adjustment`
-- Group rows by JE id (+ date as fallback). For each group, build:
-  ```
-  { id, txnDate (YYYY-MM-DD), totalAmount (sum of debits), isAdjustment, memo, lines: [{accountName, accountId, amount, postingType: "DEBIT"|"CREDIT"}] }
-  ```
-- Sort entries by `txnDate` desc.
-- Write a `processed_data` row exactly matching the shape `transformQBJournalEntriesToWizard` expects when called via `useAutoLoadProcessedData` — i.e., the hook passes `data` straight into the transform. Simplest: store the already-wizard-shaped payload `{ data: rawEntries, count }` where `rawEntries` use the same field names the QB transform reads (`id`, `txnDate`, `line[].journalEntryLineDetail.accountRef.{name,value}`, `line[].amount`, `line[].journalEntryLineDetail.postingType`, `privateNote`, `adjustment`). This keeps a single transform path.
-- Insert with `source_type: 'upload_parse'`, `data_type: 'journal_entries'`, `validation_status: 'pending'`.
-- Fire-and-forget call to `embed-project-data` with `data_types: ['journal_entries']`.
-- Standard CORS + error handling mirroring `process-debt-schedule`.
-
-### 2. Wire upload to the new function
-
-In `src/components/wizard/sections/DocumentUploadSection.tsx` (around line 1180, alongside `debt_schedule`), add a branch:
-
-```ts
-} else if (docType === "journal_entries") {
-  await supabase.from('documents').update({ processing_status: "processing" }).eq('id', insertedDoc.id);
-  const { error } = await supabase.functions.invoke('process-journal-entries', {
-    body: { documentId: insertedDoc.id, projectId },
-  });
-  if (error) {
-    await supabase.from('documents').update({ processing_status: "failed" }).eq('id', insertedDoc.id);
-    toast.error("Failed to parse journal entries");
-  } else {
-    await supabase.from('documents').update({ processing_status: "completed" }).eq('id', insertedDoc.id);
-    toast.success("Journal entries parsed — open the Journal Entries section to view.");
-  }
-}
+```sql
+update public.analysis_jobs
+set status = 'failed',
+    error_message = 'Manually expired: worker stalled at 20% for >30min',
+    updated_at = now()
+where id = '8a03c39e-123f-4eb1-8b54-6b876b9917c9';
 ```
 
-The existing `analyze-journal-entries` insights run (triggered by the `AnalysisRunButton` in DocumentUploadSection.tsx:1989) stays untouched — uploads now both populate the viewer and feed the analyzer.
+Effect: `useDiscoveryProposals` will pick a non-running latest job, stop polling, and render with the 11 existing proposals.
 
-### 3. Empty-state copy refresh
+### Step 2 — Section-level error boundary around Discovery
 
-Update `JournalEntriesSection.tsx` empty-state to: "No journal entries yet. Connect QuickBooks or upload a JE Excel/CSV in the Documents section." Keep it short.
+Add a small reusable `<SectionErrorBoundary>` (own file, class component, same shape as `AppErrorBoundary` but scoped) and wrap the `<DiscoveryProposalsSection>` JSX inside `DDAdjustmentsSection.tsx:843-868` with it. The fallback UI is a compact card:
 
-### 4. No DB / schema changes
+- Heading "AI Discovery is temporarily unavailable"
+- One-line message
+- "Reset Discovery" button — clears `jobIdRef` via a reset() callback and re-mounts the section
+- "Copy error details" link that exposes the stack so we can fix it
+- `console.error(error, errorInfo)` so the next message gives us a real stack via `read_runtime_errors`
 
-`processed_data` already supports `data_type = 'journal_entries'`. No migration needed.
+This is the same pattern we already use elsewhere; it's purely frontend, no new deps, no design tokens to touch beyond the existing `Card` + `Alert` components.
 
-## Validation
+### Step 3 — Defensive guards we know are cheap (only if scope allows in same pass)
 
-- On project `fa0768ca…`, re-upload `Sandbox Company_US_2_Debt Schedule.csv`-style JE file → confirm a new `processed_data` row with `data_type = 'journal_entries'` appears.
-- Reload wizard → Adjustments → Journal Entries: rows render in the table with debit/credit totals.
-- QB sync path: confirm `complete-qb-sync` still writes the same data_type and the viewer keeps showing QB rows (last-write-wins, which is the existing behavior for that section).
-- `analyze-journal-entries` insights card still renders independently in the Documents section.
+In `DiscoveryProposalsSection.tsx`:
 
-## Out of scope
+- `formatCurrency(proposal.proposed_amount)` (line 366) — coerce `null/undefined → 0` explicitly inside `formatCurrency` so a null `proposed_amount` never throws.
+- `Object.entries(proposal.proposed_period_values)` (ProposalDetailCard:346) — fall back to `{}` if the field is null at runtime even when the type says otherwise.
+- `proposals.map(...)` ordering — already defensive.
 
-- No changes to QuickBooks sync, `process-debt-schedule`, payroll/fixed-assets fallbacks, or the analyzer.
-- No new RLS, no schema changes.
-- No PDF support for JE (already disabled in the upload picker).
+These are 3-line changes and the most likely culprits for a render-time TypeError on an in-flight proposal row.
+
+### Step 4 — Follow-up after the user re-opens the tab
+
+The new boundary will catch and console.error the real stack. In the next loop I'll pull `read_runtime_errors`, identify the exact crashing line, and patch it. No speculative refactor here.
+
+## Files touched
+
+- `supabase/migrations/<ts>_expire_stuck_discovery_job.sql` (Step 1 — one-off)
+- `src/components/system/SectionErrorBoundary.tsx` (new, ~80 lines)
+- `src/components/wizard/sections/DDAdjustmentsSection.tsx` (wrap the tab content, ~5 line diff)
+- `src/components/wizard/sections/DiscoveryProposalsSection.tsx` + `discovery/ProposalDetailCard.tsx` (defensive null guards, ~5 line diff)
+
+## Out of scope this pass
+
+- The overlap-dedupe "$0 / $2,855" plan from earlier — paused until the page renders again.
+- Debugging the Python discovery worker (why it stalled at 20%) — separate from the frontend crash.
+- Backfilling `support_json.dedupe` on existing proposals.
