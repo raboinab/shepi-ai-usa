@@ -527,6 +527,25 @@ serve(async (req) => {
     }
     const parentPaths = new Set<string>([...tbParentPaths, ...glParentPaths]);
 
+    // Cross-namespace rollup: QB sometimes ships the same leaf name twice — once as a
+    // standalone parent row carrying the rollup balance, and once as a child under a
+    // different parent path. The standalone row has no colon so it never lands in
+    // tbParentPaths above. Detect it by leaf-frequency.
+    const tbLeafCount = new Map<string, number>();
+    for (const [, t] of tbByFullPath) {
+      const leaf = normKey(leafOf(t.fullPath));
+      tbLeafCount.set(leaf, (tbLeafCount.get(leaf) || 0) + 1);
+    }
+    const isCrossNamespaceRollup = (tbRow: TBAcct): boolean => {
+      const leaf = normKey(leafOf(tbRow.fullPath));
+      if ((tbLeafCount.get(leaf) || 0) < 2) return false;
+      for (const [, t] of tbByFullPath) {
+        if (t === tbRow) continue;
+        if (normKey(leafOf(t.fullPath)) === leaf && t.fullPath.includes(":")) return true;
+      }
+      return false;
+    };
+
 
     for (const acct of accounts) {
       // Skip zero-balance, zero-activity accounts
