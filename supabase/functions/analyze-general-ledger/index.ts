@@ -625,7 +625,7 @@ serve(async (req) => {
       }
     }
     console.log(`[ANALYZE-GL] Match attempts: fullPath=${matchByFullPath}, leaf=${matchByLeaf}, ambiguous-leaf=${ambiguousLeaf}, missingInTB=${missingInTB}`);
-    console.log(`[ANALYZE-GL] Reconciliation: matched=${matchCount}/${accounts.length} (BS=${matchBS}, P&L=${matchPL}), variances=${varianceCount}, missingInTB=${missingInTB}`);
+    console.log(`[ANALYZE-GL] Reconciliation: matched=${matchCount}/${accounts.length} (BS=${matchBS}, P&L=${matchPL}), structural=${structuralCount}, variances=${varianceCount}, missingInTB=${missingInTB}`);
 
     // TB accounts not matched to any GL row.
     // Also suppress TB rows whose leaf was already matched against a GL account in agreement,
