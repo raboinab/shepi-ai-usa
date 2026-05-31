@@ -293,9 +293,10 @@ export function useDiscoveryProposals(projectId: string | undefined) {
   useEffect(() => {
     const currentJobId = jobIdRef.current;
     if (!currentJobId) return;
+    const channelNonce = crypto.randomUUID().slice(0, 8);
 
     const channel = supabase
-      .channel(`discovery-job-${currentJobId}`)
+      .channel(`discovery-job-${currentJobId}-${channelNonce}`)
       .on(
         "postgres_changes",
         {
@@ -329,7 +330,7 @@ export function useDiscoveryProposals(projectId: string | undefined) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [fetchProposals, job?.id, job?.status]);
+  }, [fetchProposals, job?.id]);
 
   const runDiscovery = useCallback(async () => {
     if (!projectId || inflightRef.current || isRunning) return;
