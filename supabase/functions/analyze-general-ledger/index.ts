@@ -727,11 +727,13 @@ serve(async (req) => {
       reconciliation: reconciliation.slice(0, 60),
       reconciliationSummary: {
         matched: matchCount,
+        structural: structuralCount,
         variances: varianceCount,
         missingInTB,
         missingInGL: missingInGL.length,
       },
       materialVariances: materialVariances.sort((a, b) => Math.abs(b.variance!) - Math.abs(a.variance!)).slice(0, 20),
+      structuralVariances: structuralVariances.sort((a, b) => Math.abs(b.tbBalance!) - Math.abs(a.tbBalance!)).slice(0, 20),
       missingInTBList: reconciliation.filter(r => r.status === "missing_in_tb").slice(0, 30).map(r => ({ name: r.accountName, balance: r.glBalance })),
       missingInGLList: missingInGL.slice(0, 30),
       flags: [...new Set(flags)].slice(0, 25),
