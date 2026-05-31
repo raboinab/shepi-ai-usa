@@ -20,6 +20,7 @@ interface AccountInfo {
   glBalance: number;
   glActivity: number;    // sum of |amount_signed| txns in period
   txnCount: number;
+  beginningRowSeenButEmpty?: boolean; // QB shipped a "Beginning Balance" row with empty value cells
 }
 
 interface TBComparison {
@@ -29,6 +30,7 @@ interface TBComparison {
   variance: number | null;
   variancePct: number | null;
   status: "match" | "variance" | "structural_variance" | "missing_in_tb";
+  glBalanceSource?: "gl" | "tb_inferred"; // "tb_inferred" = backfilled from TB because GL opening row was empty
 }
 
 serve(async (req) => {
