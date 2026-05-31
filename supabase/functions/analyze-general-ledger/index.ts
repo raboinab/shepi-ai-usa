@@ -589,8 +589,13 @@ serve(async (req) => {
         // ending balance. When we detect that condition AND we have a TB match for a BS
         // account, accept TB's ending balance as the GL's ending balance and tag the row
         // so the UI can disclose the inference.
-        const beginningEmpty = (acct as AccountInfo).beginningRowSeenButEmpty === true;
-        if (!isPL && beginningEmpty) {
+        // Also fire the inference path when a BS account's GL parent shows only
+        // token postings against a sizeable TB ending balance — same QB defect, just
+        // expressed without a Beginning Balance row we could detect.
+        const tinyGlVsLargeTb = !isPL &&
+          Math.abs(acct.glBalance) < Math.max(Math.abs(tbBalance) * 0.05, 500) &&
+          Math.abs(tbBalance) > 1000;
+        if (!isPL && (beginningEmpty || tinyGlVsLargeTb)) {
           const cmp: TBComparison = {
             accountName: acct.name,
             glBalance: tbBalance,
@@ -603,11 +608,13 @@ serve(async (req) => {
           reconciliation.push(cmp);
           matchCount++; matchBS++;
           if (varianceLogged < 25) {
-            console.log(`[ANALYZE-GL] TB-INFERRED (by ${matchedBy}, BS): ${acct.name} gl_parsed=${acct.glBalance.toFixed(2)} tb=${tbBalance.toFixed(2)} (QB sent empty Beginning Balance row)`);
+            const reason = beginningEmpty ? "empty Beginning Balance row" : "tiny GL vs large TB";
+            console.log(`[ANALYZE-GL] TB-INFERRED (by ${matchedBy}, BS, ${reason}): ${acct.name} gl_parsed=${acct.glBalance.toFixed(2)} tb=${tbBalance.toFixed(2)}`);
             varianceLogged++;
           }
           continue;
         }
+
 
         // ── Sign-aware comparison ──
         // QuickBooks GL exports present revenue/liability/equity totals as positive
