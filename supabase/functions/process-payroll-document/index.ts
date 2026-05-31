@@ -201,26 +201,12 @@ ${periodContext}
 - If you cannot determine the exact period, use reasonable inference based on dates
 - Include a confidence assessment
 
-Return your response as a valid JSON object with this exact structure:
-{
-  "success": true,
-  "confidence": "high" | "medium" | "low",
-  "extractedData": {
-    "salaryWages": [
-      { "id": "uuid", "name": "Line item name", "monthlyValues": { "period_id": amount } }
-    ],
-    "payrollTaxes": [...],
-    "benefits": [...],
-    "ownerCompensation": [...]
-  },
-  "warnings": ["Any issues or uncertainties"],
-  "rawFindings": "Brief summary of what was found in the document",
-  "periodCoverage": ["2024-01", "2024-02"]
-}
+You MUST call the \`return_payroll_extraction\` tool with the extracted data. Do not respond with prose or markdown.
 
 - Use unique UUIDs for each account id (generate random ones)
 - monthlyValues should map period IDs to dollar amounts (numbers, not strings)
 - If a period ID is not clear, use format "YYYY-MM" (e.g., "2024-01")`;
+
 
     // Build user content based on file type
     const userContent: unknown[] = [];
@@ -256,11 +242,41 @@ Return your response as a valid JSON object with this exact structure:
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'openai/gpt-4o',
+        model: 'google/gemini-2.5-pro',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userContent }
         ],
+        max_tokens: 16000,
+        tools: [{
+          type: 'function',
+          function: {
+            name: 'return_payroll_extraction',
+            description: 'Return the extracted payroll data in structured form.',
+            parameters: {
+              type: 'object',
+              properties: {
+                success: { type: 'boolean' },
+                confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
+                extractedData: {
+                  type: 'object',
+                  properties: {
+                    salaryWages: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' }, monthlyValues: { type: 'object', additionalProperties: { type: 'number' } } }, required: ['id', 'name', 'monthlyValues'] } },
+                    payrollTaxes: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' }, monthlyValues: { type: 'object', additionalProperties: { type: 'number' } } }, required: ['id', 'name', 'monthlyValues'] } },
+                    benefits: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' }, monthlyValues: { type: 'object', additionalProperties: { type: 'number' } } }, required: ['id', 'name', 'monthlyValues'] } },
+                    ownerCompensation: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' }, monthlyValues: { type: 'object', additionalProperties: { type: 'number' } } }, required: ['id', 'name', 'monthlyValues'] } },
+                  },
+                  required: ['salaryWages', 'payrollTaxes', 'benefits', 'ownerCompensation']
+                },
+                warnings: { type: 'array', items: { type: 'string' } },
+                rawFindings: { type: 'string' },
+                periodCoverage: { type: 'array', items: { type: 'string' } },
+              },
+              required: ['success', 'confidence', 'extractedData']
+            }
+          }
+        }],
+        tool_choice: { type: 'function', function: { name: 'return_payroll_extraction' } },
       }),
     });
 
@@ -305,11 +321,12 @@ Return your response as a valid JSON object with this exact structure:
     }
 
     const aiData = await aiResponse.json();
-    const aiContent = aiData.choices?.[0]?.message?.content || '';
-    
+    const choice = aiData.choices?.[0]?.message;
+    const toolCall = choice?.tool_calls?.[0];
+    const aiContent = choice?.content || '';
+
     console.log('AI response received, parsing...');
 
-    // Parse the AI response
     let extractionResult: PayrollExtractionResult = {
       success: false,
       confidence: 'low',
@@ -325,10 +342,16 @@ Return your response as a valid JSON object with this exact structure:
     };
 
     try {
-      // Find JSON in the response
-      const jsonMatch = aiContent.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
+      let parsed: any = null;
+      if (toolCall?.function?.arguments) {
+        parsed = JSON.parse(toolCall.function.arguments);
+      } else if (aiContent) {
+        // Fallback: strip code fences and parse JSON
+        const cleaned = aiContent.replace(/```json\s*/gi, '').replace(/```/g, '').trim();
+        const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+        if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
+      }
+      if (parsed) {
         extractionResult = {
           success: parsed.success ?? true,
           confidence: parsed.confidence || 'medium',
@@ -346,8 +369,9 @@ Return your response as a valid JSON object with this exact structure:
     } catch (parseError) {
       console.error('Failed to parse AI response:', parseError);
       extractionResult.warnings = [`JSON parse error: ${parseError}`];
-      extractionResult.rawFindings = aiContent.substring(0, 500);
+      extractionResult.rawFindings = (toolCall?.function?.arguments || aiContent).substring(0, 500);
     }
+
 
     // Count extracted items
     const totalItems = 

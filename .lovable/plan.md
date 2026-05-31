@@ -1,47 +1,37 @@
-## Root cause
+## What's wrong
 
-The uploaded payroll register **is** in the database (`processed_data.data_type='payroll'` row exists with full monthly values for 2023–2025), and `useProjectDealData` correctly merges it onto `dealData.payrollFallback`.
+The CSV uploaded fine (`documents.processing_status = 'completed'`) and `process-payroll-document` produced a `processed_data` row — but with `record_count: 0` and this warning:
 
-The bug is at the render layer: `WorkbookTabView` routes the `payroll` tab to the custom React component `src/components/workbook/tabs/PayrollTab.tsx`, which **only reads Trial Balance entries** via `calc.getEntriesByLineItem(tb, "Payroll & Related")`. It has no fallback branch — so when no TB accounts are classified as "Payroll & Related" (this project's case), the grid renders an empty "reported" section even though `dealData.payrollFallback` is populated.
+> `JSON parse error: SyntaxError: Expected property name or '}' in JSON at position 2640`
 
-The sibling pure builder `buildPayrollGrid` in `src/lib/workbook-grid-builders.ts` already handles this correctly (lines 489–496 fall through to `buildPayrollFallbackGrid`). The custom component just never got the same treatment.
+Looking at `rawFindings`, the model returned `` ```json\n{...` `` and was **cut off mid-string** ("2023-08": 1 …). So extraction succeeded structurally but the JSON was truncated, the parser failed, and the function wrote empty `salaryWages/payrollTaxes/benefits/ownerCompensation` arrays. That's why the workbook and wizard show nothing.
 
-This is why both surfaces look empty:
-- **Workbook page** → `WorkbookTabView` → `PayrollTab` (no fallback) → empty grid
-- **Wizard Payroll section** → also renders `<WorkbookTabView tabId="payroll" />` → same empty grid (even though the section's own summary cards / reconciliation card do read the register correctly)
+## Root causes in `supabase/functions/process-payroll-document/index.ts` (lines 252–350)
+
+1. **No `max_tokens`** on the gateway call → model output capped at the default and truncated. A payroll register with ~36 months × multiple employees needs a large output budget.
+2. **No `response_format: { type: 'json_object' }`** → model wraps JSON in ```` ```json ```` fences and adds prose.
+3. **Greedy `aiContent.match(/\{[\s\S]*\}/)`** → on truncated output there is no closing brace, so the parse fails entirely with no recovery.
+4. **No retry / no chunking** when extraction returns 0 items.
 
 ## Fix
 
-Add a fallback branch at the top of `PayrollTab` that mirrors `buildPayrollGrid`'s logic:
+Edit only `supabase/functions/process-payroll-document/index.ts`:
 
-```ts
-const tbHasData = entries.some(e =>
-  dealData.deal.periods.some(p => Math.abs(e.balances[p.id] || 0) > 0.01)
-);
-if (!tbHasData && dealData.payrollFallback) {
-  // delegate: build the fallback grid via the existing pure builder
-  return <SpreadsheetGrid data={buildPayrollFallbackGridForTab(dealData, dealData.payrollFallback)} />;
-}
-```
-
-Two implementation options — I'll go with **Option A** for minimum surface area:
-
-**Option A (preferred):** Export `buildPayrollFallbackGrid` from `workbook-grid-builders.ts` (currently file-local) and call it from `PayrollTab` when the fallback condition hits. No duplication, single source of truth for the fallback grid shape.
-
-**Option B:** Inline a small fallback grid inside `PayrollTab` itself. Rejected — duplicates ~40 lines and creates two fallback grids that can drift.
-
-## Files to change
-
-1. `src/lib/workbook-grid-builders.ts` — change `function buildPayrollFallbackGrid` to `export function buildPayrollFallbackGrid`.
-2. `src/components/workbook/tabs/PayrollTab.tsx` — import `buildPayrollFallbackGrid`; before constructing the TB grid, detect empty TB + present `payrollFallback` and return `<SpreadsheetGrid data={buildPayrollFallbackGrid(dealData, dealData.payrollFallback)} />`.
+1. Add to the request body: `response_format: { type: 'json_object' }`, `max_tokens: 16000`, and switch model to `openai/gpt-4o-mini` (or keep `gpt-4o` — both support JSON mode and a larger output budget on the gateway).
+2. Update the system prompt to explicitly say "Return ONLY a JSON object — no markdown fences, no prose."
+3. Replace the brittle `aiContent.match(/\{[\s\S]*\}/)` with: strip ```` ``` ```` fences, find the first `{`, then `JSON.parse` from there; on failure try a single repair pass (close trailing strings/brackets) before giving up.
+4. If the parsed result has 0 line items AND the document looks like a multi-period register (size > ~30 KB), split the CSV into year-batches and call the model once per batch, then merge the arrays. This guarantees we stay under output limits on large registers.
+5. After write, if `totalItems === 0`, set `documents.processing_status = 'failed'` and surface the warnings to the UI (so the user sees "extraction failed" instead of silent empty).
 
 ## Out of scope
 
-- No DB / edge function / extraction changes — the upload pipeline is working.
-- No changes to `PayrollSection`'s reconciliation cards or `useProjectDealData`.
-- No changes to `buildPayrollGrid` (already correct).
-- We do **not** also try to render the register inline when TB *is* populated — that's what the wizard's reconciliation/detail cards are for, and the grid stays TB-primary for P&L roll-up consistency (per existing doctrine).
+- No DB schema changes.
+- No frontend changes (the existing `PayrollTab` fallback already renders `payrollFallback` once extraction populates it).
+- No changes to `useProjectDealData`, `payrollFallback.ts`, or `PayrollSection.tsx`.
 
-## Verification
+## How to verify
 
-After the change, on this project the Payroll tab in both the Workbook page and the Wizard section should render rows for Salaries & Wages, Payroll Taxes, etc., with monthly columns matching the uploaded register (e.g., Regular Wages & Salaries showing $22,201.85 in Jan-23).
+Re-upload `Sandbox Company_US_2_Payroll Register.csv`, then:
+- `processed_data` row for `data_type='payroll'` should have `record_count > 0` and `data.extractedData.salaryWages` populated.
+- Workbook → Payroll tab renders the register (TB is empty, so fallback path fires).
+- Wizard Payroll section shows summary cards with non-zero totals.
