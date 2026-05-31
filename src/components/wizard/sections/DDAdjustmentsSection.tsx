@@ -24,6 +24,7 @@ import { FlaggedTransactionsSection } from "./FlaggedTransactionsSection";
 import { WorkbookTabView } from "@/components/workbook/WorkbookTabView";
 import { DiscoveryProposalsSection } from "./DiscoveryProposalsSection";
 import { useDiscoveryProposals } from "@/hooks/useDiscoveryProposals";
+import { SectionErrorBoundary } from "@/components/system/SectionErrorBoundary";
 import { 
   Plus, 
   Trash2, 
@@ -842,21 +843,26 @@ export const DDAdjustmentsSection = ({
 
         <TabsContent value="ai-discovery" className="mt-6">
           {projectId ? (
-            <DiscoveryProposalsSection
-              key={`${projectId}:${job?.id ?? 'none'}:${proposals.length}:${hasDiscoveryJobs ? 'jobs' : 'empty'}`}
-              projectId={projectId}
-              isDemo={isDemo}
-              mockProposals={isDemo ? mockProposals : undefined}
-              onConvertToAdjustment={(adj) => {
-                if (isITDAAnchor(adj.linkedAccountName || "") || isITDAAnchor(adj.description || "")) {
-                  toast.error("Interest, Taxes, Depreciation, and Amortization are already excluded from EBITDA by definition. Adjustments to these accounts are not permitted.");
-                  return;
-                }
-                updateData({ adjustments: [...adjustments, adj] });
-                setExpandedAdjustments(prev => new Set([...prev, adj.id]));
-                setActiveTab("manual");
-              }}
-            />
+            <SectionErrorBoundary
+              title="AI Discovery is temporarily unavailable"
+              message="A proposal or analysis job failed to render. You can reset this section without leaving the adjustments page."
+            >
+              <DiscoveryProposalsSection
+                key={`${projectId}:${job?.id ?? 'none'}:${proposals.length}:${hasDiscoveryJobs ? 'jobs' : 'empty'}`}
+                projectId={projectId}
+                isDemo={isDemo}
+                mockProposals={isDemo ? mockProposals : undefined}
+                onConvertToAdjustment={(adj) => {
+                  if (isITDAAnchor(adj.linkedAccountName || "") || isITDAAnchor(adj.description || "")) {
+                    toast.error("Interest, Taxes, Depreciation, and Amortization are already excluded from EBITDA by definition. Adjustments to these accounts are not permitted.");
+                    return;
+                  }
+                  updateData({ adjustments: [...adjustments, adj] });
+                  setExpandedAdjustments(prev => new Set([...prev, adj.id]));
+                  setActiveTab("manual");
+                }}
+              />
+            </SectionErrorBoundary>
           ) : (
             <Card>
               <CardContent className="py-12 text-center text-muted-foreground">
