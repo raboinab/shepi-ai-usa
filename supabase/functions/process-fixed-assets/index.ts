@@ -227,7 +227,7 @@ Return your response as a valid JSON object with this exact structure:
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'openai/gpt-4o',
+        model: 'anthropic/claude-sonnet-4',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userContent }

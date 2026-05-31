@@ -588,7 +588,7 @@ async function extractWithAI(base64: string, mimeType: string, apiKey: string): 
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "openai/gpt-4o",
+      model: "anthropic/claude-sonnet-4",
       messages: [
         {
           role: "user",

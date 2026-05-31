@@ -242,7 +242,7 @@ Review each account's current classification (fsType, category, classification, 
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "openai/gpt-4o-mini",
+        model: "anthropic/claude-sonnet-4",
         messages: [
           { role: "system", content: enhancedSystemPrompt },
           { role: "user", content: userPrompt },
@@ -576,7 +576,7 @@ Deno.serve(async (req) => {
             is_reclassification: true,
             suggested_from_line_item: s.from_line_item,
             suggested_to_line_item: s.to_line_item,
-            model: "openai/gpt-4o-mini",
+            model: "anthropic/claude-sonnet-4",
             analysis_type: "enhanced_coa_review_with_rag",
             rag_enhanced: !!(classificationContext.industryGuidance || classificationContext.companyContext),
           },
