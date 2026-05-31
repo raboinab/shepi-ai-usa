@@ -571,6 +571,32 @@ serve(async (req) => {
         // BS uses end-of-period snapshot; P&L sums each year's YTD-final (monthly TBs reset every January).
         const tbBalance = isPL ? tb.yearSumBalance : tb.snapshotBalance;
 
+        // ── Backfill missing GL opening balance from TB ──
+        // QuickBooks ships a "Beginning Balance" row with empty value cells for some BS
+        // accounts. Our parser then opens at $0, so glBalance = period net change, not
+        // ending balance. When we detect that condition AND we have a TB match for a BS
+        // account, accept TB's ending balance as the GL's ending balance and tag the row
+        // so the UI can disclose the inference.
+        const beginningEmpty = (acct as AccountInfo).beginningRowSeenButEmpty === true;
+        if (!isPL && beginningEmpty) {
+          const cmp: TBComparison = {
+            accountName: acct.name,
+            glBalance: tbBalance,
+            tbBalance,
+            variance: 0,
+            variancePct: 0,
+            status: "match",
+            glBalanceSource: "tb_inferred",
+          };
+          reconciliation.push(cmp);
+          matchCount++; matchBS++;
+          if (varianceLogged < 25) {
+            console.log(`[ANALYZE-GL] TB-INFERRED (by ${matchedBy}, BS): ${acct.name} gl_parsed=${acct.glBalance.toFixed(2)} tb=${tbBalance.toFixed(2)} (QB sent empty Beginning Balance row)`);
+            varianceLogged++;
+          }
+          continue;
+        }
+
         // ── Sign-aware comparison ──
         // QuickBooks GL exports present revenue/liability/equity totals as positive
         // magnitudes (debit-positive convention). The Trial Balance keeps the true
@@ -604,6 +630,7 @@ serve(async (req) => {
           variance: effectiveVariance,
           variancePct,
           status: isMatch ? "match" : (isStructural ? "structural_variance" : "variance"),
+          glBalanceSource: "gl",
         };
         reconciliation.push(cmp);
         if (isMatch) { matchCount++; if (isPL) matchPL++; else matchBS++; }
