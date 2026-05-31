@@ -515,6 +515,18 @@ serve(async (req) => {
         tbParentPaths.add(normKey(parts.slice(0, i).join(":")));
       }
     }
+    // Symmetric: a path may also be a parent on the GL side (QB GL detail expands
+    // sub-accounts as siblings; the parent row carries only direct postings).
+    const glParentPaths = new Set<string>();
+    for (const a of accounts) {
+      const fp = (a as AccountInfo & { fullPath?: string }).fullPath || a.name;
+      const parts = fp.split(":");
+      for (let i = 1; i < parts.length; i++) {
+        glParentPaths.add(normKey(parts.slice(0, i).join(":")));
+      }
+    }
+    const parentPaths = new Set<string>([...tbParentPaths, ...glParentPaths]);
+
 
     for (const acct of accounts) {
       // Skip zero-balance, zero-activity accounts
@@ -577,8 +589,15 @@ serve(async (req) => {
         // ending balance. When we detect that condition AND we have a TB match for a BS
         // account, accept TB's ending balance as the GL's ending balance and tag the row
         // so the UI can disclose the inference.
+        // Also fire the inference path when a BS account's GL parent shows only
+        // token postings against a sizeable TB ending balance — same QB defect, just
+        // expressed without a Beginning Balance row we could detect.
         const beginningEmpty = (acct as AccountInfo).beginningRowSeenButEmpty === true;
-        if (!isPL && beginningEmpty) {
+        const tinyGlVsLargeTb = !isPL &&
+          Math.abs(acct.glBalance) < Math.max(Math.abs(tbBalance) * 0.05, 500) &&
+          Math.abs(tbBalance) > 1000;
+
+        if (!isPL && (beginningEmpty || tinyGlVsLargeTb)) {
           const cmp: TBComparison = {
             accountName: acct.name,
             glBalance: tbBalance,
@@ -591,11 +610,13 @@ serve(async (req) => {
           reconciliation.push(cmp);
           matchCount++; matchBS++;
           if (varianceLogged < 25) {
-            console.log(`[ANALYZE-GL] TB-INFERRED (by ${matchedBy}, BS): ${acct.name} gl_parsed=${acct.glBalance.toFixed(2)} tb=${tbBalance.toFixed(2)} (QB sent empty Beginning Balance row)`);
+            const reason = beginningEmpty ? "empty Beginning Balance row" : "tiny GL vs large TB";
+            console.log(`[ANALYZE-GL] TB-INFERRED (by ${matchedBy}, BS, ${reason}): ${acct.name} gl_parsed=${acct.glBalance.toFixed(2)} tb=${tbBalance.toFixed(2)}`);
             varianceLogged++;
           }
           continue;
         }
+
 
         // ── Sign-aware comparison ──
         // QuickBooks GL exports present revenue/liability/equity totals as positive
@@ -618,11 +639,13 @@ serve(async (req) => {
         const denom = Math.max(Math.abs(acct.glBalance), Math.abs(tbBalance), 1);
         const variancePct = absDiff / denom;
         const isMatch = absDiff < 50 || variancePct < 0.005;
-        // Detect parent-vs-rollup structural mismatch: matched TB row is a parent
-        // (has child rows in TB), and its magnitude dwarfs the GL parent's direct postings.
+        // Detect parent-vs-rollup structural mismatch: matched row is a parent on
+        // EITHER side (TB rolls up or GL expands children as siblings), and the TB
+        // rollup magnitude dwarfs the GL parent's direct postings.
         const isStructural = !isMatch &&
-          tbParentPaths.has(normKey(tb.fullPath)) &&
+          (parentPaths.has(normKey(tb.fullPath)) || parentPaths.has(normKey(fullPath))) &&
           Math.abs(tbBalance) > Math.max(Math.abs(acct.glBalance) * 3, 1000);
+
         const cmp: TBComparison = {
           accountName: acct.name,
           glBalance: acct.glBalance,
