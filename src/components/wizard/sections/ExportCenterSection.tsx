@@ -18,6 +18,7 @@ import * as rh from "@/lib/reclassHelpers";
 import { computeQoEMetrics } from "@/lib/qoeMetrics";
 import * as gridBuilders from "@/lib/workbook-grid-builders";
 import { trackEvent } from "@/lib/analytics";
+import { buildPayrollFallbackFromProcessedData } from "@/lib/payrollFallback";
 import { NarrativePanel } from "@/components/pdf-narratives/NarrativePanel";
 import { DeliverablePreviewDialog, type PreviewMode } from "@/components/demo/DeliverablePreviewDialog";
 
