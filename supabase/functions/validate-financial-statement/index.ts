@@ -766,7 +766,7 @@ Spreadsheet data:\n${textContent.slice(0, 32000)}`;
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "openai/gpt-4o",
+        model: "anthropic/claude-sonnet-4",
         messages: [
           { role: "system", content: "You are a financial data extraction specialist. Extract exact numerical values from spreadsheet data. When data has monthly columns, sum them or use the Total column. Return only valid JSON, no markdown." },
           { role: "user", content: prompt }

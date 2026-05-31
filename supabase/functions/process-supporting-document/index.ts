@@ -180,7 +180,7 @@ serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "openai/gpt-4o",
+        model: "anthropic/claude-sonnet-4",
         messages,
         temperature: 0.1,
         max_tokens: 4096,

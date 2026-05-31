@@ -175,7 +175,7 @@ async function validateImageWithAI(
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: "openai/gpt-4o-mini",
+      model: "anthropic/claude-sonnet-4",
       messages: [{
         role: "user",
         content: [
@@ -225,7 +225,7 @@ ${text.slice(0, 9000)}
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: "openai/gpt-4o-mini",
+      model: "anthropic/claude-sonnet-4",
       messages: [
         { role: "system", content: "You are a strict document classifier. Output JSON only." },
         { role: "user", content: prompt },

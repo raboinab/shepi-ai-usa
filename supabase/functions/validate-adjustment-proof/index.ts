@@ -211,7 +211,7 @@ Analyze the above adjustment and supporting documentation. Provide your validati
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "openai/gpt-4o",
+        model: "anthropic/claude-sonnet-4",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt }
