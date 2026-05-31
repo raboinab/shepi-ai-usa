@@ -57,7 +57,7 @@ export const PayrollSection = ({
     (fallback?.salaryWages?.length || 0) +
     (fallback?.ownerCompensation?.length || 0) +
     (fallback?.payrollTaxes?.length || 0) +
-    (fallback?.ownerCompensation?.length || 0);
+    (fallback?.benefits?.length || 0);
 
   // ── summary metrics (prefer register since it's the more granular source) ──
   const primary = regPresent ? regTotals : tbTotals;
