@@ -22,12 +22,12 @@ const sumItem = (item: { monthlyValues: Record<string, number> }, periodIds?: st
 export const PayrollRegisterDetail = ({ fallback, periodIds }: Props) => {
   const [open, setOpen] = useState(false);
 
-  const categories: Array<{ key: PayrollCategoryKey; items: Array<{ name: string; monthlyValues: Record<string, number> }> }> = [
-    { key: "salaryWages", items: fallback.salaryWages || [] },
-    { key: "ownerCompensation", items: fallback.ownerCompensation || [] },
-    { key: "payrollTaxes", items: fallback.payrollTaxes || [] },
-    { key: "benefits", items: fallback.benefits || [] },
-  ].filter(c => c.items.length > 0);
+  const categories: Array<{ key: PayrollCategoryKey; items: Array<{ name: string; monthlyValues: Record<string, number> }> }> = ([
+    { key: "salaryWages" as const, items: fallback.salaryWages || [] },
+    { key: "ownerCompensation" as const, items: fallback.ownerCompensation || [] },
+    { key: "payrollTaxes" as const, items: fallback.payrollTaxes || [] },
+    { key: "benefits" as const, items: fallback.benefits || [] },
+  ]).filter(c => c.items.length > 0);
 
   const totalLines = categories.reduce((s, c) => s + c.items.length, 0);
 
