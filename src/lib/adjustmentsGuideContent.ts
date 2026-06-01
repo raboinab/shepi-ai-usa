@@ -144,8 +144,8 @@ const commonKeyTerms: { term: string; definition: string }[] = [
 // ── Shared decision tree ─────────────────────────────────────────────
 
 const sharedDecisionTree: DecisionTreeItem[] = [
-  { question: "Am I changing EBITDA?", answer: "Yes → DD Adjustments", navigateTo: { phase: 3, section: 1 } },
-  { question: "Am I changing EBITDA?", answer: "No → Reclassifications", navigateTo: { phase: 3, section: 2 } },
+  { question: "Am I changing EBITDA?", answer: "Yes → DD Adjustments", navigateTo: { phase: 3, section: 2 } },
+  { question: "Am I changing EBITDA?", answer: "No → Reclassifications", navigateTo: { phase: 3, section: 1 } },
   { question: "Investigating raw entries?", answer: "Journal Entries", navigateTo: { phase: 3, section: 3 } },
 ];
 
