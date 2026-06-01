@@ -16,9 +16,9 @@ import * as calc from "@/lib/calculations";
 
 
 interface NWCFCFSectionProps {
-  /** Legacy raw NWC analysis cache — kept only for the summary cards. */
+  /** Legacy raw NWC analysis cache — kept for prop compatibility, no longer used for cards. */
   nwcAnalysisData?: { rawData?: string[][]; syncedAt?: string };
-  /** Legacy raw FCF cache — kept only for the summary cards. */
+  /** Legacy raw FCF cache — kept for prop compatibility, no longer used for cards. */
   fcfData?: { rawData?: string[][] };
   periods?: Period[];
   fiscalYearEnd?: number;
@@ -36,8 +36,6 @@ const defaultDealParameters: DealParameters = {
 
 
 export const NWCFCFSection = ({
-  nwcAnalysisData,
-  fcfData,
   periods = [],
   dealData,
   dealParameters = defaultDealParameters,
@@ -46,16 +44,54 @@ export const NWCFCFSection = ({
   const regularPeriods = periods.filter(p => !p.isStub);
   const hasPeriods = regularPeriods.length > 0;
 
-  // Summary cards: derive from legacy caches if present (cheap visual hint);
-  // the authoritative grids below come from the workbook builders.
-  const nwcMetrics = extractNWCMetrics(nwcAnalysisData?.rawData);
-  const fcfMetrics = extractFCFMetrics(fcfData?.rawData);
-  const metrics: NWCExtractedMetrics = {
-    ...nwcMetrics,
-    ltmEBITDA: fcfMetrics.ltmEBITDA || nwcMetrics.ltmEBITDA,
-    ltmCapEx: fcfMetrics.ltmCapEx || nwcMetrics.ltmCapEx,
-    ltmFCF: fcfMetrics.ltmFCF || nwcMetrics.ltmFCF,
-  };
+  // Live metrics — computed from dealData using the selected NWC method so
+  // toggling the selector updates the headline numbers along with the grids.
+  const metrics: NWCExtractedMetrics = (() => {
+    const empty: NWCExtractedMetrics = {
+      currentNWC: 0, t3mAvg: 0, t6mAvg: 0, t12mAvg: 0,
+      ltmEBITDA: 0, ltmCapEx: 0, ltmFCF: 0,
+    };
+    if (!dealData || regularPeriods.length === 0) return empty;
+
+    const tb = dealData.trialBalance;
+    const adj = dealData.adjustments ?? [];
+    const ab = dealData.addbacks;
+    const cfg = dealData.deal.nwcConfig;
+
+    // Use the project's actual periods (sorted by deal config) so NWC at each
+    // period and the prior period (for change-in-NWC) line up with the grids.
+    const dealPeriods = dealData.deal.periods.filter(p => !p.isStub);
+    if (dealPeriods.length === 0) return empty;
+
+    const nwcValues = dealPeriods.map(p => calc.calcNWCByMethod(tb, p.id, cfg));
+    const avg = (arr: number[]) => arr.length === 0 ? 0 : arr.reduce((a, b) => a + b, 0) / arr.length;
+    const currentNWC = nwcValues[nwcValues.length - 1] ?? 0;
+    const t3mAvg = avg(nwcValues.slice(-3));
+    const t6mAvg = avg(nwcValues.slice(-6));
+    const t12mAvg = avg(nwcValues.slice(-12));
+
+    const ltmPeriods = dealPeriods.slice(-12);
+    const ltmEBITDA = ltmPeriods.reduce((s, p) => s + calc.calcAdjustedEBITDA(tb, adj, p.id, ab), 0);
+
+    // FCF mirrors the workbook FCF tab: -AdjEBITDA - ΔNWC - taxes. CapEx is
+    // sourced from bank classifications (Proof of Cash) and not available here,
+    // so we omit it from the operating-FCF approximation shown in the headline.
+    let ltmFCF = 0;
+    for (let i = 0; i < ltmPeriods.length; i++) {
+      const p = ltmPeriods[i];
+      const idxInAll = dealPeriods.findIndex(x => x.id === p.id);
+      const prev = idxInAll > 0 ? dealPeriods[idxInAll - 1] : null;
+      const nwcChange = prev
+        ? calc.calcNWCByMethod(tb, p.id, cfg) - calc.calcNWCByMethod(tb, prev.id, cfg)
+        : 0;
+      ltmFCF +=
+        -calc.calcAdjustedEBITDA(tb, adj, p.id, ab)
+        - nwcChange
+        - calc.calcIncomeTaxExpense(tb, p.id, ab?.taxes);
+    }
+
+    return { currentNWC, t3mAvg, t6mAvg, t12mAvg, ltmEBITDA, ltmCapEx: 0, ltmFCF };
+  })();
 
   if (!hasPeriods) {
     return (
