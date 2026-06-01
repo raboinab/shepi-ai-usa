@@ -152,7 +152,7 @@ const sharedDecisionTree: DecisionTreeItem[] = [
 // ── Section content ──────────────────────────────────────────────────
 
 export const adjustmentsGuideContent: Record<SectionKey, GuideContentSection> = {
-  "3-1": {
+  "3-2": {
     title: "DD Adjustments",
     decisionTree: sharedDecisionTree,
     what: "Adjustments correct earnings to show what a buyer would actually earn. You remove one-time items, normalize owner perks, and account for post-deal changes so normalized EBITDA reflects reality.",
