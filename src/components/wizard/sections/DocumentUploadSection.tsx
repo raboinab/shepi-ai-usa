@@ -31,6 +31,8 @@ import {
   groupConsecutivePeriods 
 } from "@/lib/periodUtils";
 import { CoverageTimeline } from "../shared/CoverageTimeline";
+import { PerAccountCoverage } from "../shared/PerAccountCoverage";
+import { AccountLabelBackfillDialog, type BackfillDoc } from "../shared/AccountLabelBackfillDialog";
 import { useWorkflow } from "@/hooks/useWorkflow";
 import { useWorkflowStatus } from "@/hooks/useWorkflowStatus";
 import { WorkflowProgress, WorkflowError } from "@/components/workflow";
