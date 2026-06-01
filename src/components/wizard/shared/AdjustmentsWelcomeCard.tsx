@@ -11,7 +11,7 @@ interface AdjustmentsWelcomeCardProps {
 }
 
 function getRecommendation(ctx: GuideContext): { text: string; icon: React.ReactNode } {
-  if (ctx.sectionKey === "3-1") {
+  if (ctx.sectionKey === "3-2") {
     if (ctx.hasAIFlags) {
       return {
         text: "Switch to AI Discovery to review automatically flagged items.",
@@ -23,7 +23,7 @@ function getRecommendation(ctx: GuideContext): { text: string; icon: React.React
       icon: <ClipboardList className="h-4 w-4 text-primary shrink-0" />,
     };
   }
-  if (ctx.sectionKey === "3-2") {
+  if (ctx.sectionKey === "3-1") {
     return {
       text: "Add an entry, or ask the AI what might need reclassifying (COGS vs OpEx is a great first pass).",
       icon: <ClipboardList className="h-4 w-4 text-primary shrink-0" />,

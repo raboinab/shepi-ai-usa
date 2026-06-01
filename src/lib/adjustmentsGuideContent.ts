@@ -144,15 +144,15 @@ const commonKeyTerms: { term: string; definition: string }[] = [
 // ── Shared decision tree ─────────────────────────────────────────────
 
 const sharedDecisionTree: DecisionTreeItem[] = [
-  { question: "Am I changing EBITDA?", answer: "Yes → DD Adjustments", navigateTo: { phase: 3, section: 1 } },
-  { question: "Am I changing EBITDA?", answer: "No → Reclassifications", navigateTo: { phase: 3, section: 2 } },
+  { question: "Am I changing EBITDA?", answer: "Yes → DD Adjustments", navigateTo: { phase: 3, section: 2 } },
+  { question: "Am I changing EBITDA?", answer: "No → Reclassifications", navigateTo: { phase: 3, section: 1 } },
   { question: "Investigating raw entries?", answer: "Journal Entries", navigateTo: { phase: 3, section: 3 } },
 ];
 
 // ── Section content ──────────────────────────────────────────────────
 
 export const adjustmentsGuideContent: Record<SectionKey, GuideContentSection> = {
-  "3-1": {
+  "3-2": {
     title: "DD Adjustments",
     decisionTree: sharedDecisionTree,
     what: "Adjustments correct earnings to show what a buyer would actually earn. You remove one-time items, normalize owner perks, and account for post-deal changes so normalized EBITDA reflects reality.",
@@ -220,7 +220,7 @@ export const adjustmentsGuideContent: Record<SectionKey, GuideContentSection> = 
     },
   },
 
-  "3-2": {
+  "3-1": {
     title: "Reclassifications",
     decisionTree: sharedDecisionTree,
     what: "Reclassifications move amounts between financial statement categories without changing total profit. They do not change EBITDA, but can change Gross Profit / Gross Margin presentation (e.g., moving shipping from G&A to COGS).",
