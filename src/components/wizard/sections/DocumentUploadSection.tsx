@@ -2595,6 +2595,12 @@ export const DocumentUploadSection = ({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <AccountLabelBackfillDialog
+        open={!!backfillDocs}
+        onOpenChange={(open) => { if (!open) setBackfillDocs(null); }}
+        docs={backfillDocs ?? []}
+        onSaved={() => { setBackfillDocs(null); fetchDocuments(); }}
+      />
     </div>
 
   );
