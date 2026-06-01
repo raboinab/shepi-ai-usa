@@ -12,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
-import { Upload, FileText, Loader2, CheckCircle2, AlertCircle, Trash2, RefreshCw, Sparkles, ShieldCheck, Info, Scale, Check, ChevronsUpDown, Clock, Lock, ArrowRight } from "lucide-react";
+import { Upload, FileText, Loader2, CheckCircle2, AlertCircle, Trash2, RefreshCw, Sparkles, ShieldCheck, Info, Scale, Check, ChevronsUpDown, Clock, Lock, ArrowRight, Pencil } from "lucide-react";
 import { useCoaReadiness } from "@/hooks/useCoaReadiness";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -31,6 +31,8 @@ import {
   groupConsecutivePeriods 
 } from "@/lib/periodUtils";
 import { CoverageTimeline } from "../shared/CoverageTimeline";
+import { PerAccountCoverage } from "../shared/PerAccountCoverage";
+import { AccountLabelBackfillDialog, type BackfillDoc } from "../shared/AccountLabelBackfillDialog";
 import { useWorkflow } from "@/hooks/useWorkflow";
 import { useWorkflowStatus } from "@/hooks/useWorkflowStatus";
 import { WorkflowProgress, WorkflowError } from "@/components/workflow";
@@ -408,6 +410,7 @@ export const DocumentUploadSection = ({
   const [docDescription, setDocDescription] = useState("");
   const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null);
   const [activeWorkflowId, setActiveWorkflowId] = useState<string | null>(null);
+  const [backfillDocs, setBackfillDocs] = useState<BackfillDoc[] | null>(null);
   const [cimInsights, setCimInsights] = useState<CIMInsights | null>(null);
   const [parsingCim, setParsingCim] = useState(false);
   const [taxReturnInsights, setTaxReturnInsights] = useState<TaxReturnAnalysis[]>([]);
@@ -1512,6 +1515,12 @@ export const DocumentUploadSection = ({
       return;
     }
 
+    // Per-account coverage: require a distinct account label for bank/CC statements
+    if (requiresInstitution && !accountLabel.trim()) {
+      toast.error("Account label is required for bank/credit card statements (e.g. 'Operating ·…4521')");
+      return;
+    }
+
     const files = Array.from(selectedFiles);
     
     // For single file uploads of parseable types, validate first
@@ -2040,13 +2049,41 @@ export const DocumentUploadSection = ({
                     <Progress value={coverage.coveragePercentage} className="h-2" />
                   )}
                   
-                  <CoverageTimeline 
-                    periods={effectivePeriods} 
-                    coverage={coverage} 
-                    coverageType={coverageConfig.type}
-                    documentCount={filteredDocs.length}
-                    hasQBCoverage={hasQBCoverage}
-                  />
+                  {(selectedType === 'bank_statement' || selectedType === 'credit_card') && coverageConfig.type === 'monthly' ? (
+                    <PerAccountCoverage
+                      docs={filteredDocs.map((d) => ({
+                        id: d.id,
+                        institution: d.institution,
+                        account_label: d.account_label,
+                        period_start: d.period_start,
+                        period_end: d.period_end,
+                      }))}
+                      periods={effectivePeriods}
+                      onBackfill={(ids) => {
+                        const set = new Set(ids);
+                        setBackfillDocs(
+                          filteredDocs
+                            .filter((d) => set.has(d.id))
+                            .map((d) => ({
+                              id: d.id,
+                              name: d.name,
+                              institution: d.institution,
+                              account_label: d.account_label,
+                              period_start: d.period_start,
+                              period_end: d.period_end,
+                            }))
+                        );
+                      }}
+                    />
+                  ) : (
+                    <CoverageTimeline 
+                      periods={effectivePeriods} 
+                      coverage={coverage} 
+                      coverageType={coverageConfig.type}
+                      documentCount={filteredDocs.length}
+                      hasQBCoverage={hasQBCoverage}
+                    />
+                  )}
 
                   {/* Missing periods alert - only for monthly/annual */}
                   {(coverageConfig.type === 'monthly' || coverageConfig.type === 'annual') && 
@@ -2157,12 +2194,18 @@ export const DocumentUploadSection = ({
                     )}
 
                     <div className="space-y-2">
-                      <Label>Account Label (Optional)</Label>
+                      <Label>
+                        Account Label <span className="text-destructive">*</span>
+                      </Label>
                       <Input
-                        placeholder="e.g., Operating Account, Payroll"
+                        placeholder="e.g., Operating ·…4521 or Payroll ·…8830"
                         value={accountLabel}
                         onChange={(e) => setAccountLabel(e.target.value)}
+                        maxLength={80}
                       />
+                      <p className="text-xs text-muted-foreground">
+                        Use a distinct label per account — coverage is tracked separately per institution + label.
+                      </p>
                     </div>
                   </div>
                 )}
@@ -2385,7 +2428,50 @@ export const DocumentUploadSection = ({
                             </div>
                           </TableCell>
                           {showInstitutionCols && <TableCell>{doc.institution || "-"}</TableCell>}
-                          {showInstitutionCols && <TableCell>{doc.account_label || "-"}</TableCell>}
+                          {showInstitutionCols && (
+                            <TableCell>
+                              {doc.account_label ? (
+                                <span className="inline-flex items-center gap-1">
+                                  {doc.account_label}
+                                  {['bank_statement','credit_card'].includes(doc.account_type || '') && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-5 w-5"
+                                      onClick={() =>
+                                        setBackfillDocs([{
+                                          id: doc.id, name: doc.name,
+                                          institution: doc.institution,
+                                          account_label: doc.account_label,
+                                          period_start: doc.period_start,
+                                          period_end: doc.period_end,
+                                        }])
+                                      }
+                                    >
+                                      <Pencil className="h-3 w-3" />
+                                    </Button>
+                                  )}
+                                </span>
+                              ) : ['bank_statement','credit_card'].includes(doc.account_type || '') ? (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-6 text-[10px] gap-1 border-yellow-500 text-yellow-700 dark:text-yellow-400"
+                                  onClick={() =>
+                                    setBackfillDocs([{
+                                      id: doc.id, name: doc.name,
+                                      institution: doc.institution,
+                                      account_label: doc.account_label,
+                                      period_start: doc.period_start,
+                                      period_end: doc.period_end,
+                                    }])
+                                  }
+                                >
+                                  <AlertCircle className="h-3 w-3" /> Needs label
+                                </Button>
+                              ) : "-"}
+                            </TableCell>
+                          )}
                           <TableCell>
                             {doc.period_start && doc.period_end
                               ? `${formatDate(doc.period_start)} - ${formatDate(doc.period_end)}`
@@ -2509,6 +2595,12 @@ export const DocumentUploadSection = ({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <AccountLabelBackfillDialog
+        open={!!backfillDocs}
+        onOpenChange={(open) => { if (!open) setBackfillDocs(null); }}
+        docs={backfillDocs ?? []}
+        onSaved={() => { setBackfillDocs(null); fetchDocuments(); }}
+      />
     </div>
 
   );
