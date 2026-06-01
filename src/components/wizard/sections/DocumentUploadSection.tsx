@@ -2049,13 +2049,41 @@ export const DocumentUploadSection = ({
                     <Progress value={coverage.coveragePercentage} className="h-2" />
                   )}
                   
-                  <CoverageTimeline 
-                    periods={effectivePeriods} 
-                    coverage={coverage} 
-                    coverageType={coverageConfig.type}
-                    documentCount={filteredDocs.length}
-                    hasQBCoverage={hasQBCoverage}
-                  />
+                  {(selectedType === 'bank_statement' || selectedType === 'credit_card') && coverageConfig.type === 'monthly' ? (
+                    <PerAccountCoverage
+                      docs={filteredDocs.map((d) => ({
+                        id: d.id,
+                        institution: d.institution,
+                        account_label: d.account_label,
+                        period_start: d.period_start,
+                        period_end: d.period_end,
+                      }))}
+                      periods={effectivePeriods}
+                      onBackfill={(ids) => {
+                        const set = new Set(ids);
+                        setBackfillDocs(
+                          filteredDocs
+                            .filter((d) => set.has(d.id))
+                            .map((d) => ({
+                              id: d.id,
+                              name: d.name,
+                              institution: d.institution,
+                              account_label: d.account_label,
+                              period_start: d.period_start,
+                              period_end: d.period_end,
+                            }))
+                        );
+                      }}
+                    />
+                  ) : (
+                    <CoverageTimeline 
+                      periods={effectivePeriods} 
+                      coverage={coverage} 
+                      coverageType={coverageConfig.type}
+                      documentCount={filteredDocs.length}
+                      hasQBCoverage={hasQBCoverage}
+                    />
+                  )}
 
                   {/* Missing periods alert - only for monthly/annual */}
                   {(coverageConfig.type === 'monthly' || coverageConfig.type === 'annual') && 
