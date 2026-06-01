@@ -220,7 +220,7 @@ export const adjustmentsGuideContent: Record<SectionKey, GuideContentSection> = 
     },
   },
 
-  "3-2": {
+  "3-1": {
     title: "Reclassifications",
     decisionTree: sharedDecisionTree,
     what: "Reclassifications move amounts between financial statement categories without changing total profit. They do not change EBITDA, but can change Gross Profit / Gross Margin presentation (e.g., moving shipping from G&A to COGS).",
