@@ -2166,12 +2166,18 @@ export const DocumentUploadSection = ({
                     )}
 
                     <div className="space-y-2">
-                      <Label>Account Label (Optional)</Label>
+                      <Label>
+                        Account Label <span className="text-destructive">*</span>
+                      </Label>
                       <Input
-                        placeholder="e.g., Operating Account, Payroll"
+                        placeholder="e.g., Operating ·…4521 or Payroll ·…8830"
                         value={accountLabel}
                         onChange={(e) => setAccountLabel(e.target.value)}
+                        maxLength={80}
                       />
+                      <p className="text-xs text-muted-foreground">
+                        Use a distinct label per account — coverage is tracked separately per institution + label.
+                      </p>
                     </div>
                   </div>
                 )}
