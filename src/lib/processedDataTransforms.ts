@@ -583,8 +583,12 @@ export interface JournalEntriesData {
  * Transforms raw QB journal entries data from processed_data to wizard format
  */
 export function transformQBJournalEntriesToWizard(qbData: unknown): JournalEntriesData {
-  const data = qbData as { data?: unknown[]; count?: number };
-  const rawEntries = data.data || [];
+  // Accept both shapes:
+  //   - QuickBooks API:    { data: [...], count: N }
+  //   - qbtojson upload:   [ ...entries ]
+  const rawEntries: unknown[] = Array.isArray(qbData)
+    ? qbData
+    : ((qbData as { data?: unknown[] })?.data ?? []);
 
   const entries: JournalEntry[] = (rawEntries as Record<string, unknown>[]).map((je) => {
     const lines: JELine[] = ((je.line || []) as Record<string, unknown>[]).map((line) => {
