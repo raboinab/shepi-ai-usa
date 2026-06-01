@@ -1515,6 +1515,12 @@ export const DocumentUploadSection = ({
       return;
     }
 
+    // Per-account coverage: require a distinct account label for bank/CC statements
+    if (requiresInstitution && !accountLabel.trim()) {
+      toast.error("Account label is required for bank/credit card statements (e.g. 'Operating ·…4521')");
+      return;
+    }
+
     const files = Array.from(selectedFiles);
     
     // For single file uploads of parseable types, validate first
