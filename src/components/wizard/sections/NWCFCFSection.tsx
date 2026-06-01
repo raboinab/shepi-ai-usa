@@ -7,13 +7,12 @@ import { TrendingUp, DollarSign, Calculator, FileSpreadsheet } from "lucide-reac
 import { Period } from "@/lib/periodUtils";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
-  extractNWCMetrics,
-  extractFCFMetrics,
   DealParameters,
   NWCExtractedMetrics,
   DEFAULT_NWC_METHOD,
 } from "@/lib/nwcDataUtils";
 import type { DealData, NWCMethod } from "@/lib/workbook-types";
+import * as calc from "@/lib/calculations";
 
 
 interface NWCFCFSectionProps {
