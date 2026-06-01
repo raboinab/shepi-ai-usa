@@ -133,7 +133,7 @@ export const NWCFCFSection = ({
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <SummaryCard title="Current NWC" value={metrics.currentNWC} icon={DollarSign} subtitle={metrics.currentNWC === 0 ? "Sync to populate" : undefined} />
         <SummaryCard title="LTM EBITDA" value={metrics.ltmEBITDA} icon={TrendingUp} subtitle={metrics.ltmEBITDA === 0 ? "Sync to populate" : undefined} />
-        <SummaryCard title="LTM CapEx" value={metrics.ltmCapEx} icon={Calculator} subtitle={metrics.ltmCapEx === 0 ? "Sync to populate" : undefined} />
+        <SummaryCard title="LTM CapEx" value={metrics.ltmCapEx} icon={Calculator} subtitle="From Proof of Cash classifications" />
         <SummaryCard title="LTM Free Cash Flow" value={metrics.ltmFCF} icon={DollarSign} subtitle={metrics.ltmFCF === 0 ? "Sync to populate" : undefined} />
       </div>
 
