@@ -71,7 +71,9 @@ export const NWCFCFSection = ({
     const t12mAvg = avg(nwcValues.slice(-12));
 
     const ltmPeriods = dealPeriods.slice(-12);
-    const ltmEBITDA = ltmPeriods.reduce((s, p) => s + calc.calcAdjustedEBITDA(tb, adj, p.id, ab), 0);
+    // TB convention: income lines are stored negative. Negate to display as a positive number,
+    // matching the Free Cash Flow / EBITDA Bridge grids which wrap this in negatedPeriodCells().
+    const ltmEBITDA = ltmPeriods.reduce((s, p) => s - calc.calcAdjustedEBITDA(tb, adj, p.id, ab), 0);
 
     // FCF mirrors the workbook FCF tab: -AdjEBITDA - ΔNWC - taxes. CapEx is
     // sourced from bank classifications (Proof of Cash) and not available here,

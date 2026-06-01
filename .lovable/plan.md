@@ -1,33 +1,41 @@
-## What the logs show
+## Why LTM EBITDA shows negative
 
-Job `0f8afaa8-2909-4acb-978f-a36b2e84580a` (project `fa0768ca…`) is **already `completed` at 100%** in `analysis_jobs`. No error. The UI showing "Running… 40%" is a stale snapshot held by the client — the realtime `postgres_changes` notification for the final status update never reached this tab.
+In the trial balance convention used everywhere in shepi, **income line items are stored as negative numbers** (credit-balance). `calcAdjustedEBITDA(...)` returns this raw TB-space value — so a profitable business produces a **negative** number, and only the display layer flips the sign.
 
-Recent history on the same project confirms the pattern:
-- `0f8afaa8…` — completed, UI stuck at 40%
-- `3b8cbe6a…` — completed, previously shown stuck at 80%
-- `7922e84a…` — completed, previously caused the "cannot add postgres_changes callbacks after subscribe()" crash
+Every workbook tab (Free Cash Flow, EBITDA Bridge, etc.) wraps EBITDA in a `negatedPeriodCells()` helper that flips it to the human-readable positive number. Example from `FreeCashFlowTab.tsx`:
 
-The earlier session already patched `src/hooks/useDiscoveryProposals.ts` (unique channel nonce, dropped `job?.status` from deps). That fix is in source but **not in the deployed bundle** (`DDAdjustmentsSection-CL-tBoEn.js` is pre-fix), so production clients still hit the broken subscription path and miss terminal updates.
+```ts
+{ id: "adj-ebitda", cells: { label: "Adjusted EBITDA",
+   ...npc(p => calc.calcAdjustedEBITDA(...) + isReclass) } }  // npc = negated
+```
 
-## Plan
+The fix I just shipped to `NWCFCFSection.tsx` for the summary cards forgot that flip:
 
-### 1. Publish the app
-The realtime-subscription fix already lives in `src/hooks/useDiscoveryProposals.ts`. Publishing rebuilds the bundle and ships it to `shepi.ai`. This alone resolves the "cannot add postgres_changes callbacks" crash and the missed-update issue for new sessions.
+```ts
+const ltmEBITDA = ltmPeriods.reduce(
+  (s, p) => s + calc.calcAdjustedEBITDA(tb, adj, p.id, ab), 0
+);  // raw TB-space → comes out negative for a profitable company
+```
 
-### 2. Add a polling safety net in `useDiscoveryProposals.ts`
-Realtime delivery can still drop a message (tab backgrounded, websocket hiccup, mobile network). Add a lightweight poll while a job is `queued` or `running`:
+That is why the card reads **−$376,562** while the grids below (and the FCF line, which already negates EBITDA internally) look correct. Note `LTM FCF = +$358,095` is roughly `−(−376,562) − ΔNWC − taxes`, confirming the sign issue is isolated to the EBITDA card only.
 
-- Every 5s, re-fetch the current job row from `analysis_jobs` by id.
-- Stop polling as soon as status is `completed`, `failed`, or `cancelled`.
-- Same setState path as the realtime handler, so no duplicate logic.
+## Fix
 
-This guarantees the UI converges to the terminal state even if the realtime event is lost.
+In `src/components/wizard/sections/NWCFCFSection.tsx`, negate the EBITDA sum so the headline matches the grids and the rest of the app:
 
-### 3. No worker / no DB changes
-The worker is fine — every recent job completed. No migration, no edge function change.
+```ts
+const ltmEBITDA = ltmPeriods.reduce(
+  (s, p) => s - calc.calcAdjustedEBITDA(tb, adj, p.id, ab), 0
+);
+```
 
-## Out of scope
+No other change is needed:
+- `currentNWC`, `t3mAvg`, `t6mAvg`, `t12mAvg` come from `calcNWCByMethod`, which already returns signed display values (no flip needed — Current NWC reads correctly at $69,334).
+- `ltmFCF` already uses `-calcAdjustedEBITDA(...)` inside its per-period sum, so it is unaffected.
+- `ltmCapEx` stays 0 (sourced from Proof of Cash classifications, not wired here).
 
-- Removing the inline error pre-block from `SectionErrorBoundary` — keep it.
-- The old `finding_group` schema-cache errors from May 19 — already resolved.
-- Any change to `trigger-discovery` — not the source of the issue.
+After the change the card should read approximately **+$376,562** for this project, lining up with the Adjusted EBITDA row in the EBITDA Bridge and the implied EBITDA inside the FCF math.
+
+## Optional follow-up (not in this fix)
+
+`DealParametersCard` consumes the same `metrics.ltmEBITDA`. Once the sign is corrected here, anything downstream that reads `metrics.ltmEBITDA` (e.g. multiples, peg suggestions) will also read correctly — worth a quick visual check after the fix lands, but no code change expected.
