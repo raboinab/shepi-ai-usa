@@ -410,6 +410,7 @@ export const DocumentUploadSection = ({
   const [docDescription, setDocDescription] = useState("");
   const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null);
   const [activeWorkflowId, setActiveWorkflowId] = useState<string | null>(null);
+  const [backfillDocs, setBackfillDocs] = useState<BackfillDoc[] | null>(null);
   const [cimInsights, setCimInsights] = useState<CIMInsights | null>(null);
   const [parsingCim, setParsingCim] = useState(false);
   const [taxReturnInsights, setTaxReturnInsights] = useState<TaxReturnAnalysis[]>([]);
