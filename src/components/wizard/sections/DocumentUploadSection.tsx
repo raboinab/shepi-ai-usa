@@ -1251,7 +1251,7 @@ export const DocumentUploadSection = ({
                   source_document_id: insertedDoc.id,
                   period_start: parsed.periodStart,
                   period_end: parsed.periodEnd,
-                  data: parsed as unknown as Record<string, unknown>,
+                  data: parsed as any,
                   record_count: parsed.rows.length,
                   validation_status: 'pending',
                 });
