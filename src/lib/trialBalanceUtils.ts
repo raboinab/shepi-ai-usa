@@ -534,13 +534,21 @@ export function mergeAccounts(
 ): TrialBalanceAccount[] {
   const accountMap = new Map<string, TrialBalanceAccount>();
   
-  // Same priority as processRows — never collapse on bare leaf name.
-  const keyOf = (a: TrialBalanceAccount) =>
-    (a.qbAccountId && `id:${a.qbAccountId}`) ||
-    (a.accountNumber && `num:${a.accountNumber}`) ||
-    (a.fullyQualifiedName && `fqn:${a.fullyQualifiedName.toLowerCase()}`) ||
-    (a.accountName && `nm:${a.accountName.toLowerCase()}|${(a.accountType || '').toLowerCase()}|${(a.accountSubtype || '').toLowerCase()}`) ||
-    '';
+  // Same priority as processRows. accountNumber is NOT unique (QB reuses the
+  // parent's number on sub-accounts), so it's only used as part of a composite.
+  const keyOf = (a: TrialBalanceAccount) => {
+    const num = a.accountNumber || '';
+    const nm = (a.accountName || '').toLowerCase();
+    const ty = (a.accountType || '').toLowerCase();
+    const sub = (a.accountSubtype || '').toLowerCase();
+    return (
+      (a.qbAccountId && `id:${a.qbAccountId}`) ||
+      (a.fullyQualifiedName && `fqn:${a.fullyQualifiedName.toLowerCase()}`) ||
+      ((nm || num) && `c:${num}|${nm}|${ty}|${sub}`) ||
+      ''
+    );
+  };
+
 
   
   // Add existing accounts to map
