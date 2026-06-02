@@ -530,8 +530,14 @@ export function mergeAccounts(
 ): TrialBalanceAccount[] {
   const accountMap = new Map<string, TrialBalanceAccount>();
   
+  // Same priority as processRows — never collapse on bare leaf name.
   const keyOf = (a: TrialBalanceAccount) =>
-    a.qbAccountId || a.accountName || a.accountNumber;
+    (a.qbAccountId && `id:${a.qbAccountId}`) ||
+    (a.accountNumber && `num:${a.accountNumber}`) ||
+    (a.fullyQualifiedName && `fqn:${a.fullyQualifiedName.toLowerCase()}`) ||
+    (a.accountName && `nm:${a.accountName.toLowerCase()}|${(a.accountType || '').toLowerCase()}|${(a.accountSubtype || '').toLowerCase()}`) ||
+    '';
+
   
   // Add existing accounts to map
   for (const account of existing) {
