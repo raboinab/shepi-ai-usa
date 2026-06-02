@@ -464,20 +464,24 @@ function processRows(
 ): void {
   for (const row of rows) {
     // Bucket key priority (mirrors supabase/functions/_shared/tbAggregation.ts):
-    //   1. QB internal Id          — unique discriminator
-    //   2. Real accountNumber      — assumes non-synthesized
-    //   3. fullyQualifiedName      — preserves Parent:Child path
-    //   4. composite leaf+type+subtype — NEVER bare leaf name
-    // Bare-leaf bucketing previously merged distinct QB accounts that share
-    // a leaf (Unapplied Cash A/R vs A/P, Job Materials under Income vs
-    // Expense, Equipment Rental root vs sub) into single rows.
+    //   1. qbAccountId             — true unique discriminator
+    //   2. fullyQualifiedName      — Parent:Child path
+    //   3. composite               — accountNumber + name + type + subtype
+    // NOTE: accountNumber alone is NOT unique — QB reuses the parent's number
+    // on every sub-account (e.g. 90050 covers Job Materials + 5 children +
+    // Equipment Rental). Bare leaf-name bucketing is also forbidden (it merged
+    // Unapplied Cash A/R vs A/P, Job Materials Income vs Expense, etc.).
+    const _num = row.accountNumber || '';
+    const _nm = (row.accountName || '').toLowerCase();
+    const _ty = (row.accountType || '').toLowerCase();
+    const _sub = (row.accountSubtype || row.subAccountType || '').toLowerCase();
     const accountKey =
       (row.qbAccountId && `id:${row.qbAccountId}`) ||
-      (row.accountNumber && `num:${row.accountNumber}`) ||
       (row.fullyQualifiedName && `fqn:${row.fullyQualifiedName.toLowerCase()}`) ||
-      (row.accountName && `nm:${row.accountName.toLowerCase()}|${(row.accountType || '').toLowerCase()}|${(row.accountSubtype || row.subAccountType || '').toLowerCase()}`) ||
+      ((_nm || _num) && `c:${_num}|${_nm}|${_ty}|${_sub}`) ||
       '';
     if (!accountKey) continue;
+
     
     let account = accountMap.get(accountKey);
     if (!account) {
