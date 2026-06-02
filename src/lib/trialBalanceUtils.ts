@@ -18,8 +18,10 @@ export interface TrialBalanceAccount {
   subAccount1?: string; // Sub-account hierarchy level 1
   subAccount2?: string; // Sub-account hierarchy level 2
   qbAccountId?: string; // QuickBooks internal account Id (primary discriminator)
+  fullyQualifiedName?: string; // QB FQN ("Parent:Child") — disambiguates leaf-name collisions
   monthlyValues: Record<string, number>; // periodId -> value
 }
+
 
 export interface TrialBalanceSummary {
   bsTotal: number;
@@ -284,6 +286,7 @@ interface QbTrialBalanceRow {
   accountType?: string;
   subAccountType?: string;
   qbAccountId?: string; // QuickBooks internal Id from colData[0].id
+  fullyQualifiedName?: string; // QB FQN — disambiguates leaf-name collisions
   debit?: number;
   credit?: number;
   balance?: number;
@@ -297,6 +300,7 @@ interface QbTrialBalanceRow {
   subAccount3?: string;
   _matchedFromCOA?: boolean;
 }
+
 
 // Raw QB API format with colData arrays
 interface QbRawColData {
@@ -459,10 +463,20 @@ function processRows(
   accountMap: Map<string, TrialBalanceAccount>
 ): void {
   for (const row of rows) {
-    // Key priority: QB internal Id > accountName > accountNumber.
-    // QB Id is unique per account; accountName alone collides for distinct
-    // accounts sharing a leaf (e.g. "Equipment Rental" root vs sub-account).
-    const accountKey = row.qbAccountId || row.accountName || row.accountNumber || '';
+    // Bucket key priority (mirrors supabase/functions/_shared/tbAggregation.ts):
+    //   1. QB internal Id          — unique discriminator
+    //   2. Real accountNumber      — assumes non-synthesized
+    //   3. fullyQualifiedName      — preserves Parent:Child path
+    //   4. composite leaf+type+subtype — NEVER bare leaf name
+    // Bare-leaf bucketing previously merged distinct QB accounts that share
+    // a leaf (Unapplied Cash A/R vs A/P, Job Materials under Income vs
+    // Expense, Equipment Rental root vs sub) into single rows.
+    const accountKey =
+      (row.qbAccountId && `id:${row.qbAccountId}`) ||
+      (row.accountNumber && `num:${row.accountNumber}`) ||
+      (row.fullyQualifiedName && `fqn:${row.fullyQualifiedName.toLowerCase()}`) ||
+      (row.accountName && `nm:${row.accountName.toLowerCase()}|${(row.accountType || '').toLowerCase()}|${(row.accountSubtype || row.subAccountType || '').toLowerCase()}`) ||
+      '';
     if (!accountKey) continue;
     
     let account = accountMap.get(accountKey);
@@ -481,12 +495,14 @@ function processRows(
         // Use backend-provided fsLineItem only - empty = bug visible
         fsLineItem: row.fsLineItem || '',
         qbAccountId: row.qbAccountId || undefined,
+        fullyQualifiedName: row.fullyQualifiedName || undefined,
         monthlyValues: {},
         // Preserve match flag if present
         ...(row._matchedFromCOA !== undefined && { _matchedFromCOA: row._matchedFromCOA }),
       } as TrialBalanceAccount;
       accountMap.set(accountKey, account);
     }
+
     
     // Calculate value: prefer explicit balance, then debit-credit, then colData extraction
     let value = row.balance;
@@ -514,8 +530,14 @@ export function mergeAccounts(
 ): TrialBalanceAccount[] {
   const accountMap = new Map<string, TrialBalanceAccount>();
   
+  // Same priority as processRows — never collapse on bare leaf name.
   const keyOf = (a: TrialBalanceAccount) =>
-    a.qbAccountId || a.accountName || a.accountNumber;
+    (a.qbAccountId && `id:${a.qbAccountId}`) ||
+    (a.accountNumber && `num:${a.accountNumber}`) ||
+    (a.fullyQualifiedName && `fqn:${a.fullyQualifiedName.toLowerCase()}`) ||
+    (a.accountName && `nm:${a.accountName.toLowerCase()}|${(a.accountType || '').toLowerCase()}|${(a.accountSubtype || '').toLowerCase()}`) ||
+    '';
+
   
   // Add existing accounts to map
   for (const account of existing) {
