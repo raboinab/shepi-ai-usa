@@ -2597,9 +2597,40 @@ export const DocumentUploadSection = ({
                             </TableCell>
                           )}
                           <TableCell>
-                            {doc.period_start && doc.period_end
-                              ? `${formatDate(doc.period_start)} - ${formatDate(doc.period_end)}`
-                              : "-"}
+                            {doc.period_start && doc.period_end ? (
+                              <span className="inline-flex items-center gap-1">
+                                {`${formatDate(doc.period_start)} - ${formatDate(doc.period_end)}`}
+                                {isFsPeriodType(doc.account_type) && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-5 w-5"
+                                    onClick={() => {
+                                      const d = parseLocalDate(doc.period_start!);
+                                      setFsBackfillDoc(doc);
+                                      setFsBackfillPeriod({ year: d.getFullYear(), month: d.getMonth() + 1 });
+                                    }}
+                                  >
+                                    <Pencil className="h-3 w-3" />
+                                  </Button>
+                                )}
+                              </span>
+                            ) : isFsPeriodType(doc.account_type) ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-6 text-[10px] gap-1 border-yellow-500 text-yellow-700 dark:text-yellow-400"
+                                onClick={() => {
+                                  setFsBackfillDoc(doc);
+                                  setFsBackfillPeriod({
+                                    year: availableTaxYears[0] || new Date().getFullYear(),
+                                    month: new Date().getMonth() + 1,
+                                  });
+                                }}
+                              >
+                                <AlertCircle className="h-3 w-3" /> Set period
+                              </Button>
+                            ) : "-"}
                           </TableCell>
                           <TableCell>{getStatusBadge(doc.processing_status)}</TableCell>
                           <TableCell className="text-right">
