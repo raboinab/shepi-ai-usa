@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FinancialTable } from "../shared/FinancialTable";
 import { SummaryCard } from "../shared/SummaryCard";
 import { WorkbookTabView } from "@/components/workbook/WorkbookTabView";
+import { CustomerVendorMonthlyPanel } from "@/components/insights/CustomerVendorMonthlyPanel";
 import { Badge } from "@/components/ui/badge";
 import { Building2, TrendingUp, AlertTriangle, Percent } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
