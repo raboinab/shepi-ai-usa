@@ -109,13 +109,19 @@ export function parseMonthlySummaryRows(
     if (!row || row.length === 0) continue;
     const nameRaw = row[0];
     if (typeof nameRaw === "string" && /^accrual\s+basis/i.test(nameRaw.trim())) continue;
-    const name = (nameRaw == null ? "" : String(nameRaw)).trim();
+    let name = (nameRaw == null ? "" : String(nameRaw)).trim();
     // Last row is TOTAL — capture grandTotal and skip
     if (name.toLowerCase() === "total") {
       grandTotal = totalColIdx >= 0 ? toNumber(row[totalColIdx]) : monthColIdx.reduce((s, c) => s + toNumber(row[c]), 0);
       continue;
     }
-    if (!name) continue;
+    if (!name) {
+      // QB sometimes includes an unnamed leading row (no vendor/customer on the transaction).
+      // Keep it as "(Unassigned)" so totals reconcile.
+      const hasValue = monthColIdx.some((c) => toNumber(row[c]) !== 0) || (totalColIdx >= 0 && toNumber(row[totalColIdx]) !== 0);
+      if (!hasValue) continue;
+      name = entityType === "customer" ? "(Unassigned customer)" : "(Unassigned vendor)";
+    }
     const monthly: Record<string, number> = {};
     let total = 0;
     for (let k = 0; k < months.length; k++) {
