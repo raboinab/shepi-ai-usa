@@ -307,7 +307,7 @@ const DOCUMENT_COVERAGE_CONFIG: Record<string, DocumentCoverageConfig> = {
   
   // Monthly/Quarterly (financials)
   trial_balance: { type: 'monthly', label: 'Period Coverage', description: 'Trial balance for each reporting period' },
-  balance_sheet: { type: 'point-in-time', label: 'As-of Date', description: 'Balance sheet snapshot as of the reporting date' },
+  balance_sheet: { type: 'monthly', label: 'Period Coverage', description: 'Balance sheet snapshot for each reporting period (month-end)' },
   income_statement: { type: 'monthly', label: 'Period Coverage', description: 'P&L for each reporting period' },
   cash_flow: { type: 'monthly', label: 'Period Coverage', description: 'Cash flow for each reporting period' },
   
