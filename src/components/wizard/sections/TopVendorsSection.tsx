@@ -222,6 +222,8 @@ export const TopVendorsSection = ({ projectId, data, updateData, dealData }: Top
         </Card>
       </div>
 
+      <CustomerVendorMonthlyPanel projectId={projectId} entityType="vendor" />
+
       <section className="space-y-3">
         <h3 className="text-lg font-serif font-semibold">Workbook view — Top Vendors</h3>
         <WorkbookTabView tabId="top-vendors" dealData={dealData ?? null} />
