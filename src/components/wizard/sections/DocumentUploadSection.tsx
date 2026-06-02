@@ -1523,6 +1523,7 @@ export const DocumentUploadSection = ({
       setAccountLabel("");
       setDocDescription("");
       setSelectedTaxYear(null);
+      setSelectedFsPeriod(null);
       
       // Reset file input
       const fileInput = document.getElementById("file-upload") as HTMLInputElement;
