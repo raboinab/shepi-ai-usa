@@ -2756,6 +2756,67 @@ export const DocumentUploadSection = ({
         docs={backfillDocs ?? []}
         onSaved={() => { setBackfillDocs(null); fetchDocuments(); }}
       />
+
+      <AlertDialog open={!!fsBackfillDoc} onOpenChange={(open) => { if (!open) { setFsBackfillDoc(null); setFsBackfillPeriod(null); } }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Set reporting period</AlertDialogTitle>
+            <AlertDialogDescription>
+              Pick the month this {fsBackfillDoc?.account_type === 'balance_sheet' ? 'Balance Sheet' : fsBackfillDoc?.account_type === 'income_statement' ? 'Income Statement' : 'Cash Flow'} covers. The coverage timeline will update immediately.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex gap-2 py-2">
+            <Select
+              value={fsBackfillPeriod?.month?.toString() || ""}
+              onValueChange={(v) => setFsBackfillPeriod((p) => ({ year: p?.year ?? (availableTaxYears[0] || new Date().getFullYear()), month: parseInt(v) }))}
+            >
+              <SelectTrigger className="w-32"><SelectValue placeholder="Month" /></SelectTrigger>
+              <SelectContent>
+                {MONTH_OPTIONS.map((m) => (<SelectItem key={m.value} value={m.value.toString()}>{m.label}</SelectItem>))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={fsBackfillPeriod?.year?.toString() || ""}
+              onValueChange={(v) => setFsBackfillPeriod((p) => ({ year: parseInt(v), month: p?.month ?? new Date().getMonth() + 1 }))}
+            >
+              <SelectTrigger className="w-32"><SelectValue placeholder="Year" /></SelectTrigger>
+              <SelectContent>
+                {availableTaxYears.map((y) => (<SelectItem key={y} value={y.toString()}>{y}</SelectItem>))}
+              </SelectContent>
+            </Select>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={savingFsBackfill}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!fsBackfillPeriod || !fsBackfillDoc || savingFsBackfill}
+              onClick={async (e) => {
+                e.preventDefault();
+                if (!fsBackfillPeriod || !fsBackfillDoc) return;
+                setSavingFsBackfill(true);
+                try {
+                  const ep = computeMonthEndpoints(fsBackfillPeriod.year, fsBackfillPeriod.month);
+                  const { error } = await supabase
+                    .from('documents')
+                    .update({ period_start: ep.periodStart, period_end: ep.periodEnd })
+                    .eq('id', fsBackfillDoc.id);
+                  if (error) throw error;
+                  toast.success("Reporting period saved");
+                  setFsBackfillDoc(null);
+                  setFsBackfillPeriod(null);
+                  fetchDocuments();
+                } catch (err: any) {
+                  toast.error(`Failed to save: ${err?.message || 'unknown error'}`);
+                } finally {
+                  setSavingFsBackfill(false);
+                }
+              }}
+            >
+              {savingFsBackfill ? 'Saving…' : 'Save'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </div>
 
   );
