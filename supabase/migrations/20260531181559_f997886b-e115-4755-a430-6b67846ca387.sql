@@ -1,0 +1,1 @@
+update public.analysis_jobs set status='failed', error_message='Manually expired: worker stalled at 20% for >30min', updated_at=now() where id='8a03c39e-123f-4eb1-8b54-6b876b9917c9' and status in ('queued','running');

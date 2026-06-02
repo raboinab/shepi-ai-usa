@@ -1,77 +1,73 @@
 ## Goal
 
-When a user uploads a Journal Entries file (Excel or CSV) under the Journal Entries doc type, parse the rows into the same shape QuickBooks sync produces, store as `data_type = 'journal_entries'` in `processed_data`, and let the existing `useAutoLoadJournalEntries` hook populate the wizard viewer automatically — without touching the QuickBooks path.
+For `bank_statement` and `credit_card` document types, replace the single merged coverage timeline with **one timeline row per account** (institution + account label), so a missing month on Chase Operating doesn't get masked by full coverage on Wells Savings.
 
-## Diagnosis (why it's empty today)
+## Scope
 
-- `JournalEntriesSection` only renders entries from `wizardData.journalEntries.entries`, which is hydrated by `useAutoLoadJournalEntries` from `processed_data` rows with `data_type = 'journal_entries'`.
-- Only `complete-qb-sync/index.ts:359` ever writes that data type. Uploaded JE Excel/CSV files are sent to `analyze-journal-entries`, which writes `journal_entry_analysis` (the insights card) — never `journal_entries`.
-- Confirmed on project `fa0768ca…`: only `journal_entry_analysis` rows exist; no `journal_entries`. Empty-state copy reflects this ("after a QuickBooks sync").
+Only affects `bank_statement` and `credit_card` views inside `DocumentUploadSection`. Other doc types (TB, GL, AR/AP, tax returns, CIM…) keep their current single timeline — their coverage isn't per-account.
 
 ## Changes
 
-### 1. New edge function: `supabase/functions/process-journal-entries/index.ts`
+### 1. Require `account_label` on upload (bank/CC only)
 
-Deterministic parser (no AI — JE files are tabular and can be large/many rows).
+`src/components/wizard/sections/DocumentUploadSection.tsx`
 
-- Accept `{ documentId, projectId }`, look up the document row, download the file from storage.
-- For `.xlsx` / `.xls`: parse with `xlsx` via `npm:xlsx@0.18.5` (already in use elsewhere if present, else add). For `.csv`: parse with simple line/quote-aware split.
-- Detect header row (case-insensitive). Required columns (any of these aliases):
-  - JE id: `je #`, `entry #`, `num`, `journal #`, `transaction id`
-  - Date: `date`, `txn date`, `transaction date`
-  - Account: `account`, `account name`
-  - Debit: `debit`, `debit amount`
-  - Credit: `credit`, `credit amount`
-  - Optional: `memo`, `description`, `account id`, `adj` / `adjustment`
-- Group rows by JE id (+ date as fallback). For each group, build:
-  ```
-  { id, txnDate (YYYY-MM-DD), totalAmount (sum of debits), isAdjustment, memo, lines: [{accountName, accountId, amount, postingType: "DEBIT"|"CREDIT"}] }
-  ```
-- Sort entries by `txnDate` desc.
-- Write a `processed_data` row exactly matching the shape `transformQBJournalEntriesToWizard` expects when called via `useAutoLoadProcessedData` — i.e., the hook passes `data` straight into the transform. Simplest: store the already-wizard-shaped payload `{ data: rawEntries, count }` where `rawEntries` use the same field names the QB transform reads (`id`, `txnDate`, `line[].journalEntryLineDetail.accountRef.{name,value}`, `line[].amount`, `line[].journalEntryLineDetail.postingType`, `privateNote`, `adjustment`). This keeps a single transform path.
-- Insert with `source_type: 'upload_parse'`, `data_type: 'journal_entries'`, `validation_status: 'pending'`.
-- Fire-and-forget call to `embed-project-data` with `data_types: ['journal_entries']`.
-- Standard CORS + error handling mirroring `process-debt-schedule`.
+- Change the label from "Account Label (Optional)" → "Account Label" with a red `*` and helper text: *"Use something distinct per account, e.g. 'Operating · ...4521' or 'Payroll · ...8830'. Required to separate coverage per account."*
+- Add validation in the upload submit handler (`handleUpload` / the equivalent that currently checks `requiresInstitution`): if `account_type ∈ {bank_statement, credit_card}` and `accountLabel.trim() === ""`, toast `"Account label is required for bank/credit card statements"` and abort.
+- After successful upload, clear `accountLabel` like the other form state.
 
-### 2. Wire upload to the new function
+### 2. Per-account coverage rows
 
-In `src/components/wizard/sections/DocumentUploadSection.tsx` (around line 1180, alongside `debt_schedule`), add a branch:
+New component: `src/components/wizard/shared/PerAccountCoverage.tsx`
 
-```ts
-} else if (docType === "journal_entries") {
-  await supabase.from('documents').update({ processing_status: "processing" }).eq('id', insertedDoc.id);
-  const { error } = await supabase.functions.invoke('process-journal-entries', {
-    body: { documentId: insertedDoc.id, projectId },
-  });
-  if (error) {
-    await supabase.from('documents').update({ processing_status: "failed" }).eq('id', insertedDoc.id);
-    toast.error("Failed to parse journal entries");
-  } else {
-    await supabase.from('documents').update({ processing_status: "completed" }).eq('id', insertedDoc.id);
-    toast.success("Journal entries parsed — open the Journal Entries section to view.");
-  }
+```tsx
+interface AccountGroup {
+  key: string;              // `${institution}::${account_label}` (lowercased)
+  institution: string;
+  accountLabel: string;     // "" → "Unlabeled"
+  docCount: number;
+  periodSources: { period_start: string|null; period_end: string|null }[];
+}
+
+interface Props {
+  groups: AccountGroup[];
+  effectivePeriods: Period[];
+  onBackfillClick?: (docIds: string[]) => void; // for unlabeled group
+  unlabeledDocIds?: string[];
 }
 ```
 
-The existing `analyze-journal-entries` insights run (triggered by the `AnalysisRunButton` in DocumentUploadSection.tsx:1989) stays untouched — uploads now both populate the viewer and feed the analyzer.
+Renders one stacked row per group:
+- Left column (fixed ~220px): institution name + account label, doc count, % coverage badge.
+- Right column: a thinner `CoverageTimeline` bar (reuse `<CoverageTimeline coverageType="monthly" …>` per row, computed via `calculatePeriodCoverage(effectivePeriods, group.periodSources)`).
+- If a group's `accountLabel === ""` (legacy unlabeled docs), the row has a yellow "Needs labeling" badge and a small "Label accounts" button that opens the backfill dialog.
 
-### 3. Empty-state copy refresh
+In `DocumentUploadSection.tsx`:
 
-Update `JournalEntriesSection.tsx` empty-state to: "No journal entries yet. Connect QuickBooks or upload a JE Excel/CSV in the Documents section." Keep it short.
+- When `selectedType` is `bank_statement` or `credit_card`, build groups from `filteredDocs` keyed by `${institution ?? "Unknown"}::${account_label ?? ""}` and render `<PerAccountCoverage … />` **instead of** the single `<CoverageTimeline />`. Keep the overall % badge in the card header but compute it as union of all groups (so "60% of months covered across all accounts"). Keep the existing QB-coverage badge logic unchanged (QB rows go into a single "QuickBooks (synced)" group).
+- For all other doc types, keep current single-timeline behavior — no visual change.
 
-### 4. No DB / schema changes
+### 3. Backfill UI for legacy unlabeled documents
 
-`processed_data` already supports `data_type = 'journal_entries'`. No migration needed.
+New dialog: `src/components/wizard/shared/AccountLabelBackfillDialog.tsx`
 
-## Validation
+- Opens when the user clicks "Label accounts" on the unlabeled group, or from a new top-level alert banner that appears when `filteredDocs.some(d => ['bank_statement','credit_card'].includes(d.account_type) && !d.account_label)`.
+- Lists each unlabeled doc as a row: filename, institution, period range, and a required `<Input>` for the label. "Save all" updates `documents.account_label` for the selected rows via supabase, then refetches.
+- Banner copy: *"N bank/credit card document(s) are missing an account label. Per-account coverage requires this. Label them now →"*
 
-- On project `fa0768ca…`, re-upload `Sandbox Company_US_2_Debt Schedule.csv`-style JE file → confirm a new `processed_data` row with `data_type = 'journal_entries'` appears.
-- Reload wizard → Adjustments → Journal Entries: rows render in the table with debit/credit totals.
-- QB sync path: confirm `complete-qb-sync` still writes the same data_type and the viewer keeps showing QB rows (last-write-wins, which is the existing behavior for that section).
-- `analyze-journal-entries` insights card still renders independently in the Documents section.
+### 4. Document list table
+
+In the document list table (around line 2387 where institution/label columns render), make the `account_label` cell render `<Badge variant="outline">Needs label</Badge>` instead of "-" for bank/CC docs without a label, with an inline edit icon that opens the same backfill dialog scoped to that single document.
 
 ## Out of scope
 
-- No changes to QuickBooks sync, `process-debt-schedule`, payroll/fixed-assets fallbacks, or the analyzer.
-- No new RLS, no schema changes.
-- No PDF support for JE (already disabled in the upload picker).
+- No schema change. `documents.account_label` stays nullable so old rows aren't broken; required-ness is enforced at the UI for new uploads only.
+- DocuClipper auto-derivation of masked account numbers (option 2 from earlier) — can layer on later as a prefill default in the label field if `parsed_summary.account_number_masked` is present, but not part of this change.
+- No change to `bank_statement` / `credit_card` coverage math itself — same `calculatePeriodCoverage`, just applied per-group.
+
+## Verification
+
+1. Upload a new bank statement with the label field empty → submit blocked with toast.
+2. Upload two Chase statements with different labels (e.g. "Operating ...4521" Jan–Jun, "Payroll ...8830" Mar–Dec) → coverage card shows two rows with independent timelines.
+3. On a project with pre-existing unlabeled bank docs → backfill banner appears, dialog lets user assign labels, rows then split correctly.
+4. Other doc types (Trial Balance, Tax Return, CIM) are visually unchanged.

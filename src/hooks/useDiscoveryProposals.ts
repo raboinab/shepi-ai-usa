@@ -293,9 +293,26 @@ export function useDiscoveryProposals(projectId: string | undefined) {
   useEffect(() => {
     const currentJobId = jobIdRef.current;
     if (!currentJobId) return;
+    const channelNonce = crypto.randomUUID().slice(0, 8);
+
+    const applyJobUpdate = (updated: AnalysisJob) => {
+      const running = updated.status === "queued" || updated.status === "running";
+      setJob(updated);
+      setProgressPercent(updated.progress_percent);
+      setIsRunning(running);
+      setError(updated.status === "failed" ? updated.error_message || "Analysis failed" : null);
+      jobIdRef.current = running ? updated.id : null;
+      if (!running) inflightRef.current = false;
+      if (updated.status === "completed" || updated.status === "partial") {
+        void fetchProposals();
+      } else if (running && updated.progress_percent >= lastFetchedProgressRef.current + 10) {
+        lastFetchedProgressRef.current = updated.progress_percent;
+        void fetchProposals();
+      }
+    };
 
     const channel = supabase
-      .channel(`discovery-job-${currentJobId}`)
+      .channel(`discovery-job-${currentJobId}-${channelNonce}`)
       .on(
         "postgres_changes",
         {
@@ -304,32 +321,26 @@ export function useDiscoveryProposals(projectId: string | undefined) {
           table: "analysis_jobs",
           filter: `id=eq.${currentJobId}`,
         },
-        (payload) => {
-          const updated = payload.new as AnalysisJob;
-          const running = updated.status === "queued" || updated.status === "running";
-
-          setJob(updated);
-          setProgressPercent(updated.progress_percent);
-          setIsRunning(running);
-          setError(updated.status === "failed" ? updated.error_message || "Analysis failed" : null);
-          jobIdRef.current = running ? updated.id : null;
-
-          if (!running) inflightRef.current = false;
-
-          if (updated.status === "completed" || updated.status === "partial") {
-            void fetchProposals();
-          } else if (running && updated.progress_percent >= lastFetchedProgressRef.current + 10) {
-            lastFetchedProgressRef.current = updated.progress_percent;
-            void fetchProposals();
-          }
-        }
+        (payload) => applyJobUpdate(payload.new as AnalysisJob)
       )
       .subscribe();
 
+    // Safety-net poll: every 5s re-fetch the active job in case realtime drops an event.
+    const pollId = window.setInterval(async () => {
+      const { data, error: pollErr } = await supabase
+        .from("analysis_jobs" as any)
+        .select("*")
+        .eq("id", currentJobId)
+        .maybeSingle();
+      if (pollErr || !data) return;
+      applyJobUpdate(data as unknown as AnalysisJob);
+    }, 5000);
+
     return () => {
       supabase.removeChannel(channel);
+      window.clearInterval(pollId);
     };
-  }, [fetchProposals, job?.id, job?.status]);
+  }, [fetchProposals, job?.id]);
 
   const runDiscovery = useCallback(async () => {
     if (!projectId || inflightRef.current || isRunning) return;
