@@ -18,8 +18,10 @@ export interface TrialBalanceAccount {
   subAccount1?: string; // Sub-account hierarchy level 1
   subAccount2?: string; // Sub-account hierarchy level 2
   qbAccountId?: string; // QuickBooks internal account Id (primary discriminator)
+  fullyQualifiedName?: string; // QB FQN ("Parent:Child") — disambiguates leaf-name collisions
   monthlyValues: Record<string, number>; // periodId -> value
 }
+
 
 export interface TrialBalanceSummary {
   bsTotal: number;
