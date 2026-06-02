@@ -257,6 +257,8 @@ const SUPPORTING_TYPES = [
   { value: "accounts_payable", label: "Accounts Payable" },
   { value: "customer_concentration", label: "Customer Concentration" },
   { value: "vendor_concentration", label: "Vendor Concentration" },
+  { value: "sales_by_customer_monthly", label: "Sales by Customer (Monthly Columns)" },
+  { value: "expenses_by_vendor_monthly", label: "Expenses by Vendor (Monthly Columns)" },
   { value: "payroll", label: "Payroll Reports" },
   { value: "depreciation_schedule", label: "Depreciation Schedule" },
   { value: "fixed_asset_register", label: "Fixed Asset Register" },
@@ -318,6 +320,8 @@ const DOCUMENT_COVERAGE_CONFIG: Record<string, DocumentCoverageConfig> = {
   accounts_payable: { type: 'point-in-time', label: 'Point-in-Time', description: 'Snapshot as of a specific date' },
   customer_concentration: { type: 'point-in-time', label: 'Point-in-Time', description: 'Concentration analysis per year or latest' },
   vendor_concentration: { type: 'point-in-time', label: 'Point-in-Time', description: 'Concentration analysis per year or latest' },
+  sales_by_customer_monthly: { type: 'monthly', label: 'Monthly Coverage', description: 'QB "Sales by Customer Summary" with monthly columns — enables churn & trend analytics' },
+  expenses_by_vendor_monthly: { type: 'monthly', label: 'Monthly Coverage', description: 'QB "Expenses by Vendor Summary" with monthly columns — enables churn & trend analytics' },
   
   // Payroll - treat as monthly
   payroll: { type: 'monthly', label: 'Period Coverage', description: 'Payroll reports for each period' },
@@ -374,6 +378,7 @@ const getAcceptedFileTypes = (docType: string): string => {
   if (docType === 'trial_balance') return '.xlsx,.xls,.csv,.pdf';
   if (docType === 'journal_entries') return '.xlsx,.xls,.csv'; // No PDF - parsing unreliable
   if (docType === 'general_ledger') return '.xlsx,.xls,.csv'; // No PDF - structured data only
+  if (docType === 'sales_by_customer_monthly' || docType === 'expenses_by_vendor_monthly') return '.xlsx,.xls,.csv';
   if (isQuickBooksType(docType)) return '.xlsx,.xls,.csv,.pdf';
   return '.pdf,.xlsx,.xls,.csv,.docx,.doc';
 };
@@ -385,6 +390,7 @@ const getFileTypeLabel = (docType: string): string => {
   if (docType === 'trial_balance') return 'Excel, CSV, or PDF files';
   if (docType === 'journal_entries') return 'Excel or CSV files only';
   if (docType === 'general_ledger') return 'Excel or CSV files only';
+  if (docType === 'sales_by_customer_monthly' || docType === 'expenses_by_vendor_monthly') return 'Excel or CSV files only';
   if (isQuickBooksType(docType)) return 'Excel, CSV, or PDF files';
   return 'PDF, Excel, CSV, or Word files';
 };
@@ -1215,6 +1221,45 @@ export const DocumentUploadSection = ({
                 console.warn("Debt schedule processing failed:", debtError);
                 await supabase.from('documents').update({ processing_status: "failed" }).eq('id', insertedDoc.id);
                 toast.error("Failed to process debt schedule");
+              }
+            } else if (docType === "sales_by_customer_monthly" || docType === "expenses_by_vendor_monthly") {
+              await supabase.from('documents').update({ processing_status: "processing" }).eq('id', insertedDoc.id);
+              try {
+                const { parseMonthlySummary } = await import("@/lib/parsers/parseMonthlySummary");
+                const parsed = await parseMonthlySummary(file);
+                const expectedType = docType === "sales_by_customer_monthly" ? "customer" : "vendor";
+                if (parsed.entityType !== expectedType) {
+                  throw new Error(`File looks like a ${parsed.entityType} report but was uploaded as ${expectedType}.`);
+                }
+                await supabase.from('documents').update({
+                  processing_status: "completed",
+                  period_start: parsed.periodStart,
+                  period_end: parsed.periodEnd,
+                  extracted_data: parsed as unknown as Record<string, unknown>,
+                  parsed_summary: {
+                    entityType: parsed.entityType,
+                    monthCount: parsed.months.length,
+                    entityCount: parsed.rows.length,
+                    grandTotal: parsed.grandTotal,
+                  },
+                }).eq('id', insertedDoc.id);
+                await supabase.from('processed_data').insert({
+                  project_id: projectId,
+                  user_id: user.id,
+                  source_type: 'upload',
+                  data_type: docType,
+                  source_document_id: insertedDoc.id,
+                  period_start: parsed.periodStart,
+                  period_end: parsed.periodEnd,
+                  data: parsed as unknown as Record<string, unknown>,
+                  record_count: parsed.rows.length,
+                  validation_status: 'pending',
+                });
+                toast.success(`Parsed ${parsed.rows.length} ${expectedType}s × ${parsed.months.length} months — open Top ${expectedType === 'customer' ? 'Customers' : 'Vendors'} for trends & churn.`, { duration: 6000 });
+              } catch (mErr) {
+                console.warn("Monthly summary parsing failed:", mErr);
+                await supabase.from('documents').update({ processing_status: "failed" }).eq('id', insertedDoc.id);
+                toast.error(`Failed to parse monthly summary: ${(mErr as Error).message}`);
               }
             } else if (docType === "journal_entries") {
               await supabase.from('documents').update({ processing_status: "processing" }).eq('id', insertedDoc.id);

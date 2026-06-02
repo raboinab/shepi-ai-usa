@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FinancialTable } from "../shared/FinancialTable";
 import { SummaryCard } from "../shared/SummaryCard";
 import { WorkbookTabView } from "@/components/workbook/WorkbookTabView";
+import { CustomerVendorMonthlyPanel } from "@/components/insights/CustomerVendorMonthlyPanel";
 import { Users, TrendingUp, AlertTriangle, Percent } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { useAutoLoadCustomers } from "@/hooks/useAutoLoadProcessedData";
@@ -203,6 +204,8 @@ export const TopCustomersSection = ({ projectId, data, updateData, dealData }: T
           </CardContent>
         </Card>
       </div>
+
+      <CustomerVendorMonthlyPanel projectId={projectId} entityType="customer" />
 
       <section className="space-y-3">
         <h3 className="text-lg font-serif font-semibold">Workbook view — Top Customers</h3>

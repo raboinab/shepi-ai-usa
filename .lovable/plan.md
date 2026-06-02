@@ -1,73 +1,67 @@
-## Goal
+# Customer & Vendor Monthly Trends + Churn
 
-For `bank_statement` and `credit_card` document types, replace the single merged coverage timeline with **one timeline row per account** (institution + account label), so a missing month on Chase Operating doesn't get masked by full coverage on Wells Savings.
+Yes — the two files you uploaded are exactly the QuickBooks shape we need. Both are wide matrices: column A = Customer / Vendor name, columns B…N = one column per month (`"January 2023"` … `"December 2025"`), last column = `Total`. First 3 rows are title/company/period; last data row is `TOTAL`; trailing line is the QB "Accrual Basis …" footer. This is the perfect grain for monthly + churn analytics, and we can parse it locally — no DocuClipper, no QB connection required.
+
+This is Option 3 from the previous turn (new upload type), wired through the existing Documents flow.
 
 ## Scope
 
-Only affects `bank_statement` and `credit_card` views inside `DocumentUploadSection`. Other doc types (TB, GL, AR/AP, tax returns, CIM…) keep their current single timeline — their coverage isn't per-account.
+### 1. Two new document types
 
-## Changes
+Add to `DOCUMENT_TYPES` in `DocumentUploadSection.tsx`:
+- `sales_by_customer_monthly` — "Sales by Customer (Monthly Columns)"
+- `expenses_by_vendor_monthly` — "Expenses by Vendor (Monthly Columns)"
 
-### 1. Require `account_label` on upload (bank/CC only)
+Both are **range-covering** (like P&L by month): use the parsed period from row 3 (`"January 1, 2023-December 31, 2025"`) to populate `period_start` / `period_end` so they flow through the existing coverage timeline.
 
-`src/components/wizard/sections/DocumentUploadSection.tsx`
+### 2. Client-side parser (no edge function needed)
 
-- Change the label from "Account Label (Optional)" → "Account Label" with a red `*` and helper text: *"Use something distinct per account, e.g. 'Operating · ...4521' or 'Payroll · ...8830'. Required to separate coverage per account."*
-- Add validation in the upload submit handler (`handleUpload` / the equivalent that currently checks `requiresInstitution`): if `account_type ∈ {bank_statement, credit_card}` and `accountLabel.trim() === ""`, toast `"Account label is required for bank/credit card statements"` and abort.
-- After successful upload, clear `accountLabel` like the other form state.
+New `src/lib/parsers/parseMonthlySummary.ts`:
+- Reads `.xlsx` (via existing `xlsx` lib) or `.csv`.
+- Detects header row by finding the row whose first cell is `Customer` or `Vendor` and where 2nd+ cells parse as `"<MonthName> <Year>"`.
+- Builds `{ entityType: 'customer'|'vendor', periodStart, periodEnd, months: ['2023-01', …], rows: [{ name, monthly: { '2023-01': 1234.56, … }, total }], grandTotal }`.
+- Drops the `TOTAL` row and the trailing "Accrual Basis …" line.
+- Coerces `null` → 0, keeps signs (refunds/credits stay negative).
 
-### 2. Per-account coverage rows
+Persist parsed JSON into `documents.extracted_data` and a row-per-entity-per-month flattened copy into `processed_data` (data_type = `sales_by_customer_monthly` / `expenses_by_vendor_monthly`) so it's queryable the same way other processed data is.
 
-New component: `src/components/wizard/shared/PerAccountCoverage.tsx`
+### 3. New analytics module: "Customers & Vendors — Trends & Churn"
 
-```tsx
-interface AccountGroup {
-  key: string;              // `${institution}::${account_label}` (lowercased)
-  institution: string;
-  accountLabel: string;     // "" → "Unlabeled"
-  docCount: number;
-  periodSources: { period_start: string|null; period_end: string|null }[];
-}
+New route/section `src/components/insights/CustomerVendorAnalytics.tsx`, surfaced from the Insights / Customer-Vendor area (replaces today's static yearly concentration when monthly data exists; falls back to the yearly view otherwise).
 
-interface Props {
-  groups: AccountGroup[];
-  effectivePeriods: Period[];
-  onBackfillClick?: (docIds: string[]) => void; // for unlabeled group
-  unlabeledDocIds?: string[];
-}
-```
+Tabs: **Customers** | **Vendors**. Each tab shows:
 
-Renders one stacked row per group:
-- Left column (fixed ~220px): institution name + account label, doc count, % coverage badge.
-- Right column: a thinner `CoverageTimeline` bar (reuse `<CoverageTimeline coverageType="monthly" …>` per row, computed via `calculatePeriodCoverage(effectivePeriods, group.periodSources)`).
-- If a group's `accountLabel === ""` (legacy unlabeled docs), the row has a yellow "Needs labeling" badge and a small "Label accounts" button that opens the backfill dialog.
+- **Monthly heatmap** — entities (rows) × months (cols), cell shaded by $ amount, sortable by total / last-month / volatility. Top N selector (10 / 25 / 50 / all).
+- **Trend chart** — stacked area of top 10 entities + "Other", with toggle for total line.
+- **Cohort / churn table** — for each entity compute: `firstMonth`, `lastMonth`, `activeMonths`, `status` (`new` in last 3 mo, `returning`, `lost` = last activity > 3 mo before period end, `one-time` = 1 active month). Summarize counts + $ at top.
+- **New / Returning / Lost trend** — per month: # of entities new that month, # returning, # lost (last activity that month). Bar chart.
+- **Concentration drift** — top-5 / top-10 share of revenue (or spend) plotted monthly, to show concentration risk changing over time.
 
-In `DocumentUploadSection.tsx`:
+All numbers use the same `formatCurrency` and `formatPercent` helpers already in the codebase. Empty state if no monthly data uploaded yet, with a CTA pointing to the new upload types.
 
-- When `selectedType` is `bank_statement` or `credit_card`, build groups from `filteredDocs` keyed by `${institution ?? "Unknown"}::${account_label ?? ""}` and render `<PerAccountCoverage … />` **instead of** the single `<CoverageTimeline />`. Keep the overall % badge in the card header but compute it as union of all groups (so "60% of months covered across all accounts"). Keep the existing QB-coverage badge logic unchanged (QB rows go into a single "QuickBooks (synced)" group).
-- For all other doc types, keep current single-timeline behavior — no visual change.
+### 4. Hook + wizard wiring
 
-### 3. Backfill UI for legacy unlabeled documents
+- `useAutoLoadProcessedData.ts`: add the two new data_types and wizard targets (`wizardData.customerMonthly`, `wizardData.vendorMonthly`).
+- `documentChecklist.ts`: add two new entries under existing customer/vendor items as the "preferred" tier (yearly concentration stays as fallback).
+- `embed-project-data`: serialize the new shapes into chat context so insights-chat can answer monthly questions.
 
-New dialog: `src/components/wizard/shared/AccountLabelBackfillDialog.tsx`
+### 5. Out of scope
 
-- Opens when the user clicks "Label accounts" on the unlabeled group, or from a new top-level alert banner that appears when `filteredDocs.some(d => ['bank_statement','credit_card'].includes(d.account_type) && !d.account_label)`.
-- Lists each unlabeled doc as a row: filename, institution, period range, and a required `<Input>` for the label. "Save all" updates `documents.account_label` for the selected rows via supabase, then refetches.
-- Banner copy: *"N bank/credit card document(s) are missing an account label. Per-account coverage requires this. Label them now →"*
+- No change to GL vendor backfill (still nullable).
+- No new edge function — parsing is fast and bounded (sample file: 55 rows × 37 cols).
+- No QB API call — these are uploads.
 
-### 4. Document list table
+## Technical notes
 
-In the document list table (around line 2387 where institution/label columns render), make the `account_label` cell render `<Badge variant="outline">Needs label</Badge>` instead of "-" for bank/CC docs without a label, with an inline edit icon that opens the same backfill dialog scoped to that single document.
-
-## Out of scope
-
-- No schema change. `documents.account_label` stays nullable so old rows aren't broken; required-ness is enforced at the UI for new uploads only.
-- DocuClipper auto-derivation of masked account numbers (option 2 from earlier) — can layer on later as a prefill default in the label field if `parsed_summary.account_number_masked` is present, but not part of this change.
-- No change to `bank_statement` / `credit_card` coverage math itself — same `calculatePeriodCoverage`, just applied per-group.
+- Parser is pure-TS and runs in the upload handler in `DocumentUploadSection.tsx` right after the file lands in storage, before the `processing_status` flip to `completed`.
+- Month key format `YYYY-MM` matches what `periodUtils.ts` already uses for coverage math.
+- Negative amounts kept as-is so refund-heavy customers show up correctly in churn (a net-negative customer in the last 3 mo is still "active").
+- Sample row from your file — `"Bashirian and Sons", -190.93, 1099.84, null, …` — round-trips through the parser as `{ name: 'Bashirian and Sons', monthly: { '2023-01': -190.93, '2023-02': 1099.84, '2023-03': 0, … }, total: 19027.94 }`.
 
 ## Verification
 
-1. Upload a new bank statement with the label field empty → submit blocked with toast.
-2. Upload two Chase statements with different labels (e.g. "Operating ...4521" Jan–Jun, "Payroll ...8830" Mar–Dec) → coverage card shows two rows with independent timelines.
-3. On a project with pre-existing unlabeled bank docs → backfill banner appears, dialog lets user assign labels, rows then split correctly.
-4. Other doc types (Trial Balance, Tax Return, CIM) are visually unchanged.
+1. Upload `Sandbox_Company_US_2_Sales_by_Customer_Summary.xlsx` → document lands as `sales_by_customer_monthly`, coverage bar shows Jan 2023 – Dec 2025.
+2. Open Customers tab → heatmap renders 77 customers × 36 months, totals reconcile to the `TOTAL` row in the file.
+3. Upload the vendor file → Vendors tab populates; churn table shows e.g. "Bob's Burger Joint" as `new` (only Dec 2025 activity).
+4. Concentration drift line moves over time (sanity check vs. yearly customer_concentration).
+5. Yearly-only projects keep seeing the old concentration view (no regression).
