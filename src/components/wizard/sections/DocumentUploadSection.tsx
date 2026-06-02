@@ -1235,7 +1235,7 @@ export const DocumentUploadSection = ({
                   processing_status: "completed",
                   period_start: parsed.periodStart,
                   period_end: parsed.periodEnd,
-                  extracted_data: parsed as unknown as Record<string, unknown>,
+                  extracted_data: parsed as any,
                   parsed_summary: {
                     entityType: parsed.entityType,
                     monthCount: parsed.months.length,
