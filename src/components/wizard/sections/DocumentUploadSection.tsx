@@ -320,6 +320,8 @@ const DOCUMENT_COVERAGE_CONFIG: Record<string, DocumentCoverageConfig> = {
   accounts_payable: { type: 'point-in-time', label: 'Point-in-Time', description: 'Snapshot as of a specific date' },
   customer_concentration: { type: 'point-in-time', label: 'Point-in-Time', description: 'Concentration analysis per year or latest' },
   vendor_concentration: { type: 'point-in-time', label: 'Point-in-Time', description: 'Concentration analysis per year or latest' },
+  sales_by_customer_monthly: { type: 'monthly', label: 'Monthly Coverage', description: 'QB "Sales by Customer Summary" with monthly columns — enables churn & trend analytics' },
+  expenses_by_vendor_monthly: { type: 'monthly', label: 'Monthly Coverage', description: 'QB "Expenses by Vendor Summary" with monthly columns — enables churn & trend analytics' },
   
   // Payroll - treat as monthly
   payroll: { type: 'monthly', label: 'Period Coverage', description: 'Payroll reports for each period' },
