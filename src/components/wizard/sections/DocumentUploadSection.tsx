@@ -257,6 +257,8 @@ const SUPPORTING_TYPES = [
   { value: "accounts_payable", label: "Accounts Payable" },
   { value: "customer_concentration", label: "Customer Concentration" },
   { value: "vendor_concentration", label: "Vendor Concentration" },
+  { value: "sales_by_customer_monthly", label: "Sales by Customer (Monthly Columns)" },
+  { value: "expenses_by_vendor_monthly", label: "Expenses by Vendor (Monthly Columns)" },
   { value: "payroll", label: "Payroll Reports" },
   { value: "depreciation_schedule", label: "Depreciation Schedule" },
   { value: "fixed_asset_register", label: "Fixed Asset Register" },
