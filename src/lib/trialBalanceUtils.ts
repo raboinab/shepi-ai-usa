@@ -286,6 +286,7 @@ interface QbTrialBalanceRow {
   accountType?: string;
   subAccountType?: string;
   qbAccountId?: string; // QuickBooks internal Id from colData[0].id
+  fullyQualifiedName?: string; // QB FQN — disambiguates leaf-name collisions
   debit?: number;
   credit?: number;
   balance?: number;
@@ -299,6 +300,7 @@ interface QbTrialBalanceRow {
   subAccount3?: string;
   _matchedFromCOA?: boolean;
 }
+
 
 // Raw QB API format with colData arrays
 interface QbRawColData {
