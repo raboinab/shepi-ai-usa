@@ -1220,6 +1220,45 @@ export const DocumentUploadSection = ({
                 await supabase.from('documents').update({ processing_status: "failed" }).eq('id', insertedDoc.id);
                 toast.error("Failed to process debt schedule");
               }
+            } else if (docType === "sales_by_customer_monthly" || docType === "expenses_by_vendor_monthly") {
+              await supabase.from('documents').update({ processing_status: "processing" }).eq('id', insertedDoc.id);
+              try {
+                const { parseMonthlySummary } = await import("@/lib/parsers/parseMonthlySummary");
+                const parsed = await parseMonthlySummary(file);
+                const expectedType = docType === "sales_by_customer_monthly" ? "customer" : "vendor";
+                if (parsed.entityType !== expectedType) {
+                  throw new Error(`File looks like a ${parsed.entityType} report but was uploaded as ${expectedType}.`);
+                }
+                await supabase.from('documents').update({
+                  processing_status: "completed",
+                  period_start: parsed.periodStart,
+                  period_end: parsed.periodEnd,
+                  extracted_data: parsed as unknown as Record<string, unknown>,
+                  parsed_summary: {
+                    entityType: parsed.entityType,
+                    monthCount: parsed.months.length,
+                    entityCount: parsed.rows.length,
+                    grandTotal: parsed.grandTotal,
+                  },
+                }).eq('id', insertedDoc.id);
+                await supabase.from('processed_data').insert({
+                  project_id: projectId,
+                  user_id: user.id,
+                  source_type: 'upload',
+                  data_type: docType,
+                  source_document_id: insertedDoc.id,
+                  period_start: parsed.periodStart,
+                  period_end: parsed.periodEnd,
+                  data: parsed as unknown as Record<string, unknown>,
+                  record_count: parsed.rows.length,
+                  validation_status: 'pending',
+                });
+                toast.success(`Parsed ${parsed.rows.length} ${expectedType}s × ${parsed.months.length} months — open Top ${expectedType === 'customer' ? 'Customers' : 'Vendors'} for trends & churn.`, { duration: 6000 });
+              } catch (mErr) {
+                console.warn("Monthly summary parsing failed:", mErr);
+                await supabase.from('documents').update({ processing_status: "failed" }).eq('id', insertedDoc.id);
+                toast.error(`Failed to parse monthly summary: ${(mErr as Error).message}`);
+              }
             } else if (docType === "journal_entries") {
               await supabase.from('documents').update({ processing_status: "processing" }).eq('id', insertedDoc.id);
               try {
