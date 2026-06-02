@@ -427,6 +427,10 @@ export const DocumentUploadSection = ({
   const [isValidating, setIsValidating] = useState(false);
   const [validationDialogOpen, setValidationDialogOpen] = useState(false);
   const [selectedTaxYear, setSelectedTaxYear] = useState<number | null>(null);
+  const [selectedFsPeriod, setSelectedFsPeriod] = useState<{ year: number; month: number } | null>(null);
+  const [fsBackfillDoc, setFsBackfillDoc] = useState<Document | null>(null);
+  const [fsBackfillPeriod, setFsBackfillPeriod] = useState<{ year: number; month: number } | null>(null);
+  const [savingFsBackfill, setSavingFsBackfill] = useState(false);
   const [pendingValidation, setPendingValidation] = useState<{
     file: File;
     result: ValidationResult;
