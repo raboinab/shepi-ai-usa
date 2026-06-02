@@ -378,6 +378,7 @@ const getAcceptedFileTypes = (docType: string): string => {
   if (docType === 'trial_balance') return '.xlsx,.xls,.csv,.pdf';
   if (docType === 'journal_entries') return '.xlsx,.xls,.csv'; // No PDF - parsing unreliable
   if (docType === 'general_ledger') return '.xlsx,.xls,.csv'; // No PDF - structured data only
+  if (docType === 'sales_by_customer_monthly' || docType === 'expenses_by_vendor_monthly') return '.xlsx,.xls,.csv';
   if (isQuickBooksType(docType)) return '.xlsx,.xls,.csv,.pdf';
   return '.pdf,.xlsx,.xls,.csv,.docx,.doc';
 };
@@ -389,6 +390,7 @@ const getFileTypeLabel = (docType: string): string => {
   if (docType === 'trial_balance') return 'Excel, CSV, or PDF files';
   if (docType === 'journal_entries') return 'Excel or CSV files only';
   if (docType === 'general_ledger') return 'Excel or CSV files only';
+  if (docType === 'sales_by_customer_monthly' || docType === 'expenses_by_vendor_monthly') return 'Excel or CSV files only';
   if (isQuickBooksType(docType)) return 'Excel, CSV, or PDF files';
   return 'PDF, Excel, CSV, or Word files';
 };
