@@ -2312,7 +2312,54 @@ export const DocumentUploadSection = ({
                   </div>
                 )}
 
-                {/* Supporting Documents description */}
+                {/* Reporting Period - for Balance Sheet / P&L / Cash Flow */}
+                {isFsPeriodType(type.value) && (
+                  <div className="space-y-2">
+                    <Label>Reporting Period <span className="text-destructive">*</span></Label>
+                    <div className="flex gap-2">
+                      <Select
+                        value={selectedFsPeriod?.month?.toString() || ""}
+                        onValueChange={(v) =>
+                          setSelectedFsPeriod((prev) => ({
+                            year: prev?.year ?? (availableTaxYears[0] || new Date().getFullYear()),
+                            month: parseInt(v),
+                          }))
+                        }
+                      >
+                        <SelectTrigger className="w-32">
+                          <SelectValue placeholder="Month" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {MONTH_OPTIONS.map((m) => (
+                            <SelectItem key={m.value} value={m.value.toString()}>{m.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Select
+                        value={selectedFsPeriod?.year?.toString() || ""}
+                        onValueChange={(v) =>
+                          setSelectedFsPeriod((prev) => ({
+                            year: parseInt(v),
+                            month: prev?.month ?? new Date().getMonth() + 1,
+                          }))
+                        }
+                      >
+                        <SelectTrigger className="w-32">
+                          <SelectValue placeholder="Year" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availableTaxYears.map((y) => (
+                            <SelectItem key={y} value={y.toString()}>{y}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Select the month this {type.value === 'balance_sheet' ? 'Balance Sheet snapshot' : type.value === 'income_statement' ? 'P&L' : 'Cash Flow'} covers. Upload one file per month.
+                    </p>
+                  </div>
+                )}
+
                 {type.value === "supporting_documents" && (
                   <>
                     <Alert className="border-accent/30 bg-accent/5">
