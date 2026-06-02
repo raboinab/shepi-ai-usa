@@ -288,6 +288,29 @@ const DOC_TYPE_GROUPS = [
   { label: "Supporting", items: SUPPORTING_TYPES },
 ];
 
+// Financial-statement doc types that require a reporting period at upload time
+const FS_PERIOD_TYPES = ['balance_sheet', 'income_statement', 'cash_flow'] as const;
+const isFsPeriodType = (t: string | null | undefined) =>
+  !!t && (FS_PERIOD_TYPES as readonly string[]).includes(t);
+
+const MONTH_OPTIONS = [
+  { value: 1, label: 'Jan' }, { value: 2, label: 'Feb' }, { value: 3, label: 'Mar' },
+  { value: 4, label: 'Apr' }, { value: 5, label: 'May' }, { value: 6, label: 'Jun' },
+  { value: 7, label: 'Jul' }, { value: 8, label: 'Aug' }, { value: 9, label: 'Sep' },
+  { value: 10, label: 'Oct' }, { value: 11, label: 'Nov' }, { value: 12, label: 'Dec' },
+];
+
+// Returns ISO yyyy-mm-dd for first and last day of a given (year, month 1-12)
+const computeMonthEndpoints = (year: number, month: number) => {
+  const mm = String(month).padStart(2, '0');
+  const lastDay = new Date(year, month, 0).getDate();
+  return {
+    periodStart: `${year}-${mm}-01`,
+    periodEnd: `${year}-${mm}-${String(lastDay).padStart(2, '0')}`,
+  };
+};
+
+
 // Coverage configuration by document type
 const DOCUMENT_COVERAGE_CONFIG: Record<string, DocumentCoverageConfig> = {
   // No coverage UI
