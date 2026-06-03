@@ -1171,6 +1171,40 @@ export const DocumentUploadSection = ({
               }).catch((fnError) => {
                 console.warn("QuickBooks processing call failed:", fnError);
               });
+
+              // Customer/Vendor Concentration QB exports also carry monthly columns.
+              // qbToJson's concentration endpoints collapse to annual totals only, so we
+              // additionally parse the raw file client-side to populate the Monthly Trends
+              // & Churn panel (which reads sales_by_customer_monthly / expenses_by_vendor_monthly).
+              if (docType === "customer_concentration" || docType === "vendor_concentration") {
+                (async () => {
+                  try {
+                    const { parseMonthlySummary } = await import("@/lib/parsers/parseMonthlySummary");
+                    const parsed = await parseMonthlySummary(file);
+                    if (parsed.months.length < 2) return;
+                    const expectedType = docType === "customer_concentration" ? "customer" : "vendor";
+                    if (parsed.entityType !== expectedType) return;
+                    const monthlyDataType = docType === "customer_concentration"
+                      ? "sales_by_customer_monthly"
+                      : "expenses_by_vendor_monthly";
+                    await supabase.from('processed_data').insert({
+                      project_id: projectId,
+                      user_id: user.id,
+                      source_type: 'qbtojson',
+                      data_type: monthlyDataType,
+                      source_document_id: insertedDoc.id,
+                      period_start: parsed.periodStart,
+                      period_end: parsed.periodEnd,
+                      data: parsed as any,
+                      record_count: parsed.rows.length,
+                      validation_status: 'pending',
+                    });
+                    toast.success("Monthly trends ready — open Top Customers → Monthly Trends.", { duration: 5000 });
+                  } catch (mErr) {
+                    console.warn("Monthly summary parse (concentration upload) failed:", mErr);
+                  }
+                })();
+              }
             } else if (docType === "tax_return") {
               localStorage.setItem(`tax-parsing-${projectId}`, "true");
               setParsingTaxReturn(true);
