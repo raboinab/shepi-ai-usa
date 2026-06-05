@@ -1012,22 +1012,44 @@ serve(async (req) => {
     // ============ INCOME STATEMENT helpers ============
     const incomeStatement = wizardData.incomeStatement || processedData.income_statement;
     const isPeriodMismatch = processedDataPeriodMismatch.income_statement;
-    const isSourceLabel = isPeriodMismatch ? "Income Statement (period mismatch)" : "Income Statement";
+    const isSourceKind = processedDataSourceKind.income_statement;
+    const isSourceLabel = isPeriodMismatch
+      ? "Income Statement (period mismatch)"
+      : isSourceKind === 'aggregate'
+        ? `Income Statement (${taxYear}, from multi-year aggregate)`
+        : "Income Statement";
 
+    // Year-scoped monthly summation. Only sums monthlyValues keys matching `${taxYear}-*`.
+    // If no keys match the tax year, returns 0 (so we don't compare a 1120-S against the wrong year).
     const sumISMonthly = (group: 'revenue' | 'cogs' | 'expenses'): number => {
       if (!incomeStatement) return 0;
       const accounts = incomeStatement[group]?.accounts;
-      if (Array.isArray(accounts)) {
-        return accounts.reduce((sum: number, acc: any) => {
-          const vals = Object.values(acc.monthlyValues || {}) as number[];
-          return sum + vals.reduce((a, b) => a + (Number(b) || 0), 0);
-        }, 0);
-      }
-      return 0;
+      if (!Array.isArray(accounts)) return 0;
+      let anyYearKeyFound = false;
+      const total = accounts.reduce((sum: number, acc: any) => {
+        const monthly = acc.monthlyValues || {};
+        let acctTotal = 0;
+        for (const k of Object.keys(monthly)) {
+          if (k.startsWith(yearMonthPrefix)) {
+            anyYearKeyFound = true;
+            acctTotal += Number(monthly[k]) || 0;
+          }
+        }
+        return sum + acctTotal;
+      }, 0);
+      // If accounts use monthlyValues but none for this year, return 0 (not all-years total)
+      return anyYearKeyFound ? total : 0;
     };
 
-    const isRevenue = sumISMonthly('revenue') || Number(incomeStatement?.totalRevenue) || 0;
-    const isNetIncome = Number(incomeStatement?.netIncome) || 0;
+    // Per-year totals only. If the IS is a multi-year aggregate, do NOT fall back to
+    // top-level totalRevenue/netIncome (those span all years).
+    const isYearScoped = isSourceKind === 'in_year' || isSourceKind === 'aggregate';
+    const isRevenue = sumISMonthly('revenue') || (isYearScoped ? 0 : (Number(incomeStatement?.totalRevenue) || 0));
+    const isExpenses = sumISMonthly('expenses');
+    const isCogs = sumISMonthly('cogs');
+    const isNetIncomeFromMonthly = (isRevenue || isExpenses || isCogs) ? (isRevenue - isCogs - isExpenses) : 0;
+    const isNetIncome = isNetIncomeFromMonthly || (isYearScoped ? 0 : (Number(incomeStatement?.netIncome) || 0));
+
 
     // ============ PAGE 1 — INCOME ============
     pushCompare({
