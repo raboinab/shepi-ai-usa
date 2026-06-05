@@ -91,9 +91,11 @@ export function WorkbookUploadButton({ projectId, onCommitted, className }: Prop
 
       const result = data as ParseResult | { ok: false; error: string };
       if (!result.ok) {
-        toast({ title: "Could not parse workbook", description: result.error, variant: "destructive" });
+        const errMsg = (result as { error?: string }).error || "Could not parse workbook";
+        toast({ title: "Could not parse workbook", description: errMsg, variant: "destructive" });
         return;
       }
+
 
       if (result.projectId !== projectId) {
         toast({
