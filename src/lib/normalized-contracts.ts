@@ -208,12 +208,8 @@ export interface JournalEntriesPayloadV1 {
   count: number;
 }
 
-export interface TaxReturnAnalysisPayloadV1 {
-  detectedType: string;
-  extractedText: string | null;
-  keyInfo: Record<string, unknown>;
-  summary: string | null;
-}
+// NOTE: tax_return_analysis is intentionally NOT in this registry. parse-tax-return
+// owns its own normalization (analyzer output with extractedData/glMatching/etc).
 
 // ── Data type registry ─────────────────────────────────────────────────────
 export interface NormalizedDataTypeMap {
@@ -226,7 +222,6 @@ export interface NormalizedDataTypeMap {
   cim_insights: CimInsightsPayloadV1;
   supporting_document: SupportingDocPayloadV1;
   journal_entries: JournalEntriesPayloadV1;
-  tax_return_analysis: TaxReturnAnalysisPayloadV1;
 }
 export type NormalizedDataType = keyof NormalizedDataTypeMap;
 export const NORMALIZED_DATA_TYPES: NormalizedDataType[] = [
@@ -239,7 +234,6 @@ export const NORMALIZED_DATA_TYPES: NormalizedDataType[] = [
   "cim_insights",
   "supporting_document",
   "journal_entries",
-  "tax_return_analysis",
 ];
 
 // ── Read-side helpers (mirror the Deno adapters for legacy upgrade-on-read) ─
@@ -536,19 +530,6 @@ const LEGACY_ADAPTERS: { [K in NormalizedDataType]: (raw: unknown) => Normalized
       })),
     }));
     return { entries, count: entries.length };
-  },
-
-  tax_return_analysis: (raw) => {
-    const r = (raw ?? {}) as Record<string, unknown>;
-    const detectedType = strReq(
-      r.detectedType ?? (r.keyInfo as Record<string, unknown>)?.documentType ?? "tax_return_analysis",
-    );
-    return {
-      detectedType,
-      extractedText: str(r.extractedText),
-      keyInfo: (r.keyInfo && typeof r.keyInfo === "object" ? r.keyInfo : {}) as Record<string, unknown>,
-      summary: str(r.summary),
-    };
   },
 };
 
