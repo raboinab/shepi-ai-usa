@@ -2104,6 +2104,7 @@ export const DocumentUploadSection = ({
                     <TaxReturnInsightsCard 
                       key={analysis.documentId}
                       analysis={analysis}
+                      onReanalyze={handleReanalyzeTaxReturn}
                     />
                   ))}
                 </div>
