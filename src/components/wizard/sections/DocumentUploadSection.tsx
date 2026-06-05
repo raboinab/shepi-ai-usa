@@ -813,12 +813,17 @@ export const DocumentUploadSection = ({
     }
   };
 
-  const handleReanalyzeTaxReturn = async (documentId: string) => {
+  const handleReanalyzeTaxReturn = async (documentId: string, opts?: { silent?: boolean }) => {
+    const silent = !!opts?.silent;
     try {
       const { data: parseResult, error: parseError } = await supabase.functions.invoke('parse-tax-return', {
         body: { documentId, projectId },
       });
       if (parseError) {
+        if (silent) {
+          console.warn("Silent re-analyze failed:", parseError);
+          return;
+        }
         if (parseError.message?.includes('429')) {
           toast.error("Rate limit exceeded. Please try again in a few minutes.");
         } else if (parseError.message?.includes('402')) {
@@ -828,21 +833,24 @@ export const DocumentUploadSection = ({
         }
         return;
       }
-      if (parseResult?.analysis) {
+      // Edge function returns the analysis object directly; tolerate either shape.
+      const newAnalysis: TaxReturnAnalysis | undefined = parseResult?.analysis ?? parseResult;
+      if (newAnalysis && newAnalysis.documentId) {
         setTaxReturnInsights(prev => {
           const existing = prev.findIndex(a => a.documentId === documentId);
           if (existing >= 0) {
             const updated = [...prev];
-            updated[existing] = parseResult.analysis;
+            updated[existing] = newAnalysis;
             return updated;
           }
-          return [...prev, parseResult.analysis];
+          return [...prev, newAnalysis];
         });
-        toast.success("Tax return re-analyzed with latest data.");
+        if (!silent) toast.success("Tax return re-analyzed with latest data.");
       }
     } catch (err) {
       console.warn("Re-analyze tax return failed:", err);
-      toast.error("Failed to re-analyze tax return");
+      if (!silent) toast.error("Failed to re-analyze tax return");
+
     }
   };
 
