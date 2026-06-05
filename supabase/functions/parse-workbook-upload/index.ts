@@ -163,7 +163,7 @@ function parseTrialBalance(
   }
 
   const periodIdSet = new Set(meta.periods.map(p => p.id));
-  const periodLabelToId = new Map(meta.periods.map(p => [p.label.toLowerCase().trim(), p.id]));
+  const periodLabelToId = new Map<string, string>(); for (const p of meta.periods) { periodLabelToId.set(p.label.toLowerCase().trim(), p.id); if (p.shortLabel) periodLabelToId.set(p.shortLabel.toLowerCase().trim(), p.id); }
   // Also match short labels (e.g. "Jan-24") — pull from the snapshot's accounts as fallback
   const periodColIdx: { idx: number; periodId: string }[] = [];
   for (let i = 0; i < headers.length; i++) {
@@ -222,7 +222,7 @@ function parseAdjustments(
   const seenIds = new Set<string>();
 
   const periodIdSet = new Set(meta.periods.map(p => p.id));
-  const periodLabelToId = new Map(meta.periods.map(p => [p.label.toLowerCase().trim(), p.id]));
+  const periodLabelToId = new Map<string, string>(); for (const p of meta.periods) { periodLabelToId.set(p.label.toLowerCase().trim(), p.id); if (p.shortLabel) periodLabelToId.set(p.shortLabel.toLowerCase().trim(), p.id); }
 
   // Build a label+type → id map from the directory (for matching unchanged rows)
   const dirByKey = new Map<string, { id: string; type: string; label: string }>();
