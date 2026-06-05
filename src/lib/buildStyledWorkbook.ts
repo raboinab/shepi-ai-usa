@@ -444,16 +444,18 @@ function writeMetaSheet(
   ws.getCell("A4").value = "exportedAt";
   ws.getCell("B4").value = new Date().toISOString();
 
-  // Period keys (for label-based fallback matching of period columns)
+  // Period keys (id, full label, short label) — parser matches column headers
   let row = 6;
   ws.getCell(`A${row}`).value = "__periods__";
   row++;
   ws.getCell(`A${row}`).value = "periodId";
   ws.getCell(`B${row}`).value = "label";
+  ws.getCell(`C${row}`).value = "shortLabel";
   row++;
   for (const p of dealData.deal.periods) {
     ws.getCell(`A${row}`).value = p.id;
     ws.getCell(`B${row}`).value = p.label;
+    ws.getCell(`C${row}`).value = p.shortLabel;
     row++;
   }
 
