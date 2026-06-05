@@ -171,14 +171,17 @@ interface ComparisonResult {
   source: string;
   variance: number | null;
   variancePercent: number | null;
-  status: 'match' | 'minor_variance' | 'significant_variance' | 'missing_data';
+  status: 'match' | 'minor_variance' | 'significant_variance' | 'missing_data' | 'review_only';
   category?: string;
+  matchedAccounts?: string[];
+  note?: string;
 }
 
 export interface TaxReturnAnalysis {
   extractedData: TaxReturnData;
   comparisons: ComparisonResult[];
-  overallScore: number;
+  /** null = no comparable financial data was found; otherwise 0-100 */
+  overallScore: number | null;
   flags: string[];
   summary: string;
   analyzedAt: string;
