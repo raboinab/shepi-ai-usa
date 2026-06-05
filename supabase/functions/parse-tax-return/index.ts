@@ -751,21 +751,26 @@ serve(async (req) => {
     // Fetch processed_data for comparison
     const { data: processedRecords, error: pdError } = await supabase
       .from("processed_data")
-      .select("data_type, data, period_start, period_end")
+      .select("data_type, data, period_start, period_end, source_type")
       .eq("project_id", projectId);
 
     if (pdError) {
       console.warn("Failed to fetch processed data:", pdError);
     }
 
-    // Year-scoped processed_data resolution — only use records whose period_end
-    // falls within the tax year. If none, fall back to most-recent and tag the source.
+    // Year-scoped processed_data resolution.
+    // Preference order:
+    //   (a) row whose period_end is inside the tax year,
+    //   (b) qbtojson "full-history aggregate" (period_end IS NULL) — these carry monthlyValues
+    //       spanning multiple years and are year-scoped downstream via taxYear-aware helpers,
+    //   (c) most recent row with a period_end (flagged as period_mismatch).
     const taxYear = extractedData.taxYear;
     const yearStart = `${taxYear}-01-01`;
     const yearEnd = `${taxYear}-12-31`;
 
     const processedData: Record<string, any> = {};
     const processedDataPeriodMismatch: Record<string, boolean> = {};
+    const processedDataSourceKind: Record<string, 'in_year' | 'aggregate' | 'period_mismatch'> = {};
     const byType: Record<string, any[]> = {};
     for (const r of processedRecords || []) {
       (byType[r.data_type] ||= []).push(r);
@@ -778,30 +783,58 @@ serve(async (req) => {
       });
       if (inYear) {
         processedData[dtype] = inYear.data;
-      } else {
-        // Fall back to most recent, but flag the mismatch
-        const sorted = rows
-          .filter((r) => r.period_end)
-          .sort((a, b) => String(b.period_end).localeCompare(String(a.period_end)));
-        if (sorted[0]) {
-          processedData[dtype] = sorted[0].data;
-          processedDataPeriodMismatch[dtype] = true;
-        } else if (rows[0]) {
-          processedData[dtype] = rows[0].data;
-          processedDataPeriodMismatch[dtype] = true;
-        }
+        processedDataSourceKind[dtype] = 'in_year';
+        continue;
+      }
+      // (b) qbtojson aggregate rows often have NULL period_end and a monthlyValues map
+      const aggregate = rows.find((r) => !r.period_end && r.source_type === 'qbtojson');
+      if (aggregate) {
+        processedData[dtype] = aggregate.data;
+        processedDataSourceKind[dtype] = 'aggregate';
+        continue;
+      }
+      // (c) most recent with period_end
+      const sorted = rows
+        .filter((r) => r.period_end)
+        .sort((a, b) => String(b.period_end).localeCompare(String(a.period_end)));
+      if (sorted[0]) {
+        processedData[dtype] = sorted[0].data;
+        processedDataPeriodMismatch[dtype] = true;
+        processedDataSourceKind[dtype] = 'period_mismatch';
+      } else if (rows[0]) {
+        processedData[dtype] = rows[0].data;
+        processedDataPeriodMismatch[dtype] = true;
+        processedDataSourceKind[dtype] = 'period_mismatch';
       }
     }
 
-    // Year-scoped canonical_transactions (the primary GL source)
+    // Year-scoped canonical_transactions (the primary GL source).
+    // IMPORTANT: exclude rows that are *monthly snapshots* of IS/BS/CF/TB — those are
+    // already covered by the IS/BS helpers and would double-count (often 12-60x).
+    const GL_SOURCE_TYPES = ['general_ledger', 'bank_transactions', 'credit_card_transactions', 'journal_entries', 'qbtojson'];
     const { data: txns, error: txnsErr } = await supabase
       .from("canonical_transactions")
-      .select("account_name, account_type, amount, amount_signed, amount_abs")
+      .select("account_name, account_type, amount, amount_signed, amount_abs, source_type")
       .eq("project_id", projectId)
+      .in("source_type", GL_SOURCE_TYPES)
       .gte("txn_date", yearStart)
       .lte("txn_date", yearEnd);
     if (txnsErr) {
       console.warn("canonical_transactions fetch warning:", txnsErr.message);
+    }
+
+    // Diagnostics: count rows per source_type for THIS year (including excluded snapshots),
+    // so the UI can explain why GL matching produced few/no comparisons.
+    const { data: txnSourceCounts } = await supabase
+      .from("canonical_transactions")
+      .select("source_type")
+      .eq("project_id", projectId)
+      .gte("txn_date", yearStart)
+      .lte("txn_date", yearEnd);
+    const sourceTypeRows: Record<string, number> = {};
+    for (const r of txnSourceCounts || []) {
+      const st = String(r.source_type || 'unknown');
+      sourceTypeRows[st] = (sourceTypeRows[st] || 0) + 1;
     }
 
     interface AccountAgg { signed: number; abs: number; type: string | null }
@@ -815,6 +848,7 @@ serve(async (req) => {
       glByAccount.set(name, cur);
     }
     const hasGL = glByAccount.size > 0;
+
 
     const matchAccounts = (matchers: RegExp[], exclude: RegExp[] = []): { total: number; accounts: string[] } => {
       let total = 0;
