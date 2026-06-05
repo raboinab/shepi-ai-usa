@@ -1378,6 +1378,48 @@ serve(async (req) => {
     };
     const hasIS = !!incomeStatement && isYearScoped;
 
+    // Pseudo-GL synthesis: when no canonical_transactions exist for the year
+    // (e.g. qbtojson-only or quickbooks_api-only projects), populate glByAccount
+    // from the normalized Income Statement so matchAccounts() works in branches
+    // that don't already fall back to IS (Distributions, Interest income,
+    // Charitable, COGS purchases).
+    if (!hasGL && hasIS && incomeStatement) {
+      for (const group of ["revenue", "cogs", "expenses"] as const) {
+        const accts = (incomeStatement as any)[group]?.accounts;
+        if (!Array.isArray(accts)) continue;
+        for (const a of accts) {
+          const name = String(a?.name || a?.accountName || "").trim();
+          if (!name) continue;
+          const monthly = a?.monthlyValues || {};
+          let yearTotal = 0;
+          for (const k of Object.keys(monthly)) {
+            if (k.startsWith(yearMonthPrefix)) yearTotal += Math.abs(Number(monthly[k]) || 0);
+          }
+          if (yearTotal === 0) continue;
+          const cur = glByAccount.get(name) || { signed: 0, abs: 0, type: group };
+          cur.signed += yearTotal;
+          cur.abs += yearTotal;
+          glByAccount.set(name, cur);
+        }
+      }
+      if (glByAccount.size > 0) {
+        hasGL = true;
+        skippedFields.push({
+          field: "GL source",
+          reason: `Synthesized from normalized Income Statement for ${taxYear} (no canonical_transactions present)`,
+        });
+      }
+    }
+
+    // TB-only diagnostic: surface the gap when BS is missing but TB exists
+    if (!processedData.balance_sheet && processedData.trial_balance) {
+      skippedFields.push({
+        field: "Schedule L (source)",
+        reason: `Balance Sheet missing for ${taxYear}; Trial Balance present but BS comparisons require account-level EOY balances`,
+      });
+    }
+
+
     // ============ PAGE 1 — DEDUCTIONS ============
     if (hasGL || hasIS) {
       const deductionRows: Array<[string, string, keyof typeof PL_MATCHERS, number?]> = [
