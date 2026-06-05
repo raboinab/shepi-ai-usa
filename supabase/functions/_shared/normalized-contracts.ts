@@ -588,19 +588,6 @@ const ADAPTERS = {
     }));
     return { entries, count: entries.length };
   },
-
-  tax_return_analysis: (raw: unknown): unknown => {
-    const r = (raw ?? {}) as Record<string, unknown>;
-    const detectedType = strReq(
-      r.detectedType ?? (r.keyInfo as Record<string, unknown>)?.documentType ?? "tax_return_analysis",
-    );
-    return {
-      detectedType,
-      extractedText: str(r.extractedText),
-      keyInfo: (r.keyInfo && typeof r.keyInfo === "object" ? r.keyInfo : {}) as Record<string, unknown>,
-      summary: str(r.summary),
-    };
-  },
 } satisfies Record<string, RawAdapter>;
 
 const PAYLOAD_SCHEMAS = {
@@ -613,7 +600,6 @@ const PAYLOAD_SCHEMAS = {
   cim_insights: CimInsightsPayload,
   supporting_document: SupportingDocPayload,
   journal_entries: JournalEntriesPayload,
-  tax_return_analysis: TaxReturnAnalysisPayload,
 } as const;
 
 export type NormalizedDataType = keyof typeof PAYLOAD_SCHEMAS;
@@ -629,7 +615,6 @@ export const ENVELOPE_SCHEMAS: { [K in NormalizedDataType]: ReturnType<typeof En
   cim_insights: Envelope(PAYLOAD_SCHEMAS.cim_insights),
   supporting_document: Envelope(PAYLOAD_SCHEMAS.supporting_document),
   journal_entries: Envelope(PAYLOAD_SCHEMAS.journal_entries),
-  tax_return_analysis: Envelope(PAYLOAD_SCHEMAS.tax_return_analysis),
 };
 
 // ── normalize + persist ─────────────────────────────────────────────────────
