@@ -1473,7 +1473,7 @@ serve(async (req) => {
         data: analysis,
         period_start: `${extractedData.taxYear}-01-01`,
         period_end: `${extractedData.taxYear}-12-31`,
-        validation_status: overallScore >= 70 ? "valid" : "needs_review",
+        validation_status: overallScore !== null && overallScore >= 70 ? "valid" : "needs_review",
       });
 
     if (insertError) {
