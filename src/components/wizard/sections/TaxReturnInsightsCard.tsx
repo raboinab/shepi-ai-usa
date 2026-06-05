@@ -237,8 +237,9 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 const CATEGORY_ORDER = ["income_p1", "deductions_p1", "cogs", "schedule_l", "schedule_m", "schedule_k", "reconciliation"];
 
-export const TaxReturnInsightsCard = ({ analysis, className }: TaxReturnInsightsCardProps) => {
+export const TaxReturnInsightsCard = ({ analysis, className, onReanalyze }: TaxReturnInsightsCardProps) => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isReanalyzing, setIsReanalyzing] = useState(false);
   const { extractedData, comparisons, overallScore, flags, summary } = analysis;
 
   const formTypeLabel = {
@@ -253,6 +254,16 @@ export const TaxReturnInsightsCard = ({ analysis, className }: TaxReturnInsights
   const hasScheduleM1 = !!extractedData.scheduleM1;
   const hasScheduleM2 = !!extractedData.scheduleM2;
   const hasCOGS = !!extractedData.cogsDetails;
+
+  const handleReanalyze = async () => {
+    if (!onReanalyze || isReanalyzing) return;
+    setIsReanalyzing(true);
+    try {
+      await onReanalyze(analysis.documentId);
+    } finally {
+      setIsReanalyzing(false);
+    }
+  };
 
   return (
     <Card className={className}>
@@ -269,6 +280,18 @@ export const TaxReturnInsightsCard = ({ analysis, className }: TaxReturnInsights
             <Badge variant="outline" className="text-xs">
               {formTypeLabel}
             </Badge>
+            {onReanalyze && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-xs"
+                onClick={handleReanalyze}
+                disabled={isReanalyzing}
+              >
+                <RefreshCw className={`w-3.5 h-3.5 mr-1 ${isReanalyzing ? 'animate-spin' : ''}`} />
+                {isReanalyzing ? 'Re-analyzing…' : 'Re-analyze'}
+              </Button>
+            )}
           </div>
         </div>
         <CardDescription>
