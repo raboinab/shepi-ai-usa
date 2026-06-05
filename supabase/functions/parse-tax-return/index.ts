@@ -684,6 +684,15 @@ function isRawQbMonthlyArray(data: any): boolean {
     && "month" in (data[0] as any) && "report" in (data[0] as any);
 }
 
+function hasMonthlyReports(data: any): boolean {
+  return !!(data && Array.isArray(data?.monthlyReports) && data.monthlyReports[0]?.report?.rows);
+}
+
+function isRawQbReport(data: any): boolean {
+  // Single QB report shape: { rows: { row: [...] }, header, columns }
+  return !!(data && data?.rows?.row && Array.isArray(data.rows.row) && !Array.isArray(data));
+}
+
 interface NormalizedAccount { name: string; monthlyValues: Record<string, number>; }
 interface NormalizedSection { accounts: NormalizedAccount[]; }
 interface NormalizedIS { revenue: NormalizedSection; cogs: NormalizedSection; expenses: NormalizedSection; totalRevenue: number; netIncome: number; }
