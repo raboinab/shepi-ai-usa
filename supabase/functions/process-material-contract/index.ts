@@ -1,6 +1,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "npm:@supabase/supabase-js@2.87.1";
 
 import { aiFetch, ensureZdrEnabled } from "../_shared/zdrGuard.ts";
+import { normalizeAndPersist } from "../_shared/normalized-contracts.ts";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-api-key, x-service-name, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
@@ -181,14 +183,14 @@ Pay special attention to:
       extractedAt: new Date().toISOString(),
     };
 
-    // If projectId and documentId provided, store in processed_data
+    // If projectId and documentId provided, store in processed_data via shared normalizer
     if (projectId && documentId) {
       const supabaseUrl = Deno.env.get("SUPABASE_URL");
       const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
       if (supabaseUrl && supabaseKey) {
         const authHeader = req.headers.get("Authorization");
-        let userId = null;
+        let userId: string | null = null;
 
         if (authHeader) {
           const tokenResponse = await fetch(`${supabaseUrl}/auth/v1/user`, {
@@ -201,23 +203,17 @@ Pay special attention to:
         }
 
         if (userId) {
-          await fetch(`${supabaseUrl}/rest/v1/processed_data`, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${supabaseKey}`,
-              apikey: supabaseKey,
-              "Content-Type": "application/json",
-              Prefer: "return=minimal",
-            },
-            body: JSON.stringify({
-              project_id: projectId,
-              user_id: userId,
-              source_document_id: documentId,
-              source_type: "ai_extraction",
-              data_type: "material_contract",
-              data: result,
-              validation_status: result.confidence === 'high' ? 'validated' : 'pending',
-            }),
+          const adminClient = createClient(supabaseUrl, supabaseKey);
+          await normalizeAndPersist(adminClient, {
+            projectId,
+            userId,
+            sourceDocumentId: documentId,
+            dataType: "material_contract",
+            source: "ai_document_extraction",
+            rawAiOutput: result,
+            documentName: fileName,
+            confidence: result.confidence,
+            warnings: result.warnings,
           });
         }
       }

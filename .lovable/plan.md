@@ -1,73 +1,80 @@
-## Goal
+## Diagnosis
 
-For `bank_statement` and `credit_card` document types, replace the single merged coverage timeline with **one timeline row per account** (institution + account label), so a missing month on Chase Operating doesn't get masked by full coverage on Wells Savings.
+Pulled the live data for project `fa0768ca…` and compared against what the screenshot is showing.
 
-## Scope
+**What's actually in the DB (latest `tax_return_analysis` rows):**
 
-Only affects `bank_statement` and `credit_card` views inside `DocumentUploadSection`. Other doc types (TB, GL, AR/AP, tax returns, CIM…) keep their current single timeline — their coverage isn't per-account.
+| Year | Score | Comparisons | Sources picked |
+|------|-------|-------------|----------------|
+| 2023 | 56    | 9           | IS + BS = qbtojson aggregate, TB + GL = **period_mismatch** |
+| 2024 | 56    | 9           | IS + BS = qbtojson aggregate, TB + GL = **period_mismatch** |
+| 2025 | 100   | **3**       | IS + BS + TB + GL = in_year (single month) |
 
-## Changes
+So the analyzer is producing real scores. The screenshot ("N/A — no comparable data", "Analyzed: 6/4/2026") is **stale UI** — the user is looking at a previous render; the most recent 2025 re-run finished at 15:05 today with score 100 and was never refetched.
 
-### 1. Require `account_label` on upload (bank/CC only)
+But the underlying analyzer also has two real bugs that crater coverage:
 
-`src/components/wizard/sections/DocumentUploadSection.tsx`
-
-- Change the label from "Account Label (Optional)" → "Account Label" with a red `*` and helper text: *"Use something distinct per account, e.g. 'Operating · ...4521' or 'Payroll · ...8830'. Required to separate coverage per account."*
-- Add validation in the upload submit handler (`handleUpload` / the equivalent that currently checks `requiresInstitution`): if `account_type ∈ {bank_statement, credit_card}` and `accountLabel.trim() === ""`, toast `"Account label is required for bank/credit card statements"` and abort.
-- After successful upload, clear `accountLabel` like the other form state.
-
-### 2. Per-account coverage rows
-
-New component: `src/components/wizard/shared/PerAccountCoverage.tsx`
-
-```tsx
-interface AccountGroup {
-  key: string;              // `${institution}::${account_label}` (lowercased)
-  institution: string;
-  accountLabel: string;     // "" → "Unlabeled"
-  docCount: number;
-  periodSources: { period_start: string|null; period_end: string|null }[];
-}
-
-interface Props {
-  groups: AccountGroup[];
-  effectivePeriods: Period[];
-  onBackfillClick?: (docIds: string[]) => void; // for unlabeled group
-  unlabeledDocIds?: string[];
-}
+### Bug 1 — Tax year 2025 picks a single month of unified_api data
+`processed_data` for `income_statement` / `balance_sheet` / `trial_balance` (source `unified_api`) stores **one row per month**. The resolver in `parse-tax-return/index.ts` (≈L1057-1067) does:
+```ts
+const inYear = rows.find(r => period_end inside 2025-01-01..2025-12-31)
 ```
+This picks the first matching row (a single month), then proceeds as if that month *were* the full year. That's why 2025 has only 3 comparisons and unrealistically high score=100 — most matchers find $0 and silently skip via `pushCompare` (comparisonValue === 0 → return).
 
-Renders one stacked row per group:
-- Left column (fixed ~220px): institution name + account label, doc count, % coverage badge.
-- Right column: a thinner `CoverageTimeline` bar (reuse `<CoverageTimeline coverageType="monthly" …>` per row, computed via `calculatePeriodCoverage(effectivePeriods, group.periodSources)`).
-- If a group's `accountLabel === ""` (legacy unlabeled docs), the row has a yellow "Needs labeling" badge and a small "Label accounts" button that opens the backfill dialog.
+### Bug 2 — qbtojson multi-year aggregates with non-null period_end fall through to `period_mismatch`
+For TB and GL the qbtojson row has `period_start = 2023-01-31`, `period_end = 2025-12-31` (multi-year). The aggregate branch (L1069) only matches `!r.period_end && source_type === 'qbtojson'`. So the resolver skips it and lands in branch (c) "period_mismatch", which discards GL/TB matching for the right year. That's the "Only out-of-year data available" diagnostic in 2023 + 2024.
 
-In `DocumentUploadSection.tsx`:
+### Bug 3 — UI doesn't auto-refetch after re-analyze if the invoke errors silently
+`handleReanalyzeTaxReturn` updates state only when `parseResult.analysis?.documentId` is present. If the edge function returns the bare object (current shape), the field is present, but if it ever returns `{ status:'queued' }` (e.g. the auto-reanalyze path), the card stays stale and shows yesterday's "Analyzed:" date.
 
-- When `selectedType` is `bank_statement` or `credit_card`, build groups from `filteredDocs` keyed by `${institution ?? "Unknown"}::${account_label ?? ""}` and render `<PerAccountCoverage … />` **instead of** the single `<CoverageTimeline />`. Keep the overall % badge in the card header but compute it as union of all groups (so "60% of months covered across all accounts"). Keep the existing QB-coverage badge logic unchanged (QB rows go into a single "QuickBooks (synced)" group).
-- For all other doc types, keep current single-timeline behavior — no visual change.
+## Plan
 
-### 3. Backfill UI for legacy unlabeled documents
+### 1. Resolver: prefer broadest year-coverage source (parse-tax-return/index.ts ~L1040-1088)
 
-New dialog: `src/components/wizard/shared/AccountLabelBackfillDialog.tsx`
+Replace the "pick first in_year" logic with:
 
-- Opens when the user clicks "Label accounts" on the unlabeled group, or from a new top-level alert banner that appears when `filteredDocs.some(d => ['bank_statement','credit_card'].includes(d.account_type) && !d.account_label)`.
-- Lists each unlabeled doc as a row: filename, institution, period range, and a required `<Input>` for the label. "Save all" updates `documents.account_label` for the selected rows via supabase, then refetches.
-- Banner copy: *"N bank/credit card document(s) are missing an account label. Per-account coverage requires this. Label them now →"*
+1. **Multi-row in_year aggregation** — collect *all* rows with `period_start..period_end` overlapping the tax year, then:
+   - For IS/cashflow-style (additive) data: merge by appending monthlyValues maps so the full year is summed.
+   - For BS (point-in-time): pick the row whose `period_end` is closest to (but ≤) `yearEnd`.
+2. **Treat any row spanning ≥ 11 months as `aggregate`** even when `period_end` is non-null (covers the qbtojson TB/GL case). Concretely:
+   ```ts
+   const isMultiYearAggregate = (r) =>
+     r.source_type === 'qbtojson' &&
+     (!r.period_end ||
+      monthsBetween(r.period_start, r.period_end) >= 11);
+   ```
+3. Keep the existing single-row in_year branch as a fallback only when no aggregation is possible.
 
-### 4. Document list table
+Expected effect:
+- 2025: IS/BS/TB stitched from 7 unified_api months + qbtojson aggregate fill → real year totals → meaningful variance for Gross Receipts, Officer Comp, Salaries, etc.
+- 2023/2024: GL/TB no longer flagged "period_mismatch"; matchers run against the qbtojson multi-year aggregate scoped to that year.
 
-In the document list table (around line 2387 where institution/label columns render), make the `account_label` cell render `<Badge variant="outline">Needs label</Badge>` instead of "-" for bank/CC docs without a label, with an inline edit icon that opens the same backfill dialog scoped to that single document.
+### 2. Don't silently drop deduction comparisons when the matcher hits one account with $0
 
-## Out of scope
+`pushCompare` skips on `comparisonValue === 0`. For deductions where the tax return reports a real number and the IS/GL shows $0, that's a *meaningful* variance (e.g. taxpayer claimed Officer Comp but the books show none). Emit it as a `review_only` row with note "Books show $0 for matched accounts" instead of silently dropping. (`parse-tax-return/index.ts` ~L1252-1257 + the deduction loop ~L1454-1463.)
 
-- No schema change. `documents.account_label` stays nullable so old rows aren't broken; required-ness is enforced at the UI for new uploads only.
-- DocuClipper auto-derivation of masked account numbers (option 2 from earlier) — can layer on later as a prefill default in the label field if `parsed_summary.account_number_masked` is present, but not part of this change.
-- No change to `bank_statement` / `credit_card` coverage math itself — same `calculatePeriodCoverage`, just applied per-group.
+### 3. Force a refetch after re-analyze (DocumentUploadSection.tsx ~L818-857)
 
-## Verification
+After `handleReanalyzeTaxReturn` finishes (success path or any returned object), call `fetchTaxReturnInsights()` to pull the freshest row from `processed_data` instead of relying on `parseResult.analysis`. Removes the "Analyzed: 6/4" stale-card case entirely.
 
-1. Upload a new bank statement with the label field empty → submit blocked with toast.
-2. Upload two Chase statements with different labels (e.g. "Operating ...4521" Jan–Jun, "Payroll ...8830" Mar–Dec) → coverage card shows two rows with independent timelines.
-3. On a project with pre-existing unlabeled bank docs → backfill banner appears, dialog lets user assign labels, rows then split correctly.
-4. Other doc types (Trial Balance, Tax Return, CIM) are visually unchanged.
+### 4. Smoke-test against the live project
+
+After redeploy, re-run `parse-tax-return` for all three documents on project `fa0768ca…` and verify:
+- 2025 produces >10 comparisons (was 3)
+- 2023/2024 source diagnostics flip TB + GL from `period_mismatch` → `aggregate`
+- Score is no longer 100 for 2025 once real account-level matching runs
+
+## Technical Details
+
+**Files**
+- `supabase/functions/parse-tax-return/index.ts` — resolver + zero-comparison handling
+- `src/components/wizard/sections/DocumentUploadSection.tsx` — refetch after re-analyze
+
+**Data assumptions verified via SQL**
+- `processed_data` for this project has 15 unified_api monthly IS rows (2025-06..2026-05), 15 monthly BS rows, 15 monthly TB rows; qbtojson aggregates exist for IS (array of 36 months), BS (array of 36), TB (`monthlyReports[36]`), GL (raw report shape).
+- canonical_transactions: not inspected in this debug pass; the existing `GL_SOURCE_TYPES` filter + `txn_date` range is unchanged.
+
+**Out of scope**
+- Re-architecting how unified_api stores monthly rows.
+- Changing the AI extraction prompt / Schedule K-L-M shape.
+- Cross-validation against `tax_return_analysis_v1` schema (per prior decision, tax return stays out of the normalized contract).

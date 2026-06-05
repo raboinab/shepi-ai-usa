@@ -3,40 +3,32 @@
  * and maps it into the `FixedAssetEntry[]` shape consumed by the workbook,
  * PDF, and XLSX export.
  *
- * Used by `loadDealDataWithPriorBalances` so uploads flow into the workbook
- * automatically when the user hasn't clicked "Import" in the wizard yet.
+ * Delegates shape detection to readNormalized() — handles both v1 envelopes
+ * (written by process-fixed-assets via normalizeAndPersist) and legacy rows.
  */
 import { supabase } from "@/integrations/supabase/client";
+import { readNormalized } from "@/lib/normalized-contracts";
 import type { FixedAssetEntry } from "@/lib/workbook-types";
 
-function mapAssets(raw: unknown): FixedAssetEntry[] {
-  const arr = Array.isArray(raw)
-    ? raw
-    : Array.isArray((raw as Record<string, unknown>)?.assets)
-      ? ((raw as Record<string, unknown>).assets as unknown[])
-      : null;
-  if (!arr) return [];
-  return arr.map((a) => {
-    const fa = a as Record<string, unknown>;
-    const cost = Number(fa.cost || fa.originalCost || 0);
-    const accumulatedDepreciation = Number(
-      fa.accumulatedDepreciation || fa.accumDepreciation || fa.accumDepr || 0
-    );
-    const nbvRaw = fa.netBookValue ?? fa.nbv;
-    const netBookValue = nbvRaw !== undefined ? Number(nbvRaw) : cost - accumulatedDepreciation;
-    return {
-      category: String(fa.category || ""),
-      description: String(fa.description || fa.name || ""),
-      acquisitionDate: String(fa.acquisitionDate || fa.dateAcquired || ""),
-      cost,
-      accumulatedDepreciation,
-      netBookValue,
-    };
-  });
+/** Map a processed_data row's `data` into FixedAssetEntry[]. */
+export function buildFixedAssetsFallbackFromProcessedData(
+  record: { data?: unknown } | null | undefined,
+): FixedAssetEntry[] {
+  if (!record?.data) return [];
+  const payload = readNormalized("fixed_assets", record.data);
+  if (!payload) return [];
+  return payload.assets.map((a) => ({
+    category: a.category,
+    description: a.description,
+    acquisitionDate: a.acquisitionDate ?? "",
+    cost: a.cost,
+    accumulatedDepreciation: a.accumulatedDepreciation,
+    netBookValue: a.netBookValue,
+  }));
 }
 
 export async function fetchLatestFixedAssetsFallback(
-  projectId: string
+  projectId: string,
 ): Promise<FixedAssetEntry[]> {
   const { data, error } = await supabase
     .from("processed_data")
@@ -47,6 +39,5 @@ export async function fetchLatestFixedAssetsFallback(
     .limit(1)
     .maybeSingle();
   if (error || !data) return [];
-  const extracted = (data.data as Record<string, unknown> | null)?.extractedData;
-  return mapAssets(extracted);
+  return buildFixedAssetsFallbackFromProcessedData(data);
 }

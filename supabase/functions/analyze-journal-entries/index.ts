@@ -79,7 +79,10 @@ serve(async (req) => {
     if (Array.isArray(raw)) entries = raw as QBOJournalEntry[];
     else if (raw && typeof raw === "object") {
       const obj = raw as Record<string, unknown>;
-      entries = (obj.entries || obj.journalEntries || obj.rows || []) as QBOJournalEntry[];
+      // v1 normalized envelope writes entries under payload.entries
+      const payloadEntries = (obj.payload as Record<string, unknown> | undefined)?.entries;
+      // Legacy upload_parse shape wrote them under data
+      entries = (payloadEntries ?? obj.entries ?? obj.journalEntries ?? obj.rows ?? obj.data ?? []) as QBOJournalEntry[];
       if (!Array.isArray(entries)) entries = [];
     }
     console.log(`[ANALYZE-JE] Found ${entries.length} journal entries`);

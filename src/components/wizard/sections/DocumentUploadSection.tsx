@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { parseLocalDate } from "@/lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -257,6 +257,8 @@ const SUPPORTING_TYPES = [
   { value: "accounts_payable", label: "Accounts Payable" },
   { value: "customer_concentration", label: "Customer Concentration" },
   { value: "vendor_concentration", label: "Vendor Concentration" },
+  { value: "sales_by_customer_monthly", label: "Sales by Customer (Monthly Columns)" },
+  { value: "expenses_by_vendor_monthly", label: "Expenses by Vendor (Monthly Columns)" },
   { value: "payroll", label: "Payroll Reports" },
   { value: "depreciation_schedule", label: "Depreciation Schedule" },
   { value: "fixed_asset_register", label: "Fixed Asset Register" },
@@ -286,6 +288,29 @@ const DOC_TYPE_GROUPS = [
   { label: "Supporting", items: SUPPORTING_TYPES },
 ];
 
+// Financial-statement doc types that require a reporting period at upload time
+const FS_PERIOD_TYPES = ['balance_sheet', 'income_statement', 'cash_flow'] as const;
+const isFsPeriodType = (t: string | null | undefined) =>
+  !!t && (FS_PERIOD_TYPES as readonly string[]).includes(t);
+
+const MONTH_OPTIONS = [
+  { value: 1, label: 'Jan' }, { value: 2, label: 'Feb' }, { value: 3, label: 'Mar' },
+  { value: 4, label: 'Apr' }, { value: 5, label: 'May' }, { value: 6, label: 'Jun' },
+  { value: 7, label: 'Jul' }, { value: 8, label: 'Aug' }, { value: 9, label: 'Sep' },
+  { value: 10, label: 'Oct' }, { value: 11, label: 'Nov' }, { value: 12, label: 'Dec' },
+];
+
+// Returns ISO yyyy-mm-dd for first and last day of a given (year, month 1-12)
+const computeMonthEndpoints = (year: number, month: number) => {
+  const mm = String(month).padStart(2, '0');
+  const lastDay = new Date(year, month, 0).getDate();
+  return {
+    periodStart: `${year}-${mm}-01`,
+    periodEnd: `${year}-${mm}-${String(lastDay).padStart(2, '0')}`,
+  };
+};
+
+
 // Coverage configuration by document type
 const DOCUMENT_COVERAGE_CONFIG: Record<string, DocumentCoverageConfig> = {
   // No coverage UI
@@ -305,7 +330,7 @@ const DOCUMENT_COVERAGE_CONFIG: Record<string, DocumentCoverageConfig> = {
   
   // Monthly/Quarterly (financials)
   trial_balance: { type: 'monthly', label: 'Period Coverage', description: 'Trial balance for each reporting period' },
-  balance_sheet: { type: 'point-in-time', label: 'As-of Date', description: 'Balance sheet snapshot as of the reporting date' },
+  balance_sheet: { type: 'monthly', label: 'Period Coverage', description: 'Balance sheet snapshot for each reporting period (month-end)' },
   income_statement: { type: 'monthly', label: 'Period Coverage', description: 'P&L for each reporting period' },
   cash_flow: { type: 'monthly', label: 'Period Coverage', description: 'Cash flow for each reporting period' },
   
@@ -318,6 +343,8 @@ const DOCUMENT_COVERAGE_CONFIG: Record<string, DocumentCoverageConfig> = {
   accounts_payable: { type: 'point-in-time', label: 'Point-in-Time', description: 'Snapshot as of a specific date' },
   customer_concentration: { type: 'point-in-time', label: 'Point-in-Time', description: 'Concentration analysis per year or latest' },
   vendor_concentration: { type: 'point-in-time', label: 'Point-in-Time', description: 'Concentration analysis per year or latest' },
+  sales_by_customer_monthly: { type: 'monthly', label: 'Monthly Coverage', description: 'QB "Sales by Customer Summary" with monthly columns — enables churn & trend analytics' },
+  expenses_by_vendor_monthly: { type: 'monthly', label: 'Monthly Coverage', description: 'QB "Expenses by Vendor Summary" with monthly columns — enables churn & trend analytics' },
   
   // Payroll - treat as monthly
   payroll: { type: 'monthly', label: 'Period Coverage', description: 'Payroll reports for each period' },
@@ -374,6 +401,7 @@ const getAcceptedFileTypes = (docType: string): string => {
   if (docType === 'trial_balance') return '.xlsx,.xls,.csv,.pdf';
   if (docType === 'journal_entries') return '.xlsx,.xls,.csv'; // No PDF - parsing unreliable
   if (docType === 'general_ledger') return '.xlsx,.xls,.csv'; // No PDF - structured data only
+  if (docType === 'sales_by_customer_monthly' || docType === 'expenses_by_vendor_monthly') return '.xlsx,.xls,.csv';
   if (isQuickBooksType(docType)) return '.xlsx,.xls,.csv,.pdf';
   return '.pdf,.xlsx,.xls,.csv,.docx,.doc';
 };
@@ -385,6 +413,7 @@ const getFileTypeLabel = (docType: string): string => {
   if (docType === 'trial_balance') return 'Excel, CSV, or PDF files';
   if (docType === 'journal_entries') return 'Excel or CSV files only';
   if (docType === 'general_ledger') return 'Excel or CSV files only';
+  if (docType === 'sales_by_customer_monthly' || docType === 'expenses_by_vendor_monthly') return 'Excel or CSV files only';
   if (isQuickBooksType(docType)) return 'Excel, CSV, or PDF files';
   return 'PDF, Excel, CSV, or Word files';
 };
@@ -415,12 +444,18 @@ export const DocumentUploadSection = ({
   const [parsingCim, setParsingCim] = useState(false);
   const [taxReturnInsights, setTaxReturnInsights] = useState<TaxReturnAnalysis[]>([]);
   const [parsingTaxReturn, setParsingTaxReturn] = useState(false);
+  const autoReanalyzedDocsRef = useRef<Set<string>>(new Set());
+
   const [payrollAnalysis, setPayrollAnalysis] = useState<{ docName: string; data: PayrollAnalysisData }[]>([]);
   const [glAnalysis, setGlAnalysis] = useState<{ docName: string; data: GLAnalysisData }[]>([]);
   const [jeAnalysis, setJeAnalysis] = useState<{ docName: string; data: JEAnalysisData }[]>([]);
   const [isValidating, setIsValidating] = useState(false);
   const [validationDialogOpen, setValidationDialogOpen] = useState(false);
   const [selectedTaxYear, setSelectedTaxYear] = useState<number | null>(null);
+  const [selectedFsPeriod, setSelectedFsPeriod] = useState<{ year: number; month: number } | null>(null);
+  const [fsBackfillDoc, setFsBackfillDoc] = useState<Document | null>(null);
+  const [fsBackfillPeriod, setFsBackfillPeriod] = useState<{ year: number; month: number } | null>(null);
+  const [savingFsBackfill, setSavingFsBackfill] = useState(false);
   const [pendingValidation, setPendingValidation] = useState<{
     file: File;
     result: ValidationResult;
@@ -780,6 +815,76 @@ export const DocumentUploadSection = ({
     }
   };
 
+  const handleReanalyzeTaxReturn = async (documentId: string, opts?: { silent?: boolean }) => {
+    const silent = !!opts?.silent;
+    try {
+      const { data: parseResult, error: parseError } = await supabase.functions.invoke('parse-tax-return', {
+        body: { documentId, projectId },
+      });
+      if (parseError) {
+        if (silent) {
+          console.warn("Silent re-analyze failed:", parseError);
+          return;
+        }
+        if (parseError.message?.includes('429')) {
+          toast.error("Rate limit exceeded. Please try again in a few minutes.");
+        } else if (parseError.message?.includes('402')) {
+          toast.error("AI credits exhausted. Please add funds to continue.");
+        } else {
+          toast.error("Failed to re-analyze tax return");
+        }
+        return;
+      }
+      // Edge function returns the analysis object directly; tolerate either shape.
+      const newAnalysis: TaxReturnAnalysis | undefined = parseResult?.analysis ?? parseResult;
+      if (newAnalysis && newAnalysis.documentId) {
+        setTaxReturnInsights(prev => {
+          const existing = prev.findIndex(a => a.documentId === documentId);
+          if (existing >= 0) {
+            const updated = [...prev];
+            updated[existing] = newAnalysis;
+            return updated;
+          }
+          return [...prev, newAnalysis];
+        });
+      }
+      // Always refetch from processed_data so the card reflects the freshest stored
+      // analysis (covers async/queued returns and any post-write enrichment).
+      await fetchTaxReturnInsights();
+      if (!silent) toast.success("Tax return re-analyzed with latest data.");
+
+    } catch (err) {
+      console.warn("Re-analyze tax return failed:", err);
+      if (!silent) toast.error("Failed to re-analyze tax return");
+
+    }
+  };
+
+  // Auto-reanalyze stale tax-return cards (pre-rewrite results have overallScore === -1
+  // or are missing analysisDiagnostics). Runs once per documentId per session.
+  useEffect(() => {
+    const stale = taxReturnInsights.filter((a) => {
+      if (!a?.documentId) return false;
+      if (autoReanalyzedDocsRef.current.has(a.documentId)) return false;
+      const isStaleScore = a.overallScore === null || (a.overallScore as number) < 0;
+      const missingDiagnostics = !a.analysisDiagnostics;
+      return isStaleScore || missingDiagnostics;
+    });
+    if (stale.length === 0) return;
+    // Mark all as in-flight up front so we don't loop on state updates
+    stale.forEach((a) => autoReanalyzedDocsRef.current.add(a.documentId));
+    // Sequential to avoid hammering the edge function / rate limits
+    (async () => {
+      for (const a of stale) {
+        await handleReanalyzeTaxReturn(a.documentId, { silent: true });
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taxReturnInsights]);
+
+
+
+
   const fetchPayrollAnalysis = async () => {
     try {
       const { data, error } = await supabase
@@ -1007,6 +1112,10 @@ export const DocumentUploadSection = ({
           if (docType === "tax_return" && selectedTaxYear) {
             periodStart = `${selectedTaxYear}-01-01`;
             periodEnd = `${selectedTaxYear}-12-31`;
+          } else if (isFsPeriodType(docType) && selectedFsPeriod) {
+            const ep = computeMonthEndpoints(selectedFsPeriod.year, selectedFsPeriod.month);
+            periodStart = ep.periodStart;
+            periodEnd = ep.periodEnd;
           }
 
           // Create document record
@@ -1134,6 +1243,40 @@ export const DocumentUploadSection = ({
               }).catch((fnError) => {
                 console.warn("QuickBooks processing call failed:", fnError);
               });
+
+              // Customer/Vendor Concentration QB exports also carry monthly columns.
+              // qbToJson's concentration endpoints collapse to annual totals only, so we
+              // additionally parse the raw file client-side to populate the Monthly Trends
+              // & Churn panel (which reads sales_by_customer_monthly / expenses_by_vendor_monthly).
+              if (docType === "customer_concentration" || docType === "vendor_concentration") {
+                (async () => {
+                  try {
+                    const { parseMonthlySummary } = await import("@/lib/parsers/parseMonthlySummary");
+                    const parsed = await parseMonthlySummary(file);
+                    if (parsed.months.length < 2) return;
+                    const expectedType = docType === "customer_concentration" ? "customer" : "vendor";
+                    if (parsed.entityType !== expectedType) return;
+                    const monthlyDataType = docType === "customer_concentration"
+                      ? "sales_by_customer_monthly"
+                      : "expenses_by_vendor_monthly";
+                    await supabase.from('processed_data').insert({
+                      project_id: projectId,
+                      user_id: user.id,
+                      source_type: 'qbtojson',
+                      data_type: monthlyDataType,
+                      source_document_id: insertedDoc.id,
+                      period_start: parsed.periodStart,
+                      period_end: parsed.periodEnd,
+                      data: parsed as any,
+                      record_count: parsed.rows.length,
+                      validation_status: 'pending',
+                    });
+                    toast.success("Monthly trends ready — open Top Customers → Monthly Trends.", { duration: 5000 });
+                  } catch (mErr) {
+                    console.warn("Monthly summary parse (concentration upload) failed:", mErr);
+                  }
+                })();
+              }
             } else if (docType === "tax_return") {
               localStorage.setItem(`tax-parsing-${projectId}`, "true");
               setParsingTaxReturn(true);
@@ -1215,6 +1358,45 @@ export const DocumentUploadSection = ({
                 console.warn("Debt schedule processing failed:", debtError);
                 await supabase.from('documents').update({ processing_status: "failed" }).eq('id', insertedDoc.id);
                 toast.error("Failed to process debt schedule");
+              }
+            } else if (docType === "sales_by_customer_monthly" || docType === "expenses_by_vendor_monthly") {
+              await supabase.from('documents').update({ processing_status: "processing" }).eq('id', insertedDoc.id);
+              try {
+                const { parseMonthlySummary } = await import("@/lib/parsers/parseMonthlySummary");
+                const parsed = await parseMonthlySummary(file);
+                const expectedType = docType === "sales_by_customer_monthly" ? "customer" : "vendor";
+                if (parsed.entityType !== expectedType) {
+                  throw new Error(`File looks like a ${parsed.entityType} report but was uploaded as ${expectedType}.`);
+                }
+                await supabase.from('documents').update({
+                  processing_status: "completed",
+                  period_start: parsed.periodStart,
+                  period_end: parsed.periodEnd,
+                  extracted_data: parsed as any,
+                  parsed_summary: {
+                    entityType: parsed.entityType,
+                    monthCount: parsed.months.length,
+                    entityCount: parsed.rows.length,
+                    grandTotal: parsed.grandTotal,
+                  },
+                }).eq('id', insertedDoc.id);
+                await supabase.from('processed_data').insert({
+                  project_id: projectId,
+                  user_id: user.id,
+                  source_type: 'upload',
+                  data_type: docType,
+                  source_document_id: insertedDoc.id,
+                  period_start: parsed.periodStart,
+                  period_end: parsed.periodEnd,
+                  data: parsed as any,
+                  record_count: parsed.rows.length,
+                  validation_status: 'pending',
+                });
+                toast.success(`Parsed ${parsed.rows.length} ${expectedType}s × ${parsed.months.length} months — open Top ${expectedType === 'customer' ? 'Customers' : 'Vendors'} for trends & churn.`, { duration: 6000 });
+              } catch (mErr) {
+                console.warn("Monthly summary parsing failed:", mErr);
+                await supabase.from('documents').update({ processing_status: "failed" }).eq('id', insertedDoc.id);
+                toast.error(`Failed to parse monthly summary: ${(mErr as Error).message}`);
               }
             } else if (docType === "journal_entries") {
               await supabase.from('documents').update({ processing_status: "processing" }).eq('id', insertedDoc.id);
@@ -1447,6 +1629,7 @@ export const DocumentUploadSection = ({
       setAccountLabel("");
       setDocDescription("");
       setSelectedTaxYear(null);
+      setSelectedFsPeriod(null);
       
       // Reset file input
       const fileInput = document.getElementById("file-upload") as HTMLInputElement;
@@ -1959,6 +2142,7 @@ export const DocumentUploadSection = ({
                     <TaxReturnInsightsCard 
                       key={analysis.documentId}
                       analysis={analysis}
+                      onReanalyze={handleReanalyzeTaxReturn}
                     />
                   ))}
                 </div>
@@ -2235,7 +2419,54 @@ export const DocumentUploadSection = ({
                   </div>
                 )}
 
-                {/* Supporting Documents description */}
+                {/* Reporting Period - for Balance Sheet / P&L / Cash Flow */}
+                {isFsPeriodType(type.value) && (
+                  <div className="space-y-2">
+                    <Label>Reporting Period <span className="text-destructive">*</span></Label>
+                    <div className="flex gap-2">
+                      <Select
+                        value={selectedFsPeriod?.month?.toString() || ""}
+                        onValueChange={(v) =>
+                          setSelectedFsPeriod((prev) => ({
+                            year: prev?.year ?? (availableTaxYears[0] || new Date().getFullYear()),
+                            month: parseInt(v),
+                          }))
+                        }
+                      >
+                        <SelectTrigger className="w-32">
+                          <SelectValue placeholder="Month" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {MONTH_OPTIONS.map((m) => (
+                            <SelectItem key={m.value} value={m.value.toString()}>{m.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Select
+                        value={selectedFsPeriod?.year?.toString() || ""}
+                        onValueChange={(v) =>
+                          setSelectedFsPeriod((prev) => ({
+                            year: parseInt(v),
+                            month: prev?.month ?? new Date().getMonth() + 1,
+                          }))
+                        }
+                      >
+                        <SelectTrigger className="w-32">
+                          <SelectValue placeholder="Year" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availableTaxYears.map((y) => (
+                            <SelectItem key={y} value={y.toString()}>{y}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Select the month this {type.value === 'balance_sheet' ? 'Balance Sheet snapshot' : type.value === 'income_statement' ? 'P&L' : 'Cash Flow'} covers. Upload one file per month.
+                    </p>
+                  </div>
+                )}
+
                 {type.value === "supporting_documents" && (
                   <>
                     <Alert className="border-accent/30 bg-accent/5">
@@ -2330,7 +2561,7 @@ export const DocumentUploadSection = ({
 
                 <Button
                   onClick={handleUpload}
-                  disabled={uploading || isValidating || !selectedFiles || (type.value === "cim" && parsingCim) || (type.value === "tax_return" && !selectedTaxYear) || (type.value === "trial_balance" && !coaReadiness.ready)}
+                  disabled={uploading || isValidating || !selectedFiles || (type.value === "cim" && parsingCim) || (type.value === "tax_return" && !selectedTaxYear) || (isFsPeriodType(type.value) && !selectedFsPeriod) || (type.value === "trial_balance" && !coaReadiness.ready)}
                   className="w-full"
                 >
                   {isValidating ? (
@@ -2473,9 +2704,40 @@ export const DocumentUploadSection = ({
                             </TableCell>
                           )}
                           <TableCell>
-                            {doc.period_start && doc.period_end
-                              ? `${formatDate(doc.period_start)} - ${formatDate(doc.period_end)}`
-                              : "-"}
+                            {doc.period_start && doc.period_end ? (
+                              <span className="inline-flex items-center gap-1">
+                                {`${formatDate(doc.period_start)} - ${formatDate(doc.period_end)}`}
+                                {isFsPeriodType(doc.account_type) && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-5 w-5"
+                                    onClick={() => {
+                                      const d = parseLocalDate(doc.period_start!);
+                                      setFsBackfillDoc(doc);
+                                      setFsBackfillPeriod({ year: d.getFullYear(), month: d.getMonth() + 1 });
+                                    }}
+                                  >
+                                    <Pencil className="h-3 w-3" />
+                                  </Button>
+                                )}
+                              </span>
+                            ) : isFsPeriodType(doc.account_type) ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-6 text-[10px] gap-1 border-yellow-500 text-yellow-700 dark:text-yellow-400"
+                                onClick={() => {
+                                  setFsBackfillDoc(doc);
+                                  setFsBackfillPeriod({
+                                    year: availableTaxYears[0] || new Date().getFullYear(),
+                                    month: new Date().getMonth() + 1,
+                                  });
+                                }}
+                              >
+                                <AlertCircle className="h-3 w-3" /> Set period
+                              </Button>
+                            ) : "-"}
                           </TableCell>
                           <TableCell>{getStatusBadge(doc.processing_status)}</TableCell>
                           <TableCell className="text-right">
@@ -2601,6 +2863,67 @@ export const DocumentUploadSection = ({
         docs={backfillDocs ?? []}
         onSaved={() => { setBackfillDocs(null); fetchDocuments(); }}
       />
+
+      <AlertDialog open={!!fsBackfillDoc} onOpenChange={(open) => { if (!open) { setFsBackfillDoc(null); setFsBackfillPeriod(null); } }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Set reporting period</AlertDialogTitle>
+            <AlertDialogDescription>
+              Pick the month this {fsBackfillDoc?.account_type === 'balance_sheet' ? 'Balance Sheet' : fsBackfillDoc?.account_type === 'income_statement' ? 'Income Statement' : 'Cash Flow'} covers. The coverage timeline will update immediately.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex gap-2 py-2">
+            <Select
+              value={fsBackfillPeriod?.month?.toString() || ""}
+              onValueChange={(v) => setFsBackfillPeriod((p) => ({ year: p?.year ?? (availableTaxYears[0] || new Date().getFullYear()), month: parseInt(v) }))}
+            >
+              <SelectTrigger className="w-32"><SelectValue placeholder="Month" /></SelectTrigger>
+              <SelectContent>
+                {MONTH_OPTIONS.map((m) => (<SelectItem key={m.value} value={m.value.toString()}>{m.label}</SelectItem>))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={fsBackfillPeriod?.year?.toString() || ""}
+              onValueChange={(v) => setFsBackfillPeriod((p) => ({ year: parseInt(v), month: p?.month ?? new Date().getMonth() + 1 }))}
+            >
+              <SelectTrigger className="w-32"><SelectValue placeholder="Year" /></SelectTrigger>
+              <SelectContent>
+                {availableTaxYears.map((y) => (<SelectItem key={y} value={y.toString()}>{y}</SelectItem>))}
+              </SelectContent>
+            </Select>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={savingFsBackfill}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!fsBackfillPeriod || !fsBackfillDoc || savingFsBackfill}
+              onClick={async (e) => {
+                e.preventDefault();
+                if (!fsBackfillPeriod || !fsBackfillDoc) return;
+                setSavingFsBackfill(true);
+                try {
+                  const ep = computeMonthEndpoints(fsBackfillPeriod.year, fsBackfillPeriod.month);
+                  const { error } = await supabase
+                    .from('documents')
+                    .update({ period_start: ep.periodStart, period_end: ep.periodEnd })
+                    .eq('id', fsBackfillDoc.id);
+                  if (error) throw error;
+                  toast.success("Reporting period saved");
+                  setFsBackfillDoc(null);
+                  setFsBackfillPeriod(null);
+                  fetchDocuments();
+                } catch (err: any) {
+                  toast.error(`Failed to save: ${err?.message || 'unknown error'}`);
+                } finally {
+                  setSavingFsBackfill(false);
+                }
+              }}
+            >
+              {savingFsBackfill ? 'Saving…' : 'Save'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </div>
 
   );

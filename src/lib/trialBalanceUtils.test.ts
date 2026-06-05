@@ -69,4 +69,23 @@ describe("Trial Balance — leaf-name collision", () => {
     // Each TB account matched its own COA partner (no cross-contamination)
     expect(accounts).toHaveLength(2);
   });
+
+  it("mergeAccounts keeps rows distinct when accountNumber is shared but qbAccountId is absent", () => {
+    // QB reuses the parent's accountNumber on sub-accounts. Without qbAccountId,
+    // the key must still disambiguate by name+type+subtype.
+    const a: TrialBalanceAccount = {
+      id: "a", fsType: "IS", accountNumber: "90050",
+      accountName: "Job Expenses:Equipment Rental",
+      accountType: "Operating expenses", accountSubtype: "OtherMiscellaneousServiceCost",
+      fsLineItem: "", monthlyValues: { p1: 100 },
+    };
+    const b: TrialBalanceAccount = {
+      id: "b", fsType: "IS", accountNumber: "90050",
+      accountName: "Job Expenses:Job Materials",
+      accountType: "Operating expenses", accountSubtype: "OtherMiscellaneousServiceCost",
+      fsLineItem: "", monthlyValues: { p1: 200 },
+    };
+    const merged = mergeAccounts([], [a, b]);
+    expect(merged).toHaveLength(2);
+  });
 });

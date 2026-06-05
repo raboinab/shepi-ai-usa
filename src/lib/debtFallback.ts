@@ -3,30 +3,30 @@
  * into the `SupplementaryDebtItem[]` shape consumed by the workbook
  * Supplementary tab + insights.
  *
- * Mirrors payrollFallback / fixedAssetsFallback. Used by
- * loadDealDataWithPriorBalances so an uploaded debt schedule flows into the
- * workbook automatically when the wizard's Supplementary section is empty.
+ * Delegates shape detection to readNormalized() — handles both v1 envelopes
+ * and legacy rows.
  */
 import { supabase } from "@/integrations/supabase/client";
+import { readNormalized } from "@/lib/normalized-contracts";
 import type { SupplementaryDebtItem } from "@/lib/workbook-types";
 
-/** Map a processed_data row's `data.debts[]` into SupplementaryDebtItem[]. */
+/** Map a processed_data row's `data` into SupplementaryDebtItem[]. */
 export function buildDebtFallbackFromProcessedData(
-  record: { data?: unknown } | null | undefined
+  record: { data?: unknown } | null | undefined,
 ): SupplementaryDebtItem[] {
-  const data = record?.data as Record<string, unknown> | undefined;
-  if (!data) return [];
-  const raw = Array.isArray(data.debts) ? (data.debts as Record<string, unknown>[]) : [];
+  if (!record?.data) return [];
+  const payload = readNormalized("debt_schedule", record.data);
+  if (!payload) return [];
   const items: SupplementaryDebtItem[] = [];
-  for (const d of raw) {
-    const lender = String(d.lender || "").trim();
+  for (const d of payload.debts) {
+    const lender = d.lender.trim();
     if (!lender) continue;
-    const facilityType = d.facilityType ? String(d.facilityType) : "";
+    const facilityType = d.facilityType ?? "";
     items.push({
       lender: facilityType ? `${lender} - ${facilityType}` : lender,
-      balance: Number(d.currentBalance ?? d.balance ?? 0),
-      interestRate: Number(d.interestRate ?? 0),
-      maturityDate: d.maturityDate ? String(d.maturityDate) : "",
+      balance: d.currentBalance,
+      interestRate: d.interestRate ?? 0,
+      maturityDate: d.maturityDate ?? "",
       type: facilityType || undefined,
     });
   }
@@ -35,7 +35,7 @@ export function buildDebtFallbackFromProcessedData(
 
 /** Fetch the most recent debt-schedule extraction for a project. */
 export async function fetchLatestDebtFallback(
-  projectId: string
+  projectId: string,
 ): Promise<SupplementaryDebtItem[]> {
   const { data, error } = await supabase
     .from("processed_data")

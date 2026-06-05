@@ -18,8 +18,10 @@ export interface TrialBalanceAccount {
   subAccount1?: string; // Sub-account hierarchy level 1
   subAccount2?: string; // Sub-account hierarchy level 2
   qbAccountId?: string; // QuickBooks internal account Id (primary discriminator)
+  fullyQualifiedName?: string; // QB FQN ("Parent:Child") — disambiguates leaf-name collisions
   monthlyValues: Record<string, number>; // periodId -> value
 }
+
 
 export interface TrialBalanceSummary {
   bsTotal: number;
@@ -284,6 +286,7 @@ interface QbTrialBalanceRow {
   accountType?: string;
   subAccountType?: string;
   qbAccountId?: string; // QuickBooks internal Id from colData[0].id
+  fullyQualifiedName?: string; // QB FQN — disambiguates leaf-name collisions
   debit?: number;
   credit?: number;
   balance?: number;
@@ -297,6 +300,7 @@ interface QbTrialBalanceRow {
   subAccount3?: string;
   _matchedFromCOA?: boolean;
 }
+
 
 // Raw QB API format with colData arrays
 interface QbRawColData {
@@ -459,11 +463,25 @@ function processRows(
   accountMap: Map<string, TrialBalanceAccount>
 ): void {
   for (const row of rows) {
-    // Key priority: QB internal Id > accountName > accountNumber.
-    // QB Id is unique per account; accountName alone collides for distinct
-    // accounts sharing a leaf (e.g. "Equipment Rental" root vs sub-account).
-    const accountKey = row.qbAccountId || row.accountName || row.accountNumber || '';
+    // Bucket key priority (mirrors supabase/functions/_shared/tbAggregation.ts):
+    //   1. qbAccountId             — true unique discriminator
+    //   2. fullyQualifiedName      — Parent:Child path
+    //   3. composite               — accountNumber + name + type + subtype
+    // NOTE: accountNumber alone is NOT unique — QB reuses the parent's number
+    // on every sub-account (e.g. 90050 covers Job Materials + 5 children +
+    // Equipment Rental). Bare leaf-name bucketing is also forbidden (it merged
+    // Unapplied Cash A/R vs A/P, Job Materials Income vs Expense, etc.).
+    const _num = row.accountNumber || '';
+    const _nm = (row.accountName || '').toLowerCase();
+    const _ty = (row.accountType || '').toLowerCase();
+    const _sub = (row.accountSubtype || row.subAccountType || '').toLowerCase();
+    const accountKey =
+      (row.qbAccountId && `id:${row.qbAccountId}`) ||
+      (row.fullyQualifiedName && `fqn:${row.fullyQualifiedName.toLowerCase()}`) ||
+      ((_nm || _num) && `c:${_num}|${_nm}|${_ty}|${_sub}`) ||
+      '';
     if (!accountKey) continue;
+
     
     let account = accountMap.get(accountKey);
     if (!account) {
@@ -481,12 +499,14 @@ function processRows(
         // Use backend-provided fsLineItem only - empty = bug visible
         fsLineItem: row.fsLineItem || '',
         qbAccountId: row.qbAccountId || undefined,
+        fullyQualifiedName: row.fullyQualifiedName || undefined,
         monthlyValues: {},
         // Preserve match flag if present
         ...(row._matchedFromCOA !== undefined && { _matchedFromCOA: row._matchedFromCOA }),
       } as TrialBalanceAccount;
       accountMap.set(accountKey, account);
     }
+
     
     // Calculate value: prefer explicit balance, then debit-credit, then colData extraction
     let value = row.balance;
@@ -514,8 +534,22 @@ export function mergeAccounts(
 ): TrialBalanceAccount[] {
   const accountMap = new Map<string, TrialBalanceAccount>();
   
-  const keyOf = (a: TrialBalanceAccount) =>
-    a.qbAccountId || a.accountName || a.accountNumber;
+  // Same priority as processRows. accountNumber is NOT unique (QB reuses the
+  // parent's number on sub-accounts), so it's only used as part of a composite.
+  const keyOf = (a: TrialBalanceAccount) => {
+    const num = a.accountNumber || '';
+    const nm = (a.accountName || '').toLowerCase();
+    const ty = (a.accountType || '').toLowerCase();
+    const sub = (a.accountSubtype || '').toLowerCase();
+    return (
+      (a.qbAccountId && `id:${a.qbAccountId}`) ||
+      (a.fullyQualifiedName && `fqn:${a.fullyQualifiedName.toLowerCase()}`) ||
+      ((nm || num) && `c:${num}|${nm}|${ty}|${sub}`) ||
+      ''
+    );
+  };
+
+
   
   // Add existing accounts to map
   for (const account of existing) {
