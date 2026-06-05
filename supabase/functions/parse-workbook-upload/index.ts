@@ -41,7 +41,7 @@ interface MetaSheet {
   projectId: string;
   exportedFromRevision: number;
   exportedAt: string;
-  periods: { id: string; label: string }[];
+  periods: { id: string; label: string; shortLabel: string }[];
   adjustmentDirectory: { id: string; type: string; label: string }[];
   snapshot: WorkbookBaseSnapshot;
 }
