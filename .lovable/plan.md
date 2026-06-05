@@ -1,90 +1,136 @@
 ## Goal
 
-Close the remaining gaps so `parse-tax-return` produces the same comparison set regardless of whether a project's financial data came from uploaded documents, `qbtojson`, or `quickbooks_api` / `unified_api`. Then verify against the 3 returns already stored for project `fa0768ca-…be3ede` (2023, 2024, 2025).
+Move every AI-extraction edge function to a **shared normalization contract** so frontend code, fallbacks, exports, and analyzers (parse-tax-return, workbook builders, PDF) read one well-known shape per `data_type` — not 11 ad-hoc shapes glued together by per-feature mappers.
 
-## What already works
+## Why now
 
-- qbtojson **Income Statement** and **Balance Sheet** are normalized at read time via `maybeNormalizeQbData` → comparisons fire correctly.
-- `skippedFields` is populated for most no-match branches and rendered in `TaxReturnInsightsCard`.
-- Year-scoped GL aggregation from `canonical_transactions` (when present) feeds P&L matchers.
+Today every parser writes its own bespoke JSON under `processed_data.data.extractedData`:
 
-## What's still broken or incomplete
+| `data_type` | Parser | Output shape (today) |
+|---|---|---|
+| `fixed_assets` | `process-fixed-assets` | `{ extractedData: { assets: [{cost\|originalCost, accumDepreciation\|accumulatedDepreciation, …}], totals }, confidence, warnings }` |
+| `payroll` | `process-payroll-document` | `{ extractedData: { salaryWages, ownerCompensation, payrollTaxes, benefits } }` |
+| `debt_schedule` | `process-debt-schedule` | ad-hoc `{ extractedData: { loans: […] } }` |
+| `inventory` | `process-inventory-report` | ad-hoc |
+| `lease_agreement` | `process-lease-agreement` | ad-hoc |
+| `material_contract` | `process-material-contract` | ad-hoc |
+| `cim_insights` | `parse-cim` | ad-hoc |
+| `journal_entries` | `process-journal-entries` | ad-hoc |
+| `supporting_document` | `process-supporting-document` | ad-hoc |
+| `tax_return_analysis` | `extract-document-text` | ad-hoc (detectedType-based) |
 
-1. **qbtojson Cash Flow** is never normalized. No comparison reads it today, but the helper is missing from the "all sources work" claim.
-2. **qbtojson Trial Balance** is never normalized. `wizardData.trialBalance` / `processedData.trial_balance` is consulted by some BS fallbacks (`getBsEoyByMatcher` only reads `balance_sheet`, but several callers in the wizard chain pass TB through). On a TB-only project, every BS comparison silently skips.
-3. **GL fallback for qbtojson-only projects**: when `canonical_transactions` has no rows for the year, `hasGL = false` and every P&L matcher in the loop at line 1286 falls through to `{total: 0}` and emits a skip. We already have monthly IS account data after normalization — we should synthesize a pseudo-GL aggregate (`{name → abs total}`) from the normalized IS so `matchAccounts` works without `canonical_transactions`.
-4. **quickbooks_api / unified_api shape probe**: `maybeNormalizeQbData` early-returns whenever `sourceType !== "qbtojson"`. If those rows happen to land in the raw QB Reports shape (which they often do — the unified API proxies QB reports), they bypass normalization. Detect raw shape regardless of `source_type` label.
-5. **Distributions / M-2 regression guard** — already added but worth re-verifying on 2025 once items 3–4 land.
+Each of those has a sibling `src/lib/<x>Fallback.ts` that re-normalizes on read (`fixedAssetsFallback.ts`, `payrollFallback.ts`, `debtFallback.ts`, etc.). When a parser's output drifts, downstream breaks silently — exactly what happened with `parse-tax-return` for qbtojson shapes.
 
-## Changes
+`source_type` values are also a free-text mess: `ai_extraction`, `ai_classification`, `ai_fixed_assets_extraction`, `ai_payroll_extraction`, `upload_parse`, `derived_from_gl`, `gl_analysis`, `je_analysis`, etc. — no enum, no convention.
 
-All edits live in `supabase/functions/parse-tax-return/index.ts`. No DB schema changes. No ingestion changes.
+## Strategy
 
-### 1. Add two normalizers next to the existing pair
+Three pieces, shipped in this order. **No DB schema migration is required** for steps 1 and 2 — we use the existing `processed_data.data` JSONB column.
 
-- `normalizeQbCashFlowMonthly(months)` → `{ operating: NormalizedSection, investing: NormalizedSection, financing: NormalizedSection, netChange: number }`. Same `walkQbLeaves` helper; bucket by `group` in {`OperatingActivities`, `InvestingActivities`, `FinancingActivities`}.
-- `normalizeQbTrialBalance(payload)` → `{ accounts: [{ name, debit, credit, monthlyValues }] }`. Reads `payload.monthlyReports[].report.rows`, accumulates debit/credit per account per month, plus a single EOY value for `monthlyValues[YYYY-12]`.
+### 1. Normalized contract per data_type — single source of truth
 
-### 2. Generalize the shape probe
-
-Replace the `sourceType !== "qbtojson"` early return in `maybeNormalizeQbData` with:
-
-```ts
-const looksRawQb = isRawQbMonthlyArray(data) || hasMonthlyReports(data);
-if (sourceType !== "qbtojson" && !looksRawQb) return data;
-```
-
-`hasMonthlyReports(data)` returns true when `data?.monthlyReports?.[0]?.report?.rows` exists (qbtojson TB shape, occasionally produced by `quickbooks_api`).
-
-Wire `cash_flow` and `trial_balance` cases into the switch.
-
-### 3. Synthesize pseudo-GL from normalized IS when canonical_transactions is empty
-
-After the `glByAccount` build at line 1005:
+Create `supabase/functions/_shared/normalized-contracts.ts` (Deno-importable) **and** mirror to `src/lib/normalized-contracts.ts` (browser-importable). Both export the same Zod schemas + TypeScript types.
 
 ```ts
-if (!hasGL && processedData.income_statement?.revenue?.accounts) {
-  for (const group of ["revenue","cogs","expenses"] as const) {
-    for (const a of processedData.income_statement[group]?.accounts ?? []) {
-      const yearTotal = Object.entries(a.monthlyValues ?? {})
-        .filter(([k]) => k.startsWith(yearMonthPrefix))
-        .reduce((s, [,v]) => s + Math.abs(Number(v) || 0), 0);
-      if (yearTotal === 0) continue;
-      glByAccount.set(a.name, { signed: yearTotal, abs: yearTotal, type: group });
-    }
-  }
-  hasGL = glByAccount.size > 0;
-  if (hasGL) skippedFields.push({ field: "GL source", reason: "Synthesized from normalized Income Statement (no canonical_transactions for year)" });
-}
+// One schema per data_type. Field names = canonical, lowerCamelCase.
+export const FixedAssetsExtractionV1 = z.object({
+  schemaVersion: z.literal(1),
+  asOfDate: z.string().nullable(),         // ISO YYYY-MM-DD
+  assets: z.array(z.object({
+    category: z.string(),
+    description: z.string(),
+    acquisitionDate: z.string().nullable(),
+    cost: z.number(),
+    accumulatedDepreciation: z.number(),
+    netBookValue: z.number(),
+  })),
+  totals: z.object({ cost: z.number(), accumulatedDepreciation: z.number(), netBookValue: z.number() }),
+  meta: ExtractionMetaV1,   // confidence, warnings, rawFindings, documentName, extractedAt
+});
+
+export const PayrollExtractionV1 = z.object({ schemaVersion: z.literal(1), salaryWages: MonthlyItemArray, ownerCompensation: MonthlyItemArray, payrollTaxes: MonthlyItemArray, benefits: MonthlyItemArray, meta: ExtractionMetaV1 });
+// …one per existing data_type
 ```
 
-This lets `matchAccounts` resolve P&L matchers for qbtojson-only projects.
+`ExtractionMetaV1` standardizes the envelope (confidence, warnings, rawFindings string, extractedAt, sourceDocumentId, documentName, modelUsed) so every downstream consumer reads the same metadata fields.
 
-### 4. Emit explicit skip on TB-only fallthrough
+Also export a typed enum for `source_type`:
 
-If `processedData.balance_sheet` is missing but `processedData.trial_balance` exists with EOY balances, derive a synthetic BS-shaped object from the TB normalizer output and feed `getBsEoyByMatcher`. Otherwise log a `skippedFields` row stating "Balance Sheet missing; TB present but not yet wired" — surfaces the gap rather than silently scoring 0.
+```ts
+export const ExtractionSource = z.enum([
+  "ai_document_extraction",  // structured AI extraction from an upload
+  "ai_document_classification",
+  "ai_inline_derivation",    // derived inside an analyzer (e.g. derived_from_gl)
+  "user_wizard",
+  "qbtojson",
+  "quickbooks_api",
+  "docuclipper",
+]);
+```
 
-### 5. Verification (mandatory before declaring done)
+Map the legacy free-text values to these on read (one-time translation table in `normalized-contracts.ts`).
 
-Invoke `parse-tax-return` for each of the 3 returns and record:
-- `comparisons.length`
-- `overallScore`
-- `skippedFields.length` (and the reasons)
-- Counts of P&L, Schedule L, M-1, M-2, Distributions comparisons
+### 2. Parser-side normalization (write path)
 
-Expected post-fix targets:
-- 2025: ≥ 12 comparisons, Distributions row present, ≥ 1 M-1 calc check, ≥ 3 Schedule L rows.
-- 2023 / 2024: ≥ 8 comparisons each, ≥ 2 Schedule L rows each.
-- Every remaining 0-match branch shows up in `skippedFields` with a concrete reason — no silent skips.
+Every `process-*` / `parse-*` edge function gets the same three-line tail:
 
-Spot-check one revenue and one expense match per year against the QB monthly report sum to confirm pseudo-GL totals are correct.
+```ts
+import { normalizeAndPersist } from "../_shared/normalized-contracts.ts";
+await normalizeAndPersist(supabase, {
+  projectId, userId, sourceDocumentId,
+  dataType: "fixed_assets",
+  source: "ai_document_extraction",
+  rawAiOutput,                       // whatever the LLM returned
+});
+```
 
-## Out of scope
+`normalizeAndPersist` does, in order:
 
-- DB schema changes, ingestion changes, PDF extractor changes.
-- Building the BS-from-TB synthesizer if no project actually needs it (will skip cleanly via `skippedFields` instead).
-- Touching any other edge function.
+1. Maps the raw AI output to the canonical schema using a per-data_type adapter (the logic currently in each fallback mapper, moved server-side once).
+2. Validates with the Zod schema. On failure: stores `validation_status='failed'` + the Zod error in `meta.warnings`, still writes the raw payload under `data.raw` so we can debug, returns 200 to the caller so the document doesn't get stuck.
+3. Inserts `{ data: { ...normalized, raw }, source_type, data_type, validation_status, record_count }`.
+
+Per-parser changes are mechanical — each one currently builds an `extractionResult` object and calls `.from("processed_data").insert(...)`. Replace the insert with `normalizeAndPersist`. Parser file sizes shrink ~15–30 lines each.
+
+### 3. Read-side cleanup (lazy)
+
+Each `src/lib/*Fallback.ts` becomes a thin pass-through that:
+- Tries `NormalizedSchema.safeParse(record.data)` first → return as-is.
+- On failure (legacy row), applies the **same** adapter the edge function uses (re-exported from `src/lib/normalized-contracts.ts`) to upgrade in-memory.
+- Optionally writes the upgraded shape back to the row on next save (no migration script needed).
+
+Net result: fallback files drop from ~50 lines of field-juggling to ~10 lines of schema check + delegation.
+
+## Out of scope (explicit)
+
+- DB schema changes. No new columns; `processed_data.data` stays JSONB.
+- One-shot data migration. Legacy rows auto-upgrade on read.
+- Touching ingestion shapes the extractor service controls (Cloud Run extraction proxy, DocuClipper) — those are already normalized server-side and stored under different `source_type`s.
+- Changing the contract for `qbtojson` / `quickbooks_api` data — `parse-tax-return` just got its normalizers; we'll fold those into the contract module but won't re-derive.
+- Embeddings / RAG (`embed-project-data`) — already keys off `data_type` strings; contract enums make this safer but no logic change.
+
+## Risk & verification
+
+- **Risk: silent shape drift between client and edge normalizers.** Mitigated by sharing one Zod source — the `_shared/normalized-contracts.ts` file is the contract; both runtimes import the same field definitions. Add a vitest that imports both modules and asserts schema parity (`expect(serverSchema.shape).toEqual(clientSchema.shape)`).
+- **Risk: existing rows break.** Mitigated by `safeParse` + legacy adapter on read. We never throw on legacy data.
+- **Verification:** For each parser, write one fixture test that runs raw LLM output → `normalizeAndPersist` → schema parse → matches expected `FixedAssetsExtractionV1` (or equivalent). Run via `supabase--test_edge_functions`. Spot-check one real upload per data_type in the preview before sign-off.
+
+## Rollout
+
+Phase 1 (small): ship `_shared/normalized-contracts.ts` + the client mirror, with schemas only for `fixed_assets`, `payroll`, `debt_schedule`. Migrate those 3 parsers + their 3 fallbacks. Verify against existing uploads.
+
+Phase 2: `inventory`, `lease_agreement`, `material_contract`, `cim_insights`, `supporting_document`.
+
+Phase 3: `journal_entries`, `tax_return_analysis`, `transfer_classification` — the analyzer-derived shapes. These deserve their own pass because they're outputs of other analyzers, not raw extractions.
+
+Phase 4 (optional, only if needed): a one-time backfill script that walks `processed_data`, runs each row through the legacy adapter, and writes the normalized shape back so reads stop paying the upgrade cost.
 
 ## Files touched
 
-- `supabase/functions/parse-tax-return/index.ts` — two new normalizers, generalized shape probe, pseudo-GL fallback, explicit TB-only skip diagnostic.
+- New: `supabase/functions/_shared/normalized-contracts.ts`, `src/lib/normalized-contracts.ts`, `src/lib/normalized-contracts.test.ts`.
+- Modified parsers (per phase): `process-fixed-assets`, `process-payroll-document`, `process-debt-schedule`, then phases 2/3.
+- Slimmed fallbacks: `src/lib/fixedAssetsFallback.ts`, `src/lib/payrollFallback.ts`, `src/lib/debtFallback.ts`, then phases 2/3.
+
+## Open question before I start coding
+
+Do you want **Phase 1 only** in the first PR (3 data_types, low risk, proves the pattern), or **the full normalized-contracts module + all 10 data_types** in one bigger PR? Phase 1 is the safer ship.
