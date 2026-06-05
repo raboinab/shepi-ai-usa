@@ -1582,15 +1582,23 @@ serve(async (req) => {
           [/distribution/i, /owner.?(?:s)? draw/i, /shareholder.?(?:s)? draw/i, /dividend/i],
           [/dividend income/i]
         );
-        pushCompare({
-          field: "Shareholder Distributions (M-2/K-16d)",
-          taxValue: totalDistributions,
-          comparisonValue: matched.total > 0 ? matched.total : null,
-          source: matched.accounts.length ? `GL (${matched.accounts.length} acct${matched.accounts.length === 1 ? '' : 's'})` : "GL — no matching account",
-          category: "schedule_m",
-          threshold: 0.05,
-          matchedAccounts: matched.accounts,
-        });
+        if (matched.total === 0) {
+          skippedFields.push({
+            field: "Shareholder Distributions (M-2/K-16d)",
+            reason: `No GL account matched distribution/draw/dividend for ${taxYear}`,
+          });
+        } else {
+          pushCompare({
+            field: "Shareholder Distributions (M-2/K-16d)",
+            taxValue: totalDistributions,
+            comparisonValue: matched.total,
+            source: `GL (${matched.accounts.length} acct${matched.accounts.length === 1 ? '' : 's'})`,
+            category: "schedule_m",
+            threshold: 0.05,
+            matchedAccounts: matched.accounts,
+          });
+        }
+
       }
     } else if (extractedData.scheduleK?.distributions && extractedData.scheduleK.distributions > 0) {
       pushReviewOnly({
