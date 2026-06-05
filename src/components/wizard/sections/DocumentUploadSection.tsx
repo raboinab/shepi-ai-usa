@@ -813,6 +813,40 @@ export const DocumentUploadSection = ({
     }
   };
 
+  const handleReanalyzeTaxReturn = async (documentId: string) => {
+    try {
+      const { data: parseResult, error: parseError } = await supabase.functions.invoke('parse-tax-return', {
+        body: { documentId, projectId },
+      });
+      if (parseError) {
+        if (parseError.message?.includes('429')) {
+          toast.error("Rate limit exceeded. Please try again in a few minutes.");
+        } else if (parseError.message?.includes('402')) {
+          toast.error("AI credits exhausted. Please add funds to continue.");
+        } else {
+          toast.error("Failed to re-analyze tax return");
+        }
+        return;
+      }
+      if (parseResult?.analysis) {
+        setTaxReturnInsights(prev => {
+          const existing = prev.findIndex(a => a.documentId === documentId);
+          if (existing >= 0) {
+            const updated = [...prev];
+            updated[existing] = parseResult.analysis;
+            return updated;
+          }
+          return [...prev, parseResult.analysis];
+        });
+        toast.success("Tax return re-analyzed with latest data.");
+      }
+    } catch (err) {
+      console.warn("Re-analyze tax return failed:", err);
+      toast.error("Failed to re-analyze tax return");
+    }
+  };
+
+
   const fetchPayrollAnalysis = async () => {
     try {
       const { data, error } = await supabase
