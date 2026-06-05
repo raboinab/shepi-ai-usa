@@ -1566,8 +1566,18 @@ serve(async (req) => {
       return { total, yearScoped: anyYearKey, annualTotal };
     };
 
+    // Owner Compensation should reflect ONLY wages/salary paid to officer(s) —
+    // line 7 of Form 1120-S. Exclude rows that look like employer-side payroll
+    // taxes (FICA/Medicare/FUTA/SUTA/unemployment/workers comp), which some
+    // payroll extracts bundle into the ownerCompensation group.
+    const isPayrollTaxRow = (name: unknown): boolean => {
+      const s = String(name ?? '').toLowerCase();
+      if (!s) return false;
+      return /(fica|medicare|social security|payroll tax|unemploy|futa|suta|workers? comp|sui|fui)/i.test(s);
+    };
     const getPayrollOwnerComp = (): ExtFallback => {
-      const accounts = resolvePayrollAccounts('ownerCompensation');
+      const all = resolvePayrollAccounts('ownerCompensation');
+      const accounts = all.filter((a: any) => !isPayrollTaxRow(a?.name ?? a?.account ?? a?.label));
       if (!accounts.length) {
         return { total: 0, yearScoped: false, source: "Payroll — Owner Compensation (uploaded)" };
       }
