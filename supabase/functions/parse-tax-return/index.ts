@@ -1458,7 +1458,8 @@ serve(async (req) => {
           source: isSourceLabel,
           category: "income_p1",
           threshold: 0.10,
-          note: "Books 'Other Income' section vs sum of Schedule K interest, dividends, capital gains, and other income items.",
+          note: "Informational only — books 'Other Income' bucket and Schedule K line items (interest, dividends, capital gains, etc.) are structurally different categorizations. Excluded from consistency score.",
+          excludeFromScore: true,
         });
       }
     }
