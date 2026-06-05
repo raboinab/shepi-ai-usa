@@ -1110,6 +1110,10 @@ serve(async (req) => {
     // Build comparisons
     const comparisons: ComparisonResult[] = [];
     const flags: string[] = [];
+    // Surface why expected comparisons were skipped. Populated throughout
+    // the loops below; emitted in the final analysisDiagnostics block.
+    const skippedFields: NonNullable<AnalysisDiagnostics['skippedFields']> = [];
+
 
     const getStatus = (variance: number | null, threshold: number = 0.05): ComparisonResult['status'] => {
       if (variance === null) return 'missing_data';
