@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { parseLocalDate } from "@/lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -444,6 +444,8 @@ export const DocumentUploadSection = ({
   const [parsingCim, setParsingCim] = useState(false);
   const [taxReturnInsights, setTaxReturnInsights] = useState<TaxReturnAnalysis[]>([]);
   const [parsingTaxReturn, setParsingTaxReturn] = useState(false);
+  const autoReanalyzedDocsRef = useRef<Set<string>>(new Set());
+
   const [payrollAnalysis, setPayrollAnalysis] = useState<{ docName: string; data: PayrollAnalysisData }[]>([]);
   const [glAnalysis, setGlAnalysis] = useState<{ docName: string; data: GLAnalysisData }[]>([]);
   const [jeAnalysis, setJeAnalysis] = useState<{ docName: string; data: JEAnalysisData }[]>([]);
@@ -813,12 +815,17 @@ export const DocumentUploadSection = ({
     }
   };
 
-  const handleReanalyzeTaxReturn = async (documentId: string) => {
+  const handleReanalyzeTaxReturn = async (documentId: string, opts?: { silent?: boolean }) => {
+    const silent = !!opts?.silent;
     try {
       const { data: parseResult, error: parseError } = await supabase.functions.invoke('parse-tax-return', {
         body: { documentId, projectId },
       });
       if (parseError) {
+        if (silent) {
+          console.warn("Silent re-analyze failed:", parseError);
+          return;
+        }
         if (parseError.message?.includes('429')) {
           toast.error("Rate limit exceeded. Please try again in a few minutes.");
         } else if (parseError.message?.includes('402')) {
@@ -828,23 +835,50 @@ export const DocumentUploadSection = ({
         }
         return;
       }
-      if (parseResult?.analysis) {
+      // Edge function returns the analysis object directly; tolerate either shape.
+      const newAnalysis: TaxReturnAnalysis | undefined = parseResult?.analysis ?? parseResult;
+      if (newAnalysis && newAnalysis.documentId) {
         setTaxReturnInsights(prev => {
           const existing = prev.findIndex(a => a.documentId === documentId);
           if (existing >= 0) {
             const updated = [...prev];
-            updated[existing] = parseResult.analysis;
+            updated[existing] = newAnalysis;
             return updated;
           }
-          return [...prev, parseResult.analysis];
+          return [...prev, newAnalysis];
         });
-        toast.success("Tax return re-analyzed with latest data.");
+        if (!silent) toast.success("Tax return re-analyzed with latest data.");
       }
     } catch (err) {
       console.warn("Re-analyze tax return failed:", err);
-      toast.error("Failed to re-analyze tax return");
+      if (!silent) toast.error("Failed to re-analyze tax return");
+
     }
   };
+
+  // Auto-reanalyze stale tax-return cards (pre-rewrite results have overallScore === -1
+  // or are missing analysisDiagnostics). Runs once per documentId per session.
+  useEffect(() => {
+    const stale = taxReturnInsights.filter((a) => {
+      if (!a?.documentId) return false;
+      if (autoReanalyzedDocsRef.current.has(a.documentId)) return false;
+      const isStaleScore = a.overallScore === null || (a.overallScore as number) < 0;
+      const missingDiagnostics = !a.analysisDiagnostics;
+      return isStaleScore || missingDiagnostics;
+    });
+    if (stale.length === 0) return;
+    // Mark all as in-flight up front so we don't loop on state updates
+    stale.forEach((a) => autoReanalyzedDocsRef.current.add(a.documentId));
+    // Sequential to avoid hammering the edge function / rate limits
+    (async () => {
+      for (const a of stale) {
+        await handleReanalyzeTaxReturn(a.documentId, { silent: true });
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taxReturnInsights]);
+
+
 
 
   const fetchPayrollAnalysis = async () => {

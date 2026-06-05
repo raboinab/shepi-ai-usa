@@ -201,6 +201,19 @@ interface ComparisonResult {
   note?: string;
 }
 
+interface AnalysisDiagnostics {
+  taxYear: number;
+  sources: Array<{
+    dataType: string;
+    status: 'in_year' | 'aggregate' | 'period_mismatch' | 'missing';
+    detail?: string;
+  }>;
+  glSourceTypes: Array<{ source_type: string; rows: number; usedForGL: boolean }>;
+  hasGL: boolean;
+  glFallback?: 'income_statement_aggregate' | null;
+  skippedFields?: Array<{ field: string; reason: string }>;
+}
+
 interface TaxReturnAnalysis {
   extractedData: TaxReturnData;
   comparisons: ComparisonResult[];
@@ -211,7 +224,9 @@ interface TaxReturnAnalysis {
   analyzedAt: string;
   documentId: string;
   extractionSource?: string;
+  analysisDiagnostics?: AnalysisDiagnostics;
 }
+
 
 // Helper function to safely parse numbers from various formats
 function parseNumber(value: any): number | null {
@@ -736,21 +751,26 @@ serve(async (req) => {
     // Fetch processed_data for comparison
     const { data: processedRecords, error: pdError } = await supabase
       .from("processed_data")
-      .select("data_type, data, period_start, period_end")
+      .select("data_type, data, period_start, period_end, source_type")
       .eq("project_id", projectId);
 
     if (pdError) {
       console.warn("Failed to fetch processed data:", pdError);
     }
 
-    // Year-scoped processed_data resolution — only use records whose period_end
-    // falls within the tax year. If none, fall back to most-recent and tag the source.
+    // Year-scoped processed_data resolution.
+    // Preference order:
+    //   (a) row whose period_end is inside the tax year,
+    //   (b) qbtojson "full-history aggregate" (period_end IS NULL) — these carry monthlyValues
+    //       spanning multiple years and are year-scoped downstream via taxYear-aware helpers,
+    //   (c) most recent row with a period_end (flagged as period_mismatch).
     const taxYear = extractedData.taxYear;
     const yearStart = `${taxYear}-01-01`;
     const yearEnd = `${taxYear}-12-31`;
 
     const processedData: Record<string, any> = {};
     const processedDataPeriodMismatch: Record<string, boolean> = {};
+    const processedDataSourceKind: Record<string, 'in_year' | 'aggregate' | 'period_mismatch'> = {};
     const byType: Record<string, any[]> = {};
     for (const r of processedRecords || []) {
       (byType[r.data_type] ||= []).push(r);
@@ -763,30 +783,58 @@ serve(async (req) => {
       });
       if (inYear) {
         processedData[dtype] = inYear.data;
-      } else {
-        // Fall back to most recent, but flag the mismatch
-        const sorted = rows
-          .filter((r) => r.period_end)
-          .sort((a, b) => String(b.period_end).localeCompare(String(a.period_end)));
-        if (sorted[0]) {
-          processedData[dtype] = sorted[0].data;
-          processedDataPeriodMismatch[dtype] = true;
-        } else if (rows[0]) {
-          processedData[dtype] = rows[0].data;
-          processedDataPeriodMismatch[dtype] = true;
-        }
+        processedDataSourceKind[dtype] = 'in_year';
+        continue;
+      }
+      // (b) qbtojson aggregate rows often have NULL period_end and a monthlyValues map
+      const aggregate = rows.find((r) => !r.period_end && r.source_type === 'qbtojson');
+      if (aggregate) {
+        processedData[dtype] = aggregate.data;
+        processedDataSourceKind[dtype] = 'aggregate';
+        continue;
+      }
+      // (c) most recent with period_end
+      const sorted = rows
+        .filter((r) => r.period_end)
+        .sort((a, b) => String(b.period_end).localeCompare(String(a.period_end)));
+      if (sorted[0]) {
+        processedData[dtype] = sorted[0].data;
+        processedDataPeriodMismatch[dtype] = true;
+        processedDataSourceKind[dtype] = 'period_mismatch';
+      } else if (rows[0]) {
+        processedData[dtype] = rows[0].data;
+        processedDataPeriodMismatch[dtype] = true;
+        processedDataSourceKind[dtype] = 'period_mismatch';
       }
     }
 
-    // Year-scoped canonical_transactions (the primary GL source)
+    // Year-scoped canonical_transactions (the primary GL source).
+    // IMPORTANT: exclude rows that are *monthly snapshots* of IS/BS/CF/TB — those are
+    // already covered by the IS/BS helpers and would double-count (often 12-60x).
+    const GL_SOURCE_TYPES = ['general_ledger', 'bank_transactions', 'credit_card_transactions', 'journal_entries', 'qbtojson'];
     const { data: txns, error: txnsErr } = await supabase
       .from("canonical_transactions")
-      .select("account_name, account_type, amount, amount_signed, amount_abs")
+      .select("account_name, account_type, amount, amount_signed, amount_abs, source_type")
       .eq("project_id", projectId)
+      .in("source_type", GL_SOURCE_TYPES)
       .gte("txn_date", yearStart)
       .lte("txn_date", yearEnd);
     if (txnsErr) {
       console.warn("canonical_transactions fetch warning:", txnsErr.message);
+    }
+
+    // Diagnostics: count rows per source_type for THIS year (including excluded snapshots),
+    // so the UI can explain why GL matching produced few/no comparisons.
+    const { data: txnSourceCounts } = await supabase
+      .from("canonical_transactions")
+      .select("source_type")
+      .eq("project_id", projectId)
+      .gte("txn_date", yearStart)
+      .lte("txn_date", yearEnd);
+    const sourceTypeRows: Record<string, number> = {};
+    for (const r of txnSourceCounts || []) {
+      const st = String(r.source_type || 'unknown');
+      sourceTypeRows[st] = (sourceTypeRows[st] || 0) + 1;
     }
 
     interface AccountAgg { signed: number; abs: number; type: string | null }
@@ -800,6 +848,7 @@ serve(async (req) => {
       glByAccount.set(name, cur);
     }
     const hasGL = glByAccount.size > 0;
+
 
     const matchAccounts = (matchers: RegExp[], exclude: RegExp[] = []): { total: number; accounts: string[] } => {
       let total = 0;
@@ -847,7 +896,10 @@ serve(async (req) => {
       retainedEarnings: { match: [/retained earnings/i] },
     };
 
-    // Helper: extract EOY balance from processed_data.balance_sheet shape
+    // Helper: extract EOY balance from processed_data.balance_sheet shape, scoped to taxYear.
+    // Picks the December (or last available) monthly key whose YYYY-MM <= yearEnd. If no key
+    // belongs to or precedes the tax year, falls back to absolute-last (with mismatch flag).
+    const yearMonthPrefix = `${taxYear}-`;
     const getBsEoyByMatcher = (matchers: { match: RegExp[]; exclude?: RegExp[] }): { total: number; accounts: string[] } => {
       const bs = wizardData.balanceSheet || processedData.balance_sheet;
       if (!bs) return { total: 0, accounts: [] };
@@ -859,16 +911,25 @@ serve(async (req) => {
           if (!name) continue;
           if (matchers.exclude?.some((rx) => rx.test(name))) continue;
           if (!matchers.match.some((rx) => rx.test(name))) continue;
-          // EOY = last monthly value
           const monthly = a.monthlyValues || {};
           const keys = Object.keys(monthly).sort();
-          const eoy = keys.length ? Number(monthly[keys[keys.length - 1]]) || 0 : Number(a.endingBalance ?? a.balance ?? 0);
+          let eoyKey: string | undefined;
+          // Prefer last key inside the tax year (e.g. "2024-12")
+          const inYear = keys.filter((k) => k.startsWith(yearMonthPrefix));
+          if (inYear.length) {
+            eoyKey = inYear[inYear.length - 1];
+          } else {
+            // Otherwise last key <= yearEnd ("YYYY-12")
+            const leYearEnd = keys.filter((k) => k <= `${taxYear}-12`);
+            if (leYearEnd.length) eoyKey = leYearEnd[leYearEnd.length - 1];
+            else if (keys.length) eoyKey = keys[keys.length - 1];
+          }
+          const eoy = eoyKey ? Number(monthly[eoyKey]) || 0 : Number(a.endingBalance ?? a.balance ?? 0);
           total += eoy;
           matched.push(name);
         }
         return { total, accounts: matched };
       };
-      // shapes vary: {assets:{accounts:[]}, liabilities:{accounts:[]}, equity:{accounts:[]}, accounts:[]}
       const buckets = [bs.accounts, bs.assets?.accounts, bs.liabilities?.accounts, bs.equity?.accounts];
       let total = 0;
       const accounts: string[] = [];
@@ -880,6 +941,7 @@ serve(async (req) => {
       }
       return { total, accounts: Array.from(new Set(accounts)) };
     };
+
 
     // Build comparisons
     const comparisons: ComparisonResult[] = [];
@@ -950,22 +1012,44 @@ serve(async (req) => {
     // ============ INCOME STATEMENT helpers ============
     const incomeStatement = wizardData.incomeStatement || processedData.income_statement;
     const isPeriodMismatch = processedDataPeriodMismatch.income_statement;
-    const isSourceLabel = isPeriodMismatch ? "Income Statement (period mismatch)" : "Income Statement";
+    const isSourceKind = processedDataSourceKind.income_statement;
+    const isSourceLabel = isPeriodMismatch
+      ? "Income Statement (period mismatch)"
+      : isSourceKind === 'aggregate'
+        ? `Income Statement (${taxYear}, from multi-year aggregate)`
+        : "Income Statement";
 
+    // Year-scoped monthly summation. Only sums monthlyValues keys matching `${taxYear}-*`.
+    // If no keys match the tax year, returns 0 (so we don't compare a 1120-S against the wrong year).
     const sumISMonthly = (group: 'revenue' | 'cogs' | 'expenses'): number => {
       if (!incomeStatement) return 0;
       const accounts = incomeStatement[group]?.accounts;
-      if (Array.isArray(accounts)) {
-        return accounts.reduce((sum: number, acc: any) => {
-          const vals = Object.values(acc.monthlyValues || {}) as number[];
-          return sum + vals.reduce((a, b) => a + (Number(b) || 0), 0);
-        }, 0);
-      }
-      return 0;
+      if (!Array.isArray(accounts)) return 0;
+      let anyYearKeyFound = false;
+      const total = accounts.reduce((sum: number, acc: any) => {
+        const monthly = acc.monthlyValues || {};
+        let acctTotal = 0;
+        for (const k of Object.keys(monthly)) {
+          if (k.startsWith(yearMonthPrefix)) {
+            anyYearKeyFound = true;
+            acctTotal += Number(monthly[k]) || 0;
+          }
+        }
+        return sum + acctTotal;
+      }, 0);
+      // If accounts use monthlyValues but none for this year, return 0 (not all-years total)
+      return anyYearKeyFound ? total : 0;
     };
 
-    const isRevenue = sumISMonthly('revenue') || Number(incomeStatement?.totalRevenue) || 0;
-    const isNetIncome = Number(incomeStatement?.netIncome) || 0;
+    // Per-year totals only. If the IS is a multi-year aggregate, do NOT fall back to
+    // top-level totalRevenue/netIncome (those span all years).
+    const isYearScoped = isSourceKind === 'in_year' || isSourceKind === 'aggregate';
+    const isRevenue = sumISMonthly('revenue') || (isYearScoped ? 0 : (Number(incomeStatement?.totalRevenue) || 0));
+    const isExpenses = sumISMonthly('expenses');
+    const isCogs = sumISMonthly('cogs');
+    const isNetIncomeFromMonthly = (isRevenue || isExpenses || isCogs) ? (isRevenue - isCogs - isExpenses) : 0;
+    const isNetIncome = isNetIncomeFromMonthly || (isYearScoped ? 0 : (Number(incomeStatement?.netIncome) || 0));
+
 
     // ============ PAGE 1 — INCOME ============
     pushCompare({
@@ -978,8 +1062,40 @@ serve(async (req) => {
       flagMessage: `Revenue variance between tax return and Income Statement exceeds 5%`,
     });
 
-    // ============ PAGE 1 — DEDUCTIONS (GL-driven) ============
-    if (hasGL) {
+    // Year-scoped matching against the Income Statement accounts (expenses + COGS).
+    // Used both as a complement to GL and as a fallback when no GL is available for the year.
+    const matchISAccounts = (matchers: RegExp[], exclude: RegExp[] = []): { total: number; accounts: string[] } => {
+      if (!incomeStatement) return { total: 0, accounts: [] };
+      const buckets = [incomeStatement.expenses?.accounts, incomeStatement.cogs?.accounts];
+      let total = 0;
+      const accounts: string[] = [];
+      for (const b of buckets) {
+        if (!Array.isArray(b)) continue;
+        for (const a of b) {
+          const name = String(a?.name || a?.accountName || "").trim();
+          if (!name) continue;
+          if (exclude.some((rx) => rx.test(name))) continue;
+          if (!matchers.some((rx) => rx.test(name))) continue;
+          const monthly = a.monthlyValues || {};
+          let acctYearTotal = 0;
+          let anyKey = false;
+          for (const k of Object.keys(monthly)) {
+            if (k.startsWith(yearMonthPrefix)) {
+              acctYearTotal += Math.abs(Number(monthly[k]) || 0);
+              anyKey = true;
+            }
+          }
+          if (!anyKey) continue;
+          total += acctYearTotal;
+          accounts.push(name);
+        }
+      }
+      return { total, accounts: Array.from(new Set(accounts)) };
+    };
+    const hasIS = !!incomeStatement && isYearScoped;
+
+    // ============ PAGE 1 — DEDUCTIONS ============
+    if (hasGL || hasIS) {
       const deductionRows: Array<[string, string, keyof typeof PL_MATCHERS, number?]> = [
         ["Officer Compensation (7)", "officerCompensation", "officerCompensation", 0.10],
         ["Salaries & Wages (8)", "salariesWages", "salariesWages", 0.10],
@@ -997,19 +1113,32 @@ serve(async (req) => {
       for (const [label, taxKey, matcherKey, thr] of deductionRows) {
         const taxVal = (extractedData as any)[taxKey] as number | null;
         if (taxVal === null || taxVal === undefined) continue;
-        const matched = matchAccounts(PL_MATCHERS[matcherKey].match, PL_MATCHERS[matcherKey].exclude || []);
+        const m = PL_MATCHERS[matcherKey];
+        // Prefer GL if it has a hit; else fall back to year-scoped IS accounts
+        let matched = hasGL ? matchAccounts(m.match, m.exclude || []) : { total: 0, accounts: [] as string[] };
+        let sourceLabel = matched.accounts.length
+          ? `GL (${matched.accounts.length} acct${matched.accounts.length === 1 ? '' : 's'})`
+          : "";
+        if (matched.total === 0 && hasIS) {
+          matched = matchISAccounts(m.match, m.exclude || []);
+          sourceLabel = matched.accounts.length
+            ? `Income Statement ${taxYear} (${matched.accounts.length} acct${matched.accounts.length === 1 ? '' : 's'})`
+            : (hasGL ? "GL — no matching account" : `Income Statement ${taxYear} — no matching account`);
+        }
+        if (matched.total === 0) continue; // skip rows with no counterpart at all
         pushCompare({
           field: label,
           taxValue: taxVal,
-          comparisonValue: matched.total > 0 ? matched.total : null,
-          source: matched.accounts.length ? `GL (${matched.accounts.length} acct${matched.accounts.length === 1 ? '' : 's'})` : "GL — no matching account",
+          comparisonValue: matched.total,
+          source: sourceLabel,
           category: "deductions_p1",
           threshold: thr,
           matchedAccounts: matched.accounts,
-          flagMessage: `${label} variance vs. GL exceeds ${(thr! * 100).toFixed(0)}%`,
+          flagMessage: `${label} variance vs. books exceeds ${(thr! * 100).toFixed(0)}%`,
         });
       }
     } else {
+
       // Fall back to processed_data fallbacks for the key deduction lines we previously supported
       const payrollData = wizardData.payroll || processedData.payroll;
       if (extractedData.salariesWages !== null && payrollData) {
@@ -1437,6 +1566,50 @@ serve(async (req) => {
     else if (overallScore !== null) summary += "No significant variances flagged.";
 
 
+    // Build diagnostics that explain *why* we got the score we did.
+    const diagSources: AnalysisDiagnostics['sources'] = [];
+    const describe = (dtype: string, label: string) => {
+      const kind = processedDataSourceKind[dtype];
+      if (!kind) {
+        diagSources.push({ dataType: label, status: 'missing', detail: `No ${label} found for project` });
+        return;
+      }
+      if (kind === 'in_year') diagSources.push({ dataType: label, status: 'in_year', detail: `Period inside ${taxYear}` });
+      else if (kind === 'aggregate') diagSources.push({ dataType: label, status: 'aggregate', detail: `Multi-year aggregate, scoped to ${taxYear} months` });
+      else diagSources.push({ dataType: label, status: 'period_mismatch', detail: `Only out-of-year data available — flagged as period mismatch` });
+    };
+    describe('income_statement', 'Income Statement');
+    describe('balance_sheet', 'Balance Sheet');
+    describe('trial_balance', 'Trial Balance');
+    describe('general_ledger', 'General Ledger');
+    describe('ar_aging', 'A/R Aging');
+    describe('ap_aging', 'A/P Aging');
+
+    const glSourceTypes = Object.entries(sourceTypeRows).map(([source_type, rows]) => ({
+      source_type,
+      rows,
+      usedForGL: GL_SOURCE_TYPES.includes(source_type),
+    }));
+
+    const skippedFields: AnalysisDiagnostics['skippedFields'] = [];
+    if (!hasGL && !hasIS) {
+      skippedFields.push({ field: 'P&L Deductions', reason: `No GL or year-scoped Income Statement available for ${taxYear}` });
+    } else if (!hasGL && hasIS) {
+      skippedFields.push({ field: 'P&L Deductions', reason: `No detailed General Ledger for ${taxYear} — using Income Statement aggregates instead` });
+    }
+    if (!processedDataSourceKind.balance_sheet || processedDataPeriodMismatch.balance_sheet) {
+      skippedFields.push({ field: 'Schedule L (Balance Sheet)', reason: `No in-year Balance Sheet for ${taxYear}` });
+    }
+
+    const analysisDiagnostics: AnalysisDiagnostics = {
+      taxYear,
+      sources: diagSources,
+      glSourceTypes,
+      hasGL,
+      glFallback: (!hasGL && hasIS) ? 'income_statement_aggregate' : null,
+      skippedFields,
+    };
+
     const analysis: TaxReturnAnalysis = {
       extractedData,
       comparisons,
@@ -1446,7 +1619,9 @@ serve(async (req) => {
       analyzedAt: new Date().toISOString(),
       documentId,
       extractionSource,
+      analysisDiagnostics,
     };
+
 
     // Get user_id for storing processed data
     const { data: { user } } = await supabase.auth.getUser();
