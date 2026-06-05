@@ -1785,15 +1785,18 @@ serve(async (req) => {
       usedForGL: GL_SOURCE_TYPES.includes(source_type),
     }));
 
-    const skippedFields: AnalysisDiagnostics['skippedFields'] = [];
+    // Source-level reasons (appended to per-field reasons already collected during comparisons)
     if (!hasGL && !hasIS) {
-      skippedFields.push({ field: 'P&L Deductions', reason: `No GL or year-scoped Income Statement available for ${taxYear}` });
+      skippedFields.push({ field: 'P&L Deductions (source)', reason: `No GL or year-scoped Income Statement available for ${taxYear}` });
     } else if (!hasGL && hasIS) {
-      skippedFields.push({ field: 'P&L Deductions', reason: `No detailed General Ledger for ${taxYear} — using Income Statement aggregates instead` });
+      skippedFields.push({ field: 'P&L Deductions (source)', reason: `No detailed General Ledger for ${taxYear} — using Income Statement aggregates instead` });
     }
-    if (!processedDataSourceKind.balance_sheet || processedDataPeriodMismatch.balance_sheet) {
-      skippedFields.push({ field: 'Schedule L (Balance Sheet)', reason: `No in-year Balance Sheet for ${taxYear}` });
+    if (!processedDataSourceKind.balance_sheet) {
+      skippedFields.push({ field: 'Schedule L (source)', reason: `No Balance Sheet available for ${taxYear}` });
+    } else if (processedDataPeriodMismatch.balance_sheet) {
+      skippedFields.push({ field: 'Schedule L (source)', reason: `Balance Sheet is out-of-year for ${taxYear} (period mismatch)` });
     }
+
 
     const analysisDiagnostics: AnalysisDiagnostics = {
       taxYear,
