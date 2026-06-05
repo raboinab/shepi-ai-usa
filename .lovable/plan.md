@@ -1,136 +1,80 @@
-## Goal
+## Diagnosis
 
-Move every AI-extraction edge function to a **shared normalization contract** so frontend code, fallbacks, exports, and analyzers (parse-tax-return, workbook builders, PDF) read one well-known shape per `data_type` — not 11 ad-hoc shapes glued together by per-feature mappers.
+Pulled the live data for project `fa0768ca…` and compared against what the screenshot is showing.
 
-## Why now
+**What's actually in the DB (latest `tax_return_analysis` rows):**
 
-Today every parser writes its own bespoke JSON under `processed_data.data.extractedData`:
+| Year | Score | Comparisons | Sources picked |
+|------|-------|-------------|----------------|
+| 2023 | 56    | 9           | IS + BS = qbtojson aggregate, TB + GL = **period_mismatch** |
+| 2024 | 56    | 9           | IS + BS = qbtojson aggregate, TB + GL = **period_mismatch** |
+| 2025 | 100   | **3**       | IS + BS + TB + GL = in_year (single month) |
 
-| `data_type` | Parser | Output shape (today) |
-|---|---|---|
-| `fixed_assets` | `process-fixed-assets` | `{ extractedData: { assets: [{cost\|originalCost, accumDepreciation\|accumulatedDepreciation, …}], totals }, confidence, warnings }` |
-| `payroll` | `process-payroll-document` | `{ extractedData: { salaryWages, ownerCompensation, payrollTaxes, benefits } }` |
-| `debt_schedule` | `process-debt-schedule` | ad-hoc `{ extractedData: { loans: […] } }` |
-| `inventory` | `process-inventory-report` | ad-hoc |
-| `lease_agreement` | `process-lease-agreement` | ad-hoc |
-| `material_contract` | `process-material-contract` | ad-hoc |
-| `cim_insights` | `parse-cim` | ad-hoc |
-| `journal_entries` | `process-journal-entries` | ad-hoc |
-| `supporting_document` | `process-supporting-document` | ad-hoc |
-| `tax_return_analysis` | `extract-document-text` | ad-hoc (detectedType-based) |
+So the analyzer is producing real scores. The screenshot ("N/A — no comparable data", "Analyzed: 6/4/2026") is **stale UI** — the user is looking at a previous render; the most recent 2025 re-run finished at 15:05 today with score 100 and was never refetched.
 
-Each of those has a sibling `src/lib/<x>Fallback.ts` that re-normalizes on read (`fixedAssetsFallback.ts`, `payrollFallback.ts`, `debtFallback.ts`, etc.). When a parser's output drifts, downstream breaks silently — exactly what happened with `parse-tax-return` for qbtojson shapes.
+But the underlying analyzer also has two real bugs that crater coverage:
 
-`source_type` values are also a free-text mess: `ai_extraction`, `ai_classification`, `ai_fixed_assets_extraction`, `ai_payroll_extraction`, `upload_parse`, `derived_from_gl`, `gl_analysis`, `je_analysis`, etc. — no enum, no convention.
-
-## Strategy
-
-Three pieces, shipped in this order. **No DB schema migration is required** for steps 1 and 2 — we use the existing `processed_data.data` JSONB column.
-
-### 1. Normalized contract per data_type — single source of truth
-
-Create `supabase/functions/_shared/normalized-contracts.ts` (Deno-importable) **and** mirror to `src/lib/normalized-contracts.ts` (browser-importable). Both export the same Zod schemas + TypeScript types.
-
+### Bug 1 — Tax year 2025 picks a single month of unified_api data
+`processed_data` for `income_statement` / `balance_sheet` / `trial_balance` (source `unified_api`) stores **one row per month**. The resolver in `parse-tax-return/index.ts` (≈L1057-1067) does:
 ```ts
-// One schema per data_type. Field names = canonical, lowerCamelCase.
-export const FixedAssetsExtractionV1 = z.object({
-  schemaVersion: z.literal(1),
-  asOfDate: z.string().nullable(),         // ISO YYYY-MM-DD
-  assets: z.array(z.object({
-    category: z.string(),
-    description: z.string(),
-    acquisitionDate: z.string().nullable(),
-    cost: z.number(),
-    accumulatedDepreciation: z.number(),
-    netBookValue: z.number(),
-  })),
-  totals: z.object({ cost: z.number(), accumulatedDepreciation: z.number(), netBookValue: z.number() }),
-  meta: ExtractionMetaV1,   // confidence, warnings, rawFindings, documentName, extractedAt
-});
-
-export const PayrollExtractionV1 = z.object({ schemaVersion: z.literal(1), salaryWages: MonthlyItemArray, ownerCompensation: MonthlyItemArray, payrollTaxes: MonthlyItemArray, benefits: MonthlyItemArray, meta: ExtractionMetaV1 });
-// …one per existing data_type
+const inYear = rows.find(r => period_end inside 2025-01-01..2025-12-31)
 ```
+This picks the first matching row (a single month), then proceeds as if that month *were* the full year. That's why 2025 has only 3 comparisons and unrealistically high score=100 — most matchers find $0 and silently skip via `pushCompare` (comparisonValue === 0 → return).
 
-`ExtractionMetaV1` standardizes the envelope (confidence, warnings, rawFindings string, extractedAt, sourceDocumentId, documentName, modelUsed) so every downstream consumer reads the same metadata fields.
+### Bug 2 — qbtojson multi-year aggregates with non-null period_end fall through to `period_mismatch`
+For TB and GL the qbtojson row has `period_start = 2023-01-31`, `period_end = 2025-12-31` (multi-year). The aggregate branch (L1069) only matches `!r.period_end && source_type === 'qbtojson'`. So the resolver skips it and lands in branch (c) "period_mismatch", which discards GL/TB matching for the right year. That's the "Only out-of-year data available" diagnostic in 2023 + 2024.
 
-Also export a typed enum for `source_type`:
+### Bug 3 — UI doesn't auto-refetch after re-analyze if the invoke errors silently
+`handleReanalyzeTaxReturn` updates state only when `parseResult.analysis?.documentId` is present. If the edge function returns the bare object (current shape), the field is present, but if it ever returns `{ status:'queued' }` (e.g. the auto-reanalyze path), the card stays stale and shows yesterday's "Analyzed:" date.
 
-```ts
-export const ExtractionSource = z.enum([
-  "ai_document_extraction",  // structured AI extraction from an upload
-  "ai_document_classification",
-  "ai_inline_derivation",    // derived inside an analyzer (e.g. derived_from_gl)
-  "user_wizard",
-  "qbtojson",
-  "quickbooks_api",
-  "docuclipper",
-]);
-```
+## Plan
 
-Map the legacy free-text values to these on read (one-time translation table in `normalized-contracts.ts`).
+### 1. Resolver: prefer broadest year-coverage source (parse-tax-return/index.ts ~L1040-1088)
 
-### 2. Parser-side normalization (write path)
+Replace the "pick first in_year" logic with:
 
-Every `process-*` / `parse-*` edge function gets the same three-line tail:
+1. **Multi-row in_year aggregation** — collect *all* rows with `period_start..period_end` overlapping the tax year, then:
+   - For IS/cashflow-style (additive) data: merge by appending monthlyValues maps so the full year is summed.
+   - For BS (point-in-time): pick the row whose `period_end` is closest to (but ≤) `yearEnd`.
+2. **Treat any row spanning ≥ 11 months as `aggregate`** even when `period_end` is non-null (covers the qbtojson TB/GL case). Concretely:
+   ```ts
+   const isMultiYearAggregate = (r) =>
+     r.source_type === 'qbtojson' &&
+     (!r.period_end ||
+      monthsBetween(r.period_start, r.period_end) >= 11);
+   ```
+3. Keep the existing single-row in_year branch as a fallback only when no aggregation is possible.
 
-```ts
-import { normalizeAndPersist } from "../_shared/normalized-contracts.ts";
-await normalizeAndPersist(supabase, {
-  projectId, userId, sourceDocumentId,
-  dataType: "fixed_assets",
-  source: "ai_document_extraction",
-  rawAiOutput,                       // whatever the LLM returned
-});
-```
+Expected effect:
+- 2025: IS/BS/TB stitched from 7 unified_api months + qbtojson aggregate fill → real year totals → meaningful variance for Gross Receipts, Officer Comp, Salaries, etc.
+- 2023/2024: GL/TB no longer flagged "period_mismatch"; matchers run against the qbtojson multi-year aggregate scoped to that year.
 
-`normalizeAndPersist` does, in order:
+### 2. Don't silently drop deduction comparisons when the matcher hits one account with $0
 
-1. Maps the raw AI output to the canonical schema using a per-data_type adapter (the logic currently in each fallback mapper, moved server-side once).
-2. Validates with the Zod schema. On failure: stores `validation_status='failed'` + the Zod error in `meta.warnings`, still writes the raw payload under `data.raw` so we can debug, returns 200 to the caller so the document doesn't get stuck.
-3. Inserts `{ data: { ...normalized, raw }, source_type, data_type, validation_status, record_count }`.
+`pushCompare` skips on `comparisonValue === 0`. For deductions where the tax return reports a real number and the IS/GL shows $0, that's a *meaningful* variance (e.g. taxpayer claimed Officer Comp but the books show none). Emit it as a `review_only` row with note "Books show $0 for matched accounts" instead of silently dropping. (`parse-tax-return/index.ts` ~L1252-1257 + the deduction loop ~L1454-1463.)
 
-Per-parser changes are mechanical — each one currently builds an `extractionResult` object and calls `.from("processed_data").insert(...)`. Replace the insert with `normalizeAndPersist`. Parser file sizes shrink ~15–30 lines each.
+### 3. Force a refetch after re-analyze (DocumentUploadSection.tsx ~L818-857)
 
-### 3. Read-side cleanup (lazy)
+After `handleReanalyzeTaxReturn` finishes (success path or any returned object), call `fetchTaxReturnInsights()` to pull the freshest row from `processed_data` instead of relying on `parseResult.analysis`. Removes the "Analyzed: 6/4" stale-card case entirely.
 
-Each `src/lib/*Fallback.ts` becomes a thin pass-through that:
-- Tries `NormalizedSchema.safeParse(record.data)` first → return as-is.
-- On failure (legacy row), applies the **same** adapter the edge function uses (re-exported from `src/lib/normalized-contracts.ts`) to upgrade in-memory.
-- Optionally writes the upgraded shape back to the row on next save (no migration script needed).
+### 4. Smoke-test against the live project
 
-Net result: fallback files drop from ~50 lines of field-juggling to ~10 lines of schema check + delegation.
+After redeploy, re-run `parse-tax-return` for all three documents on project `fa0768ca…` and verify:
+- 2025 produces >10 comparisons (was 3)
+- 2023/2024 source diagnostics flip TB + GL from `period_mismatch` → `aggregate`
+- Score is no longer 100 for 2025 once real account-level matching runs
 
-## Out of scope (explicit)
+## Technical Details
 
-- DB schema changes. No new columns; `processed_data.data` stays JSONB.
-- One-shot data migration. Legacy rows auto-upgrade on read.
-- Touching ingestion shapes the extractor service controls (Cloud Run extraction proxy, DocuClipper) — those are already normalized server-side and stored under different `source_type`s.
-- Changing the contract for `qbtojson` / `quickbooks_api` data — `parse-tax-return` just got its normalizers; we'll fold those into the contract module but won't re-derive.
-- Embeddings / RAG (`embed-project-data`) — already keys off `data_type` strings; contract enums make this safer but no logic change.
+**Files**
+- `supabase/functions/parse-tax-return/index.ts` — resolver + zero-comparison handling
+- `src/components/wizard/sections/DocumentUploadSection.tsx` — refetch after re-analyze
 
-## Risk & verification
+**Data assumptions verified via SQL**
+- `processed_data` for this project has 15 unified_api monthly IS rows (2025-06..2026-05), 15 monthly BS rows, 15 monthly TB rows; qbtojson aggregates exist for IS (array of 36 months), BS (array of 36), TB (`monthlyReports[36]`), GL (raw report shape).
+- canonical_transactions: not inspected in this debug pass; the existing `GL_SOURCE_TYPES` filter + `txn_date` range is unchanged.
 
-- **Risk: silent shape drift between client and edge normalizers.** Mitigated by sharing one Zod source — the `_shared/normalized-contracts.ts` file is the contract; both runtimes import the same field definitions. Add a vitest that imports both modules and asserts schema parity (`expect(serverSchema.shape).toEqual(clientSchema.shape)`).
-- **Risk: existing rows break.** Mitigated by `safeParse` + legacy adapter on read. We never throw on legacy data.
-- **Verification:** For each parser, write one fixture test that runs raw LLM output → `normalizeAndPersist` → schema parse → matches expected `FixedAssetsExtractionV1` (or equivalent). Run via `supabase--test_edge_functions`. Spot-check one real upload per data_type in the preview before sign-off.
-
-## Rollout
-
-Phase 1 (small): ship `_shared/normalized-contracts.ts` + the client mirror, with schemas only for `fixed_assets`, `payroll`, `debt_schedule`. Migrate those 3 parsers + their 3 fallbacks. Verify against existing uploads.
-
-Phase 2: `inventory`, `lease_agreement`, `material_contract`, `cim_insights`, `supporting_document`.
-
-Phase 3: `journal_entries`, `tax_return_analysis`, `transfer_classification` — the analyzer-derived shapes. These deserve their own pass because they're outputs of other analyzers, not raw extractions.
-
-Phase 4 (optional, only if needed): a one-time backfill script that walks `processed_data`, runs each row through the legacy adapter, and writes the normalized shape back so reads stop paying the upgrade cost.
-
-## Files touched
-
-- New: `supabase/functions/_shared/normalized-contracts.ts`, `src/lib/normalized-contracts.ts`, `src/lib/normalized-contracts.test.ts`.
-- Modified parsers (per phase): `process-fixed-assets`, `process-payroll-document`, `process-debt-schedule`, then phases 2/3.
-- Slimmed fallbacks: `src/lib/fixedAssetsFallback.ts`, `src/lib/payrollFallback.ts`, `src/lib/debtFallback.ts`, then phases 2/3.
-
-## Open question before I start coding
-
-Do you want **Phase 1 only** in the first PR (3 data_types, low risk, proves the pattern), or **the full normalized-contracts module + all 10 data_types** in one bigger PR? Phase 1 is the safer ship.
+**Out of scope**
+- Re-architecting how unified_api stores monthly rows.
+- Changing the AI extraction prompt / Schedule K-L-M shape.
+- Cross-validation against `tax_return_analysis_v1` schema (per prior decision, tax return stays out of the normalized contract).
