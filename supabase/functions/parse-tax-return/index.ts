@@ -695,13 +695,16 @@ function isRawQbReport(data: any): boolean {
 
 interface NormalizedAccount { name: string; monthlyValues: Record<string, number>; }
 interface NormalizedSection { accounts: NormalizedAccount[]; }
-interface NormalizedIS { revenue: NormalizedSection; cogs: NormalizedSection; expenses: NormalizedSection; totalRevenue: number; netIncome: number; }
+interface NormalizedIS { revenue: NormalizedSection; otherIncome: NormalizedSection; cogs: NormalizedSection; expenses: NormalizedSection; totalRevenue: number; netIncome: number; }
 interface NormalizedBS { assets: NormalizedSection; liabilities: NormalizedSection; equity: NormalizedSection; }
 
-function bucketIsSection(group: string, header: string): "revenue" | "cogs" | "expenses" | null {
+function bucketIsSection(group: string, header: string): "revenue" | "otherIncome" | "cogs" | "expenses" | null {
   const g = (group || "").toLowerCase();
   const h = (header || "").toLowerCase();
-  if (g === "income" || g === "otherincome" || h === "income" || h === "other income") return "revenue";
+  // Keep operating revenue (Line 1a counterpart) separate from non-operating Other Income
+  // (interest, dividends, gains) which belong on Schedule K, not Page 1.
+  if (g === "otherincome" || h === "other income") return "otherIncome";
+  if (g === "income" || h === "income") return "revenue";
   if (g === "cogs" || h.includes("cost of goods")) return "cogs";
   if (g === "expenses" || g === "otherexpenses" || h === "expenses" || h === "other expenses") return "expenses";
   return null; // ignore GrossProfit, NetIncome, NetOperatingIncome, NetOtherIncome
@@ -735,8 +738,8 @@ function walkQbLeaves(rows: any, onLeaf: (colData: any[]) => void, onSection?: (
 }
 
 function normalizeQbPnlMonthly(months: any[]): NormalizedIS {
-  const buckets: Record<"revenue" | "cogs" | "expenses", Map<string, Record<string, number>>> = {
-    revenue: new Map(), cogs: new Map(), expenses: new Map(),
+  const buckets: Record<"revenue" | "otherIncome" | "cogs" | "expenses", Map<string, Record<string, number>>> = {
+    revenue: new Map(), otherIncome: new Map(), cogs: new Map(), expenses: new Map(),
   };
   let totalRevenue = 0;
   let netIncome = 0;
@@ -761,6 +764,8 @@ function normalizeQbPnlMonthly(months: any[]): NormalizedIS {
         const mv = buckets[bucket].get(name) || {};
         mv[monthKey] = (mv[monthKey] || 0) + amt;
         buckets[bucket].set(name, mv);
+        // totalRevenue tracks operating revenue only (Line 1a counterpart).
+        // Other Income is non-operating and intentionally excluded.
         if (bucket === "revenue") totalRevenue += amt;
       });
     }
@@ -768,7 +773,7 @@ function normalizeQbPnlMonthly(months: any[]): NormalizedIS {
   const sec = (b: Map<string, Record<string, number>>): NormalizedSection => ({
     accounts: Array.from(b.entries()).map(([name, mv]) => ({ name, monthlyValues: mv })),
   });
-  return { revenue: sec(buckets.revenue), cogs: sec(buckets.cogs), expenses: sec(buckets.expenses), totalRevenue, netIncome };
+  return { revenue: sec(buckets.revenue), otherIncome: sec(buckets.otherIncome), cogs: sec(buckets.cogs), expenses: sec(buckets.expenses), totalRevenue, netIncome };
 }
 
 function normalizeQbBalanceSheetMonthly(months: any[]): NormalizedBS {
@@ -1322,7 +1327,7 @@ serve(async (req) => {
 
     // Year-scoped monthly summation. Only sums monthlyValues keys matching `${taxYear}-*`.
     // If no keys match the tax year, returns 0 (so we don't compare a 1120-S against the wrong year).
-    const sumISMonthly = (group: 'revenue' | 'cogs' | 'expenses'): number => {
+    const sumISMonthly = (group: 'revenue' | 'otherIncome' | 'cogs' | 'expenses'): number => {
       if (!incomeStatement) return 0;
       const accounts = incomeStatement[group]?.accounts;
       if (!Array.isArray(accounts)) return 0;
@@ -1361,7 +1366,35 @@ serve(async (req) => {
       category: "income_p1",
       threshold: 0.05,
       flagMessage: `Revenue variance between tax return and Income Statement exceeds 5%`,
+      note: "Compares to operating revenue only; non-operating Other Income (interest, dividends, gains) is tied out separately against Schedule K.",
     });
+
+    // ============ OTHER INCOME (Schedule K non-operating) ============
+    // Tie out QB's "Other Income" section to the Schedule K items that aggregate it on the return.
+    // Without this, Other Income silently inflated the Gross Receipts comparison (pre-fix bug).
+    const isOtherIncome = sumISMonthly('otherIncome');
+    if (isOtherIncome > 0 && extractedData.scheduleK) {
+      const k = extractedData.scheduleK;
+      const taxOtherIncomeSum =
+        (Number(k.interestIncome) || 0) +
+        (Number(k.ordinaryDividends) || 0) +
+        (Number(k.netShortTermCapitalGain) || 0) +
+        (Number(k.netLongTermCapitalGain) || 0) +
+        (Number(k.netSection1231Gain) || 0) +
+        (Number(k.otherIncomeLoss) || 0);
+      if (taxOtherIncomeSum > 0) {
+        pushCompare({
+          field: "Other Income (Schedule K non-operating)",
+          taxValue: taxOtherIncomeSum,
+          comparisonValue: isOtherIncome,
+          source: isSourceLabel,
+          category: "income_p1",
+          threshold: 0.10,
+          note: "Books 'Other Income' section vs sum of Schedule K interest, dividends, capital gains, and other income items.",
+        });
+      }
+    }
+
 
     // Year-scoped matching against the Income Statement accounts (expenses + COGS).
     // Used both as a complement to GL and as a fallback when no GL is available for the year.
@@ -1401,7 +1434,7 @@ serve(async (req) => {
     // that don't already fall back to IS (Distributions, Interest income,
     // Charitable, COGS purchases).
     if (!hasGL && hasIS && incomeStatement) {
-      for (const group of ["revenue", "cogs", "expenses"] as const) {
+      for (const group of ["revenue", "otherIncome", "cogs", "expenses"] as const) {
         const accts = (incomeStatement as any)[group]?.accounts;
         if (!Array.isArray(accts)) continue;
         for (const a of accts) {
