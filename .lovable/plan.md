@@ -1,84 +1,72 @@
-# Offline Workbook Round-Trip
+# Offline Workbook Round-Trip — Full Build + Self-Test
 
-Let users download the full XLSX workbook, edit it offline in Excel, and upload it back. The system applies their changes, regenerates calculated tabs, and merges intelligently if another teammate edited the same workbook online while they were away.
+Ship Phases 2 and 3 on top of the Phase 1 foundation already in place, then self-test the full round-trip in the sandbox (export → mutate XLSX programmatically → re-upload → verify DB state) without requiring user interaction.
 
-## Scope
+## Phase 2 — Full input-tab coverage
 
-All editable data flows back:
-- Trial Balance (monthly balances per account)
-- Adjustments (MA / DD / PF) + Reclassifications
-- Supplementary: AR/AP Aging, Fixed Assets, Top Customers/Vendors, Debt Schedule, Leases
-- Setup: deal info, addback mappings
+Extend the meta sheet, parser, and committer to cover every editable input tab:
 
-Calculated tabs (QoE Analysis, NWC, Proof of Cash, Free Cash Flow, IS/BS Reconciliation, etc.) are **ignored on upload** and regenerated from inputs.
+- **Trial Balance** — per-(accountId, periodId) cell diffs. Stable keys already emitted; add parser that reads the TB sheet, matches by account + period header, and emits cell-level changes.
+- **Adjustments add/delete** — detect new rows (blank id → server-generated uuid) and missing rows (id in meta but absent in sheet → delete).
+- **Reclassifications** — same row-level pattern as adjustments.
+- **Supplementary tabs** — AR Aging, AP Aging, Fixed Assets, Top Customers, Top Vendors, Debt Schedule, Leases. Treat each as a full list replace (these are snapshot-style tabs); show "list replaced" in review.
+- **Setup** — per-field diff on deal info + addback mappings.
 
-## User Flow
+Calculated tabs (QoE, NWC, Proof of Cash, IS/BS Recon, Free Cash Flow, etc.) parsed sheets are ignored on upload; surface a soft warning in the review dialog if the user touched them.
 
-1. In the workbook header, "Export XLSX" stays as-is. Add a new "Upload edited workbook" button next to it.
-2. Export embeds a hidden `__shepi_meta` sheet with:
-   - `projectId`, `schemaVersion`, `exportedAt` (ISO timestamp), `exportedFromRevision` (project revision counter)
-   - Stable row keys per input tab (accountId, adjustment id, period id, aging row id, etc.) so we can match rows even if the user re-orders or inserts blank lines
-3. User edits in Excel, clicks Upload → file goes to a new `parse-workbook-upload` edge function.
-4. Edge function:
-   - Validates the meta sheet (right project, schema version compatible)
-   - Compares `exportedFromRevision` to the project's current revision in the DB
-   - Parses each input tab into a normalized diff
-5. UI shows a **review dialog** before commit:
-   - Summary: "47 TB cells changed, 3 adjustments added, 1 deleted, AR aging replaced"
-   - If conflict detected → merge UI (see below)
-6. User confirms → changes write to `projects.wizard_data` + supplementary tables. Revision counter bumps. Calculated tabs recompute on next workbook load.
+## Phase 3 — Per-field merge UI
 
-## Conflict Handling (the merge case)
+When `exportedFromRevision < current revision` AND the diff overlaps fields the online side also changed:
 
-Add a `revision` integer column on `projects` (bumps on every workbook write).
+- `commit-workbook-upload` returns a conflict payload listing each overlapping field (TB cell, adjustment field, setup field) with `mine` / `theirs` / `base` values.
+- New `ConflictResolutionDialog.tsx` renders each conflict with three buttons: *Keep mine*, *Keep theirs*, *Keep both* (only where semantically valid — e.g. two new adjustments).
+- User resolves all conflicts → resolved payload posted back to `commit-workbook-upload` with `resolutions` map → atomic write + revision bump.
+- Non-overlapping drift auto-merges with a "Both changes kept" toast.
 
-On upload, compare `exportedFromRevision` vs current `revision`:
+## Self-Test in sandbox
 
-- **No drift** (revisions match) → straight overwrite, no merge UI.
-- **Drift, no overlap** (online user edited Tab A, offline user edited Tab B) → auto-merge, show a "Both changes kept" confirmation.
-- **Drift with overlap** (same cell/row touched on both sides) → **per-field merge UI** listing each conflict with three buttons: *Keep mine (offline)*, *Keep theirs (online)*, *Keep both* (where it makes sense — e.g. two new adjustments). User must resolve every conflict before commit.
+End-to-end automated test, no user interaction:
 
-Conflict detection granularity:
-- Trial Balance: per (accountId, periodId) cell
-- Adjustments / Reclass: per row (by id), with field-level diff if same id edited both sides
-- Aging / Customers / Vendors / Fixed Assets / Debt / Leases: list-level (full replace from whichever side, with a "review both lists" view since these are usually full snapshots)
-- Setup: per field
+1. Seed a test project in Supabase with known wizard_data (TB, adjustments, AR aging, debt, setup).
+2. Run the real `buildStyledWorkbook` server-side via a Node script to produce an XLSX with the `__shepi_meta` sheet.
+3. Programmatically mutate the workbook with `exceljs`:
+   - Edit a TB cell
+   - Change an adjustment amount
+   - Add a new adjustment row (blank id)
+   - Delete an adjustment row
+   - Replace an AR aging row
+   - Edit a setup field
+4. Invoke `parse-workbook-upload` via `supabase functions invoke` against the local sandbox — assert the diff matches expectations.
+5. Invoke `commit-workbook-upload` — assert DB wizard_data reflects every change and revision bumped by 1.
+6. **Conflict path:** bump revision out-of-band, mutate the same TB cell on both sides, re-upload — assert conflict payload returned, then post resolutions and assert final state matches the chosen resolutions.
+7. Print a pass/fail report.
 
-## Technical Section
+Test lives at `scripts/test-workbook-roundtrip.ts`, run with `bun run scripts/test-workbook-roundtrip.ts`. Iterates until all assertions green; fixes bugs found along the way.
+
+## Technical section
 
 **New files:**
-- `supabase/functions/parse-workbook-upload/index.ts` — accepts XLSX upload, parses with `xlsx` (already used elsewhere), validates meta, returns diff payload (does NOT write yet)
-- `supabase/functions/commit-workbook-upload/index.ts` — accepts resolved diff payload, writes to DB, bumps revision
-- `src/lib/workbookUploadParser.ts` — shared parser logic (per-tab row→record mappers)
-- `src/lib/workbookDiff.ts` — diff/merge algorithm
-- `src/components/workbook/UploadReviewDialog.tsx` — diff summary + conflict resolution UI
-- `src/components/workbook/WorkbookUploadButton.tsx` — file picker + upload orchestration
+- `src/lib/workbookUploadParser.ts` — per-tab row→record parsers (TB, adjustments, reclass, AR, AP, fixed assets, customers, vendors, debt, leases, setup)
+- `src/lib/workbookDiff.ts` — three-way diff (base = `exportedFromRevision` snapshot, mine = uploaded, theirs = current DB)
+- `src/components/workbook/ConflictResolutionDialog.tsx` — per-field merge UI
+- `scripts/test-workbook-roundtrip.ts` — sandbox self-test harness
 
 **Edited files:**
-- `src/lib/exportWorkbookXlsx.ts` — append hidden `__shepi_meta` sheet with project id, revision, schema version, and per-tab row id columns
-- `src/components/workbook/WorkbookShell.tsx` — add Upload button next to Export
-- `src/pages/Workbook.tsx` — wire upload handler, refetch on commit
+- `src/lib/buildStyledWorkbook.ts` — extend `__shepi_meta` with stable keys for TB cells, reclass, supplementary tabs, setup fields; snapshot of base values for three-way diff
+- `supabase/functions/parse-workbook-upload/index.ts` — call full parser, produce full diff, store base snapshot for conflict detection
+- `supabase/functions/commit-workbook-upload/index.ts` — three-way merge logic, return conflict payload when overlaps detected, accept resolutions on second call
+- `src/components/workbook/WorkbookUploadButton.tsx` — expand review dialog to cover all change types; chain into ConflictResolutionDialog when conflicts returned
 
-**Migration:**
-- Add `revision integer not null default 0` to `projects`
-- Trigger or app-side increment on any wizard_data write from the workbook path
+**Schema:** no new migrations — `revision` already added in Phase 1. Schema version bumps from `"1.0"` → `"1.1"` because meta sheet gains fields; older exports rejected with a clear "please re-export" error.
 
-**Schema version:** start at `"1.0"`. If the workbook structure changes later, bump and reject older exports with a clear "please re-export and redo your edits" error.
+**Base snapshot strategy:** to do real three-way merge, the parse function needs the "base" (what the DB looked like at `exportedFromRevision`). Two options:
+- (a) Embed the full base snapshot in `__shepi_meta` at export time (simpler, fatter XLSX)
+- (b) Store snapshots server-side in a new `project_revision_snapshots` table keyed by revision (cleaner, requires migration + retention policy)
 
-**Edge cases handled:**
-- User adds a new adjustment row in Excel with blank id → treated as insert, new id generated server-side
-- User deletes a row → detected as missing key, marked for delete (confirmed in review dialog)
-- User edits a calculated tab → silently ignored, surfaced as a warning in review ("You edited QoE Analysis — those changes were dropped because that tab regenerates from inputs")
-- File from a different project → hard reject with clear error
-- Schema version mismatch → hard reject
-
-## Out of Scope (for now)
-
-- Realtime collaboration / live presence
-- Offline editing in a PWA (still requires Excel)
-- Round-tripping cell formatting/colors the user added in Excel
-- Partial tab upload (always whole workbook)
+Going with **(a)** for now — keeps everything in the file, no extra table, no retention question. Snapshot is JSON-stringified and stored in a hidden sheet cell; for a typical workbook this adds ~50–200KB to the XLSX, acceptable.
 
 ## Effort
+Single agent loop. Phase 2 parsers + Phase 3 merge UI + self-test harness, iterating until the test passes.
 
-~1.5–2 weeks. The hidden meta sheet + diff/merge UI is the bulk of the work; the parsers are mechanical (one per input tab, mirroring the existing exporters).
+## Out of scope
+Realtime presence; cell formatting round-trip; partial tab upload.
