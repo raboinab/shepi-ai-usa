@@ -199,6 +199,8 @@ interface ComparisonResult {
   matchedAccounts?: string[];
   /** Optional short note (e.g. "period mismatch", "no GL counterpart") */
   note?: string;
+  /** Informational rows that should display but not affect the consistency score */
+  excludeFromScore?: boolean;
 }
 
 interface AnalysisDiagnostics {
