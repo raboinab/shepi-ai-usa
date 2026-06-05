@@ -1293,7 +1293,18 @@ serve(async (req) => {
             ? `Income Statement ${taxYear} (${matched.accounts.length} acct${matched.accounts.length === 1 ? '' : 's'})`
             : (hasGL ? "GL — no matching account" : `Income Statement ${taxYear} — no matching account`);
         }
-        if (matched.total === 0) continue; // skip rows with no counterpart at all
+        if (matched.total === 0) {
+          skippedFields.push({
+            field: label,
+            reason: hasGL && hasIS
+              ? `No GL or Income Statement account matched "${matcherKey}" for ${taxYear}`
+              : hasGL
+                ? `No GL account matched "${matcherKey}" for ${taxYear}`
+                : `No Income Statement account matched "${matcherKey}" for ${taxYear}`,
+          });
+          continue;
+        }
+
         pushCompare({
           field: label,
           taxValue: taxVal,
