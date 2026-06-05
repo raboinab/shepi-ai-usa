@@ -273,14 +273,11 @@ const JournalEntriesPayload = z.object({
   count: z.number(),
 });
 
-// tax_return_analysis ───────────────────────────────────────────────────────
-// Very permissive — the underlying extractor's keyInfo shape varies by form.
-const TaxReturnAnalysisPayload = z.object({
-  detectedType: z.string(),
-  extractedText: z.string().nullable().default(null),
-  keyInfo: z.record(z.string(), z.unknown()).default({}),
-  summary: z.string().nullable().default(null),
-});
+// NOTE: `tax_return_analysis` is intentionally NOT in this registry.
+// The parse-tax-return edge function writes a rich analyzer output to that
+// data_type and owns its own normalization (qbtojson + IS/BS/CF/TB shapes).
+// extract-document-text writes a dynamic data_type derived from keyInfo and
+// is also left alone.
 
 // ── Registry: data_type → { schema, adapter } ───────────────────────────────
 type RawAdapter = (raw: unknown, ctx: AdapterContext) => unknown;
