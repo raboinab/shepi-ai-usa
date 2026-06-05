@@ -1566,6 +1566,50 @@ serve(async (req) => {
     else if (overallScore !== null) summary += "No significant variances flagged.";
 
 
+    // Build diagnostics that explain *why* we got the score we did.
+    const diagSources: AnalysisDiagnostics['sources'] = [];
+    const describe = (dtype: string, label: string) => {
+      const kind = processedDataSourceKind[dtype];
+      if (!kind) {
+        diagSources.push({ dataType: label, status: 'missing', detail: `No ${label} found for project` });
+        return;
+      }
+      if (kind === 'in_year') diagSources.push({ dataType: label, status: 'in_year', detail: `Period inside ${taxYear}` });
+      else if (kind === 'aggregate') diagSources.push({ dataType: label, status: 'aggregate', detail: `Multi-year aggregate, scoped to ${taxYear} months` });
+      else diagSources.push({ dataType: label, status: 'period_mismatch', detail: `Only out-of-year data available — flagged as period mismatch` });
+    };
+    describe('income_statement', 'Income Statement');
+    describe('balance_sheet', 'Balance Sheet');
+    describe('trial_balance', 'Trial Balance');
+    describe('general_ledger', 'General Ledger');
+    describe('ar_aging', 'A/R Aging');
+    describe('ap_aging', 'A/P Aging');
+
+    const glSourceTypes = Object.entries(sourceTypeRows).map(([source_type, rows]) => ({
+      source_type,
+      rows,
+      usedForGL: GL_SOURCE_TYPES.includes(source_type),
+    }));
+
+    const skippedFields: AnalysisDiagnostics['skippedFields'] = [];
+    if (!hasGL && !hasIS) {
+      skippedFields.push({ field: 'P&L Deductions', reason: `No GL or year-scoped Income Statement available for ${taxYear}` });
+    } else if (!hasGL && hasIS) {
+      skippedFields.push({ field: 'P&L Deductions', reason: `No detailed General Ledger for ${taxYear} — using Income Statement aggregates instead` });
+    }
+    if (!processedDataSourceKind.balance_sheet || processedDataPeriodMismatch.balance_sheet) {
+      skippedFields.push({ field: 'Schedule L (Balance Sheet)', reason: `No in-year Balance Sheet for ${taxYear}` });
+    }
+
+    const analysisDiagnostics: AnalysisDiagnostics = {
+      taxYear,
+      sources: diagSources,
+      glSourceTypes,
+      hasGL,
+      glFallback: (!hasGL && hasIS) ? 'income_statement_aggregate' : null,
+      skippedFields,
+    };
+
     const analysis: TaxReturnAnalysis = {
       extractedData,
       comparisons,
@@ -1575,7 +1619,9 @@ serve(async (req) => {
       analyzedAt: new Date().toISOString(),
       documentId,
       extractionSource,
+      analysisDiagnostics,
     };
+
 
     // Get user_id for storing processed data
     const { data: { user } } = await supabase.auth.getUser();
