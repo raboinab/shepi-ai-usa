@@ -1127,7 +1127,7 @@ serve(async (req) => {
       cur.abs += Number(t.amount_abs ?? Math.abs(Number(t.amount ?? 0)));
       glByAccount.set(name, cur);
     }
-    const hasGL = glByAccount.size > 0;
+    let hasGL = glByAccount.size > 0;
 
 
     const matchAccounts = (matchers: RegExp[], exclude: RegExp[] = []): { total: number; accounts: string[] } => {
