@@ -1167,18 +1167,82 @@ serve(async (req) => {
 
     // P&L deduction-account matchers (used against canonical_transactions)
     const PL_MATCHERS: Record<string, { match: RegExp[]; exclude?: RegExp[] }> = {
-      salariesWages: { match: [/salar/i, /\bwages?\b/i, /\bpayroll\b/i], exclude: [/officer/i, /owner/i, /payroll tax/i, /shareholder/i] },
-      officerCompensation: { match: [/officer/i, /owner.*comp/i, /shareholder.*comp/i, /\bowners draw\b/i] },
-      repairs: { match: [/repair/i, /maintenance/i] },
+      salariesWages: {
+        match: [
+          /salar/i, /\bwages?\b/i, /\bpayroll\b/i,
+          /\bw[- ]?2\b/i, /\bgusto\b/i, /\badp\b/i, /paychex/i, /justworks/i, /rippling/i,
+          /payroll expense/i, /employee comp/i, /staff (cost|wage|pay)/i, /labor expense/i,
+        ],
+        exclude: [/officer/i, /owner/i, /payroll tax/i, /shareholder/i, /contract labor/i],
+      },
+      officerCompensation: {
+        match: [
+          /officer/i, /owner.*comp/i, /shareholder.*comp/i, /\bowners?\s+draw\b/i,
+          /officer salar/i, /officer wage/i, /owner salar/i, /owner wage/i,
+          /shareholder salar/i, /shareholder wage/i, /\bowner pay\b/i,
+          /\bs[- ]?corp.*(salary|wage|comp)/i,
+        ],
+      },
+      repairs: {
+        match: [
+          /repair/i, /maintenance/i,
+          /\br\s*&\s*m\b/i, /\br\/m\b/i, /upkeep/i, /janitorial/i, /\bcleaning\b/i,
+          /\bservice contract/i, /\bgroundskeep/i, /landscap/i,
+        ],
+        exclude: [/customer service/i, /internet service/i, /professional service/i],
+      },
       badDebts: { match: [/bad debt/i, /uncollect/i, /write.?off/i] },
-      rent: { match: [/\brent\b/i, /\blease\b/i], exclude: [/rental income/i, /rent income/i] },
-      taxes: { match: [/\btax(es)?\b/i, /licens/i], exclude: [/income tax/i, /deferred tax/i] },
-      interestExpense: { match: [/interest expen/i, /^interest$/i, /finance charg/i] },
-      depreciation: { match: [/deprec/i, /amortiz/i] },
+      rent: {
+        match: [
+          /\brent\b/i, /\blease\b/i,
+          /\brental expense/i, /office space/i, /storage (rent|fee)/i,
+          /equipment lease/i, /vehicle lease/i, /\brent expense/i,
+        ],
+        exclude: [/rental income/i, /rent income/i, /prepaid rent/i],
+      },
+      taxes: {
+        match: [
+          /\btax(es)?\b/i, /licens/i,
+          /\bbusiness license/i, /\bpermit/i, /regulatory fee/i,
+          /\bfranchise tax/i, /\bproperty tax/i, /\bpayroll tax/i, /\bexcise tax/i,
+        ],
+        exclude: [/income tax/i, /deferred tax/i, /tax refund/i],
+      },
+      interestExpense: {
+        match: [
+          /interest expen/i, /^interest$/i, /finance charg/i,
+          /\bloan interest/i, /credit card interest/i, /mortgage interest/i,
+          /line of credit/i, /\bloc interest/i,
+        ],
+        exclude: [/interest income/i],
+      },
+      depreciation: {
+        match: [
+          /deprec/i, /amortiz/i,
+          /section 179/i, /bonus depreciation/i,
+        ],
+      },
       depletion: { match: [/deplet/i] },
-      advertising: { match: [/advertis/i, /marketing/i, /promot/i] },
-      pension: { match: [/pension/i, /401\s*\(?k\)?/i, /retirement plan/i, /profit shar/i] },
-      employeeBenefit: { match: [/employee benefit/i, /health insur/i, /\bmedical\b/i, /dental/i, /vision insur/i] },
+      advertising: {
+        match: [
+          /advertis/i, /marketing/i, /promot/i,
+          /\bads\b/i, /google ads/i, /facebook ads/i, /social media/i,
+          /sponsorship/i, /trade show/i, /\bbranding\b/i, /seo expense/i,
+        ],
+      },
+      pension: {
+        match: [
+          /pension/i, /401\s*\(?k\)?/i, /retirement plan/i, /profit shar/i,
+          /simple ira/i, /sep[- ]?ira/i, /\broth\b/i, /employer match/i,
+        ],
+      },
+      employeeBenefit: {
+        match: [
+          /employee benefit/i, /health insur/i, /\bmedical\b/i, /dental/i, /vision insur/i,
+          /\bhsa\b/i, /\bfsa\b/i, /life insurance/i, /disability insurance/i,
+          /worker.?s? comp/i, /\bpto\b/i, /staff (meal|event|gift)/i,
+        ],
+      },
     };
 
     // Balance-sheet matchers (used against processed_data.balance_sheet / trial_balance EOY values)
@@ -1426,6 +1490,27 @@ serve(async (req) => {
       }
       return { total, accounts: Array.from(new Set(accounts)) };
     };
+
+    // List year-scoped IS expense + COGS account names (used to surface "considered but
+    // unmatched" hints when a tax line lands $0 in books).
+    const listISExpenseAccountNames = (): string[] => {
+      if (!incomeStatement) return [];
+      const buckets = [incomeStatement.expenses?.accounts, incomeStatement.cogs?.accounts];
+      const names: string[] = [];
+      for (const b of buckets) {
+        if (!Array.isArray(b)) continue;
+        for (const a of b) {
+          const name = String(a?.name || a?.accountName || "").trim();
+          if (!name) continue;
+          const monthly = a?.monthlyValues || {};
+          const hasYearActivity = Object.keys(monthly).some((k) =>
+            k.startsWith(yearMonthPrefix) && Math.abs(Number(monthly[k]) || 0) > 0
+          );
+          if (hasYearActivity) names.push(name);
+        }
+      }
+      return Array.from(new Set(names));
+    };
     const hasIS = !!incomeStatement && isYearScoped;
 
     // Pseudo-GL synthesis: when no canonical_transactions exist for the year
@@ -1486,6 +1571,12 @@ serve(async (req) => {
         ["Pension (17)", "pension", "pension", 0.10],
         ["Employee Benefits (18)", "employeeBenefit", "employeeBenefit", 0.10],
       ];
+      // Track payroll-line outcomes so we can emit a combined Officer+Salaries fallback row
+      // when an S-corp books everything to a single payroll bucket.
+      const payrollOutcome: Record<'officerCompensation' | 'salariesWages', { taxVal: number; bookVal: number } | null> = {
+        officerCompensation: null,
+        salariesWages: null,
+      };
       for (const [label, taxKey, matcherKey, thr] of deductionRows) {
         const taxVal = (extractedData as any)[taxKey] as number | null;
         if (taxVal === null || taxVal === undefined) continue;
@@ -1501,6 +1592,9 @@ serve(async (req) => {
             ? `Income Statement ${taxYear} (${matched.accounts.length} acct${matched.accounts.length === 1 ? '' : 's'})`
             : (hasGL ? "GL — no matching account" : `Income Statement ${taxYear} — no matching account`);
         }
+        if (taxKey === 'officerCompensation' || taxKey === 'salariesWages') {
+          payrollOutcome[taxKey] = { taxVal, bookVal: matched.total };
+        }
         if (matched.total === 0) {
           const reason = hasGL && hasIS
             ? `No GL or Income Statement account matched "${matcherKey}" for ${taxYear}`
@@ -1508,13 +1602,17 @@ serve(async (req) => {
               ? `No GL account matched "${matcherKey}" for ${taxYear}`
               : `No Income Statement account matched "${matcherKey}" for ${taxYear}`;
           skippedFields.push({ field: label, reason });
-          // Surface the gap as a review_only row so a non-zero tax deduction with $0 in books
-          // doesn't silently disappear from the comparison table.
+          // Surface up to 5 expense accounts the matcher considered but rejected, so the
+          // user can spot misclassifications (e.g. "Contract Labor" not matched as wages).
+          const considered = hasIS ? listISExpenseAccountNames() : [];
+          const hint = considered.length
+            ? ` Considered accounts that did not match: ${considered.slice(0, 5).map((n) => `"${n}"`).join(', ')}${considered.length > 5 ? `, +${considered.length - 5} more` : ''}.`
+            : '';
           pushReviewOnly({
             field: label,
             taxValue: taxVal,
             category: "deductions",
-            note: `Tax return reports ${taxVal.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })} but books show $0 for any account matching "${matcherKey}" in ${taxYear}.`,
+            note: `Tax return reports ${taxVal.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })} but books show $0 for any account matching "${matcherKey}" in ${taxYear}.${hint}`,
           });
           continue;
         }
@@ -1530,6 +1628,43 @@ serve(async (req) => {
           matchedAccounts: matched.accounts,
           flagMessage: `${label} variance vs. books exceeds ${(thr! * 100).toFixed(0)}%`,
         });
+      }
+
+      // S-corp combined-payroll fallback: when both Officer Comp and Salaries are present on
+      // the return but at least one came up $0 in books, run a single combined match so the
+      // headline score isn't dragged down by a structural book-side split that doesn't exist.
+      const oc = payrollOutcome.officerCompensation;
+      const sw = payrollOutcome.salariesWages;
+      if (oc && sw && (oc.bookVal === 0 || sw.bookVal === 0)) {
+        const combinedMatchers = [
+          ...PL_MATCHERS.officerCompensation.match,
+          ...PL_MATCHERS.salariesWages.match,
+        ];
+        const combinedExcludes = (PL_MATCHERS.salariesWages.exclude || []).filter(
+          (rx) => !/officer|owner|shareholder/i.test(rx.source)
+        );
+        let combined = hasGL ? matchAccounts(combinedMatchers, combinedExcludes) : { total: 0, accounts: [] as string[] };
+        let combinedSource = combined.accounts.length
+          ? `GL (${combined.accounts.length} acct${combined.accounts.length === 1 ? '' : 's'})`
+          : '';
+        if (combined.total === 0 && hasIS) {
+          combined = matchISAccounts(combinedMatchers, combinedExcludes);
+          combinedSource = combined.accounts.length
+            ? `Income Statement ${taxYear} (${combined.accounts.length} acct${combined.accounts.length === 1 ? '' : 's'})`
+            : '';
+        }
+        if (combined.total > 0) {
+          pushCompare({
+            field: "Combined Payroll (Officer + Salaries) — fallback",
+            taxValue: oc.taxVal + sw.taxVal,
+            comparisonValue: combined.total,
+            source: combinedSource,
+            category: "deductions_p1",
+            threshold: 0.10,
+            matchedAccounts: combined.accounts,
+            flagMessage: "Combined payroll variance vs. books exceeds 10% — books may not split officer/staff compensation",
+          });
+        }
       }
     } else {
 
