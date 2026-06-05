@@ -1337,8 +1337,9 @@ serve(async (req) => {
       matchedAccounts?: string[];
       note?: string;
       flagMessage?: string;
+      excludeFromScore?: boolean;
     }) => {
-      const { field, taxValue, comparisonValue, source, category, threshold = 0.05, matchedAccounts, note, flagMessage } = args;
+      const { field, taxValue, comparisonValue, source, category, threshold = 0.05, matchedAccounts, note, flagMessage, excludeFromScore } = args;
       if (taxValue === null || taxValue === undefined) return;
       if (comparisonValue === null || comparisonValue === 0) {
         // Skip rows where we have no comparable counterpart — they pollute the table
@@ -1357,8 +1358,9 @@ serve(async (req) => {
         category,
         matchedAccounts,
         note,
+        excludeFromScore,
       });
-      if (flagMessage && Math.abs(variance) > threshold) flags.push(flagMessage);
+      if (flagMessage && Math.abs(variance) > threshold && !excludeFromScore) flags.push(flagMessage);
     };
 
     const pushReviewOnly = (args: {
