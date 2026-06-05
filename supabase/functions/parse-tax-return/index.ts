@@ -660,6 +660,169 @@ async function extractWithAI(base64: string, mimeType: string, apiKey: string): 
   }
 }
 
+// ============================================================================
+// QuickBooks Reports API → normalized {accounts: [{name, monthlyValues}]} shape
+// ============================================================================
+// qbtojson stores raw QB ProfitAndLoss / BalanceSheet / CashFlow reports.
+// The comparison engine expects normalized buckets. These helpers convert
+// in-memory at read time. No DB schema changes.
+
+function parseQbAmount(v: any): number {
+  if (v === null || v === undefined || v === "") return 0;
+  if (typeof v === "number") return v;
+  let s = String(v).replace(/[$,\s]/g, "");
+  if (!s) return 0;
+  let neg = false;
+  if (s.startsWith("(") && s.endsWith(")")) { neg = true; s = s.slice(1, -1); }
+  const n = parseFloat(s);
+  if (isNaN(n)) return 0;
+  return neg ? -n : n;
+}
+
+function isRawQbMonthlyArray(data: any): boolean {
+  return Array.isArray(data) && data.length > 0 && data[0] && typeof data[0] === "object"
+    && "month" in (data[0] as any) && "report" in (data[0] as any);
+}
+
+interface NormalizedAccount { name: string; monthlyValues: Record<string, number>; }
+interface NormalizedSection { accounts: NormalizedAccount[]; }
+interface NormalizedIS { revenue: NormalizedSection; cogs: NormalizedSection; expenses: NormalizedSection; totalRevenue: number; netIncome: number; }
+interface NormalizedBS { assets: NormalizedSection; liabilities: NormalizedSection; equity: NormalizedSection; }
+
+function bucketIsSection(group: string, header: string): "revenue" | "cogs" | "expenses" | null {
+  const g = (group || "").toLowerCase();
+  const h = (header || "").toLowerCase();
+  if (g === "income" || g === "otherincome" || h === "income" || h === "other income") return "revenue";
+  if (g === "cogs" || h.includes("cost of goods")) return "cogs";
+  if (g === "expenses" || g === "otherexpenses" || h === "expenses" || h === "other expenses") return "expenses";
+  return null; // ignore GrossProfit, NetIncome, NetOperatingIncome, NetOtherIncome
+}
+
+function bucketBsSection(group: string, header: string): "assets" | "liabilities" | "equity" | null {
+  const g = (group || "").toLowerCase();
+  const h = (header || "").toLowerCase();
+  if (g === "totalassets" || g.endsWith("assets") || g === "bank" || g === "ar" || g === "inventory" || h.includes("asset")) return "assets";
+  if (g === "totalliabilitiesandequity") return null; // parent — children resolve to liabilities/equity
+  if (g === "liabilities" || g.endsWith("liabilities") || g === "creditcards" || g === "longtermliabilities" || h.includes("liabilit")) return "liabilities";
+  if (g === "equity" || h === "equity") return "equity";
+  return null;
+}
+
+// Walk QB report `rows` (which is `{row: [...]}`); call `onLeaf` for each DATA row.
+function walkQbLeaves(rows: any, onLeaf: (colData: any[]) => void, onSection?: (r: any) => { skip?: boolean; replaceBucket?: any } | void): void {
+  const list = rows?.row;
+  if (!Array.isArray(list)) return;
+  for (const r of list) {
+    if (!r) continue;
+    const isSection = r.type === "Section" || r.type === "SECTION" || !!r.rows;
+    if (isSection) {
+      const action = onSection?.(r);
+      if (action?.skip) continue;
+      if (r.rows) walkQbLeaves(r.rows, onLeaf, onSection);
+    } else if (r.colData && Array.isArray(r.colData) && r.colData.length >= 2) {
+      onLeaf(r.colData);
+    }
+  }
+}
+
+function normalizeQbPnlMonthly(months: any[]): NormalizedIS {
+  const buckets: Record<"revenue" | "cogs" | "expenses", Map<string, Record<string, number>>> = {
+    revenue: new Map(), cogs: new Map(), expenses: new Map(),
+  };
+  let totalRevenue = 0;
+  let netIncome = 0;
+  for (const m of months || []) {
+    const monthKey = String(m?.month || "").substring(0, 7); // "YYYY-MM"
+    if (!/^\d{4}-\d{2}$/.test(monthKey)) continue;
+    const topRows = m?.report?.rows?.row;
+    if (!Array.isArray(topRows)) continue;
+    for (const section of topRows) {
+      const group = section?.group || "";
+      const header = section?.header?.colData?.[0]?.value || "";
+      if (group === "NetIncome") {
+        netIncome += parseQbAmount(section?.summary?.colData?.[1]?.value);
+      }
+      const bucket = bucketIsSection(group, header);
+      if (!bucket) continue;
+      walkQbLeaves(section.rows, (colData) => {
+        const name = String(colData?.[0]?.value || "").trim();
+        if (!name) return;
+        const amt = parseQbAmount(colData?.[1]?.value);
+        if (amt === 0) return;
+        const mv = buckets[bucket].get(name) || {};
+        mv[monthKey] = (mv[monthKey] || 0) + amt;
+        buckets[bucket].set(name, mv);
+        if (bucket === "revenue") totalRevenue += amt;
+      });
+    }
+  }
+  const sec = (b: Map<string, Record<string, number>>): NormalizedSection => ({
+    accounts: Array.from(b.entries()).map(([name, mv]) => ({ name, monthlyValues: mv })),
+  });
+  return { revenue: sec(buckets.revenue), cogs: sec(buckets.cogs), expenses: sec(buckets.expenses), totalRevenue, netIncome };
+}
+
+function normalizeQbBalanceSheetMonthly(months: any[]): NormalizedBS {
+  const buckets: Record<"assets" | "liabilities" | "equity", Map<string, Record<string, number>>> = {
+    assets: new Map(), liabilities: new Map(), equity: new Map(),
+  };
+  for (const m of months || []) {
+    const monthKey = String(m?.month || "").substring(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(monthKey)) continue;
+    const topRows = m?.report?.rows;
+    if (!topRows) continue;
+
+    const visit = (rows: any, currentBucket: "assets" | "liabilities" | "equity" | null) => {
+      const list = rows?.row;
+      if (!Array.isArray(list)) return;
+      for (const r of list) {
+        if (!r) continue;
+        const isSection = r.type === "Section" || r.type === "SECTION" || !!r.rows;
+        if (isSection) {
+          const g = r.group || "";
+          const h = r.header?.colData?.[0]?.value || "";
+          const resolved = bucketBsSection(g, h);
+          // For TotalLiabilitiesAndEquity parent (resolved === null but children carry the bucket),
+          // keep currentBucket as null so child sections set it.
+          const nextBucket = resolved ?? currentBucket;
+          if (r.rows) visit(r.rows, nextBucket);
+        } else if (r.colData && Array.isArray(r.colData) && r.colData.length >= 2 && currentBucket) {
+          const name = String(r.colData[0]?.value || "").trim();
+          if (!name) continue;
+          const amt = parseQbAmount(r.colData[1]?.value);
+          // BS is point-in-time: record EOM balance per month (replace, don't add)
+          const mv = buckets[currentBucket].get(name) || {};
+          mv[monthKey] = amt;
+          buckets[currentBucket].set(name, mv);
+        }
+      }
+    };
+    visit(topRows, null);
+  }
+  const sec = (b: Map<string, Record<string, number>>): NormalizedSection => ({
+    accounts: Array.from(b.entries()).map(([name, mv]) => ({ name, monthlyValues: mv })),
+  });
+  return { assets: sec(buckets.assets), liabilities: sec(buckets.liabilities), equity: sec(buckets.equity) };
+}
+
+/** Apply the right QB-shape normalizer based on data_type. Returns input untouched if already normalized. */
+function maybeNormalizeQbData(dataType: string, sourceType: string, data: any): any {
+  if (sourceType !== "qbtojson") return data;
+  try {
+    if (dataType === "income_statement" && isRawQbMonthlyArray(data)) {
+      return normalizeQbPnlMonthly(data);
+    }
+    if (dataType === "balance_sheet" && isRawQbMonthlyArray(data)) {
+      return normalizeQbBalanceSheetMonthly(data);
+    }
+  } catch (e) {
+    console.warn(`maybeNormalizeQbData(${dataType}) failed:`, e);
+  }
+  return data;
+}
+
+
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
