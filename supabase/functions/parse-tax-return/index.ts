@@ -896,7 +896,10 @@ serve(async (req) => {
       retainedEarnings: { match: [/retained earnings/i] },
     };
 
-    // Helper: extract EOY balance from processed_data.balance_sheet shape
+    // Helper: extract EOY balance from processed_data.balance_sheet shape, scoped to taxYear.
+    // Picks the December (or last available) monthly key whose YYYY-MM <= yearEnd. If no key
+    // belongs to or precedes the tax year, falls back to absolute-last (with mismatch flag).
+    const yearMonthPrefix = `${taxYear}-`;
     const getBsEoyByMatcher = (matchers: { match: RegExp[]; exclude?: RegExp[] }): { total: number; accounts: string[] } => {
       const bs = wizardData.balanceSheet || processedData.balance_sheet;
       if (!bs) return { total: 0, accounts: [] };
@@ -908,16 +911,25 @@ serve(async (req) => {
           if (!name) continue;
           if (matchers.exclude?.some((rx) => rx.test(name))) continue;
           if (!matchers.match.some((rx) => rx.test(name))) continue;
-          // EOY = last monthly value
           const monthly = a.monthlyValues || {};
           const keys = Object.keys(monthly).sort();
-          const eoy = keys.length ? Number(monthly[keys[keys.length - 1]]) || 0 : Number(a.endingBalance ?? a.balance ?? 0);
+          let eoyKey: string | undefined;
+          // Prefer last key inside the tax year (e.g. "2024-12")
+          const inYear = keys.filter((k) => k.startsWith(yearMonthPrefix));
+          if (inYear.length) {
+            eoyKey = inYear[inYear.length - 1];
+          } else {
+            // Otherwise last key <= yearEnd ("YYYY-12")
+            const leYearEnd = keys.filter((k) => k <= `${taxYear}-12`);
+            if (leYearEnd.length) eoyKey = leYearEnd[leYearEnd.length - 1];
+            else if (keys.length) eoyKey = keys[keys.length - 1];
+          }
+          const eoy = eoyKey ? Number(monthly[eoyKey]) || 0 : Number(a.endingBalance ?? a.balance ?? 0);
           total += eoy;
           matched.push(name);
         }
         return { total, accounts: matched };
       };
-      // shapes vary: {assets:{accounts:[]}, liabilities:{accounts:[]}, equity:{accounts:[]}, accounts:[]}
       const buckets = [bs.accounts, bs.assets?.accounts, bs.liabilities?.accounts, bs.equity?.accounts];
       let total = 0;
       const accounts: string[] = [];
@@ -929,6 +941,7 @@ serve(async (req) => {
       }
       return { total, accounts: Array.from(new Set(accounts)) };
     };
+
 
     // Build comparisons
     const comparisons: ComparisonResult[] = [];
