@@ -757,7 +757,6 @@ function computeRecordCount(dataType: NormalizedDataType, payload: unknown): num
     case "inventory":
       return arr(p.categories).length;
     case "lease_agreement":
-    case "tax_return_analysis":
     case "cim_insights":
     case "supporting_document":
       return 1;
