@@ -695,13 +695,16 @@ function isRawQbReport(data: any): boolean {
 
 interface NormalizedAccount { name: string; monthlyValues: Record<string, number>; }
 interface NormalizedSection { accounts: NormalizedAccount[]; }
-interface NormalizedIS { revenue: NormalizedSection; cogs: NormalizedSection; expenses: NormalizedSection; totalRevenue: number; netIncome: number; }
+interface NormalizedIS { revenue: NormalizedSection; otherIncome: NormalizedSection; cogs: NormalizedSection; expenses: NormalizedSection; totalRevenue: number; netIncome: number; }
 interface NormalizedBS { assets: NormalizedSection; liabilities: NormalizedSection; equity: NormalizedSection; }
 
-function bucketIsSection(group: string, header: string): "revenue" | "cogs" | "expenses" | null {
+function bucketIsSection(group: string, header: string): "revenue" | "otherIncome" | "cogs" | "expenses" | null {
   const g = (group || "").toLowerCase();
   const h = (header || "").toLowerCase();
-  if (g === "income" || g === "otherincome" || h === "income" || h === "other income") return "revenue";
+  // Keep operating revenue (Line 1a counterpart) separate from non-operating Other Income
+  // (interest, dividends, gains) which belong on Schedule K, not Page 1.
+  if (g === "otherincome" || h === "other income") return "otherIncome";
+  if (g === "income" || h === "income") return "revenue";
   if (g === "cogs" || h.includes("cost of goods")) return "cogs";
   if (g === "expenses" || g === "otherexpenses" || h === "expenses" || h === "other expenses") return "expenses";
   return null; // ignore GrossProfit, NetIncome, NetOperatingIncome, NetOtherIncome
