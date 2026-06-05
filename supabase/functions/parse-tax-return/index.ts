@@ -1469,16 +1469,23 @@ serve(async (req) => {
             : (hasGL ? "GL — no matching account" : `Income Statement ${taxYear} — no matching account`);
         }
         if (matched.total === 0) {
-          skippedFields.push({
+          const reason = hasGL && hasIS
+            ? `No GL or Income Statement account matched "${matcherKey}" for ${taxYear}`
+            : hasGL
+              ? `No GL account matched "${matcherKey}" for ${taxYear}`
+              : `No Income Statement account matched "${matcherKey}" for ${taxYear}`;
+          skippedFields.push({ field: label, reason });
+          // Surface the gap as a review_only row so a non-zero tax deduction with $0 in books
+          // doesn't silently disappear from the comparison table.
+          pushReviewOnly({
             field: label,
-            reason: hasGL && hasIS
-              ? `No GL or Income Statement account matched "${matcherKey}" for ${taxYear}`
-              : hasGL
-                ? `No GL account matched "${matcherKey}" for ${taxYear}`
-                : `No Income Statement account matched "${matcherKey}" for ${taxYear}`,
+            taxValue: taxVal,
+            category: "deductions",
+            note: `Tax return reports ${taxVal.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })} but books show $0 for any account matching "${matcherKey}" in ${taxYear}.`,
           });
           continue;
         }
+
 
         pushCompare({
           field: label,
