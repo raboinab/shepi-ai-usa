@@ -178,7 +178,7 @@ function detectChanges(wb: ExcelJS.Workbook, meta: MetaParsed) {
   const tbEdits: Record<string, Record<string, number>> = {};
   const adjEdits: Record<string, Record<string, number>> = {};
 
-  const periodIdByLabel = new Map(meta.periods.map(p => [p.label.toLowerCase(), p.id]));
+  const periodIdByLabel = new Map<string, string>(); for (const p of meta.periods) { periodIdByLabel.set(p.label.toLowerCase(), p.id); if (p.shortLabel) periodIdByLabel.set(p.shortLabel.toLowerCase(), p.id); }
   const periodIdSet = new Set(meta.periods.map(p => p.id));
 
   // TB
