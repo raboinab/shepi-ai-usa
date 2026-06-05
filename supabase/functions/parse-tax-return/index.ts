@@ -1366,7 +1366,35 @@ serve(async (req) => {
       category: "income_p1",
       threshold: 0.05,
       flagMessage: `Revenue variance between tax return and Income Statement exceeds 5%`,
+      note: "Compares to operating revenue only; non-operating Other Income (interest, dividends, gains) is tied out separately against Schedule K.",
     });
+
+    // ============ OTHER INCOME (Schedule K non-operating) ============
+    // Tie out QB's "Other Income" section to the Schedule K items that aggregate it on the return.
+    // Without this, Other Income silently inflated the Gross Receipts comparison (pre-fix bug).
+    const isOtherIncome = sumISMonthly('otherIncome');
+    if (isOtherIncome > 0 && extractedData.scheduleK) {
+      const k = extractedData.scheduleK;
+      const taxOtherIncomeSum =
+        (Number(k.interestIncome) || 0) +
+        (Number(k.ordinaryDividends) || 0) +
+        (Number(k.netShortTermCapitalGain) || 0) +
+        (Number(k.netLongTermCapitalGain) || 0) +
+        (Number(k.netSection1231Gain) || 0) +
+        (Number(k.otherIncomeLoss) || 0);
+      if (taxOtherIncomeSum > 0) {
+        pushCompare({
+          field: "Other Income (Schedule K non-operating)",
+          taxValue: taxOtherIncomeSum,
+          comparisonValue: isOtherIncome,
+          source: isSourceLabel,
+          category: "income_p1",
+          threshold: 0.10,
+          note: "Books 'Other Income' section vs sum of Schedule K interest, dividends, capital gains, and other income items.",
+        });
+      }
+    }
+
 
     // Year-scoped matching against the Income Statement accounts (expenses + COGS).
     // Used both as a complement to GL and as a fallback when no GL is available for the year.
