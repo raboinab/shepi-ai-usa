@@ -1327,7 +1327,7 @@ serve(async (req) => {
 
     // Year-scoped monthly summation. Only sums monthlyValues keys matching `${taxYear}-*`.
     // If no keys match the tax year, returns 0 (so we don't compare a 1120-S against the wrong year).
-    const sumISMonthly = (group: 'revenue' | 'cogs' | 'expenses'): number => {
+    const sumISMonthly = (group: 'revenue' | 'otherIncome' | 'cogs' | 'expenses'): number => {
       if (!incomeStatement) return 0;
       const accounts = incomeStatement[group]?.accounts;
       if (!Array.isArray(accounts)) return 0;
