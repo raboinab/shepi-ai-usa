@@ -349,6 +349,42 @@ export const TaxReturnInsightsCard = ({ analysis, className, onReanalyze }: TaxR
           {summary}
         </p>
 
+        {/* Diagnostics — surfaced when N/A or when the user expands the card */}
+        {analysis.analysisDiagnostics && (overallScore === null || overallScore < 0 || isExpanded) && (
+          <div className="border rounded-lg p-3 space-y-2 bg-muted/30">
+            <div className="text-sm font-medium">Why this score</div>
+            <ul className="text-xs space-y-1">
+              {analysis.analysisDiagnostics.sources.map((s) => {
+                const icon =
+                  s.status === 'in_year' ? '✅' :
+                  s.status === 'aggregate' ? '✅' :
+                  s.status === 'period_mismatch' ? '⚠️' : '❌';
+                return (
+                  <li key={s.dataType} className="flex gap-2">
+                    <span>{icon}</span>
+                    <span><strong>{s.dataType}:</strong> {s.detail || s.status}</span>
+                  </li>
+                );
+              })}
+              {analysis.analysisDiagnostics.skippedFields?.map((sk, i) => (
+                <li key={`sk-${i}`} className="flex gap-2">
+                  <span>⚠️</span>
+                  <span><strong>{sk.field}:</strong> {sk.reason}</span>
+                </li>
+              ))}
+            </ul>
+            {analysis.analysisDiagnostics.glSourceTypes.length > 0 && (
+              <div className="text-xs text-muted-foreground pt-1 border-t">
+                <span className="font-medium">Transaction sources for {analysis.analysisDiagnostics.taxYear}: </span>
+                {analysis.analysisDiagnostics.glSourceTypes
+                  .map((g) => `${g.source_type} (${g.rows.toLocaleString()}${g.usedForGL ? '' : ', snapshot — excluded'})`)
+                  .join(', ')}
+              </div>
+            )}
+          </div>
+        )}
+
+
         {/* Key Metrics */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div className="flex flex-col">
