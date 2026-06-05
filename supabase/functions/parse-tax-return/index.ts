@@ -1710,6 +1710,28 @@ serve(async (req) => {
           payrollOutcome[taxKey] = { taxVal, bookVal: matched.total };
         }
         if (matched.total === 0) {
+          // Before giving up, try the per-line external-document fallback (payroll,
+          // fixed assets, debt schedule) for the four tax keys we support.
+          const fallbackFn = EXT_FALLBACKS[taxKey];
+          if (fallbackFn) {
+            const ext = fallbackFn();
+            if (ext.total > 0) {
+              if (taxKey === 'officerCompensation' || taxKey === 'salariesWages') {
+                payrollOutcome[taxKey] = { taxVal, bookVal: ext.total };
+              }
+              const yearNote = ext.yearScoped ? '' : ' — variance may reflect multi-year totals';
+              pushCompare({
+                field: label,
+                taxValue: taxVal,
+                comparisonValue: ext.total,
+                source: ext.source,
+                category: "deductions_p1",
+                threshold: thr,
+                flagMessage: `${label}: books had $0 for this line; matched against uploaded ${ext.source}${yearNote}. Variance vs. tax exceeds ${(thr! * 100).toFixed(0)}%.`,
+              });
+              continue;
+            }
+          }
           const reason = hasGL && hasIS
             ? `No GL or Income Statement account matched "${matcherKey}" for ${taxYear}`
             : hasGL
@@ -1722,11 +1744,12 @@ serve(async (req) => {
           const hint = considered.length
             ? ` Considered accounts that did not match: ${considered.slice(0, 5).map((n) => `"${n}"`).join(', ')}${considered.length > 5 ? `, +${considered.length - 5} more` : ''}.`
             : '';
+          const tip = EXT_TIP[taxKey] ? ` ${EXT_TIP[taxKey]}` : '';
           pushReviewOnly({
             field: label,
             taxValue: taxVal,
             category: "deductions",
-            note: `Tax return reports ${taxVal.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })} but books show $0 for any account matching "${matcherKey}" in ${taxYear}.${hint}`,
+            note: `Tax return reports ${taxVal.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })} but books show $0 for any account matching "${matcherKey}" in ${taxYear}.${hint}${tip}`,
           });
           continue;
         }
@@ -1766,6 +1789,17 @@ serve(async (req) => {
           combinedSource = combined.accounts.length
             ? `Income Statement ${taxYear} (${combined.accounts.length} acct${combined.accounts.length === 1 ? '' : 's'})`
             : '';
+        }
+        // If books are still empty, sum uploaded payroll documents (owner comp + salaries).
+        if (combined.total === 0) {
+          const ocExt = getPayrollOwnerComp();
+          const swExt = getPayrollSalaries();
+          const extTotal = ocExt.total + swExt.total;
+          if (extTotal > 0) {
+            combined = { total: extTotal, accounts: [] };
+            const yearScoped = ocExt.yearScoped && swExt.yearScoped;
+            combinedSource = `Payroll Reports (uploaded${yearScoped ? '' : '; no year scoping'})`;
+          }
         }
         if (combined.total > 0) {
           pushCompare({
