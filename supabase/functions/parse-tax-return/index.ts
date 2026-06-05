@@ -2320,6 +2320,7 @@ serve(async (req) => {
     let totalComparisons = 0;
     for (const comp of comparisons) {
       if (comp.status === 'missing_data' || comp.status === 'review_only') continue;
+      if (comp.excludeFromScore) continue;
       totalComparisons += 1;
       if (comp.status === 'match') matchCount += 1;
       else if (comp.status === 'minor_variance') matchCount += 0.7;
