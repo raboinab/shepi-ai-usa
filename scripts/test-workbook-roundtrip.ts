@@ -118,7 +118,7 @@ function readMetaFromWorkbook(wb: ExcelJS.Workbook): MetaParsed {
     if (aTrim === "__snapshot__") { section = "snapshot"; continue; }
     if (aTrim === "__snapshot_end__") break;
     if (aTrim === "periodId" || aTrim === "id") continue;
-    if (section === "periods" && aTrim) periods.push({ id: aTrim, label: b });
+    if (section === "periods" && aTrim) periods.push({ id: aTrim, label: b, shortLabel: c || b });
     else if (section === "adjustments" && aTrim) adjustmentDirectory.push({ id: aTrim, type: b, label: c });
     else if (section === "snapshot" && a) chunks.push(a);
   }
