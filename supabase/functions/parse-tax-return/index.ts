@@ -201,6 +201,19 @@ interface ComparisonResult {
   note?: string;
 }
 
+interface AnalysisDiagnostics {
+  taxYear: number;
+  sources: Array<{
+    dataType: string;
+    status: 'in_year' | 'aggregate' | 'period_mismatch' | 'missing';
+    detail?: string;
+  }>;
+  glSourceTypes: Array<{ source_type: string; rows: number; usedForGL: boolean }>;
+  hasGL: boolean;
+  glFallback?: 'income_statement_aggregate' | null;
+  skippedFields?: Array<{ field: string; reason: string }>;
+}
+
 interface TaxReturnAnalysis {
   extractedData: TaxReturnData;
   comparisons: ComparisonResult[];
@@ -211,7 +224,9 @@ interface TaxReturnAnalysis {
   analyzedAt: string;
   documentId: string;
   extractionSource?: string;
+  analysisDiagnostics?: AnalysisDiagnostics;
 }
+
 
 // Helper function to safely parse numbers from various formats
 function parseNumber(value: any): number | null {
