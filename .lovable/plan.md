@@ -1,77 +1,108 @@
-## Goal
+## What's actually wrong
 
-When a tax-return deduction line lands $0 in the books (GL + Income Statement), fall back to comparison against uploaded external documents (payroll registers, fixed assets schedule, debt schedule) before emitting a review-only row. This closes the gap where payroll runs through Gusto/ADP and never hits the GL, depreciation is tracked off-book on a fixed asset schedule, or interest is tracked in a debt schedule.
+I pulled the project's uploaded documents straight from `processed_data` and confirmed three concrete bugs in `supabase/functions/parse-tax-return/index.ts`. The user already uploaded everything we need; the analyzer just isn't reading the right paths.
 
-## Where the changes go
+### Bug 1 — Payroll / Fixed Assets / Debt Schedule helpers read the wrong JSON paths
 
-`supabase/functions/parse-tax-return/index.ts` — deduction loop at lines ~1574–1631 plus four small reducer helpers.
+The helpers I added last round look at `payrollDoc.ownerComp.accounts`, `fixedAssetsDoc.assets[].currentYearDepreciation`, `debtScheduleDoc.debts[].annualInterest`. None of those fields exist in the real stored shape. So every helper returns `0`, the fallback never fires, and the user gets the "upload a payroll register…" tip on top of docs they already uploaded.
 
-## Changes
+Real shapes (verified against this project):
 
-### 1. Extract four reducer helpers (top of analyzer block, near `matchISAccounts`)
-
-```
-getPayrollOwnerComp(year)        → number    // from wizardData.payroll.ownerComp.accounts, year-scoped via monthlyValues YYYY-MM prefix
-getPayrollSalaries(year)         → number    // from wizardData.payroll.salaryWages.accounts OR employees[]/array forms, year-scoped
-getFixedAssetDepreciation(year)  → number    // sum of currentYearDepreciation / annualDepreciation, year-scoped if asset has year field, else annual
-getDebtScheduleInterest(year)    → number    // sum of annualInterest / interestExpense, year-scoped if available, else annual
-```
-
-Each returns `{ total: number; yearScoped: boolean; source: string }` so the row can show the right source label and a "(no year scoping)" hint when only annual totals exist.
-
-### 2. Per-line external-document fallback in the deduction loop
-
-Before the existing `pushReviewOnly` push when `matched.total === 0`, check the tax key and consult the matching helper:
-
-| Tax key | Helper | Source label |
+| Doc | Actual path | Per-row fields |
 |---|---|---|
-| `officerCompensation` | `getPayrollOwnerComp` | `Payroll Reports — Owner Comp (uploaded)` |
-| `salariesWages` | `getPayrollSalaries` | `Payroll Reports (uploaded)` |
-| `depreciation` | `getFixedAssetDepreciation` | `Fixed Assets Schedule (uploaded)` |
-| `interestExpense` | `getDebtScheduleInterest` | `Debt Schedule (uploaded)` |
+| Payroll | `data.extractedData.salaryWages[]` and `data.extractedData.ownerCompensation[]` | `{ name, monthlyValues: { "YYYY-MM": number } }` |
+| Fixed Assets | `data.extractedData.assets[]` | `{ cost, accumDepreciation, dateAcquired, usefulLife: "7 years" }` — no precomputed annual depreciation |
+| Debt Schedule | `data.debts[]` (top-level, NOT under extractedData) | `{ currentBalance, interestRate, originalAmount, maturityDate }` — no precomputed annual interest |
 
-If the helper returns a positive total, emit a `pushCompare` row (not review-only) with the original threshold and a `flagMessage` that notes "books had $0 for this line; matched against uploaded {source}".
+### Bug 2 — "Other Income (Schedule K non-operating)" is structurally apples-to-oranges
 
-### 3. Combined Payroll fallback row
+Tax-side sum of Schedule K interest + dividends + cap gains vs. books "Other Income" section produces wild swings (−75%, −81%, +1574% across the three years). Including it in the consistency score punishes deals for a comparison that was never meaningful.
 
-The combined Officer+Salaries fallback added in the previous change should also include `getPayrollOwnerComp(year) + getPayrollSalaries(year)` in its book-side total when the keyword match returns $0. This makes the combined row work even for projects with no payroll account in books at all.
+### Bug 3 — Revenue "regression" is not a regression
 
-### 4. Review-only "tip" when no fallback document exists
+The prior 0% Gross Receipts variance was an artifact of `totalRevenue` summing all 3 years against a single-year tax return. The new per-year monthly scoping shows real 10–24% variances — that's the honest number and stays.
 
-When `matched.total === 0` AND the external-document helper also returns 0 AND the tax key is one of the four supported, append a tip to the review-only note:
+## Changes to `supabase/functions/parse-tax-return/index.ts`
 
-> Tip: upload a payroll register / fixed assets schedule / debt schedule for this year to enable a direct comparison.
+### 1. Rewrite the four helpers (lines ~1520–1615) against real shapes
 
-This converts a silent dead-end into an actionable next step.
+```text
+payrollAccounts(group)  // group = 'salaryWages' | 'ownerCompensation'
+  arr = payrollDoc?.extractedData?.[group]      // real path
+     ?? (Array.isArray(payrollDoc?.[group]) ? payrollDoc[group] : null)  // PayrollFallbackData shape
+     ?? payrollDoc?.[group]?.accounts           // last-resort legacy
+  sum each row's monthlyValues keys matching `${taxYear}-`
+  fallback: sum all monthlyValues if no year keys match (mark yearScoped:false)
 
-### 5. Year scoping caveats
+getPayrollOwnerComp(year)
+  payrollAccounts('ownerCompensation')
+  source: "Payroll — Owner Compensation (uploaded)"
 
-- Payroll: `monthlyValues` keys (`YYYY-MM`) are filtered to the tax year. If only annual totals exist (no `monthlyValues`), use the annual total and mark `yearScoped: false`.
-- Fixed assets: prefer `currentYearDepreciation` when the asset's `inServiceYear` ≤ taxYear and not disposed; otherwise sum all. Mark `yearScoped` accordingly.
-- Debt schedule: same pattern — prefer year-specific interest fields if present.
+getPayrollSalaries(year)
+  payrollAccounts('salaryWages')
+  source: "Payroll Reports (uploaded)"
 
-When `yearScoped` is false, the row's source label becomes e.g. `Payroll Reports (uploaded; no year scoping)` and the flagMessage gets a `— variance may reflect multi-year totals` suffix.
+getFixedAssetDepreciation(year)
+  list = fixedAssetsDoc?.extractedData?.assets ?? fixedAssetsDoc?.assets ?? (Array.isArray(fixedAssetsDoc) ? fixedAssetsDoc : [])
+  for each asset:
+     life = parseInt(usefulLife) || 0       // "7 years" -> 7
+     annual = life > 0 ? cost / life : 0
+     acquiredYear = new Date(dateAcquired || acquisitionDate).getFullYear()
+     fullyDepYear = acquiredYear + life
+     include if acquiredYear <= taxYear && fullyDepYear > taxYear
+     (prorate first year by months in service if dateAcquired is mid-year — optional, skip for v1)
+  source: "Fixed Assets Schedule (uploaded)"
+
+getDebtScheduleInterest(year)
+  list = debtScheduleDoc?.debts ?? debtScheduleDoc?.extractedData?.debts ?? (Array.isArray(debtScheduleDoc) ? debtScheduleDoc : [])
+  for each debt:
+     rate = interestRate / 100
+     // Approximation: avg of original and current balance (declining principal)
+     avgBal = (originalAmount + currentBalance) / 2
+     annual = avgBal * rate
+     maturityYear = new Date(maturityDate).getFullYear()
+     include if maturityYear >= taxYear   // debt still outstanding in tax year
+  mark yearScoped:false and add " (estimated from rate × avg balance)" to source label
+  source: "Debt Schedule (uploaded, estimated)"
+```
+
+Sanity check against this project's docs for 2024:
+- Owner Comp: 12 × $10,000 = **$120,000** (matches tax line 7 if present)
+- Salaries: Sum of 2024 monthlyValues = **~$228,409**
+- Depreciation: 5 assets, annual ≈ $13,495/7 + $12,800/7 + $8,500/10 + 0 (fully dep) + $3,200/5 ≈ **~$5,323**
+- Interest: ($15k+$4k)/2 × 7.25% + ($35k+$25k)/2 × 5.99% ≈ **~$2,486**
+
+These now actually flow into `pushCompare` rows instead of "$0 books → tip".
+
+### 2. Downgrade "Other Income (Schedule K non-operating)" (lines ~1436–1460)
+
+Add `excludeFromScore: true` to the row's payload and skip it in the consistency-score reducer. Also append to its `note`: *"Informational only — books 'Other Income' bucket and Schedule K line items are structurally different. Excluded from consistency score."*
+
+The pushCompare/scoring reducer already iterates over flagged rows; add `if (row.excludeFromScore) continue;` before counting.
+
+### 3. Make the tip only fire when the document truly isn't uploaded
+
+Currently the tip is appended whenever `EXT_FALLBACKS[taxKey]() === 0`. Change it so the tip is appended only when the corresponding `payrollDoc / fixedAssetsDoc / debtScheduleDoc` is `null/undefined` — i.e. genuinely missing. If the doc exists but the helper returned 0, append a different note: *"Uploaded {doc} for {year} had no matching rows — extraction may need review."* That converts a wrong nag into an actionable signal.
 
 ## Out of scope
 
-- No new document categories — only uses payroll / fixed assets / debt schedules already in `wizardData`.
-- No prompt or extractor changes.
-- No frontend changes — `source` and `flagMessage` already render on the comparison table.
-- No M-1 / Schedule K / Schedule L changes.
-- No further matcher-regex changes (the previous broadening stays as-is).
+- No prompt/extractor changes; the existing extractors produce the shapes above.
+- No frontend changes.
+- No new document categories.
+- Revenue/Other Income deltas surfaced by per-year scoping remain visible — that's the correct behavior.
 
 ## Files touched
 
-- `supabase/functions/parse-tax-return/index.ts` only.
+- `supabase/functions/parse-tax-return/index.ts` only. ~80 LOC diff. Single edge-function deploy. No migration.
 
-## Effort
+## Verification (after deploy)
 
-~80–120 LOC. Single edge function deploy. No migration.
+Re-analyze 2023 / 2024 / 2025 on project `fa0768ca-96f9-4ded-b498-f64ca5be3ede`. Expected:
 
-## Regression check
-
-Re-analyze 2023 / 2024 / 2025 on project `fa0768ca-96f9-4ded-b498-f64ca5be3ede`:
-- If payroll reports were uploaded: Officer Comp and Salaries rows switch from review-only ($0 books) to real comparison rows sourced from "Payroll Reports (uploaded)".
-- If no payroll docs were uploaded: review-only row keeps the "considered accounts" hint AND gets the new "upload a payroll register…" tip.
-- Same pattern for Depreciation (Fixed Assets Schedule) and Interest (Debt Schedule).
-- Consistency scores recover further as legitimate matches replace $0-in-books gaps.
+- Officer Compensation row: tax vs **$120,000** sourced from "Payroll — Owner Compensation (uploaded)".
+- Salaries & Wages row: tax vs year-summed salaryWages from "Payroll Reports (uploaded)".
+- Depreciation row: tax vs computed Fixed Assets total from "Fixed Assets Schedule (uploaded)".
+- Interest Expense row: tax vs estimated Debt Schedule interest from "Debt Schedule (uploaded, estimated)".
+- "Upload a payroll register…" tip disappears on this project (docs are present).
+- "Other Income (Schedule K non-operating)" still shown but tagged informational and no longer drags the consistency score.
+- Consistency score should land in the 60–80% range across all three years.
