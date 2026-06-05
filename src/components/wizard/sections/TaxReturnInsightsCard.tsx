@@ -212,15 +212,28 @@ const getStatusIcon = (status: ComparisonResult['status']) => {
     case 'significant_variance':
       return <XCircle className="w-4 h-4 text-red-500" />;
     case 'missing_data':
+    case 'review_only':
       return <Info className="w-4 h-4 text-muted-foreground" />;
   }
 };
 
-const getScoreColor = (score: number): string => {
+const getScoreColor = (score: number | null): string => {
+  if (score === null) return "bg-muted";
   if (score >= 90) return "bg-green-500";
   if (score >= 70) return "bg-amber-500";
   return "bg-red-500";
 };
+
+const CATEGORY_LABELS: Record<string, string> = {
+  income_p1: "Page 1 — Income",
+  deductions_p1: "Page 1 — Deductions",
+  schedule_l: "Schedule L — Balance Sheet",
+  schedule_m: "Schedule M-1 / M-2",
+  schedule_k: "Schedule K",
+  cogs: "Form 1125-A — COGS",
+  reconciliation: "Book/Tax Reconciliation",
+};
+const CATEGORY_ORDER = ["income_p1", "deductions_p1", "cogs", "schedule_l", "schedule_m", "schedule_k", "reconciliation"];
 
 export const TaxReturnInsightsCard = ({ analysis, className }: TaxReturnInsightsCardProps) => {
   const [isExpanded, setIsExpanded] = useState(false);
