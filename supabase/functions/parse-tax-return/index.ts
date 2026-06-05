@@ -1490,6 +1490,27 @@ serve(async (req) => {
       }
       return { total, accounts: Array.from(new Set(accounts)) };
     };
+
+    // List year-scoped IS expense + COGS account names (used to surface "considered but
+    // unmatched" hints when a tax line lands $0 in books).
+    const listISExpenseAccountNames = (): string[] => {
+      if (!incomeStatement) return [];
+      const buckets = [incomeStatement.expenses?.accounts, incomeStatement.cogs?.accounts];
+      const names: string[] = [];
+      for (const b of buckets) {
+        if (!Array.isArray(b)) continue;
+        for (const a of b) {
+          const name = String(a?.name || a?.accountName || "").trim();
+          if (!name) continue;
+          const monthly = a?.monthlyValues || {};
+          const hasYearActivity = Object.keys(monthly).some((k) =>
+            k.startsWith(yearMonthPrefix) && Math.abs(Number(monthly[k]) || 0) > 0
+          );
+          if (hasYearActivity) names.push(name);
+        }
+      }
+      return Array.from(new Set(names));
+    };
     const hasIS = !!incomeStatement && isYearScoped;
 
     // Pseudo-GL synthesis: when no canonical_transactions exist for the year
