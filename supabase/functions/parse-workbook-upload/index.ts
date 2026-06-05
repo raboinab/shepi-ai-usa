@@ -1,26 +1,40 @@
 /**
  * parse-workbook-upload
  *
- * Accepts a base64-encoded XLSX file exported from shepi, validates the hidden
- * `__shepi_meta` sheet, detects revision drift, and returns a structured diff
- * payload describing what changed in the editable input tabs.
+ * Validates a re-uploaded shepi XLSX, extracts the embedded base snapshot
+ * from the hidden __shepi_meta sheet, then re-parses the Trial Balance and
+ * DD Adjustments tabs to compute the user's offline edits (mine).
  *
- * Phase 1: parses the DD Adjustments I/II sheets — extracts amount edits per
- * adjustment id (matched via the meta sheet's id list). TB and supplementary
- * tab parsing land in Phase 2.
+ * Returns base + mine. The committer uses both to do a three-way merge
+ * against the current DB state.
  *
- * Does NOT write to the database; that is the commit-workbook-upload function.
+ * Schema 1.1 — older exports (1.0) are rejected with a re-export message.
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import * as XLSX from "npm:xlsx@0.18.5";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const SUPPORTED_SCHEMA_VERSIONS = new Set(["1.0"]);
+const SUPPORTED_SCHEMA_VERSIONS = new Set(["1.1"]);
+const META_SHEET_NAME = "__shepi_meta";
+
+interface BaseAdjustment {
+  id: string;
+  type: string;
+  label: string;
+  tbAccountNumber?: string;
+  intent?: string;
+  notes?: string;
+  periodValues: Record<string, number>;
+}
+
+interface WorkbookBaseSnapshot {
+  trialBalance: Record<string, Record<string, number>>;
+  adjustments: Record<string, BaseAdjustment>;
+}
 
 interface MetaSheet {
   schemaVersion: string;
@@ -28,41 +42,15 @@ interface MetaSheet {
   exportedFromRevision: number;
   exportedAt: string;
   periods: { id: string; label: string }[];
-  accounts: { id: string; name: string }[];
-  adjustments: { id: string; type: string; label: string }[];
+  adjustmentDirectory: { id: string; type: string; label: string }[];
+  snapshot: WorkbookBaseSnapshot;
 }
 
-interface AdjustmentDiff {
-  id: string;
-  label: string;
-  type: string;
-  changes: { periodId: string; oldValue: number | null; newValue: number }[];
-  isNew?: boolean;
-  isDeleted?: boolean;
-}
-
-interface ParseResult {
-  ok: true;
-  schemaVersion: string;
-  projectId: string;
-  exportedFromRevision: number;
-  currentRevision: number;
-  revisionDrifted: boolean;
-  summary: {
-    adjustmentsChanged: number;
-    adjustmentsAdded: number;
-    adjustmentsDeleted: number;
-    tbCellsChanged: number; // Phase 2
-    supplementaryChanged: number; // Phase 2
-  };
-  adjustmentDiffs: AdjustmentDiff[];
-  warnings: string[];
-}
-
-interface ParseError {
-  ok: false;
-  error: string;
-  details?: string;
+interface MineEdits {
+  trialBalance: Record<string, Record<string, number>>;
+  adjustmentsChanged: Record<string, Record<string, number>>;
+  adjustmentsDeleted: string[];
+  adjustmentsAdded: BaseAdjustment[];
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -73,7 +61,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 function parseMetaSheet(wb: XLSX.WorkBook): MetaSheet | { error: string } {
-  const ws = wb.Sheets["__shepi_meta"];
+  const ws = wb.Sheets[META_SHEET_NAME];
   if (!ws) return { error: "Workbook is missing the hidden __shepi_meta sheet — was it exported from shepi?" };
 
   const get = (addr: string): string => {
@@ -84,76 +72,171 @@ function parseMetaSheet(wb: XLSX.WorkBook): MetaSheet | { error: string } {
 
   if (get("A1") !== "shepiWorkbook") return { error: "Meta sheet header invalid." };
   const schemaVersion = get("B1");
+  if (!SUPPORTED_SCHEMA_VERSIONS.has(schemaVersion)) {
+    return {
+      error: `Unsupported workbook schema "${schemaVersion}". Please re-export the workbook from shepi and try again.`,
+    };
+  }
+
   const projectId = get("B2");
   const exportedFromRevision = Number(get("B3") || "0");
   const exportedAt = get("B4");
-
-  if (!SUPPORTED_SCHEMA_VERSIONS.has(schemaVersion)) {
-    return { error: `Unsupported schema version "${schemaVersion}". Please re-export the workbook.` };
-  }
   if (!projectId) return { error: "Meta sheet is missing projectId." };
 
-  // Scan from row 6 onward for section markers
   const periods: MetaSheet["periods"] = [];
-  const accounts: MetaSheet["accounts"] = [];
-  const adjustments: MetaSheet["adjustments"] = [];
+  const adjustmentDirectory: MetaSheet["adjustmentDirectory"] = [];
+  let section: "" | "periods" | "adjustments" | "snapshot" = "";
+  const snapshotChunks: string[] = [];
 
-  let section: "" | "periods" | "accounts" | "adjustments" = "";
-  for (let r = 6; r < 100000; r++) {
-    const a = ws[`A${r}`];
-    const b = ws[`B${r}`];
-    const c = ws[`C${r}`];
-    if (!a && !b && !c) {
-      // blank row — continue but break if many in a row
-      if (r > 20 && !ws[`A${r + 1}`] && !ws[`A${r + 2}`] && !ws[`A${r + 3}`]) break;
+  // Walk rows until we hit a snapshot_end sentinel or 3 consecutive empties
+  let emptyRun = 0;
+  for (let r = 6; r < 200000; r++) {
+    const aRaw = ws[`A${r}`];
+    const a = aRaw ? String(aRaw.v ?? "") : "";
+    const aTrim = a.trim();
+    const b = ws[`B${r}`] ? String(ws[`B${r}`].v ?? "").trim() : "";
+    const c = ws[`C${r}`] ? String(ws[`C${r}`].v ?? "").trim() : "";
+
+    if (!aTrim && !b && !c) {
+      emptyRun++;
+      if (emptyRun >= 5 && section !== "snapshot") break;
       continue;
     }
-    const aVal = String(a?.v ?? "").trim();
-    if (aVal === "__periods__") { section = "periods"; continue; }
-    if (aVal === "__accounts__") { section = "accounts"; continue; }
-    if (aVal === "__adjustments__") { section = "adjustments"; continue; }
-    if (aVal === "periodId" || aVal === "accountId" || aVal === "id") continue; // header row
+    emptyRun = 0;
 
-    const bVal = String(b?.v ?? "").trim();
-    const cVal = String(c?.v ?? "").trim();
-    if (section === "periods" && aVal) periods.push({ id: aVal, label: bVal });
-    else if (section === "accounts" && aVal) accounts.push({ id: aVal, name: bVal });
-    else if (section === "adjustments" && aVal) adjustments.push({ id: aVal, type: bVal, label: cVal });
+    if (aTrim === "__periods__") { section = "periods"; continue; }
+    if (aTrim === "__adjustments__") { section = "adjustments"; continue; }
+    if (aTrim === "__snapshot__") { section = "snapshot"; continue; }
+    if (aTrim === "__snapshot_end__") break;
+    if (aTrim === "periodId" || aTrim === "accountId" || aTrim === "id") continue;
+
+    if (section === "periods" && aTrim) {
+      periods.push({ id: aTrim, label: b });
+    } else if (section === "adjustments" && aTrim) {
+      adjustmentDirectory.push({ id: aTrim, type: b, label: c });
+    } else if (section === "snapshot" && a) {
+      // Preserve original (untrimmed) content — JSON may have leading spaces
+      snapshotChunks.push(a);
+    }
   }
 
-  return { schemaVersion, projectId, exportedFromRevision, exportedAt, periods, accounts, adjustments };
+  let snapshot: WorkbookBaseSnapshot;
+  try {
+    const json = snapshotChunks.join("");
+    if (!json) {
+      return { error: "Workbook is missing an embedded base snapshot. Please re-export and try again." };
+    }
+    snapshot = JSON.parse(json);
+    if (!snapshot.trialBalance) snapshot.trialBalance = {};
+    if (!snapshot.adjustments) snapshot.adjustments = {};
+  } catch (err) {
+    return { error: `Could not parse embedded base snapshot: ${String(err)}` };
+  }
+
+  return { schemaVersion, projectId, exportedFromRevision, exportedAt, periods, adjustmentDirectory, snapshot };
 }
 
-/**
- * Parse DD Adjustment sheets (Management Adjustments + DD/PF Adjustments).
- * Returns map of adjustment id -> { periodId -> new amount }.
- * The Excel grid has frozen meta columns then aggregate-period columns then per-period columns.
- * We match adjustment rows by scanning the "Adj #" / Description column — but the meta sheet's
- * adjustment ID is the source of truth, embedded only via row position. To make this robust,
- * we match by the (label, type, acctNo) tuple back to the meta list.
- */
-function parseAdjustmentSheets(
+function rowsOf(ws: XLSX.WorkSheet): unknown[][] {
+  return XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+}
+
+function parseTrialBalance(
   wb: XLSX.WorkBook,
   meta: MetaSheet,
-): { amounts: Map<string, Map<string, number>>; warnings: string[] } {
-  const amounts = new Map<string, Map<string, number>>();
+): { tbEdits: Record<string, Record<string, number>>; warnings: string[] } {
+  const tbEdits: Record<string, Record<string, number>> = {};
   const warnings: string[] = [];
+  const ws = wb.Sheets["Trial Balance"];
+  if (!ws) {
+    warnings.push("Trial Balance sheet not found — skipping TB edits.");
+    return { tbEdits, warnings };
+  }
+  const rows = rowsOf(ws);
+  if (rows.length < 2) return { tbEdits, warnings };
 
-  const periodIdSet = new Set(meta.periods.map(p => p.id));
-  const adjByKey = new Map<string, { id: string; label: string; type: string }>();
-  for (const a of meta.adjustments) {
-    adjByKey.set(`${a.type}::${a.label.toLowerCase().trim()}`, a);
+  const headers = rows[0].map(h => String(h ?? "").trim());
+  // Locate account id column ("Acct #") and the per-period columns
+  const acctIdIdx = headers.findIndex(h => /acct\s*#|account\s*id/i.test(h));
+  if (acctIdIdx < 0) {
+    warnings.push("Could not find Account ID column in Trial Balance.");
+    return { tbEdits, warnings };
   }
 
-  const sheetNames = ["DD Adjustments I", "DD Adjustments II"];
-  for (const sheetName of sheetNames) {
+  const periodIdSet = new Set(meta.periods.map(p => p.id));
+  const periodLabelToId = new Map(meta.periods.map(p => [p.label.toLowerCase().trim(), p.id]));
+  // Also match short labels (e.g. "Jan-24") — pull from the snapshot's accounts as fallback
+  const periodColIdx: { idx: number; periodId: string }[] = [];
+  for (let i = 0; i < headers.length; i++) {
+    const h = headers[i];
+    if (periodIdSet.has(h)) {
+      periodColIdx.push({ idx: i, periodId: h });
+    } else {
+      const id = periodLabelToId.get(h.toLowerCase());
+      if (id) periodColIdx.push({ idx: i, periodId: id });
+    }
+  }
+  if (periodColIdx.length === 0) {
+    warnings.push("No period columns matched in Trial Balance.");
+    return { tbEdits, warnings };
+  }
+
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row) continue;
+    const acctId = String(row[acctIdIdx] ?? "").trim();
+    if (!acctId) continue;
+    const baseRow = meta.snapshot.trialBalance[acctId];
+    if (!baseRow) continue; // unknown account — skip (TB add not supported this phase)
+
+    const cellChanges: Record<string, number> = {};
+    for (const { idx, periodId } of periodColIdx) {
+      const v = row[idx];
+      if (v == null || v === "") continue;
+      const n = Number(v);
+      if (!Number.isFinite(n)) continue;
+      const baseVal = baseRow[periodId] ?? 0;
+      if (Math.abs(baseVal - n) > 0.005) {
+        cellChanges[periodId] = n;
+      }
+    }
+    if (Object.keys(cellChanges).length > 0) {
+      tbEdits[acctId] = cellChanges;
+    }
+  }
+
+  return { tbEdits, warnings };
+}
+
+function parseAdjustments(
+  wb: XLSX.WorkBook,
+  meta: MetaSheet,
+): {
+  changed: Record<string, Record<string, number>>;
+  deleted: string[];
+  added: BaseAdjustment[];
+  warnings: string[];
+} {
+  const warnings: string[] = [];
+  const changed: Record<string, Record<string, number>> = {};
+  const added: BaseAdjustment[] = [];
+  const seenIds = new Set<string>();
+
+  const periodIdSet = new Set(meta.periods.map(p => p.id));
+  const periodLabelToId = new Map(meta.periods.map(p => [p.label.toLowerCase().trim(), p.id]));
+
+  // Build a label+type → id map from the directory (for matching unchanged rows)
+  const dirByKey = new Map<string, { id: string; type: string; label: string }>();
+  for (const d of meta.adjustmentDirectory) {
+    dirByKey.set(`${d.type}::${d.label.toLowerCase().trim()}`, d);
+  }
+
+  for (const sheetName of ["DD Adjustments I", "DD Adjustments II"]) {
     const ws = wb.Sheets[sheetName];
     if (!ws) continue;
-
-    const rows: unknown[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+    const rows = rowsOf(ws);
     if (rows.length < 2) continue;
 
-    // Find header row — has "Description" in column 0
+    // Find header row
     let headerRow = -1;
     for (let r = 0; r < Math.min(rows.length, 10); r++) {
       if (String(rows[r]?.[0] ?? "").toLowerCase().trim() === "description") {
@@ -162,29 +245,25 @@ function parseAdjustmentSheets(
       }
     }
     if (headerRow < 0) {
-      warnings.push(`Could not find header row in sheet "${sheetName}"`);
+      warnings.push(`Could not find header row in "${sheetName}"`);
       continue;
     }
 
     const headers = rows[headerRow].map(h => String(h ?? "").trim());
-    // Map period-bearing column indices: header label must match a period.shortLabel OR aggregate label.
-    // Simpler: any column whose header appears in the meta period labels is a per-period column.
-    // For aggregates we skip (they are calculated and would over-write per-period edits).
-    const periodLabelToId = new Map(meta.periods.map(p => [p.label.toLowerCase(), p.id]));
-    const periodColIdx: { idx: number; periodId: string }[] = [];
-    for (let i = 0; i < headers.length; i++) {
-      const h = headers[i].toLowerCase();
-      // Try direct period id match first (in case the sheet uses ids), then label
-      if (periodIdSet.has(headers[i])) {
-        periodColIdx.push({ idx: i, periodId: headers[i] });
-      } else if (periodLabelToId.has(h)) {
-        periodColIdx.push({ idx: i, periodId: periodLabelToId.get(h)! });
-      }
-    }
-
-    // Column indices for matching
     const labelIdx = headers.findIndex(h => h.toLowerCase() === "description");
     const typeIdx = headers.findIndex(h => h.toLowerCase() === "type");
+    const acctIdx = headers.findIndex(h => /acct|account/i.test(h));
+    const notesIdx = headers.findIndex(h => /note|intent/i.test(h));
+
+    const periodColIdx: { idx: number; periodId: string }[] = [];
+    for (let i = 0; i < headers.length; i++) {
+      const h = headers[i];
+      if (periodIdSet.has(h)) periodColIdx.push({ idx: i, periodId: h });
+      else {
+        const id = periodLabelToId.get(h.toLowerCase());
+        if (id) periodColIdx.push({ idx: i, periodId: id });
+      }
+    }
 
     for (let r = headerRow + 1; r < rows.length; r++) {
       const row = rows[r];
@@ -192,26 +271,55 @@ function parseAdjustmentSheets(
       const label = String(row[labelIdx] ?? "").trim();
       const type = String(row[typeIdx] ?? "").trim();
       if (!label || !type) continue;
+      // Skip total/subtotal rows
+      if (/^(total|subtotal)/i.test(label)) continue;
 
       const key = `${type}::${label.toLowerCase()}`;
-      const adj = adjByKey.get(key);
-      if (!adj) {
-        // Could be a new adjustment added in Excel — Phase 2.
-        continue;
-      }
+      const dirHit = dirByKey.get(key);
 
-      const periodMap = amounts.get(adj.id) ?? new Map<string, number>();
+      const newAmounts: Record<string, number> = {};
       for (const { idx, periodId } of periodColIdx) {
         const v = row[idx];
         if (v == null || v === "") continue;
         const n = Number(v);
-        if (Number.isFinite(n)) periodMap.set(periodId, n);
+        if (Number.isFinite(n) && n !== 0) newAmounts[periodId] = n;
       }
-      if (periodMap.size > 0) amounts.set(adj.id, periodMap);
+
+      if (dirHit) {
+        // Existing adjustment — diff vs base
+        seenIds.add(dirHit.id);
+        const baseAdj = meta.snapshot.adjustments[dirHit.id];
+        const basePeriodValues = baseAdj?.periodValues ?? {};
+        const cellChanges: Record<string, number> = {};
+        // Check changes + clears (period had value, now zero/blank)
+        const allPeriods = new Set([...Object.keys(basePeriodValues), ...Object.keys(newAmounts)]);
+        for (const pid of allPeriods) {
+          const oldV = basePeriodValues[pid] ?? 0;
+          const newV = newAmounts[pid] ?? 0;
+          if (Math.abs(oldV - newV) > 0.005) cellChanges[pid] = newV;
+        }
+        if (Object.keys(cellChanges).length > 0) changed[dirHit.id] = cellChanges;
+      } else {
+        // New adjustment added in Excel
+        added.push({
+          id: `new-${crypto.randomUUID()}`,
+          type,
+          label,
+          tbAccountNumber: acctIdx >= 0 ? String(row[acctIdx] ?? "").trim() || undefined : undefined,
+          notes: notesIdx >= 0 ? String(row[notesIdx] ?? "").trim() || undefined : undefined,
+          periodValues: newAmounts,
+        });
+      }
     }
   }
 
-  return { amounts, warnings };
+  // Anything in the directory not seen in the workbook = deleted
+  const deleted: string[] = [];
+  for (const d of meta.adjustmentDirectory) {
+    if (!seenIds.has(d.id)) deleted.push(d.id);
+  }
+
+  return { changed, deleted, added, warnings };
 }
 
 Deno.serve(async (req: Request) => {
@@ -220,7 +328,7 @@ Deno.serve(async (req: Request) => {
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
-      return jsonResponse({ ok: false, error: "Unauthorized" } satisfies ParseError, 401);
+      return jsonResponse({ ok: false, error: "Unauthorized" }, 401);
     }
 
     const supabase = createClient(
@@ -232,42 +340,34 @@ Deno.serve(async (req: Request) => {
     const token = authHeader.replace("Bearer ", "");
     const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
     if (claimsError || !claimsData?.claims) {
-      return jsonResponse({ ok: false, error: "Unauthorized" } satisfies ParseError, 401);
+      return jsonResponse({ ok: false, error: "Unauthorized" }, 401);
     }
 
     const body = await req.json().catch(() => null) as { fileBase64?: string } | null;
     if (!body?.fileBase64) {
-      return jsonResponse({ ok: false, error: "Missing fileBase64 in request body" } satisfies ParseError, 400);
+      return jsonResponse({ ok: false, error: "Missing fileBase64" }, 400);
     }
 
-    // Decode base64
     let buf: Uint8Array;
     try {
       const bin = atob(body.fileBase64);
       buf = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
     } catch {
-      return jsonResponse({ ok: false, error: "Invalid base64 file payload" } satisfies ParseError, 400);
+      return jsonResponse({ ok: false, error: "Invalid base64 payload" }, 400);
     }
 
     let wb: XLSX.WorkBook;
     try {
       wb = XLSX.read(buf, { type: "array" });
     } catch (err) {
-      return jsonResponse({
-        ok: false,
-        error: "Could not read the uploaded file as an XLSX workbook",
-        details: String(err),
-      } satisfies ParseError, 400);
+      return jsonResponse({ ok: false, error: "Could not read XLSX", details: String(err) }, 400);
     }
 
     const metaOrErr = parseMetaSheet(wb);
-    if ("error" in metaOrErr) {
-      return jsonResponse({ ok: false, error: metaOrErr.error } satisfies ParseError, 400);
-    }
+    if ("error" in metaOrErr) return jsonResponse({ ok: false, error: metaOrErr.error }, 400);
     const meta = metaOrErr;
 
-    // Verify user has access to this project
     const { data: projectRow, error: projectErr } = await supabase
       .from("projects")
       .select("id, revision, wizard_data")
@@ -277,75 +377,59 @@ Deno.serve(async (req: Request) => {
     if (projectErr || !projectRow) {
       return jsonResponse({
         ok: false,
-        error: "You don't have access to the project this workbook belongs to, or it no longer exists.",
-      } satisfies ParseError, 403);
+        error: "You don't have access to this project, or it no longer exists.",
+      }, 403);
     }
 
     const currentRevision = (projectRow.revision as number | null) ?? 0;
     const revisionDrifted = currentRevision !== meta.exportedFromRevision;
 
-    // Parse adjustments
-    const { amounts: newAmounts, warnings } = parseAdjustmentSheets(wb, meta);
+    const { tbEdits, warnings: tbWarnings } = parseTrialBalance(wb, meta);
+    const { changed, deleted, added, warnings: adjWarnings } = parseAdjustments(wb, meta);
 
-    // Diff against current DB values
-    const wd = (projectRow.wizard_data as Record<string, unknown>) || {};
-    const ddAdj = wd.ddAdjustments as Record<string, unknown> | undefined;
-    const existingAdjustments = (ddAdj?.adjustments ?? wd.adjustments ?? []) as Array<Record<string, unknown>>;
-    const existingById = new Map<string, Record<string, unknown>>();
-    for (const a of existingAdjustments) {
-      if (a?.id) existingById.set(String(a.id), a);
+    // Soft warnings for tabs we know about but don't round-trip this phase
+    const deferredTabsSeen: string[] = [];
+    for (const t of [
+      "AR Aging",
+      "AP Aging",
+      "Fixed Assets",
+      "Top Customers by Year",
+      "Top Vendors by Year",
+      "Due Diligence Information",
+      "Reclassifications",
+    ]) {
+      if (wb.Sheets[t]) deferredTabsSeen.push(t);
     }
 
-    const adjustmentDiffs: AdjustmentDiff[] = [];
-    for (const [adjId, periodMap] of newAmounts.entries()) {
-      const existing = existingById.get(adjId);
-      const existingPeriodValues = (existing?.periodValues ?? existing?.periodAmounts ?? existing?.amounts) as Record<string, unknown> | undefined;
-      const changes: AdjustmentDiff["changes"] = [];
-      for (const [periodId, newValue] of periodMap.entries()) {
-        const oldRaw = existingPeriodValues?.[periodId];
-        const oldNum = oldRaw == null ? null : Number(oldRaw);
-        const oldValue = Number.isFinite(oldNum as number) ? (oldNum as number) : null;
-        // Tolerance to ignore float noise
-        if (oldValue === null || Math.abs(oldValue - newValue) > 0.005) {
-          changes.push({ periodId, oldValue, newValue });
-        }
-      }
-      if (changes.length > 0) {
-        const metaAdj = meta.adjustments.find(a => a.id === adjId);
-        adjustmentDiffs.push({
-          id: adjId,
-          label: metaAdj?.label || String(existing?.description ?? existing?.label ?? adjId),
-          type: metaAdj?.type || String(existing?.block ?? existing?.type ?? ""),
-          changes,
-        });
-      }
-    }
+    const mine: MineEdits = {
+      trialBalance: tbEdits,
+      adjustmentsChanged: changed,
+      adjustmentsDeleted: deleted,
+      adjustmentsAdded: added,
+    };
 
-    const result: ParseResult = {
+    const tbCellsChanged = Object.values(tbEdits).reduce((s, m) => s + Object.keys(m).length, 0);
+
+    return jsonResponse({
       ok: true,
       schemaVersion: meta.schemaVersion,
       projectId: meta.projectId,
       exportedFromRevision: meta.exportedFromRevision,
       currentRevision,
       revisionDrifted,
+      mine,
+      base: meta.snapshot,
       summary: {
-        adjustmentsChanged: adjustmentDiffs.length,
-        adjustmentsAdded: 0, // Phase 2
-        adjustmentsDeleted: 0, // Phase 2
-        tbCellsChanged: 0, // Phase 2
-        supplementaryChanged: 0, // Phase 2
+        tbCellsChanged,
+        adjustmentsChanged: Object.keys(changed).length,
+        adjustmentsAdded: added.length,
+        adjustmentsDeleted: deleted.length,
+        deferredTabsSeen,
       },
-      adjustmentDiffs,
-      warnings,
-    };
-
-    return jsonResponse(result, 200);
+      warnings: [...tbWarnings, ...adjWarnings],
+    }, 200);
   } catch (err) {
     console.error("parse-workbook-upload error:", err);
-    return jsonResponse({
-      ok: false,
-      error: "Server error while parsing the workbook",
-      details: String(err),
-    } satisfies ParseError, 500);
+    return jsonResponse({ ok: false, error: "Server error", details: String(err) }, 500);
   }
 });
