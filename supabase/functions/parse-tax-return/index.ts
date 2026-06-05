@@ -1442,7 +1442,14 @@ serve(async (req) => {
           const taxVal = eoy[eoyKey];
           if (taxVal === null || taxVal === undefined) continue;
           const matched = getBsEoyByMatcher(BS_MATCHERS[matcherKey]);
-          if (matched.total === 0) continue;
+          if (matched.total === 0) {
+            skippedFields.push({
+              field: label,
+              reason: `No Balance Sheet account matched "${matcherKey}" at EOY ${taxYear}`,
+            });
+            continue;
+          }
+
           pushCompare({
             field: label,
             taxValue: taxVal,
