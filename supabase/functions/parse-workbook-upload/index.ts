@@ -111,7 +111,7 @@ function parseMetaSheet(wb: XLSX.WorkBook): MetaSheet | { error: string } {
     if (aTrim === "periodId" || aTrim === "accountId" || aTrim === "id") continue;
 
     if (section === "periods" && aTrim) {
-      periods.push({ id: aTrim, label: b });
+      periods.push({ id: aTrim, label: b, shortLabel: c || b });
     } else if (section === "adjustments" && aTrim) {
       adjustmentDirectory.push({ id: aTrim, type: b, label: c });
     } else if (section === "snapshot" && a) {
