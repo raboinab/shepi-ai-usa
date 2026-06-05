@@ -22,7 +22,8 @@ import {
   Calculator,
   BarChart3,
   Users,
-  Landmark
+  Landmark,
+  RefreshCw
 } from "lucide-react";
 
 // Enhanced interfaces matching the backend
