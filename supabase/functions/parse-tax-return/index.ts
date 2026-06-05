@@ -1513,6 +1513,120 @@ serve(async (req) => {
     };
     const hasIS = !!incomeStatement && isYearScoped;
 
+    // ---------- External-document fallback helpers ----------
+    // When books (GL + IS) show $0 for a deduction line, consult uploaded
+    // payroll / fixed assets / debt schedule documents before giving up.
+    type ExtFallback = { total: number; yearScoped: boolean; source: string };
+    const payrollDoc: any = wizardData.payroll || processedData.payroll;
+    const fixedAssetsDoc: any = wizardData.fixedAssets || processedData.fixed_assets;
+    const debtScheduleDoc: any = wizardData.debtSchedule || processedData.debt_schedule;
+
+    const sumYearScopedMonthly = (accounts: any[]): { total: number; yearScoped: boolean } => {
+      let total = 0;
+      let anyYearKey = false;
+      let anyValue = false;
+      for (const a of accounts) {
+        const monthly = a?.monthlyValues || {};
+        const keys = Object.keys(monthly);
+        const hasAny = keys.length > 0;
+        if (!hasAny) continue;
+        anyValue = true;
+        for (const k of keys) {
+          if (k.startsWith(yearMonthPrefix)) {
+            total += Math.abs(Number(monthly[k]) || 0);
+            anyYearKey = true;
+          }
+        }
+      }
+      // If accounts had monthlyValues but no keys for taxYear, treat as 0/yearScoped.
+      // If they had no monthlyValues at all, caller will fall back to annual totals.
+      return { total, yearScoped: anyValue ? true : false };
+    };
+
+    const getPayrollOwnerComp = (): ExtFallback => {
+      if (!payrollDoc?.ownerComp?.accounts || !Array.isArray(payrollDoc.ownerComp.accounts)) {
+        return { total: 0, yearScoped: false, source: "Payroll — Owner Comp (uploaded)" };
+      }
+      const { total, yearScoped } = sumYearScopedMonthly(payrollDoc.ownerComp.accounts);
+      if (total > 0) return { total, yearScoped, source: "Payroll — Owner Comp (uploaded)" };
+      // Annual fallback
+      const annual = payrollDoc.ownerComp.accounts.reduce((s: number, a: any) =>
+        s + (Object.values(a.monthlyValues || {}) as number[]).reduce((x: number, y) => x + (Number(y) || 0), 0), 0);
+      return { total: Math.abs(annual), yearScoped: false, source: "Payroll — Owner Comp (uploaded; no year scoping)" };
+    };
+
+    const getPayrollSalaries = (): ExtFallback => {
+      if (!payrollDoc) return { total: 0, yearScoped: false, source: "Payroll Reports (uploaded)" };
+      if (payrollDoc.salaryWages?.accounts && Array.isArray(payrollDoc.salaryWages.accounts)) {
+        const { total, yearScoped } = sumYearScopedMonthly(payrollDoc.salaryWages.accounts);
+        if (total > 0) return { total, yearScoped, source: "Payroll Reports (uploaded)" };
+        const annual = payrollDoc.salaryWages.accounts.reduce((s: number, a: any) =>
+          s + (Object.values(a.monthlyValues || {}) as number[]).reduce((x: number, y) => x + (Number(y) || 0), 0), 0);
+        if (Math.abs(annual) > 0) return { total: Math.abs(annual), yearScoped: false, source: "Payroll Reports (uploaded; no year scoping)" };
+      }
+      const arr = Array.isArray(payrollDoc) ? payrollDoc : payrollDoc.employees;
+      if (Array.isArray(arr)) {
+        const total = arr.reduce((s: number, e: any) =>
+          s + (Number(e.salary) || Number(e.totalCompensation) || Number(e.grossPay) || Number(e.wages) || 0), 0);
+        if (total > 0) return { total, yearScoped: false, source: "Payroll Reports (uploaded; no year scoping)" };
+      }
+      return { total: 0, yearScoped: false, source: "Payroll Reports (uploaded)" };
+    };
+
+    const getFixedAssetDepreciation = (): ExtFallback => {
+      if (!fixedAssetsDoc) return { total: 0, yearScoped: false, source: "Fixed Assets Schedule (uploaded)" };
+      const list = Array.isArray(fixedAssetsDoc) ? fixedAssetsDoc : (fixedAssetsDoc.assets || []);
+      if (!Array.isArray(list) || list.length === 0) return { total: 0, yearScoped: false, source: "Fixed Assets Schedule (uploaded)" };
+      // Year-scoped: prefer assets in service by taxYear and not disposed before taxYear
+      let yearTotal = 0;
+      let yearMatched = false;
+      for (const a of list) {
+        const inService = Number(a.inServiceYear) || (a.inServiceDate ? new Date(a.inServiceDate).getFullYear() : null);
+        const disposed = Number(a.disposalYear) || (a.disposalDate ? new Date(a.disposalDate).getFullYear() : null);
+        if (inService !== null && inService <= taxYear && (disposed === null || disposed >= taxYear)) {
+          const v = Number(a.currentYearDepreciation) || Number(a.annualDepreciation) || 0;
+          if (v) { yearTotal += Math.abs(v); yearMatched = true; }
+        }
+      }
+      if (yearMatched && yearTotal > 0) return { total: yearTotal, yearScoped: true, source: "Fixed Assets Schedule (uploaded)" };
+      const annual = list.reduce((s: number, a: any) =>
+        s + Math.abs(Number(a.currentYearDepreciation) || Number(a.annualDepreciation) || 0), 0);
+      return { total: annual, yearScoped: false, source: annual > 0 ? "Fixed Assets Schedule (uploaded; no year scoping)" : "Fixed Assets Schedule (uploaded)" };
+    };
+
+    const getDebtScheduleInterest = (): ExtFallback => {
+      if (!debtScheduleDoc) return { total: 0, yearScoped: false, source: "Debt Schedule (uploaded)" };
+      const list = Array.isArray(debtScheduleDoc) ? debtScheduleDoc : (debtScheduleDoc.debts || []);
+      if (!Array.isArray(list) || list.length === 0) return { total: 0, yearScoped: false, source: "Debt Schedule (uploaded)" };
+      // Year-specific field if available, e.g. interestByYear[taxYear]
+      let yearTotal = 0;
+      let yearMatched = false;
+      for (const d of list) {
+        const byYear = d.interestByYear?.[taxYear] ?? d.annualInterestByYear?.[taxYear];
+        if (byYear !== undefined && byYear !== null) {
+          yearTotal += Math.abs(Number(byYear) || 0);
+          yearMatched = true;
+        }
+      }
+      if (yearMatched && yearTotal > 0) return { total: yearTotal, yearScoped: true, source: "Debt Schedule (uploaded)" };
+      const annual = list.reduce((s: number, d: any) =>
+        s + Math.abs(Number(d.annualInterest) || Number(d.interestExpense) || 0), 0);
+      return { total: annual, yearScoped: false, source: annual > 0 ? "Debt Schedule (uploaded; no year scoping)" : "Debt Schedule (uploaded)" };
+    };
+
+    const EXT_FALLBACKS: Record<string, () => ExtFallback> = {
+      officerCompensation: getPayrollOwnerComp,
+      salariesWages: getPayrollSalaries,
+      depreciation: getFixedAssetDepreciation,
+      interestExpense: getDebtScheduleInterest,
+    };
+    const EXT_TIP: Record<string, string> = {
+      officerCompensation: "Tip: upload a payroll register or W-3 for this year to enable a direct comparison.",
+      salariesWages: "Tip: upload a payroll register or W-3 for this year to enable a direct comparison.",
+      depreciation: "Tip: upload a fixed assets / depreciation schedule for this year to enable a direct comparison.",
+      interestExpense: "Tip: upload a debt schedule for this year to enable a direct comparison.",
+    };
+
     // Pseudo-GL synthesis: when no canonical_transactions exist for the year
     // (e.g. qbtojson-only or quickbooks_api-only projects), populate glByAccount
     // from the normalized Income Statement so matchAccounts() works in branches
