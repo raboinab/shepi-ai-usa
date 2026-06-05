@@ -1831,7 +1831,11 @@ serve(async (req) => {
           const hint = considered.length
             ? ` Considered accounts that did not match: ${considered.slice(0, 5).map((n) => `"${n}"`).join(', ')}${considered.length > 5 ? `, +${considered.length - 5} more` : ''}.`
             : '';
-          const tip = EXT_TIP[taxKey] ? ` ${EXT_TIP[taxKey]}` : '';
+          const docPresent = EXT_DOC_PRESENT[taxKey]?.() ?? false;
+          const tipText = EXT_FALLBACKS[taxKey]
+            ? (docPresent ? EXT_TIP_EMPTY[taxKey] : EXT_TIP_MISSING[taxKey])
+            : '';
+          const tip = tipText ? ` ${tipText}` : '';
           pushReviewOnly({
             field: label,
             taxValue: taxVal,
