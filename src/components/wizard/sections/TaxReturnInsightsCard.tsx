@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -171,14 +171,17 @@ interface ComparisonResult {
   source: string;
   variance: number | null;
   variancePercent: number | null;
-  status: 'match' | 'minor_variance' | 'significant_variance' | 'missing_data';
+  status: 'match' | 'minor_variance' | 'significant_variance' | 'missing_data' | 'review_only';
   category?: string;
+  matchedAccounts?: string[];
+  note?: string;
 }
 
 export interface TaxReturnAnalysis {
   extractedData: TaxReturnData;
   comparisons: ComparisonResult[];
-  overallScore: number;
+  /** null = no comparable financial data was found; otherwise 0-100 */
+  overallScore: number | null;
   flags: string[];
   summary: string;
   analyzedAt: string;
@@ -209,15 +212,28 @@ const getStatusIcon = (status: ComparisonResult['status']) => {
     case 'significant_variance':
       return <XCircle className="w-4 h-4 text-red-500" />;
     case 'missing_data':
+    case 'review_only':
       return <Info className="w-4 h-4 text-muted-foreground" />;
   }
 };
 
-const getScoreColor = (score: number): string => {
+const getScoreColor = (score: number | null): string => {
+  if (score === null) return "bg-muted";
   if (score >= 90) return "bg-green-500";
   if (score >= 70) return "bg-amber-500";
   return "bg-red-500";
 };
+
+const CATEGORY_LABELS: Record<string, string> = {
+  income_p1: "Page 1 — Income",
+  deductions_p1: "Page 1 — Deductions",
+  schedule_l: "Schedule L — Balance Sheet",
+  schedule_m: "Schedule M-1 / M-2",
+  schedule_k: "Schedule K",
+  cogs: "Form 1125-A — COGS",
+  reconciliation: "Book/Tax Reconciliation",
+};
+const CATEGORY_ORDER = ["income_p1", "deductions_p1", "cogs", "schedule_l", "schedule_m", "schedule_k", "reconciliation"];
 
 export const TaxReturnInsightsCard = ({ analysis, className }: TaxReturnInsightsCardProps) => {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -259,17 +275,34 @@ export const TaxReturnInsightsCard = ({ analysis, className }: TaxReturnInsights
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Score Overview */}
-        <div className="flex items-center gap-4 p-3 bg-muted/50 rounded-lg">
-          <div className="flex-1">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-sm font-medium">Consistency Score</span>
-              <span className={`text-lg font-bold ${overallScore >= 70 ? 'text-green-600' : 'text-amber-600'}`}>
-                {overallScore}%
-              </span>
+        {(() => {
+          const scoreUnavailable = overallScore === null || overallScore < 0;
+          const automatedComparisons = comparisons.filter(c => c.status !== 'review_only' && c.status !== 'missing_data');
+          return (
+            <div className="flex items-center gap-4 p-3 bg-muted/50 rounded-lg">
+              <div className="flex-1">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm font-medium">Consistency Score</span>
+                  {scoreUnavailable ? (
+                    <Badge variant="outline" className="text-xs">N/A — no comparable data</Badge>
+                  ) : (
+                    <span className={`text-lg font-bold ${overallScore! >= 90 ? 'text-green-600' : overallScore! >= 70 ? 'text-amber-600' : 'text-red-600'}`}>
+                      {overallScore}%
+                    </span>
+                  )}
+                </div>
+                {!scoreUnavailable && (
+                  <>
+                    <Progress value={overallScore!} className={`h-2 ${getScoreColor(overallScore)}`} />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Based on {automatedComparisons.length} automated cross-check{automatedComparisons.length === 1 ? '' : 's'}
+                    </p>
+                  </>
+                )}
+              </div>
             </div>
-            <Progress value={overallScore} className={`h-2 ${getScoreColor(overallScore)}`} />
-          </div>
-        </div>
+          );
+        })()}
 
         {/* Summary */}
         <p className="text-sm text-muted-foreground leading-relaxed">
@@ -308,46 +341,110 @@ export const TaxReturnInsightsCard = ({ analysis, className }: TaxReturnInsights
           </div>
         )}
 
-        {/* Comparison Table - Always visible */}
-        {comparisons.length > 0 && (
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Field</TableHead>
-                  <TableHead className="text-right">Tax Return</TableHead>
-                  <TableHead className="text-right">Records</TableHead>
-                  <TableHead className="text-right">Variance</TableHead>
-                  <TableHead className="text-center">Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {comparisons.map((comp, i) => (
-                  <TableRow key={i}>
-                    <TableCell className="font-medium text-sm">{comp.field}</TableCell>
-                    <TableCell className="text-right text-sm">{formatCurrency(comp.taxReturnValue)}</TableCell>
-                    <TableCell className="text-right text-sm">
-                      <div className="flex flex-col items-end">
-                        <span>{formatCurrency(comp.comparisonValue)}</span>
-                        <span className="text-xs text-muted-foreground">{comp.source}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right text-sm">
-                      {comp.variancePercent !== null ? (
-                        <span className={comp.variancePercent > 5 ? 'text-red-500' : comp.variancePercent < -5 ? 'text-amber-500' : 'text-green-500'}>
-                          {comp.variancePercent > 0 ? '+' : ''}{comp.variancePercent.toFixed(1)}%
-                        </span>
-                      ) : '-'}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {getStatusIcon(comp.status)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
+        {/* Comparison Table - grouped by category */}
+        {(() => {
+          const automated = comparisons.filter(c => c.status !== 'review_only');
+          const reviewOnly = comparisons.filter(c => c.status === 'review_only');
+          if (automated.length === 0 && reviewOnly.length === 0) return null;
+
+          // Group automated by category
+          const grouped = new Map<string, ComparisonResult[]>();
+          for (const c of automated) {
+            const cat = c.category || 'other';
+            if (!grouped.has(cat)) grouped.set(cat, []);
+            grouped.get(cat)!.push(c);
+          }
+          const orderedCategories = [
+            ...CATEGORY_ORDER.filter(k => grouped.has(k)),
+            ...Array.from(grouped.keys()).filter(k => !CATEGORY_ORDER.includes(k)),
+          ];
+
+          return (
+            <div className="space-y-4">
+              {automated.length > 0 && (
+                <div className="rounded-md border overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Field</TableHead>
+                        <TableHead className="text-right">Tax Return</TableHead>
+                        <TableHead className="text-right">Records</TableHead>
+                        <TableHead className="text-right">Variance</TableHead>
+                        <TableHead className="text-center">Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {orderedCategories.map((cat) => (
+                        <Fragment key={`grp-${cat}`}>
+                          <TableRow className="bg-muted/40">
+                            <TableCell colSpan={5} className="text-xs font-semibold uppercase tracking-wide text-muted-foreground py-1.5">
+                              {CATEGORY_LABELS[cat] || cat}
+                            </TableCell>
+                          </TableRow>
+                          {grouped.get(cat)!.map((comp, i) => (
+                            <TableRow key={`${cat}-${i}`}>
+                              <TableCell className="font-medium text-sm">{comp.field}</TableCell>
+                              <TableCell className="text-right text-sm">{formatCurrency(comp.taxReturnValue)}</TableCell>
+                              <TableCell className="text-right text-sm">
+                                <div className="flex flex-col items-end">
+                                  <span>{formatCurrency(comp.comparisonValue)}</span>
+                                  <span className="text-xs text-muted-foreground">{comp.source}</span>
+                                  {comp.matchedAccounts && comp.matchedAccounts.length > 0 && (
+                                    <span className="text-[10px] text-muted-foreground italic max-w-[240px] truncate" title={comp.matchedAccounts.join(', ')}>
+                                      {comp.matchedAccounts.slice(0, 2).join(', ')}{comp.matchedAccounts.length > 2 ? ` +${comp.matchedAccounts.length - 2}` : ''}
+                                    </span>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-right text-sm">
+                                {comp.variancePercent !== null ? (
+                                  <span className={Math.abs(comp.variancePercent) > 10 ? 'text-red-500' : Math.abs(comp.variancePercent) > 5 ? 'text-amber-500' : 'text-green-500'}>
+                                    {comp.variancePercent > 0 ? '+' : ''}{comp.variancePercent.toFixed(1)}%
+                                  </span>
+                                ) : '-'}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {getStatusIcon(comp.status)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </Fragment>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+
+              {reviewOnly.length > 0 && (
+                <div className="rounded-md border border-dashed overflow-hidden">
+                  <div className="px-3 py-2 bg-muted/30 text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-2">
+                    <Info className="w-3.5 h-3.5" />
+                    Manual review — no automated GL counterpart
+                  </div>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Field</TableHead>
+                        <TableHead className="text-right">Tax Return</TableHead>
+                        <TableHead>Note</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {reviewOnly.map((comp, i) => (
+                        <TableRow key={`ro-${i}`}>
+                          <TableCell className="font-medium text-sm">{comp.field}</TableCell>
+                          <TableCell className="text-right text-sm">{formatCurrency(comp.taxReturnValue)}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{comp.note || '—'}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
 
         {/* Expandable Details with Tabs */}
         <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>
