@@ -1062,8 +1062,40 @@ serve(async (req) => {
       flagMessage: `Revenue variance between tax return and Income Statement exceeds 5%`,
     });
 
-    // ============ PAGE 1 — DEDUCTIONS (GL-driven) ============
-    if (hasGL) {
+    // Year-scoped matching against the Income Statement accounts (expenses + COGS).
+    // Used both as a complement to GL and as a fallback when no GL is available for the year.
+    const matchISAccounts = (matchers: RegExp[], exclude: RegExp[] = []): { total: number; accounts: string[] } => {
+      if (!incomeStatement) return { total: 0, accounts: [] };
+      const buckets = [incomeStatement.expenses?.accounts, incomeStatement.cogs?.accounts];
+      let total = 0;
+      const accounts: string[] = [];
+      for (const b of buckets) {
+        if (!Array.isArray(b)) continue;
+        for (const a of b) {
+          const name = String(a?.name || a?.accountName || "").trim();
+          if (!name) continue;
+          if (exclude.some((rx) => rx.test(name))) continue;
+          if (!matchers.some((rx) => rx.test(name))) continue;
+          const monthly = a.monthlyValues || {};
+          let acctYearTotal = 0;
+          let anyKey = false;
+          for (const k of Object.keys(monthly)) {
+            if (k.startsWith(yearMonthPrefix)) {
+              acctYearTotal += Math.abs(Number(monthly[k]) || 0);
+              anyKey = true;
+            }
+          }
+          if (!anyKey) continue;
+          total += acctYearTotal;
+          accounts.push(name);
+        }
+      }
+      return { total, accounts: Array.from(new Set(accounts)) };
+    };
+    const hasIS = !!incomeStatement && isYearScoped;
+
+    // ============ PAGE 1 — DEDUCTIONS ============
+    if (hasGL || hasIS) {
       const deductionRows: Array<[string, string, keyof typeof PL_MATCHERS, number?]> = [
         ["Officer Compensation (7)", "officerCompensation", "officerCompensation", 0.10],
         ["Salaries & Wages (8)", "salariesWages", "salariesWages", 0.10],
@@ -1081,19 +1113,32 @@ serve(async (req) => {
       for (const [label, taxKey, matcherKey, thr] of deductionRows) {
         const taxVal = (extractedData as any)[taxKey] as number | null;
         if (taxVal === null || taxVal === undefined) continue;
-        const matched = matchAccounts(PL_MATCHERS[matcherKey].match, PL_MATCHERS[matcherKey].exclude || []);
+        const m = PL_MATCHERS[matcherKey];
+        // Prefer GL if it has a hit; else fall back to year-scoped IS accounts
+        let matched = hasGL ? matchAccounts(m.match, m.exclude || []) : { total: 0, accounts: [] as string[] };
+        let sourceLabel = matched.accounts.length
+          ? `GL (${matched.accounts.length} acct${matched.accounts.length === 1 ? '' : 's'})`
+          : "";
+        if (matched.total === 0 && hasIS) {
+          matched = matchISAccounts(m.match, m.exclude || []);
+          sourceLabel = matched.accounts.length
+            ? `Income Statement ${taxYear} (${matched.accounts.length} acct${matched.accounts.length === 1 ? '' : 's'})`
+            : (hasGL ? "GL — no matching account" : `Income Statement ${taxYear} — no matching account`);
+        }
+        if (matched.total === 0) continue; // skip rows with no counterpart at all
         pushCompare({
           field: label,
           taxValue: taxVal,
-          comparisonValue: matched.total > 0 ? matched.total : null,
-          source: matched.accounts.length ? `GL (${matched.accounts.length} acct${matched.accounts.length === 1 ? '' : 's'})` : "GL — no matching account",
+          comparisonValue: matched.total,
+          source: sourceLabel,
           category: "deductions_p1",
           threshold: thr,
           matchedAccounts: matched.accounts,
-          flagMessage: `${label} variance vs. GL exceeds ${(thr! * 100).toFixed(0)}%`,
+          flagMessage: `${label} variance vs. books exceeds ${(thr! * 100).toFixed(0)}%`,
         });
       }
     } else {
+
       // Fall back to processed_data fallbacks for the key deduction lines we previously supported
       const payrollData = wizardData.payroll || processedData.payroll;
       if (extractedData.salariesWages !== null && payrollData) {
