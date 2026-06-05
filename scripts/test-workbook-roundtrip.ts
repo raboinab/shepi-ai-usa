@@ -79,7 +79,7 @@ interface MetaParsed {
   schemaVersion: string;
   projectId: string;
   exportedFromRevision: number;
-  periods: { id: string; label: string }[];
+  periods: { id: string; label: string; shortLabel: string }[];
   adjustmentDirectory: { id: string; type: string; label: string }[];
   snapshot: { trialBalance: Record<string, Record<string, number>>; adjustments: Record<string, { id: string; type: string; label: string; periodValues: Record<string, number> }> };
 }
