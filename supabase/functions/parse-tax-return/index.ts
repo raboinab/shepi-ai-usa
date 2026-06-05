@@ -1434,7 +1434,7 @@ serve(async (req) => {
     // that don't already fall back to IS (Distributions, Interest income,
     // Charitable, COGS purchases).
     if (!hasGL && hasIS && incomeStatement) {
-      for (const group of ["revenue", "cogs", "expenses"] as const) {
+      for (const group of ["revenue", "otherIncome", "cogs", "expenses"] as const) {
         const accts = (incomeStatement as any)[group]?.accounts;
         if (!Array.isArray(accts)) continue;
         for (const a of accts) {
