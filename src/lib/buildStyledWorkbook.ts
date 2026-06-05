@@ -328,13 +328,23 @@ export interface BuildOptions {
   docSources?: DocSourceItem[];
   /** Optional cover/title overrides */
   watermark?: string;
+  /** Round-trip metadata: project id and current revision counter */
+  roundTripMeta?: { projectId: string; revision: number };
 }
+
+/** Schema version for the round-trip meta sheet. Bump when input-tab shape changes. */
+export const WORKBOOK_SCHEMA_VERSION = "1.0";
+
+/** Hidden meta sheet name. The leading "_" + lowercase keeps it out of typical TOCs. */
+export const META_SHEET_NAME = "__shepi_meta";
+
 
 /**
  * Build the full styled workbook in memory. Caller saves it.
  */
 export async function buildStyledWorkbook(opts: BuildOptions): Promise<ExcelJS.Workbook> {
-  const { dealData, pocBankData, docSources, watermark } = opts;
+  const { dealData, pocBankData, docSources, watermark, roundTripMeta } = opts;
+
 
   const wb = new ExcelJS.Workbook();
   wb.creator = "Shepi";
@@ -410,5 +420,78 @@ export async function buildStyledWorkbook(opts: BuildOptions): Promise<ExcelJS.W
   });
   buildTOCSheet(toc, sheetsBuilt);
 
+  // --- Hidden meta sheet for offline round-trip (must come LAST) ---
+  if (roundTripMeta) {
+    writeMetaSheet(wb, dealData, roundTripMeta);
+  }
+
   return wb;
 }
+
+/**
+ * Hidden machine-readable sheet used by the offline round-trip upload flow.
+ * Stores project id, schema version, source revision, plus stable row keys
+ * for every input tab so we can match rows on re-import even if the user
+ * inserts/reorders rows in Excel.
+ */
+function writeMetaSheet(
+  wb: ExcelJS.Workbook,
+  dealData: DealData,
+  meta: { projectId: string; revision: number }
+): void {
+  const ws = wb.addWorksheet(META_SHEET_NAME, { state: "hidden" });
+
+  // Header block — single-cell key/value pairs the parser reads by address
+  ws.getCell("A1").value = "shepiWorkbook";
+  ws.getCell("B1").value = WORKBOOK_SCHEMA_VERSION;
+  ws.getCell("A2").value = "projectId";
+  ws.getCell("B2").value = meta.projectId;
+  ws.getCell("A3").value = "exportedFromRevision";
+  ws.getCell("B3").value = meta.revision;
+  ws.getCell("A4").value = "exportedAt";
+  ws.getCell("B4").value = new Date().toISOString();
+
+  // Section 1: period keys (id, label) so the parser can map column headers back to period ids
+  let row = 6;
+  ws.getCell(`A${row}`).value = "__periods__";
+  row++;
+  ws.getCell(`A${row}`).value = "periodId";
+  ws.getCell(`B${row}`).value = "label";
+  row++;
+  for (const p of dealData.deal.periods) {
+    ws.getCell(`A${row}`).value = p.id;
+    ws.getCell(`B${row}`).value = p.label;
+    row++;
+  }
+
+  // Section 2: account keys (accountId, accountName) — used to match TB rows
+  row += 1;
+  ws.getCell(`A${row}`).value = "__accounts__";
+  row++;
+  ws.getCell(`A${row}`).value = "accountId";
+  ws.getCell(`B${row}`).value = "accountName";
+  row++;
+  for (const a of dealData.accounts) {
+    ws.getCell(`A${row}`).value = a.accountId;
+    ws.getCell(`B${row}`).value = a.accountName;
+    row++;
+  }
+
+  // Section 3: adjustment ids (id, label, type) — used to match adjustment rows
+  row += 1;
+  ws.getCell(`A${row}`).value = "__adjustments__";
+  row++;
+  ws.getCell(`A${row}`).value = "id";
+  ws.getCell(`B${row}`).value = "type";
+  ws.getCell(`C${row}`).value = "label";
+  row++;
+  for (const adj of dealData.adjustments) {
+    ws.getCell(`A${row}`).value = adj.id;
+    ws.getCell(`B${row}`).value = adj.type;
+    ws.getCell(`C${row}`).value = adj.label;
+    row++;
+  }
+
+  ws.state = "hidden";
+}
+

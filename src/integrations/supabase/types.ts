@@ -2339,6 +2339,7 @@ export type Database = {
           periods: Json | null
           prepared_by_line: string | null
           professional_use_acknowledged_at: string | null
+          revision: number
           service_tier: string
           status: string | null
           target_company: string | null
@@ -2365,6 +2366,7 @@ export type Database = {
           periods?: Json | null
           prepared_by_line?: string | null
           professional_use_acknowledged_at?: string | null
+          revision?: number
           service_tier?: string
           status?: string | null
           target_company?: string | null
@@ -2391,6 +2393,7 @@ export type Database = {
           periods?: Json | null
           prepared_by_line?: string | null
           professional_use_acknowledged_at?: string | null
+          revision?: number
           service_tier?: string
           status?: string | null
           target_company?: string | null
