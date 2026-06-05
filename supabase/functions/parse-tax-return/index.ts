@@ -1038,14 +1038,29 @@ serve(async (req) => {
     }
 
     // Year-scoped processed_data resolution.
-    // Preference order:
-    //   (a) row whose period_end is inside the tax year,
-    //   (b) qbtojson "full-history aggregate" (period_end IS NULL) — these carry monthlyValues
-    //       spanning multiple years and are year-scoped downstream via taxYear-aware helpers,
-    //   (c) most recent row with a period_end (flagged as period_mismatch).
+    // Preference order (prefer multi-year normalized aggregates so we don't pick a single
+    // monthly snapshot whose raw shape the downstream matchers can't interpret):
+    //   (a) qbtojson "aggregate" — either NULL period_end OR a row spanning ≥ 11 months.
+    //       Carries monthlyValues across years; year-scoped downstream via taxYear-aware helpers.
+    //   (b) row whose period_end is inside the tax year (single-month snapshots),
+    //       used only when no qbtojson aggregate exists for this data_type.
+    //   (c) most recent row with period_end (flagged as period_mismatch).
     const taxYear = extractedData.taxYear;
     const yearStart = `${taxYear}-01-01`;
     const yearEnd = `${taxYear}-12-31`;
+
+    const monthsBetween = (a?: string | null, b?: string | null): number => {
+      if (!a || !b) return 0;
+      const da = new Date(String(a));
+      const db = new Date(String(b));
+      if (isNaN(da.getTime()) || isNaN(db.getTime())) return 0;
+      return (db.getFullYear() - da.getFullYear()) * 12 + (db.getMonth() - da.getMonth()) + 1;
+    };
+    const isQbAggregateRow = (r: any): boolean => {
+      if (r.source_type !== 'qbtojson') return false;
+      if (!r.period_end) return true;
+      return monthsBetween(r.period_start, r.period_end) >= 11;
+    };
 
     const processedData: Record<string, any> = {};
     const processedDataPeriodMismatch: Record<string, boolean> = {};
@@ -1055,6 +1070,14 @@ serve(async (req) => {
       (byType[r.data_type] ||= []).push(r);
     }
     for (const [dtype, rows] of Object.entries(byType)) {
+      // (a) qbtojson aggregate first — multi-year, normalized into monthlyValues
+      const aggregate = rows.find(isQbAggregateRow);
+      if (aggregate) {
+        processedData[dtype] = maybeNormalizeQbData(dtype, 'qbtojson', aggregate.data);
+        processedDataSourceKind[dtype] = 'aggregate';
+        continue;
+      }
+      // (b) row whose period_end is inside the tax year
       const inYear = rows.find((r) => {
         if (!r.period_end) return false;
         const d = String(r.period_end);
@@ -1063,13 +1086,6 @@ serve(async (req) => {
       if (inYear) {
         processedData[dtype] = maybeNormalizeQbData(dtype, inYear.source_type, inYear.data);
         processedDataSourceKind[dtype] = 'in_year';
-        continue;
-      }
-      // (b) qbtojson aggregate rows often have NULL period_end and a monthlyValues map
-      const aggregate = rows.find((r) => !r.period_end && r.source_type === 'qbtojson');
-      if (aggregate) {
-        processedData[dtype] = maybeNormalizeQbData(dtype, 'qbtojson', aggregate.data);
-        processedDataSourceKind[dtype] = 'aggregate';
         continue;
       }
       // (c) most recent with period_end
@@ -1086,6 +1102,7 @@ serve(async (req) => {
         processedDataSourceKind[dtype] = 'period_mismatch';
       }
     }
+
 
 
     // Year-scoped canonical_transactions (the primary GL source).
