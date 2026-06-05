@@ -2,6 +2,8 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.87.1";
 import * as XLSX from "npm:xlsx@0.18.5";
 
+import { normalizeAndPersist } from "../_shared/normalized-contracts.ts";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
@@ -257,29 +259,21 @@ serve(async (req) => {
     // Sort newest first
     entries.sort((a, b) => b.txnDate.localeCompare(a.txnDate));
 
-    // Insert in QB shape so transformQBJournalEntriesToWizard can consume it unchanged
-    const payload = {
-      data: entries,
-      count: entries.length,
+    // Persist via shared normalizer (entries already in canonical shape)
+    const persistResult = await normalizeAndPersist(supabase, {
+      projectId,
+      userId: document.user_id,
+      sourceDocumentId: documentId,
+      dataType: "journal_entries",
       source: "upload_parse",
+      rawAiOutput: { entries, count: entries.length },
       documentName: document.name,
-      extractedAt: new Date().toISOString(),
-    };
-
-    const { error: insertError } = await supabase.from("processed_data").insert({
-      project_id: projectId,
-      user_id: document.user_id,
-      source_document_id: documentId,
-      source_type: "upload_parse",
-      data_type: "journal_entries",
-      data: payload,
-      validation_status: "pending",
+      confidence: "high",
     });
-
-    if (insertError) {
-      console.error("[process-journal-entries] insert error:", insertError);
+    if (!persistResult.ok) {
+      console.error("[process-journal-entries] persist error:", persistResult.errors);
       await supabase.from("documents").update({ processing_status: "failed" }).eq("id", documentId);
-      throw insertError;
+      throw new Error(persistResult.errors?.join("; ") ?? "Failed to persist journal entries");
     }
 
     await supabase.from("documents").update({

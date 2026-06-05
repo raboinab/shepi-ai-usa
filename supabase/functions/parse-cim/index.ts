@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.87.1";
 
 import { aiFetch, ensureZdrEnabled } from "../_shared/zdrGuard.ts";
+import { normalizeAndPersist } from "../_shared/normalized-contracts.ts";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-api-key, x-service-name, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
@@ -294,21 +295,20 @@ Return ONLY valid JSON, no markdown code blocks or additional text.`;
       };
     }
 
-    // Store in processed_data table
-    const { error: insertError } = await supabase
-      .from("processed_data")
-      .insert({
-        project_id: projectId,
-        user_id: document.user_id,
-        source_document_id: documentId,
-        source_type: "ai_extraction",
-        data_type: "cim_insights",
-        data: insights,
-        validation_status: "completed",
-      });
-
-    if (insertError) {
-      console.error("Failed to store CIM insights:", insertError);
+    // Store via shared normalizer
+    const persistResult = await normalizeAndPersist(supabase, {
+      projectId,
+      userId: document.user_id,
+      sourceDocumentId: documentId,
+      dataType: "cim_insights",
+      source: "ai_document_extraction",
+      rawAiOutput: insights,
+      documentName: document.name,
+      modelUsed: "anthropic/claude-sonnet-4",
+      confidence: "medium",
+    });
+    if (!persistResult.ok) {
+      console.error("Failed to persist normalized CIM insights:", persistResult.errors);
     }
 
     // Update document status

@@ -3,6 +3,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.87.1";
 import * as XLSX from "npm:xlsx@0.18.5";
 
 import { aiFetch, ensureZdrEnabled } from "../_shared/zdrGuard.ts";
+import { normalizeAndPersist } from "../_shared/normalized-contracts.ts";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
@@ -252,14 +253,15 @@ serve(async (req) => {
         const userId = doc?.user_id;
 
         if (userId) {
-          await adminClient.from("processed_data").insert({
-            project_id: projectId,
-            user_id: userId,
-            source_document_id: documentId,
-            source_type: "ai_extraction",
-            data_type: "supporting_document",
-            data: result,
-            validation_status: "validated",
+          await normalizeAndPersist(adminClient, {
+            projectId,
+            userId,
+            sourceDocumentId: documentId,
+            dataType: "supporting_document",
+            source: "ai_document_extraction",
+            rawAiOutput: result,
+            documentName: fileName,
+            confidence: "medium",
           });
         }
 
