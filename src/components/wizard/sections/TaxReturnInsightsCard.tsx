@@ -178,6 +178,19 @@ interface ComparisonResult {
   note?: string;
 }
 
+export interface AnalysisDiagnostics {
+  taxYear: number;
+  sources: Array<{
+    dataType: string;
+    status: 'in_year' | 'aggregate' | 'period_mismatch' | 'missing';
+    detail?: string;
+  }>;
+  glSourceTypes: Array<{ source_type: string; rows: number; usedForGL: boolean }>;
+  hasGL: boolean;
+  glFallback?: 'income_statement_aggregate' | null;
+  skippedFields?: Array<{ field: string; reason: string }>;
+}
+
 export interface TaxReturnAnalysis {
   extractedData: TaxReturnData;
   comparisons: ComparisonResult[];
@@ -187,7 +200,9 @@ export interface TaxReturnAnalysis {
   summary: string;
   analyzedAt: string;
   documentId: string;
+  analysisDiagnostics?: AnalysisDiagnostics;
 }
+
 
 interface TaxReturnInsightsCardProps {
   analysis: TaxReturnAnalysis;
