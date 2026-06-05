@@ -945,14 +945,14 @@ serve(async (req) => {
         return d >= yearStart && d <= yearEnd;
       });
       if (inYear) {
-        processedData[dtype] = inYear.data;
+        processedData[dtype] = maybeNormalizeQbData(dtype, inYear.source_type, inYear.data);
         processedDataSourceKind[dtype] = 'in_year';
         continue;
       }
       // (b) qbtojson aggregate rows often have NULL period_end and a monthlyValues map
       const aggregate = rows.find((r) => !r.period_end && r.source_type === 'qbtojson');
       if (aggregate) {
-        processedData[dtype] = aggregate.data;
+        processedData[dtype] = maybeNormalizeQbData(dtype, 'qbtojson', aggregate.data);
         processedDataSourceKind[dtype] = 'aggregate';
         continue;
       }
@@ -961,15 +961,16 @@ serve(async (req) => {
         .filter((r) => r.period_end)
         .sort((a, b) => String(b.period_end).localeCompare(String(a.period_end)));
       if (sorted[0]) {
-        processedData[dtype] = sorted[0].data;
+        processedData[dtype] = maybeNormalizeQbData(dtype, sorted[0].source_type, sorted[0].data);
         processedDataPeriodMismatch[dtype] = true;
         processedDataSourceKind[dtype] = 'period_mismatch';
       } else if (rows[0]) {
-        processedData[dtype] = rows[0].data;
+        processedData[dtype] = maybeNormalizeQbData(dtype, rows[0].source_type, rows[0].data);
         processedDataPeriodMismatch[dtype] = true;
         processedDataSourceKind[dtype] = 'period_mismatch';
       }
     }
+
 
     // Year-scoped canonical_transactions (the primary GL source).
     // IMPORTANT: exclude rows that are *monthly snapshots* of IS/BS/CF/TB — those are
