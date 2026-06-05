@@ -192,6 +192,7 @@ export interface TaxReturnAnalysis {
 interface TaxReturnInsightsCardProps {
   analysis: TaxReturnAnalysis;
   className?: string;
+  onReanalyze?: (documentId: string) => Promise<void>;
 }
 
 const formatCurrency = (value: number | null | undefined): string => {
