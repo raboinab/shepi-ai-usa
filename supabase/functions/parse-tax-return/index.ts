@@ -1571,6 +1571,12 @@ serve(async (req) => {
         ["Pension (17)", "pension", "pension", 0.10],
         ["Employee Benefits (18)", "employeeBenefit", "employeeBenefit", 0.10],
       ];
+      // Track payroll-line outcomes so we can emit a combined Officer+Salaries fallback row
+      // when an S-corp books everything to a single payroll bucket.
+      const payrollOutcome: Record<'officerCompensation' | 'salariesWages', { taxVal: number; bookVal: number } | null> = {
+        officerCompensation: null,
+        salariesWages: null,
+      };
       for (const [label, taxKey, matcherKey, thr] of deductionRows) {
         const taxVal = (extractedData as any)[taxKey] as number | null;
         if (taxVal === null || taxVal === undefined) continue;
@@ -1586,6 +1592,9 @@ serve(async (req) => {
             ? `Income Statement ${taxYear} (${matched.accounts.length} acct${matched.accounts.length === 1 ? '' : 's'})`
             : (hasGL ? "GL — no matching account" : `Income Statement ${taxYear} — no matching account`);
         }
+        if (taxKey === 'officerCompensation' || taxKey === 'salariesWages') {
+          payrollOutcome[taxKey] = { taxVal, bookVal: matched.total };
+        }
         if (matched.total === 0) {
           const reason = hasGL && hasIS
             ? `No GL or Income Statement account matched "${matcherKey}" for ${taxYear}`
@@ -1593,13 +1602,17 @@ serve(async (req) => {
               ? `No GL account matched "${matcherKey}" for ${taxYear}`
               : `No Income Statement account matched "${matcherKey}" for ${taxYear}`;
           skippedFields.push({ field: label, reason });
-          // Surface the gap as a review_only row so a non-zero tax deduction with $0 in books
-          // doesn't silently disappear from the comparison table.
+          // Surface up to 5 expense accounts the matcher considered but rejected, so the
+          // user can spot misclassifications (e.g. "Contract Labor" not matched as wages).
+          const considered = hasIS ? listISExpenseAccountNames() : [];
+          const hint = considered.length
+            ? ` Considered accounts that did not match: ${considered.slice(0, 5).map((n) => `"${n}"`).join(', ')}${considered.length > 5 ? `, +${considered.length - 5} more` : ''}.`
+            : '';
           pushReviewOnly({
             field: label,
             taxValue: taxVal,
             category: "deductions",
-            note: `Tax return reports ${taxVal.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })} but books show $0 for any account matching "${matcherKey}" in ${taxYear}.`,
+            note: `Tax return reports ${taxVal.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })} but books show $0 for any account matching "${matcherKey}" in ${taxYear}.${hint}`,
           });
           continue;
         }
@@ -1615,6 +1628,43 @@ serve(async (req) => {
           matchedAccounts: matched.accounts,
           flagMessage: `${label} variance vs. books exceeds ${(thr! * 100).toFixed(0)}%`,
         });
+      }
+
+      // S-corp combined-payroll fallback: when both Officer Comp and Salaries are present on
+      // the return but at least one came up $0 in books, run a single combined match so the
+      // headline score isn't dragged down by a structural book-side split that doesn't exist.
+      const oc = payrollOutcome.officerCompensation;
+      const sw = payrollOutcome.salariesWages;
+      if (oc && sw && (oc.bookVal === 0 || sw.bookVal === 0)) {
+        const combinedMatchers = [
+          ...PL_MATCHERS.officerCompensation.match,
+          ...PL_MATCHERS.salariesWages.match,
+        ];
+        const combinedExcludes = (PL_MATCHERS.salariesWages.exclude || []).filter(
+          (rx) => !/officer|owner|shareholder/i.test(rx.source)
+        );
+        let combined = hasGL ? matchAccounts(combinedMatchers, combinedExcludes) : { total: 0, accounts: [] as string[] };
+        let combinedSource = combined.accounts.length
+          ? `GL (${combined.accounts.length} acct${combined.accounts.length === 1 ? '' : 's'})`
+          : '';
+        if (combined.total === 0 && hasIS) {
+          combined = matchISAccounts(combinedMatchers, combinedExcludes);
+          combinedSource = combined.accounts.length
+            ? `Income Statement ${taxYear} (${combined.accounts.length} acct${combined.accounts.length === 1 ? '' : 's'})`
+            : '';
+        }
+        if (combined.total > 0) {
+          pushCompare({
+            field: "Combined Payroll (Officer + Salaries) — fallback",
+            taxValue: oc.taxVal + sw.taxVal,
+            comparisonValue: combined.total,
+            source: combinedSource,
+            category: "deductions_p1",
+            threshold: 0.10,
+            matchedAccounts: combined.accounts,
+            flagMessage: "Combined payroll variance vs. books exceeds 10% — books may not split officer/staff compensation",
+          });
+        }
       }
     } else {
 
