@@ -1,11 +1,9 @@
 /**
- * WorkbookUploadButton — lets a user re-upload an XLSX workbook they edited
- * offline. Validates the hidden meta sheet via the parse-workbook-upload edge
- * function, shows a review dialog summarizing changes + revision drift, then
- * commits via commit-workbook-upload.
- *
- * Phase 1 scope: adjustment amount changes. TB cells and supplementary tabs
- * land in Phase 2.
+ * WorkbookUploadButton — handles the full offline round-trip:
+ * 1. User picks XLSX → parse-workbook-upload extracts base + mine
+ * 2. Review dialog shows summary of TB cell edits + adjustment add/edit/delete
+ * 3. Commit invokes commit-workbook-upload; on 409 CONFLICTS, opens ConflictResolutionDialog
+ * 4. User resolves per-field, commits again with resolutions
  */
 import { useRef, useState } from "react";
 import { Upload, AlertTriangle, Loader2, CheckCircle2 } from "lucide-react";
@@ -22,12 +20,16 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+import { ConflictResolutionDialog, type FieldConflict } from "./ConflictResolutionDialog";
 
-interface AdjustmentDiff {
+interface BaseAdjustment {
   id: string;
-  label: string;
   type: string;
-  changes: { periodId: string; oldValue: number | null; newValue: number }[];
+  label: string;
+  tbAccountNumber?: string;
+  intent?: string;
+  notes?: string;
+  periodValues: Record<string, number>;
 }
 
 interface ParseResult {
@@ -37,14 +39,23 @@ interface ParseResult {
   exportedFromRevision: number;
   currentRevision: number;
   revisionDrifted: boolean;
+  mine: {
+    trialBalance: Record<string, Record<string, number>>;
+    adjustmentsChanged: Record<string, Record<string, number>>;
+    adjustmentsDeleted: string[];
+    adjustmentsAdded: BaseAdjustment[];
+  };
+  base: {
+    trialBalance: Record<string, Record<string, number>>;
+    adjustments: Record<string, BaseAdjustment>;
+  };
   summary: {
+    tbCellsChanged: number;
     adjustmentsChanged: number;
     adjustmentsAdded: number;
     adjustmentsDeleted: number;
-    tbCellsChanged: number;
-    supplementaryChanged: number;
+    deferredTabsSeen: string[];
   };
-  adjustmentDiffs: AdjustmentDiff[];
   warnings: string[];
 }
 
@@ -54,22 +65,17 @@ interface Props {
   className?: string;
 }
 
-const fmt = (n: number | null): string => {
-  if (n == null) return "—";
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
-};
-
 export function WorkbookUploadButton({ projectId, onCommitted, className }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [parsing, setParsing] = useState(false);
   const [committing, setCommitting] = useState(false);
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
-  const [open, setOpen] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [conflicts, setConflicts] = useState<FieldConflict[] | null>(null);
 
   const handleFileChosen = async (file: File) => {
     setParsing(true);
     try {
-      // Read file as base64
       const arrayBuf = await file.arrayBuffer();
       const bytes = new Uint8Array(arrayBuf);
       let binary = "";
@@ -88,40 +94,27 @@ export function WorkbookUploadButton({ projectId, onCommitted, className }: Prop
         toast({ title: "Could not parse workbook", description: errMsg, variant: "destructive" });
         return;
       }
-
       const result = data as ParseResult | { ok: false; error: string };
       if (!result.ok) {
-        const errMsg = (result as { error?: string }).error || "Could not parse workbook";
-        toast({ title: "Could not parse workbook", description: errMsg, variant: "destructive" });
+        toast({ title: "Could not parse workbook", description: (result as { error?: string }).error || "Unknown error", variant: "destructive" });
         return;
       }
-
-
       if (result.projectId !== projectId) {
-        toast({
-          title: "Wrong project",
-          description: "This workbook was exported from a different project.",
-          variant: "destructive",
-        });
+        toast({ title: "Wrong project", description: "This workbook was exported from a different project.", variant: "destructive" });
         return;
       }
-
       setParseResult(result);
-      setOpen(true);
+      setReviewOpen(true);
     } catch (err) {
       console.error("Upload parse failed:", err);
-      toast({
-        title: "Upload failed",
-        description: err instanceof Error ? err.message : "Unknown error",
-        variant: "destructive",
-      });
+      toast({ title: "Upload failed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" });
     } finally {
       setParsing(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
-  const handleCommit = async (force: boolean) => {
+  const submitCommit = async (resolutions?: Record<string, "mine" | "theirs">, force = false) => {
     if (!parseResult) return;
     setCommitting(true);
     try {
@@ -129,45 +122,55 @@ export function WorkbookUploadButton({ projectId, onCommitted, className }: Prop
         body: {
           projectId: parseResult.projectId,
           exportedFromRevision: parseResult.exportedFromRevision,
-          adjustmentDiffs: parseResult.adjustmentDiffs.map(d => ({
-            id: d.id,
-            changes: d.changes.map(c => ({ periodId: c.periodId, newValue: c.newValue })),
-          })),
+          base: parseResult.base,
+          mine: parseResult.mine,
+          resolutions,
           force,
         },
       });
 
-      if (error || !(data as { ok?: boolean })?.ok) {
-        const errMsg = (data as { error?: string; message?: string })?.message
-          || (data as { error?: string })?.error
-          || error?.message
-          || "Commit failed";
-        toast({ title: "Could not save changes", description: errMsg, variant: "destructive" });
+      // Edge function returns 409 for conflicts — supabase-js exposes it via error
+      const payload = data as { ok?: boolean; error?: string; message?: string; conflicts?: FieldConflict[]; applied?: Record<string, number>; autoMerged?: boolean };
+
+      if (payload?.error === "CONFLICTS" && Array.isArray(payload.conflicts)) {
+        setReviewOpen(false);
+        setConflicts(payload.conflicts);
         return;
       }
 
+      if (error || !payload?.ok) {
+        toast({
+          title: "Could not save changes",
+          description: payload?.message || payload?.error || error?.message || "Commit failed",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const a = payload.applied ?? { tbCells: 0, adjustmentsChanged: 0, adjustmentsAdded: 0, adjustmentsDeleted: 0 };
+      const parts: string[] = [];
+      if (a.tbCells) parts.push(`${a.tbCells} TB cells`);
+      if (a.adjustmentsChanged) parts.push(`${a.adjustmentsChanged} adjustments edited`);
+      if (a.adjustmentsAdded) parts.push(`${a.adjustmentsAdded} added`);
+      if (a.adjustmentsDeleted) parts.push(`${a.adjustmentsDeleted} deleted`);
       toast({
-        title: "Workbook updated",
-        description: `Applied ${(data as { adjustmentChangesApplied: number }).adjustmentChangesApplied} adjustment edits.`,
+        title: payload.autoMerged ? "Workbook updated (auto-merged)" : "Workbook updated",
+        description: parts.join(" · ") || "No changes applied.",
       });
-      setOpen(false);
+      setReviewOpen(false);
+      setConflicts(null);
       setParseResult(null);
       onCommitted?.();
     } catch (err) {
-      toast({
-        title: "Commit failed",
-        description: err instanceof Error ? err.message : "Unknown error",
-        variant: "destructive",
-      });
+      toast({ title: "Commit failed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" });
     } finally {
       setCommitting(false);
     }
   };
 
-  const totalChanges = parseResult
-    ? parseResult.summary.adjustmentsChanged
-      + parseResult.summary.adjustmentsAdded
-      + parseResult.summary.adjustmentsDeleted
+  const summary = parseResult?.summary;
+  const totalChanges = summary
+    ? summary.tbCellsChanged + summary.adjustmentsChanged + summary.adjustmentsAdded + summary.adjustmentsDeleted
     : 0;
 
   return (
@@ -193,25 +196,25 @@ export function WorkbookUploadButton({ projectId, onCommitted, className }: Prop
         Upload XLSX
       </Button>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={reviewOpen} onOpenChange={setReviewOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Review workbook changes</DialogTitle>
             <DialogDescription>
-              We compared your edited workbook against the current project data. Confirm to apply.
+              Detected edits in your offline workbook. Confirm to apply.
             </DialogDescription>
           </DialogHeader>
 
-          {parseResult && (
+          {parseResult && summary && (
             <div className="space-y-3">
               {parseResult.revisionDrifted && (
-                <Alert variant="destructive">
+                <Alert>
                   <AlertTriangle className="h-4 w-4" />
                   <AlertTitle>Online changes detected</AlertTitle>
                   <AlertDescription>
-                    The workbook was modified online (revision {parseResult.currentRevision})
-                    after you exported it (revision {parseResult.exportedFromRevision}).
-                    Choosing "Apply anyway" will overwrite those online changes with your offline edits.
+                    Workbook was modified online (revision {parseResult.currentRevision}) after you exported
+                    (revision {parseResult.exportedFromRevision}). Non-overlapping edits will be auto-merged;
+                    overlaps will prompt for resolution.
                   </AlertDescription>
                 </Alert>
               )}
@@ -223,55 +226,26 @@ export function WorkbookUploadButton({ projectId, onCommitted, className }: Prop
                   <AlertDescription>Your uploaded workbook matches what's already saved.</AlertDescription>
                 </Alert>
               ) : (
-                <>
-                  <div className="rounded-md border bg-muted/30 p-3 text-sm">
-                    <div className="font-medium mb-1">Summary</div>
-                    <ul className="space-y-0.5 text-muted-foreground">
-                      <li>• {parseResult.summary.adjustmentsChanged} adjustments with amount edits</li>
-                      <li className="text-xs italic">
-                        Trial Balance, supplementary tabs, and added/deleted adjustments will be supported in Phase 2.
-                      </li>
-                    </ul>
-                  </div>
+                <div className="rounded-md border bg-muted/30 p-3 text-sm space-y-1">
+                  <div className="font-medium">Summary</div>
+                  <ul className="space-y-0.5 text-muted-foreground">
+                    {summary.tbCellsChanged > 0 && <li>• {summary.tbCellsChanged} Trial Balance cell edits</li>}
+                    {summary.adjustmentsChanged > 0 && <li>• {summary.adjustmentsChanged} adjustments with amount changes</li>}
+                    {summary.adjustmentsAdded > 0 && <li>• {summary.adjustmentsAdded} new adjustments added</li>}
+                    {summary.adjustmentsDeleted > 0 && <li>• {summary.adjustmentsDeleted} adjustments deleted</li>}
+                  </ul>
+                </div>
+              )}
 
-                  {parseResult.adjustmentDiffs.length > 0 && (
-                    <div>
-                      <div className="text-sm font-medium mb-2">Adjustment changes</div>
-                      <ScrollArea className="h-64 rounded-md border">
-                        <div className="p-2 space-y-2">
-                          {parseResult.adjustmentDiffs.map(d => (
-                            <div key={d.id} className="rounded border bg-card p-2 text-xs">
-                              <div className="font-medium">
-                                <span className="inline-block px-1.5 py-0.5 rounded bg-muted text-muted-foreground mr-2">
-                                  {d.type}
-                                </span>
-                                {d.label}
-                              </div>
-                              <table className="mt-1 w-full">
-                                <thead>
-                                  <tr className="text-muted-foreground">
-                                    <th className="text-left font-normal">Period</th>
-                                    <th className="text-right font-normal">Old</th>
-                                    <th className="text-right font-normal">New</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {d.changes.map(c => (
-                                    <tr key={c.periodId}>
-                                      <td>{c.periodId}</td>
-                                      <td className="text-right">{fmt(c.oldValue)}</td>
-                                      <td className="text-right font-semibold">{fmt(c.newValue)}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          ))}
-                        </div>
-                      </ScrollArea>
-                    </div>
-                  )}
-                </>
+              {summary.deferredTabsSeen.length > 0 && (
+                <Alert>
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTitle>Some tabs not yet round-trippable</AlertTitle>
+                  <AlertDescription className="text-xs">
+                    Edits in these tabs will be ignored on import:&nbsp;
+                    {summary.deferredTabsSeen.join(", ")}. Coming in the next release.
+                  </AlertDescription>
+                </Alert>
               )}
 
               {parseResult.warnings.length > 0 && (
@@ -285,25 +259,58 @@ export function WorkbookUploadButton({ projectId, onCommitted, className }: Prop
                   </AlertDescription>
                 </Alert>
               )}
+
+              {totalChanges > 0 && (
+                <ScrollArea className="h-48 rounded-md border">
+                  <div className="p-2 space-y-1 text-xs">
+                    {Object.entries(parseResult.mine.adjustmentsChanged).map(([id, cells]) => {
+                      const baseAdj = parseResult.base.adjustments[id];
+                      return (
+                        <div key={id} className="border-b pb-1">
+                          <div className="font-medium">{baseAdj?.type} · {baseAdj?.label}</div>
+                          <div className="text-muted-foreground">{Object.keys(cells).length} period(s) changed</div>
+                        </div>
+                      );
+                    })}
+                    {parseResult.mine.adjustmentsAdded.map(a => (
+                      <div key={a.id} className="border-b pb-1">
+                        <span className="inline-block px-1 rounded bg-primary/10 text-primary mr-1">NEW</span>
+                        {a.type} · {a.label}
+                      </div>
+                    ))}
+                    {parseResult.mine.adjustmentsDeleted.map(id => (
+                      <div key={id} className="border-b pb-1">
+                        <span className="inline-block px-1 rounded bg-destructive/10 text-destructive mr-1">DEL</span>
+                        {parseResult.base.adjustments[id]?.label ?? id}
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              )}
             </div>
           )}
 
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setOpen(false)} disabled={committing}>
-              Cancel
-            </Button>
+            <Button variant="ghost" onClick={() => setReviewOpen(false)} disabled={committing}>Cancel</Button>
             {parseResult && totalChanges > 0 && (
-              <Button
-                onClick={() => handleCommit(parseResult.revisionDrifted)}
-                disabled={committing}
-              >
+              <Button onClick={() => submitCommit()} disabled={committing}>
                 {committing && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />}
-                {parseResult.revisionDrifted ? "Apply anyway (overwrite)" : "Apply changes"}
+                Apply changes
               </Button>
             )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {conflicts && (
+        <ConflictResolutionDialog
+          open={conflicts !== null}
+          conflicts={conflicts}
+          submitting={committing}
+          onCancel={() => setConflicts(null)}
+          onResolve={(r) => submitCommit(r)}
+        />
+      )}
     </>
   );
 }
