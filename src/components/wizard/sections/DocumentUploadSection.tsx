@@ -856,6 +856,30 @@ export const DocumentUploadSection = ({
     }
   };
 
+  // Auto-reanalyze stale tax-return cards (pre-rewrite results have overallScore === -1
+  // or are missing analysisDiagnostics). Runs once per documentId per session.
+  useEffect(() => {
+    const stale = taxReturnInsights.filter((a) => {
+      if (!a?.documentId) return false;
+      if (autoReanalyzedDocsRef.current.has(a.documentId)) return false;
+      const isStaleScore = a.overallScore === null || (a.overallScore as number) < 0;
+      const missingDiagnostics = !a.analysisDiagnostics;
+      return isStaleScore || missingDiagnostics;
+    });
+    if (stale.length === 0) return;
+    // Mark all as in-flight up front so we don't loop on state updates
+    stale.forEach((a) => autoReanalyzedDocsRef.current.add(a.documentId));
+    // Sequential to avoid hammering the edge function / rate limits
+    (async () => {
+      for (const a of stale) {
+        await handleReanalyzeTaxReturn(a.documentId, { silent: true });
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taxReturnInsights]);
+
+
+
 
   const fetchPayrollAnalysis = async () => {
     try {
