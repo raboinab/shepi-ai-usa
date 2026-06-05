@@ -444,6 +444,8 @@ export const DocumentUploadSection = ({
   const [parsingCim, setParsingCim] = useState(false);
   const [taxReturnInsights, setTaxReturnInsights] = useState<TaxReturnAnalysis[]>([]);
   const [parsingTaxReturn, setParsingTaxReturn] = useState(false);
+  const autoReanalyzedDocsRef = useRef<Set<string>>(new Set());
+
   const [payrollAnalysis, setPayrollAnalysis] = useState<{ docName: string; data: PayrollAnalysisData }[]>([]);
   const [glAnalysis, setGlAnalysis] = useState<{ docName: string; data: GLAnalysisData }[]>([]);
   const [jeAnalysis, setJeAnalysis] = useState<{ docName: string; data: JEAnalysisData }[]>([]);
