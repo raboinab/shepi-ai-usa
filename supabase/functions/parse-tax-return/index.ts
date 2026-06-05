@@ -1566,8 +1566,18 @@ serve(async (req) => {
       return { total, yearScoped: anyYearKey, annualTotal };
     };
 
+    // Owner Compensation should reflect ONLY wages/salary paid to officer(s) —
+    // line 7 of Form 1120-S. Exclude rows that look like employer-side payroll
+    // taxes (FICA/Medicare/FUTA/SUTA/unemployment/workers comp), which some
+    // payroll extracts bundle into the ownerCompensation group.
+    const isPayrollTaxRow = (name: unknown): boolean => {
+      const s = String(name ?? '').toLowerCase();
+      if (!s) return false;
+      return /(fica|medicare|social security|payroll tax|unemploy|futa|suta|workers? comp|sui|fui)/i.test(s);
+    };
     const getPayrollOwnerComp = (): ExtFallback => {
-      const accounts = resolvePayrollAccounts('ownerCompensation');
+      const all = resolvePayrollAccounts('ownerCompensation');
+      const accounts = all.filter((a: any) => !isPayrollTaxRow(a?.name ?? a?.account ?? a?.label));
       if (!accounts.length) {
         return { total: 0, yearScoped: false, source: "Payroll — Owner Compensation (uploaded)" };
       }
@@ -1808,6 +1818,11 @@ serve(async (req) => {
                 payrollOutcome[taxKey] = { taxVal, bookVal: ext.total };
               }
               const yearNote = ext.yearScoped ? '' : ' — variance may reflect multi-year totals';
+              // If the tax return reports $0 for this line AND our books-side value is only
+              // an estimate (e.g. debt-schedule rate × avg balance), treat the row as
+              // informational. A -100% "variance" against an estimate is not a real finding.
+              const isEstimated = /\bestimated\b/i.test(ext.source);
+              const informational = taxVal === 0 && isEstimated;
               pushCompare({
                 field: label,
                 taxValue: taxVal,
@@ -1815,7 +1830,13 @@ serve(async (req) => {
                 source: ext.source,
                 category: "deductions_p1",
                 threshold: thr,
-                flagMessage: `${label}: books had $0 for this line; matched against uploaded ${ext.source}${yearNote}. Variance vs. tax exceeds ${(thr! * 100).toFixed(0)}%.`,
+                excludeFromScore: informational || undefined,
+                note: informational
+                  ? `Tax return reports $0 for ${label}; books value is an estimate from the uploaded ${ext.source.replace(/ \(.*\)/, '')}. Informational only — excluded from consistency score.`
+                  : undefined,
+                flagMessage: informational
+                  ? undefined
+                  : `${label}: books had $0 for this line; matched against uploaded ${ext.source}${yearNote}. Variance vs. tax exceeds ${(thr! * 100).toFixed(0)}%.`,
               });
               continue;
             }
