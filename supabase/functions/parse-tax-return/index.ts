@@ -743,410 +743,699 @@ serve(async (req) => {
       console.warn("Failed to fetch processed data:", pdError);
     }
 
+    // Year-scoped processed_data resolution — only use records whose period_end
+    // falls within the tax year. If none, fall back to most-recent and tag the source.
+    const taxYear = extractedData.taxYear;
+    const yearStart = `${taxYear}-01-01`;
+    const yearEnd = `${taxYear}-12-31`;
+
     const processedData: Record<string, any> = {};
-    for (const record of processedRecords || []) {
-      const recordYear = record.period_end ? new Date(record.period_end).getFullYear() : null;
-      // Prefer records whose period matches the tax year
-      if (!processedData[record.data_type] || recordYear === extractedData.taxYear) {
-        processedData[record.data_type] = record.data;
+    const processedDataPeriodMismatch: Record<string, boolean> = {};
+    const byType: Record<string, any[]> = {};
+    for (const r of processedRecords || []) {
+      (byType[r.data_type] ||= []).push(r);
+    }
+    for (const [dtype, rows] of Object.entries(byType)) {
+      const inYear = rows.find((r) => {
+        if (!r.period_end) return false;
+        const d = String(r.period_end);
+        return d >= yearStart && d <= yearEnd;
+      });
+      if (inYear) {
+        processedData[dtype] = inYear.data;
+      } else {
+        // Fall back to most recent, but flag the mismatch
+        const sorted = rows
+          .filter((r) => r.period_end)
+          .sort((a, b) => String(b.period_end).localeCompare(String(a.period_end)));
+        if (sorted[0]) {
+          processedData[dtype] = sorted[0].data;
+          processedDataPeriodMismatch[dtype] = true;
+        } else if (rows[0]) {
+          processedData[dtype] = rows[0].data;
+          processedDataPeriodMismatch[dtype] = true;
+        }
       }
     }
+
+    // Year-scoped canonical_transactions (the primary GL source)
+    const { data: txns, error: txnsErr } = await supabase
+      .from("canonical_transactions")
+      .select("account_name, account_type, amount, amount_signed, amount_abs")
+      .eq("project_id", projectId)
+      .gte("txn_date", yearStart)
+      .lte("txn_date", yearEnd);
+    if (txnsErr) {
+      console.warn("canonical_transactions fetch warning:", txnsErr.message);
+    }
+
+    interface AccountAgg { signed: number; abs: number; type: string | null }
+    const glByAccount = new Map<string, AccountAgg>();
+    for (const t of txns || []) {
+      const name = String(t.account_name || "").trim();
+      if (!name) continue;
+      const cur = glByAccount.get(name) || { signed: 0, abs: 0, type: t.account_type ?? null };
+      cur.signed += Number(t.amount_signed ?? t.amount ?? 0);
+      cur.abs += Number(t.amount_abs ?? Math.abs(Number(t.amount ?? 0)));
+      glByAccount.set(name, cur);
+    }
+    const hasGL = glByAccount.size > 0;
+
+    const matchAccounts = (matchers: RegExp[], exclude: RegExp[] = []): { total: number; accounts: string[] } => {
+      let total = 0;
+      const accounts: string[] = [];
+      for (const [name, vals] of glByAccount.entries()) {
+        if (exclude.some((rx) => rx.test(name))) continue;
+        if (matchers.some((rx) => rx.test(name))) {
+          total += vals.abs;
+          accounts.push(name);
+        }
+      }
+      return { total, accounts };
+    };
+
+    // P&L deduction-account matchers (used against canonical_transactions)
+    const PL_MATCHERS: Record<string, { match: RegExp[]; exclude?: RegExp[] }> = {
+      salariesWages: { match: [/salar/i, /\bwages?\b/i, /\bpayroll\b/i], exclude: [/officer/i, /owner/i, /payroll tax/i, /shareholder/i] },
+      officerCompensation: { match: [/officer/i, /owner.*comp/i, /shareholder.*comp/i, /\bowners draw\b/i] },
+      repairs: { match: [/repair/i, /maintenance/i] },
+      badDebts: { match: [/bad debt/i, /uncollect/i, /write.?off/i] },
+      rent: { match: [/\brent\b/i, /\blease\b/i], exclude: [/rental income/i, /rent income/i] },
+      taxes: { match: [/\btax(es)?\b/i, /licens/i], exclude: [/income tax/i, /deferred tax/i] },
+      interestExpense: { match: [/interest expen/i, /^interest$/i, /finance charg/i] },
+      depreciation: { match: [/deprec/i, /amortiz/i] },
+      depletion: { match: [/deplet/i] },
+      advertising: { match: [/advertis/i, /marketing/i, /promot/i] },
+      pension: { match: [/pension/i, /401\s*\(?k\)?/i, /retirement plan/i, /profit shar/i] },
+      employeeBenefit: { match: [/employee benefit/i, /health insur/i, /\bmedical\b/i, /dental/i, /vision insur/i] },
+    };
+
+    // Balance-sheet matchers (used against processed_data.balance_sheet / trial_balance EOY values)
+    const BS_MATCHERS: Record<string, { match: RegExp[]; exclude?: RegExp[] }> = {
+      cash: { match: [/^cash/i, /checking/i, /money market/i, /^bank/i, /savings/i] },
+      accountsReceivable: { match: [/^a\/?r\b/i, /accounts? receiv/i, /trade receiv/i] },
+      inventories: { match: [/inventor/i] },
+      loansToShareholders: { match: [/loan.*to.*(shareholder|owner|officer)/i, /due from (shareholder|officer|owner)/i] },
+      buildings: { match: [/building/i, /leasehold improvement/i] },
+      depreciableAssets: { match: [/equipment/i, /machinery/i, /vehicle/i, /furniture/i, /fixture/i, /computer hardware/i], exclude: [/accumulated/i] },
+      accumulatedDepreciation: { match: [/accumulated depreciation/i, /less.*depreciation/i] },
+      land: { match: [/^land\b/i] },
+      accountsPayable: { match: [/^a\/?p\b/i, /accounts? payab/i, /trade payab/i] },
+      mortgagesPayable: { match: [/mortgage/i, /note.*payab/i, /long.term.*debt/i, /loan.*payab/i] },
+      loansFromShareholders: { match: [/loan.*from.*(shareholder|owner|officer)/i, /due to (shareholder|officer|owner)/i] },
+      capitalStock: { match: [/capital stock/i, /common stock/i, /paid.in capital/i] },
+      retainedEarnings: { match: [/retained earnings/i] },
+    };
+
+    // Helper: extract EOY balance from processed_data.balance_sheet shape
+    const getBsEoyByMatcher = (matchers: { match: RegExp[]; exclude?: RegExp[] }): { total: number; accounts: string[] } => {
+      const bs = wizardData.balanceSheet || processedData.balance_sheet;
+      if (!bs) return { total: 0, accounts: [] };
+      const collect = (accounts: any[]): { total: number; accounts: string[] } => {
+        let total = 0;
+        const matched: string[] = [];
+        for (const a of accounts || []) {
+          const name = String(a?.name || a?.accountName || "").trim();
+          if (!name) continue;
+          if (matchers.exclude?.some((rx) => rx.test(name))) continue;
+          if (!matchers.match.some((rx) => rx.test(name))) continue;
+          // EOY = last monthly value
+          const monthly = a.monthlyValues || {};
+          const keys = Object.keys(monthly).sort();
+          const eoy = keys.length ? Number(monthly[keys[keys.length - 1]]) || 0 : Number(a.endingBalance ?? a.balance ?? 0);
+          total += eoy;
+          matched.push(name);
+        }
+        return { total, accounts: matched };
+      };
+      // shapes vary: {assets:{accounts:[]}, liabilities:{accounts:[]}, equity:{accounts:[]}, accounts:[]}
+      const buckets = [bs.accounts, bs.assets?.accounts, bs.liabilities?.accounts, bs.equity?.accounts];
+      let total = 0;
+      const accounts: string[] = [];
+      for (const b of buckets) {
+        if (!Array.isArray(b)) continue;
+        const r = collect(b);
+        total += r.total;
+        accounts.push(...r.accounts);
+      }
+      return { total, accounts: Array.from(new Set(accounts)) };
+    };
 
     // Build comparisons
     const comparisons: ComparisonResult[] = [];
     const flags: string[] = [];
 
-    // Helper to get comparison status
-    const getComparisonStatus = (variance: number | null, threshold: number = 0.05): ComparisonResult['status'] => {
+    const getStatus = (variance: number | null, threshold: number = 0.05): ComparisonResult['status'] => {
       if (variance === null) return 'missing_data';
-      const absVariance = Math.abs(variance);
-      if (absVariance <= threshold) return 'match';
-      if (absVariance <= 0.1) return 'minor_variance';
+      const a = Math.abs(variance);
+      if (a <= threshold) return 'match';
+      if (a <= 0.10) return 'minor_variance';
       return 'significant_variance';
     };
 
-    // Compare Gross Receipts vs Income Statement Revenue
+    const pushCompare = (args: {
+      field: string;
+      taxValue: number | null | undefined;
+      comparisonValue: number | null;
+      source: string;
+      category: string;
+      threshold?: number;
+      matchedAccounts?: string[];
+      note?: string;
+      flagMessage?: string;
+    }) => {
+      const { field, taxValue, comparisonValue, source, category, threshold = 0.05, matchedAccounts, note, flagMessage } = args;
+      if (taxValue === null || taxValue === undefined) return;
+      if (comparisonValue === null || comparisonValue === 0) {
+        // Skip rows where we have no comparable counterpart — they pollute the table
+        return;
+      }
+      const variance = (taxValue - comparisonValue) / Math.abs(comparisonValue);
+      const status = getStatus(variance, threshold);
+      comparisons.push({
+        field,
+        taxReturnValue: taxValue,
+        comparisonValue,
+        source,
+        variance: taxValue - comparisonValue,
+        variancePercent: variance * 100,
+        status,
+        category,
+        matchedAccounts,
+        note,
+      });
+      if (flagMessage && Math.abs(variance) > threshold) flags.push(flagMessage);
+    };
+
+    const pushReviewOnly = (args: {
+      field: string;
+      taxValue: number | null | undefined;
+      category: string;
+      note: string;
+    }) => {
+      if (args.taxValue === null || args.taxValue === undefined || args.taxValue === 0) return;
+      comparisons.push({
+        field: args.field,
+        taxReturnValue: args.taxValue,
+        comparisonValue: null,
+        source: "Manual review",
+        variance: null,
+        variancePercent: null,
+        status: 'review_only',
+        category: args.category,
+        note: args.note,
+      });
+    };
+
+    // ============ INCOME STATEMENT helpers ============
     const incomeStatement = wizardData.incomeStatement || processedData.income_statement;
-    if (extractedData.grossReceipts !== null && incomeStatement) {
-      let isRevenue = 0;
-      
-      if (incomeStatement.revenue?.accounts) {
-        isRevenue = incomeStatement.revenue.accounts.reduce((sum: number, acc: any) => {
-          const values = Object.values(acc.monthlyValues || {}) as number[];
-          return sum + values.reduce((a, b) => a + (Number(b) || 0), 0);
-        }, 0);
-      } else if (incomeStatement.data?.monthlyReports) {
-        for (const report of incomeStatement.data.monthlyReports) {
-          if (report.rows?.row) {
-            for (const row of report.rows.row) {
-              if ((row.group === 'TotalIncome' || row.group === 'Income') && row.summary?.colData) {
-                const val = row.summary.colData.find((c: any) => c.value);
-                if (val) isRevenue += parseFloat(String(val.value).replace(/[,$]/g, '')) || 0;
-              }
-            }
-          }
-        }
-      }
+    const isPeriodMismatch = processedDataPeriodMismatch.income_statement;
+    const isSourceLabel = isPeriodMismatch ? "Income Statement (period mismatch)" : "Income Statement";
 
-      if (isRevenue > 0) {
-        const variance = (extractedData.grossReceipts - isRevenue) / isRevenue;
-        comparisons.push({
-          field: "Gross Receipts / Revenue",
-          taxReturnValue: extractedData.grossReceipts,
-          comparisonValue: isRevenue,
-          source: "Income Statement",
-          variance: extractedData.grossReceipts - isRevenue,
-          variancePercent: variance * 100,
-          status: getComparisonStatus(variance),
-          category: "income",
+    const sumISMonthly = (group: 'revenue' | 'cogs' | 'expenses'): number => {
+      if (!incomeStatement) return 0;
+      const accounts = incomeStatement[group]?.accounts;
+      if (Array.isArray(accounts)) {
+        return accounts.reduce((sum: number, acc: any) => {
+          const vals = Object.values(acc.monthlyValues || {}) as number[];
+          return sum + vals.reduce((a, b) => a + (Number(b) || 0), 0);
+        }, 0);
+      }
+      return 0;
+    };
+
+    const isRevenue = sumISMonthly('revenue') || Number(incomeStatement?.totalRevenue) || 0;
+    const isNetIncome = Number(incomeStatement?.netIncome) || 0;
+
+    // ============ PAGE 1 — INCOME ============
+    pushCompare({
+      field: "Gross Receipts (1a)",
+      taxValue: extractedData.grossReceipts,
+      comparisonValue: isRevenue > 0 ? isRevenue : null,
+      source: isSourceLabel,
+      category: "income_p1",
+      threshold: 0.05,
+      flagMessage: `Revenue variance between tax return and Income Statement exceeds 5%`,
+    });
+
+    // ============ PAGE 1 — DEDUCTIONS (GL-driven) ============
+    if (hasGL) {
+      const deductionRows: Array<[string, string, keyof typeof PL_MATCHERS, number?]> = [
+        ["Officer Compensation (7)", "officerCompensation", "officerCompensation", 0.10],
+        ["Salaries & Wages (8)", "salariesWages", "salariesWages", 0.10],
+        ["Repairs & Maintenance (9)", "repairs", "repairs", 0.10],
+        ["Bad Debts (10)", "badDebts", "badDebts", 0.10],
+        ["Rents (11)", "rent", "rent", 0.05],
+        ["Taxes & Licenses (12)", "taxes", "taxes", 0.10],
+        ["Interest (13)", "interestExpense", "interestExpense", 0.05],
+        ["Depreciation (14)", "depreciation", "depreciation", 0.05],
+        ["Depletion (15)", "depletion", "depletion", 0.10],
+        ["Advertising (16)", "advertising", "advertising", 0.10],
+        ["Pension (17)", "pension", "pension", 0.10],
+        ["Employee Benefits (18)", "employeeBenefit", "employeeBenefit", 0.10],
+      ];
+      for (const [label, taxKey, matcherKey, thr] of deductionRows) {
+        const taxVal = (extractedData as any)[taxKey] as number | null;
+        if (taxVal === null || taxVal === undefined) continue;
+        const matched = matchAccounts(PL_MATCHERS[matcherKey].match, PL_MATCHERS[matcherKey].exclude || []);
+        pushCompare({
+          field: label,
+          taxValue: taxVal,
+          comparisonValue: matched.total > 0 ? matched.total : null,
+          source: matched.accounts.length ? `GL (${matched.accounts.length} acct${matched.accounts.length === 1 ? '' : 's'})` : "GL — no matching account",
+          category: "deductions_p1",
+          threshold: thr,
+          matchedAccounts: matched.accounts,
+          flagMessage: `${label} variance vs. GL exceeds ${(thr! * 100).toFixed(0)}%`,
         });
-
-        if (Math.abs(variance) > 0.05) {
-          flags.push(`Revenue variance of ${(variance * 100).toFixed(1)}% between tax return ($${extractedData.grossReceipts.toLocaleString()}) and Income Statement ($${isRevenue.toLocaleString()})`);
+      }
+    } else {
+      // Fall back to processed_data fallbacks for the key deduction lines we previously supported
+      const payrollData = wizardData.payroll || processedData.payroll;
+      if (extractedData.salariesWages !== null && payrollData) {
+        let payrollTotal = 0;
+        if (payrollData.salaryWages?.accounts) {
+          payrollTotal = payrollData.salaryWages.accounts.reduce((s: number, acc: any) =>
+            s + (Object.values(acc.monthlyValues || {}) as number[]).reduce((a: number, b) => a + (Number(b) || 0), 0), 0);
+        } else if (Array.isArray(payrollData)) {
+          payrollTotal = payrollData.reduce((s: number, e: any) => s + (Number(e.salary) || Number(e.totalCompensation) || 0), 0);
+        } else if (payrollData.employees) {
+          payrollTotal = payrollData.employees.reduce((s: number, e: any) => s + (Number(e.salary) || Number(e.totalCompensation) || 0), 0);
         }
-      }
-    }
-
-    // Compare Salaries/Wages vs Payroll
-    const payrollData = wizardData.payroll || processedData.payroll;
-    if (extractedData.salariesWages !== null && payrollData) {
-      let payrollTotal = 0;
-      
-      if (payrollData.salaryWages?.accounts) {
-        payrollTotal = payrollData.salaryWages.accounts.reduce((sum: number, acc: any) => {
-          const values = Object.values(acc.monthlyValues || {}) as number[];
-          return sum + values.reduce((a, b) => a + (Number(b) || 0), 0);
-        }, 0);
-      } else if (Array.isArray(payrollData)) {
-        payrollTotal = payrollData.reduce((sum: number, e: any) => 
-          sum + (Number(e.salary) || Number(e.totalCompensation) || 0), 0);
-      } else if (payrollData.employees) {
-        payrollTotal = payrollData.employees.reduce((sum: number, e: any) => 
-          sum + (Number(e.salary) || Number(e.totalCompensation) || 0), 0);
-      }
-
-      if (payrollTotal > 0) {
-        const variance = (extractedData.salariesWages - payrollTotal) / payrollTotal;
-        comparisons.push({
-          field: "Salaries & Wages",
-          taxReturnValue: extractedData.salariesWages,
-          comparisonValue: payrollTotal,
+        pushCompare({
+          field: "Salaries & Wages (8)",
+          taxValue: extractedData.salariesWages,
+          comparisonValue: payrollTotal > 0 ? payrollTotal : null,
           source: "Payroll Reports",
-          variance: extractedData.salariesWages - payrollTotal,
-          variancePercent: variance * 100,
-          status: getComparisonStatus(variance, 0.1),
-          category: "payroll",
-        });
-
-        if (Math.abs(variance) > 0.1) {
-          flags.push(`Payroll variance of ${(variance * 100).toFixed(1)}% - review for proper accrual`);
-        }
-      }
-    }
-
-    // Compare Officer Compensation vs Payroll (for owner compensation)
-    if (extractedData.officerCompensation !== null && payrollData?.ownerComp?.accounts) {
-      let ownerCompTotal = payrollData.ownerComp.accounts.reduce((sum: number, acc: any) => {
-        const values = Object.values(acc.monthlyValues || {}) as number[];
-        return sum + values.reduce((a, b) => a + (Number(b) || 0), 0);
-      }, 0);
-
-      if (ownerCompTotal > 0) {
-        const variance = (extractedData.officerCompensation - ownerCompTotal) / ownerCompTotal;
-        comparisons.push({
-          field: "Officer/Owner Compensation",
-          taxReturnValue: extractedData.officerCompensation,
-          comparisonValue: ownerCompTotal,
-          source: "Payroll - Owner Comp",
-          variance: extractedData.officerCompensation - ownerCompTotal,
-          variancePercent: variance * 100,
-          status: getComparisonStatus(variance, 0.1),
-          category: "payroll",
+          category: "deductions_p1",
+          threshold: 0.10,
         });
       }
-    }
-
-    // Compare Depreciation vs Fixed Assets
-    const fixedAssets = wizardData.fixedAssets || processedData.fixed_assets;
-    if (extractedData.depreciation !== null && fixedAssets) {
-      let depreciationTotal = 0;
-      
-      if (fixedAssets.assets && Array.isArray(fixedAssets.assets)) {
-        depreciationTotal = fixedAssets.assets.reduce((sum: number, a: any) => 
-          sum + (Number(a.currentYearDepreciation) || Number(a.annualDepreciation) || 0), 0);
-      } else if (Array.isArray(fixedAssets)) {
-        depreciationTotal = fixedAssets.reduce((sum: number, a: any) => 
-          sum + (Number(a.currentYearDepreciation) || Number(a.annualDepreciation) || 0), 0);
+      if (extractedData.officerCompensation !== null && payrollData?.ownerComp?.accounts) {
+        const ownerCompTotal = payrollData.ownerComp.accounts.reduce((s: number, acc: any) =>
+          s + (Object.values(acc.monthlyValues || {}) as number[]).reduce((a: number, b) => a + (Number(b) || 0), 0), 0);
+        pushCompare({
+          field: "Officer Compensation (7)",
+          taxValue: extractedData.officerCompensation,
+          comparisonValue: ownerCompTotal > 0 ? ownerCompTotal : null,
+          source: "Payroll — Owner Comp",
+          category: "deductions_p1",
+          threshold: 0.10,
+        });
       }
-
-      if (depreciationTotal > 0) {
-        const variance = (extractedData.depreciation - depreciationTotal) / depreciationTotal;
-        comparisons.push({
-          field: "Depreciation",
-          taxReturnValue: extractedData.depreciation,
-          comparisonValue: depreciationTotal,
+      const fixedAssets = wizardData.fixedAssets || processedData.fixed_assets;
+      if (extractedData.depreciation !== null && fixedAssets) {
+        const list = Array.isArray(fixedAssets) ? fixedAssets : fixedAssets.assets || [];
+        const depTotal = list.reduce((s: number, a: any) => s + (Number(a.currentYearDepreciation) || Number(a.annualDepreciation) || 0), 0);
+        pushCompare({
+          field: "Depreciation (14)",
+          taxValue: extractedData.depreciation,
+          comparisonValue: depTotal > 0 ? depTotal : null,
           source: "Fixed Assets Schedule",
-          variance: extractedData.depreciation - depreciationTotal,
-          variancePercent: variance * 100,
-          status: getComparisonStatus(variance, 0.02),
-          category: "assets",
+          category: "deductions_p1",
+          threshold: 0.05,
         });
-
-        if (Math.abs(variance) > 0.02) {
-          flags.push(`Depreciation mismatch - may indicate timing differences or method changes`);
-        }
       }
-    }
-
-    // Compare Interest Expense vs Debt Schedule
-    const debtSchedule = wizardData.debtSchedule || processedData.debt_schedule;
-    if (extractedData.interestExpense !== null && debtSchedule) {
-      let interestTotal = 0;
-      
-      if (debtSchedule.debts && Array.isArray(debtSchedule.debts)) {
-        interestTotal = debtSchedule.debts.reduce((sum: number, d: any) => 
-          sum + (Number(d.annualInterest) || Number(d.interestExpense) || 0), 0);
-      } else if (Array.isArray(debtSchedule)) {
-        interestTotal = debtSchedule.reduce((sum: number, d: any) => 
-          sum + (Number(d.annualInterest) || Number(d.interestExpense) || 0), 0);
-      }
-
-      if (interestTotal > 0) {
-        const variance = (extractedData.interestExpense - interestTotal) / interestTotal;
-        comparisons.push({
-          field: "Interest Expense",
-          taxReturnValue: extractedData.interestExpense,
-          comparisonValue: interestTotal,
+      const debtSchedule = wizardData.debtSchedule || processedData.debt_schedule;
+      if (extractedData.interestExpense !== null && debtSchedule) {
+        const list = Array.isArray(debtSchedule) ? debtSchedule : debtSchedule.debts || [];
+        const interestTotal = list.reduce((s: number, d: any) => s + (Number(d.annualInterest) || Number(d.interestExpense) || 0), 0);
+        pushCompare({
+          field: "Interest (13)",
+          taxValue: extractedData.interestExpense,
+          comparisonValue: interestTotal > 0 ? interestTotal : null,
           source: "Debt Schedule",
-          variance: extractedData.interestExpense - interestTotal,
-          variancePercent: variance * 100,
-          status: getComparisonStatus(variance, 0.05),
-          category: "debt",
-        });
-
-        if (Math.abs(variance) > 0.05) {
-          flags.push(`Interest expense variance - verify debt terms match recorded obligations`);
-        }
-      }
-    }
-
-    // Compare Schedule L Total Assets vs Balance Sheet
-    const balanceSheet = wizardData.balanceSheet || processedData.balance_sheet;
-    if (extractedData.scheduleL?.endOfYear?.totalAssets !== null && balanceSheet) {
-      let bsTotalAssets = 0;
-      
-      if (balanceSheet.totalAssets !== undefined) {
-        bsTotalAssets = Number(balanceSheet.totalAssets) || 0;
-      } else if (balanceSheet.assets?.accounts) {
-        bsTotalAssets = balanceSheet.assets.accounts.reduce((sum: number, acc: any) => {
-          const values = Object.values(acc.monthlyValues || {}) as number[];
-          const lastValue = values[values.length - 1] || 0;
-          return sum + (Number(lastValue) || 0);
-        }, 0);
-      }
-
-      if (bsTotalAssets > 0 && extractedData.scheduleL?.endOfYear?.totalAssets) {
-        const variance = (extractedData.scheduleL.endOfYear.totalAssets - bsTotalAssets) / bsTotalAssets;
-        comparisons.push({
-          field: "Total Assets (Schedule L)",
-          taxReturnValue: extractedData.scheduleL.endOfYear.totalAssets,
-          comparisonValue: bsTotalAssets,
-          source: "Balance Sheet",
-          variance: extractedData.scheduleL.endOfYear.totalAssets - bsTotalAssets,
-          variancePercent: variance * 100,
-          status: getComparisonStatus(variance, 0.05),
-          category: "balance_sheet",
-        });
-
-        if (Math.abs(variance) > 0.1) {
-          flags.push(`Schedule L total assets differ from Balance Sheet by ${(variance * 100).toFixed(1)}%`);
-        }
-      }
-    }
-
-    // Compare Schedule K Distributions vs Cash Flow or Bank Records
-    if (extractedData.scheduleK?.distributions !== null && extractedData.scheduleK?.distributions !== undefined) {
-      const distributions = extractedData.scheduleK.distributions;
-      if (distributions > 0) {
-        // Flag significant distributions for review
-        const grossReceipts = extractedData.grossReceipts || 0;
-        if (grossReceipts > 0) {
-          const distributionRatio = distributions / grossReceipts;
-          if (distributionRatio > 0.3) {
-            flags.push(`High shareholder distributions: ${(distributionRatio * 100).toFixed(0)}% of gross receipts - verify cash flow capacity`);
-          }
-        }
-        
-        comparisons.push({
-          field: "Shareholder Distributions (K)",
-          taxReturnValue: distributions,
-          comparisonValue: null,
-          source: "Review Required",
-          variance: null,
-          variancePercent: null,
-          status: 'missing_data',
-          category: "schedule_k",
+          category: "deductions_p1",
+          threshold: 0.05,
         });
       }
     }
 
-    // Compare M-1 Net Income per Books vs Income Statement
-    const m1NetIncome = extractedData.scheduleM1?.netIncomePerBooks;
-    if (m1NetIncome !== null && m1NetIncome !== undefined && incomeStatement) {
-      let netIncome = 0;
-      
-      if (incomeStatement.netIncome !== undefined) {
-        netIncome = Number(incomeStatement.netIncome) || 0;
-      }
-
-      if (netIncome !== 0) {
-        const variance = (m1NetIncome - netIncome) / Math.abs(netIncome);
-        comparisons.push({
-          field: "Net Income per Books (M-1)",
-          taxReturnValue: m1NetIncome,
-          comparisonValue: netIncome,
-          source: "Income Statement",
-          variance: m1NetIncome - netIncome,
-          variancePercent: variance * 100,
-          status: getComparisonStatus(variance, 0.05),
-          category: "reconciliation",
+    // Internal tie-out: Total Deductions = sum of lines 7-19
+    if (extractedData.totalDeductions !== null) {
+      const sumLines = [
+        extractedData.officerCompensation, extractedData.salariesWages, extractedData.repairs,
+        extractedData.badDebts, extractedData.rent, extractedData.taxes, extractedData.interestExpense,
+        extractedData.depreciation, extractedData.depletion, extractedData.advertising,
+        extractedData.pension, extractedData.employeeBenefit, extractedData.otherDeductions,
+      ].reduce((s: number, v) => s + (Number(v) || 0), 0);
+      if (sumLines > 0) {
+        pushCompare({
+          field: "Total Deductions (20) tie-out",
+          taxValue: extractedData.totalDeductions,
+          comparisonValue: sumLines,
+          source: "Calculated from lines 7–19",
+          category: "deductions_p1",
+          threshold: 0.01,
         });
       }
     }
 
-    // Compare Ordinary Business Income
+    // Internal tie-out: Ordinary Business Income = Total Income − Total Deductions
     if (extractedData.ordinaryBusinessIncome !== null) {
-      const grossReceipts = extractedData.grossReceipts || 0;
-      const totalDeductions = extractedData.totalDeductions || 0;
-      const calculatedIncome = grossReceipts - (extractedData.costOfGoodsSold || 0) - totalDeductions + (extractedData.otherIncome || 0);
-      
-      if (Math.abs(calculatedIncome) > 0) {
-        const variance = (extractedData.ordinaryBusinessIncome - calculatedIncome) / Math.abs(calculatedIncome);
-        if (Math.abs(variance) > 0.01) {
-          comparisons.push({
-            field: "Ordinary Business Income (calc check)",
-            taxReturnValue: extractedData.ordinaryBusinessIncome,
-            comparisonValue: calculatedIncome,
-            source: "Calculated from lines",
-            variance: extractedData.ordinaryBusinessIncome - calculatedIncome,
-            variancePercent: variance * 100,
-            status: getComparisonStatus(variance, 0.01),
-            category: "income",
+      const totalIncome = extractedData.totalIncome ?? ((extractedData.grossProfit ?? 0) + (extractedData.otherIncome ?? 0));
+      const calc = totalIncome - (extractedData.totalDeductions ?? 0);
+      if (Math.abs(calc) > 0) {
+        pushCompare({
+          field: "Ordinary Business Income (21) tie-out",
+          taxValue: extractedData.ordinaryBusinessIncome,
+          comparisonValue: calc,
+          source: "Calculated from Page 1",
+          category: "income_p1",
+          threshold: 0.01,
+        });
+      }
+    }
+
+    // ============ SCHEDULE L (EOY balance sheet) ============
+    if (extractedData.scheduleL?.endOfYear) {
+      const eoy = extractedData.scheduleL.endOfYear;
+      const bsAvailable = !!(wizardData.balanceSheet || processedData.balance_sheet);
+      const bsLabel = processedDataPeriodMismatch.balance_sheet ? "Balance Sheet (period mismatch)" : "Balance Sheet";
+
+      const schLRows: Array<[string, keyof BalanceSheetEoy, keyof typeof BS_MATCHERS, number?]> = [
+        ["Cash (L-1)", "cash", "cash", 0.05],
+        ["A/R (L-2)", "accountsReceivable", "accountsReceivable", 0.05],
+        ["Inventories (L-3)", "inventories", "inventories", 0.05],
+        ["Loans to Shareholders (L-6)", "loansToShareholders", "loansToShareholders", 0.05],
+        ["Buildings (L-9a)", "buildings", "buildings", 0.10],
+        ["Depreciable Assets (L-10a)", "depreciableAssets", "depreciableAssets", 0.10],
+        ["Accumulated Depreciation (L-10b)", "accumulatedDepreciation", "accumulatedDepreciation", 0.10],
+        ["Land (L-12)", "land", "land", 0.05],
+        ["Accounts Payable (L-16)", "accountsPayable", "accountsPayable", 0.05],
+        ["Mortgages/Notes Payable (L-17/L-19)", "mortgagesPayable", "mortgagesPayable", 0.05],
+        ["Loans from Shareholders (L-18)", "loansFromShareholders", "loansFromShareholders", 0.05],
+        ["Capital Stock (L-22)", "capitalStock", "capitalStock", 0.01],
+        ["Retained Earnings (L-24)", "retainedEarnings", "retainedEarnings", 0.05],
+      ];
+
+      if (bsAvailable) {
+        for (const [label, eoyKey, matcherKey, thr] of schLRows) {
+          const taxVal = eoy[eoyKey];
+          if (taxVal === null || taxVal === undefined) continue;
+          const matched = getBsEoyByMatcher(BS_MATCHERS[matcherKey]);
+          if (matched.total === 0) continue;
+          pushCompare({
+            field: label,
+            taxValue: taxVal,
+            comparisonValue: matched.total,
+            source: bsLabel,
+            category: "schedule_l",
+            threshold: thr,
+            matchedAccounts: matched.accounts,
+          });
+        }
+      }
+
+      // Total Assets — preserve original comparison (more sources)
+      const balanceSheet = wizardData.balanceSheet || processedData.balance_sheet;
+      if (eoy.totalAssets !== null && balanceSheet) {
+        let bsTotalAssets = 0;
+        if (balanceSheet.totalAssets !== undefined) {
+          bsTotalAssets = Number(balanceSheet.totalAssets) || 0;
+        } else if (balanceSheet.assets?.accounts) {
+          bsTotalAssets = balanceSheet.assets.accounts.reduce((sum: number, acc: any) => {
+            const values = Object.values(acc.monthlyValues || {}) as number[];
+            return sum + (Number(values[values.length - 1]) || 0);
+          }, 0);
+        }
+        pushCompare({
+          field: "Total Assets (L-15)",
+          taxValue: eoy.totalAssets,
+          comparisonValue: bsTotalAssets > 0 ? bsTotalAssets : null,
+          source: bsLabel,
+          category: "schedule_l",
+          threshold: 0.05,
+          flagMessage: `Schedule L total assets differ from Balance Sheet`,
+        });
+      }
+
+      // AR aging cross-check
+      const arAging = processedData.ar_aging;
+      if (eoy.accountsReceivable !== null && arAging) {
+        const arTotal = Number(arAging.total) || Number(arAging.totalReceivable) ||
+          (Array.isArray(arAging) ? arAging.reduce((s: number, r: any) => s + (Number(r.amount) || Number(r.balance) || 0), 0) : 0) ||
+          (Array.isArray(arAging.entries) ? arAging.entries.reduce((s: number, r: any) => s + (Number(r.amount) || Number(r.balance) || 0), 0) : 0);
+        pushCompare({
+          field: "A/R (L-2) vs AR Aging",
+          taxValue: eoy.accountsReceivable,
+          comparisonValue: arTotal > 0 ? arTotal : null,
+          source: "AR Aging Report",
+          category: "schedule_l",
+          threshold: 0.05,
+        });
+      }
+
+      // AP aging cross-check
+      const apAging = processedData.ap_aging;
+      if (eoy.accountsPayable !== null && apAging) {
+        const apTotal = Number(apAging.total) || Number(apAging.totalPayable) ||
+          (Array.isArray(apAging) ? apAging.reduce((s: number, r: any) => s + (Number(r.amount) || Number(r.balance) || 0), 0) : 0) ||
+          (Array.isArray(apAging.entries) ? apAging.entries.reduce((s: number, r: any) => s + (Number(r.amount) || Number(r.balance) || 0), 0) : 0);
+        pushCompare({
+          field: "A/P (L-16) vs AP Aging",
+          taxValue: eoy.accountsPayable,
+          comparisonValue: apTotal > 0 ? apTotal : null,
+          source: "AP Aging Report",
+          category: "schedule_l",
+          threshold: 0.05,
+        });
+      }
+    }
+
+    // ============ SCHEDULE M-1 (book/tax recon) ============
+    const m1 = extractedData.scheduleM1;
+    if (m1?.netIncomePerBooks !== null && m1?.netIncomePerBooks !== undefined && incomeStatement && isNetIncome !== 0) {
+      pushCompare({
+        field: "Net Income per Books (M-1, line 1)",
+        taxValue: m1.netIncomePerBooks,
+        comparisonValue: isNetIncome,
+        source: isSourceLabel,
+        category: "schedule_m",
+        threshold: 0.05,
+      });
+    }
+    // Internal: line 4 = line 1 + line 2 + line 3
+    if (m1 && m1.netIncomePerBooks !== null) {
+      const calcLine4 = (Number(m1.netIncomePerBooks) || 0) + (Number(m1.incomeOnBooksNotOnReturn) || 0) + (Number(m1.expensesOnBooksNotDeducted) || 0);
+      const k = m1.incomePerScheduleK;
+      const calcK = calcLine4 - (Number(m1.incomeOnReturnNotOnBooks) || 0) - (Number(m1.deductionsNotChargedToBooks) || 0);
+      if (k !== null && k !== undefined && Math.abs(calcK) > 0) {
+        pushCompare({
+          field: "Income per Schedule K (M-1 tie-out)",
+          taxValue: k,
+          comparisonValue: calcK,
+          source: "M-1 arithmetic",
+          category: "schedule_m",
+          threshold: 0.01,
+        });
+      }
+    }
+    // Reconciling items have no GL counterpart — review-only
+    if (m1) {
+      pushReviewOnly({ field: "Income on books, not on return (M-1, line 2)", taxValue: m1.incomeOnBooksNotOnReturn, category: "schedule_m", note: "No automated GL counterpart — confirm with M-1 detail" });
+      pushReviewOnly({ field: "Expenses on books, not deducted (M-1, line 3)", taxValue: m1.expensesOnBooksNotDeducted, category: "schedule_m", note: "Includes non-deductible meals, fines, etc." });
+      pushReviewOnly({ field: "Income on return, not on books (M-1, line 5)", taxValue: m1.incomeOnReturnNotOnBooks, category: "schedule_m", note: "Tax-only income items" });
+      pushReviewOnly({ field: "Deductions not charged to books (M-1, line 6)", taxValue: m1.deductionsNotChargedToBooks, category: "schedule_m", note: "Tax-only deductions" });
+    }
+
+    // ============ SCHEDULE M-2 (AAA) ============
+    const m2 = extractedData.scheduleM2;
+    if (m2?.beginningAAA !== null && m2?.endingAAA !== null && m2?.beginningAAA !== undefined && m2?.endingAAA !== undefined) {
+      const calcEnding = (Number(m2.beginningAAA) || 0)
+        + (Number(m2.ordinaryIncome) || 0)
+        + (Number(m2.otherAdditions) || 0)
+        - (Number(m2.lossDeductions) || 0)
+        - (Number(m2.otherReductions) || 0)
+        - (Number(m2.distributionsCash) || 0)
+        - (Number(m2.distributionsProperty) || 0);
+      pushCompare({
+        field: "Ending AAA (M-2, line 8) tie-out",
+        taxValue: m2.endingAAA,
+        comparisonValue: calcEnding,
+        source: "M-2 roll-forward",
+        category: "schedule_m",
+        threshold: 0.01,
+        flagMessage: "Schedule M-2 AAA roll-forward does not foot",
+      });
+    }
+    // M-2 distributions vs GL distribution accounts
+    if (m2 && hasGL) {
+      const totalDistributions = (Number(m2.distributionsCash) || 0) + (Number(m2.distributionsProperty) || 0);
+      if (totalDistributions > 0) {
+        const matched = matchAccounts(
+          [/distribution/i, /owner.?(?:s)? draw/i, /shareholder.?(?:s)? draw/i, /dividend/i],
+          [/dividend income/i]
+        );
+        pushCompare({
+          field: "Shareholder Distributions (M-2/K-16d)",
+          taxValue: totalDistributions,
+          comparisonValue: matched.total > 0 ? matched.total : null,
+          source: matched.accounts.length ? `GL (${matched.accounts.length} acct${matched.accounts.length === 1 ? '' : 's'})` : "GL — no matching account",
+          category: "schedule_m",
+          threshold: 0.05,
+          matchedAccounts: matched.accounts,
+        });
+      }
+    } else if (extractedData.scheduleK?.distributions && extractedData.scheduleK.distributions > 0) {
+      pushReviewOnly({
+        field: "Shareholder Distributions (K-16d)",
+        taxValue: extractedData.scheduleK.distributions,
+        category: "schedule_k",
+        note: "No GL distributions account available — verify against bank records",
+      });
+      const ratio = extractedData.scheduleK.distributions / (extractedData.grossReceipts || 1);
+      if (ratio > 0.3) flags.push(`High shareholder distributions: ${(ratio * 100).toFixed(0)}% of gross receipts`);
+    }
+
+    // ============ SCHEDULE K ============
+    const k = extractedData.scheduleK;
+    if (k) {
+      // K-1 Ordinary income ↔ Page 1, line 21
+      if (k.ordinaryBusinessIncome !== null && extractedData.ordinaryBusinessIncome !== null) {
+        pushCompare({
+          field: "Ordinary Income (K-1) vs Page 1 line 21",
+          taxValue: k.ordinaryBusinessIncome,
+          comparisonValue: extractedData.ordinaryBusinessIncome,
+          source: "Page 1",
+          category: "schedule_k",
+          threshold: 0.01,
+        });
+      }
+      // K-4 Interest income vs GL
+      if (k.interestIncome !== null && hasGL) {
+        const matched = matchAccounts([/interest income/i, /investment income/i]);
+        pushCompare({
+          field: "Interest Income (K-4)",
+          taxValue: k.interestIncome,
+          comparisonValue: matched.total > 0 ? matched.total : null,
+          source: matched.accounts.length ? "GL" : "GL — no matching account",
+          category: "schedule_k",
+          threshold: 0.10,
+          matchedAccounts: matched.accounts,
+        });
+      }
+      // K-12a Charitable contributions vs GL
+      if (k.charitableContributions !== null && hasGL) {
+        const matched = matchAccounts([/charit/i, /donat/i, /contribution/i], [/capital contribution/i]);
+        pushCompare({
+          field: "Charitable Contributions (K-12a)",
+          taxValue: k.charitableContributions,
+          comparisonValue: matched.total > 0 ? matched.total : null,
+          source: matched.accounts.length ? "GL" : "GL — no matching account",
+          category: "schedule_k",
+          threshold: 0.10,
+          matchedAccounts: matched.accounts,
+        });
+      }
+      // Low-signal K items → review-only
+      pushReviewOnly({ field: "Ordinary Dividends (K-5a)", taxValue: k.ordinaryDividends, category: "schedule_k", note: "Verify against brokerage 1099-DIV" });
+      pushReviewOnly({ field: "Net ST Capital Gain (K-7)", taxValue: k.netShortTermCapitalGain, category: "schedule_k", note: "Trace to Form 8949" });
+      pushReviewOnly({ field: "Net LT Capital Gain (K-8a)", taxValue: k.netLongTermCapitalGain, category: "schedule_k", note: "Trace to Form 8949" });
+      pushReviewOnly({ field: "Sec 1231 Gain (K-9)", taxValue: k.netSection1231Gain, category: "schedule_k", note: "Trace to Form 4797" });
+      pushReviewOnly({ field: "Section 179 Deduction (K-11)", taxValue: k.section179Deduction, category: "schedule_k", note: "Trace to Form 4562" });
+      pushReviewOnly({ field: "Nondeductible Expenses (K-16c)", taxValue: k.nondeductibleExpenses, category: "schedule_k", note: "Typically 50% meals, fines, club dues" });
+      pushReviewOnly({ field: "Foreign Taxes Paid (K-17f)", taxValue: k.foreignTaxesPaid, category: "schedule_k", note: "Verify against foreign withholding statements" });
+    }
+
+    // ============ 1125-A COGS ============
+    const cogs = extractedData.cogsDetails;
+    if (cogs && extractedData.costOfGoodsSold !== null) {
+      const calcCOGS = (Number(cogs.beginningInventory) || 0)
+        + (Number(cogs.purchases) || 0)
+        + (Number(cogs.costOfLabor) || 0)
+        + (Number(cogs.additionalSection263ACosts) || 0)
+        + (Number(cogs.otherCosts) || 0)
+        - (Number(cogs.endingInventory) || 0);
+      if (calcCOGS > 0) {
+        pushCompare({
+          field: "Total COGS (1125-A tie-out)",
+          taxValue: extractedData.costOfGoodsSold,
+          comparisonValue: calcCOGS,
+          source: "Form 1125-A line 1–7",
+          category: "cogs",
+          threshold: 0.01,
+        });
+      }
+      // Inventory beginning/ending vs TB / BS inventory
+      if (cogs.beginningInventory !== null || cogs.endingInventory !== null) {
+        const matched = getBsEoyByMatcher(BS_MATCHERS.inventories);
+        if (cogs.endingInventory !== null && matched.total > 0) {
+          pushCompare({
+            field: "Ending Inventory (1125-A line 7)",
+            taxValue: cogs.endingInventory,
+            comparisonValue: matched.total,
+            source: "Balance Sheet inventory",
+            category: "cogs",
+            threshold: 0.05,
+            matchedAccounts: matched.accounts,
+          });
+        }
+      }
+      // Purchases vs GL purchases accounts
+      if (cogs.purchases !== null && hasGL) {
+        const matched = matchAccounts([/purchases/i, /cost of goods/i, /materials/i, /supplies.*cogs/i]);
+        if (matched.total > 0) {
+          pushCompare({
+            field: "Purchases (1125-A line 2)",
+            taxValue: cogs.purchases,
+            comparisonValue: matched.total,
+            source: "GL purchases accounts",
+            category: "cogs",
+            threshold: 0.10,
+            matchedAccounts: matched.accounts,
           });
         }
       }
     }
 
-    // Compare COGS details if present
-    if (extractedData.cogsDetails && extractedData.costOfGoodsSold !== null) {
-      const calculatedCOGS = (extractedData.cogsDetails.beginningInventory || 0) +
-                             (extractedData.cogsDetails.purchases || 0) +
-                             (extractedData.cogsDetails.costOfLabor || 0) +
-                             (extractedData.cogsDetails.otherCosts || 0) -
-                             (extractedData.cogsDetails.endingInventory || 0);
-      
-      if (calculatedCOGS > 0) {
-        const variance = (extractedData.costOfGoodsSold - calculatedCOGS) / calculatedCOGS;
-        comparisons.push({
-          field: "COGS (1125-A tie-out)",
-          taxReturnValue: extractedData.costOfGoodsSold,
-          comparisonValue: calculatedCOGS,
-          source: "Form 1125-A Detail",
-          variance: extractedData.costOfGoodsSold - calculatedCOGS,
-          variancePercent: variance * 100,
-          status: getComparisonStatus(variance, 0.01),
-          category: "cogs",
-        });
-      }
+    // ============ TAXABLE INCOME / NET INCOME ============
+    if (extractedData.taxableIncome !== null && incomeStatement && isNetIncome !== 0) {
+      pushCompare({
+        field: "Taxable Income vs Book Net Income",
+        taxValue: extractedData.taxableIncome,
+        comparisonValue: isNetIncome,
+        source: isSourceLabel,
+        category: "reconciliation",
+        threshold: 0.15,
+        flagMessage: "Significant book-tax difference — review M-1 adjustments",
+      });
     }
 
-    // Taxable Income vs Net Income (book/tax difference)
-    if (extractedData.taxableIncome !== null && incomeStatement) {
-      let netIncome = 0;
-      
-      if (incomeStatement.netIncome !== undefined) {
-        netIncome = Number(incomeStatement.netIncome) || 0;
-      } else if (wizardData.qoeSummary?.adjustedEbitda) {
-        netIncome = Number(wizardData.qoeSummary.adjustedEbitda) || 0;
-      }
-
-      if (netIncome !== 0) {
-        const variance = (extractedData.taxableIncome - netIncome) / Math.abs(netIncome);
-        comparisons.push({
-          field: "Taxable Income / Net Income",
-          taxReturnValue: extractedData.taxableIncome,
-          comparisonValue: netIncome,
-          source: "Income Statement",
-          variance: extractedData.taxableIncome - netIncome,
-          variancePercent: variance * 100,
-          status: getComparisonStatus(variance, 0.15),
-          category: "reconciliation",
-        });
-
-        if (Math.abs(variance) > 0.2) {
-          flags.push(`Significant book-tax difference of ${(variance * 100).toFixed(1)}% - review M-1/M-3 adjustments`);
-        }
-      }
-    }
-
-    // Check AAA reconciliation (M-2)
-    if (extractedData.scheduleM2) {
-      const m2 = extractedData.scheduleM2;
-      if (m2.beginningAAA !== null && m2.endingAAA !== null) {
-        const calculatedEnding = (m2.beginningAAA || 0) + (m2.ordinaryIncome || 0) + (m2.otherAdditions || 0) 
-                                 - (m2.lossDeductions || 0) - (m2.otherReductions || 0) 
-                                 - (m2.distributionsCash || 0) - (m2.distributionsProperty || 0);
-        
-        const variance = m2.endingAAA !== 0 ? (m2.endingAAA - calculatedEnding) / Math.abs(m2.endingAAA) : 0;
-        if (Math.abs(variance) > 0.01) {
-          flags.push(`Schedule M-2 AAA calculation variance of ${(variance * 100).toFixed(1)}%`);
-        }
-      }
-    }
-
-    // Calculate overall score
+    // ============ Calculate overall score ============
     let matchCount = 0;
-    let totalComparisons = comparisons.length;
-    
+    let totalComparisons = 0;
     for (const comp of comparisons) {
+      if (comp.status === 'missing_data' || comp.status === 'review_only') continue;
+      totalComparisons += 1;
       if (comp.status === 'match') matchCount += 1;
       else if (comp.status === 'minor_variance') matchCount += 0.7;
-      else if (comp.status === 'missing_data') totalComparisons -= 1;
     }
+    const overallScore: number | null = totalComparisons > 0
+      ? Math.round((matchCount / totalComparisons) * 100)
+      : null;
 
-    const overallScore = totalComparisons > 0 
-      ? Math.round((matchCount / totalComparisons) * 100) 
-      : -1; // -1 = extraction succeeded but no comparison data available
-
-    // Generate summary
+    // ============ Generate summary ============
     let summary = "";
-    if (overallScore === -1) {
-      summary = `${extractedData.formType} for ${extractedData.taxYear} extracted successfully. No matching financial data found for ${extractedData.taxYear} to compare against — upload financial statements for this period to enable cross-validation. `;
+    if (overallScore === null) {
+      summary = `${extractedData.formType} for ${extractedData.taxYear} extracted successfully. No matching financial data found for ${extractedData.taxYear} to compare against — upload trial balance, balance sheet, or general ledger for this period to enable cross-validation. `;
     } else if (overallScore >= 90) {
-      summary = `${extractedData.formType} for ${extractedData.taxYear} is highly consistent with financial records. `;
+      summary = `${extractedData.formType} for ${extractedData.taxYear} is highly consistent with financial records across ${totalComparisons} cross-checks. `;
     } else if (overallScore >= 70) {
-      summary = `Tax return shows reasonable consistency with some variances requiring review. `;
+      summary = `Tax return shows reasonable consistency across ${totalComparisons} cross-checks with some variances requiring review. `;
     } else {
-      summary = `Significant discrepancies found between tax return and financial records - detailed review recommended. `;
+      summary = `Significant discrepancies found across ${totalComparisons} cross-checks — detailed review recommended. `;
     }
-
-    // Add schedule extraction info
     const schedulesSummary = [];
     if (extractedData.scheduleK) schedulesSummary.push("Schedule K");
     if (extractedData.scheduleL) schedulesSummary.push("Schedule L");
     if (extractedData.scheduleM1) schedulesSummary.push("M-1");
     if (extractedData.scheduleM2) schedulesSummary.push("M-2");
     if (extractedData.cogsDetails) schedulesSummary.push("1125-A");
-    
-    if (schedulesSummary.length > 0) {
-      summary += `Extracted: ${schedulesSummary.join(", ")}. `;
-    }
+    if (schedulesSummary.length > 0) summary += `Extracted: ${schedulesSummary.join(", ")}. `;
+    if (flags.length > 0) summary += `Key findings: ${flags.slice(0, 2).join("; ")}.`;
+    else if (overallScore !== null) summary += "No significant variances flagged.";
 
-    if (flags.length > 0) {
-      summary += `Key findings: ${flags.slice(0, 2).join("; ")}.`;
-    } else {
-      summary += "No significant variances flagged.";
-    }
 
     const analysis: TaxReturnAnalysis = {
       extractedData,
