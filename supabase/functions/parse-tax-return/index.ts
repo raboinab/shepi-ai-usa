@@ -814,15 +814,122 @@ function normalizeQbBalanceSheetMonthly(months: any[]): NormalizedBS {
   return { assets: sec(buckets.assets), liabilities: sec(buckets.liabilities), equity: sec(buckets.equity) };
 }
 
+function bucketCfSection(group: string, header: string): "operating" | "investing" | "financing" | null {
+  const g = (group || "").toLowerCase();
+  const h = (header || "").toLowerCase();
+  if (g.includes("operat") || h.includes("operat")) return "operating";
+  if (g.includes("invest") || h.includes("invest")) return "investing";
+  if (g.includes("financ") || h.includes("financ")) return "financing";
+  return null;
+}
+
+function normalizeQbCashFlowMonthly(months: any[]): {
+  operating: NormalizedSection; investing: NormalizedSection; financing: NormalizedSection; netChange: number;
+} {
+  const buckets: Record<"operating" | "investing" | "financing", Map<string, Record<string, number>>> = {
+    operating: new Map(), investing: new Map(), financing: new Map(),
+  };
+  let netChange = 0;
+  for (const m of months || []) {
+    const monthKey = String(m?.month || "").substring(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(monthKey)) continue;
+    const topRows = m?.report?.rows?.row;
+    if (!Array.isArray(topRows)) continue;
+    for (const section of topRows) {
+      const group = section?.group || "";
+      const header = section?.header?.colData?.[0]?.value || "";
+      if (group === "NetCashIncrease" || /net (cash )?increase/i.test(header)) {
+        netChange += parseQbAmount(section?.summary?.colData?.[1]?.value);
+        continue;
+      }
+      const bucket = bucketCfSection(group, header);
+      if (!bucket) continue;
+      walkQbLeaves(section.rows, (colData) => {
+        const name = String(colData?.[0]?.value || "").trim();
+        if (!name) return;
+        const amt = parseQbAmount(colData?.[1]?.value);
+        if (amt === 0) return;
+        const mv = buckets[bucket].get(name) || {};
+        mv[monthKey] = (mv[monthKey] || 0) + amt;
+        buckets[bucket].set(name, mv);
+      });
+    }
+  }
+  const sec = (b: Map<string, Record<string, number>>): NormalizedSection => ({
+    accounts: Array.from(b.entries()).map(([name, mv]) => ({ name, monthlyValues: mv })),
+  });
+  return { operating: sec(buckets.operating), investing: sec(buckets.investing), financing: sec(buckets.financing), netChange };
+}
+
+/** Normalize qbtojson trial_balance payload to { accounts: [{ name, debit, credit, monthlyValues }] }. */
+function normalizeQbTrialBalance(payload: any): { accounts: NormalizedAccount[]; totalDebit: number; totalCredit: number } {
+  const monthlyReports = Array.isArray(payload?.monthlyReports) ? payload.monthlyReports : [];
+  const byAccount = new Map<string, { debit: number; credit: number; monthlyValues: Record<string, number> }>();
+  let totalDebit = 0;
+  let totalCredit = 0;
+  for (const mr of monthlyReports) {
+    const year = mr?.year;
+    const month = mr?.month;
+    if (!year || !month) continue;
+    const monthKey = `${year}-${String(month).padStart(2, "0")}`;
+    const rows = mr?.report?.rows;
+    if (!rows) continue;
+    const visit = (r: any) => {
+      const list = r?.row;
+      if (!Array.isArray(list)) return;
+      for (const row of list) {
+        if (!row) continue;
+        if (row.type === "Section" || row.rows) {
+          if (row.rows) visit(row.rows);
+          continue;
+        }
+        const cd = row.colData;
+        if (!Array.isArray(cd) || cd.length < 2) continue;
+        const name = String(cd[0]?.value || "").trim();
+        if (!name) continue;
+        // TB rows commonly: [name, debit, credit] OR [name, amount]
+        const debit = parseQbAmount(cd[1]?.value);
+        const credit = cd.length >= 3 ? parseQbAmount(cd[2]?.value) : 0;
+        const net = debit - credit;
+        if (debit === 0 && credit === 0) continue;
+        const cur = byAccount.get(name) || { debit: 0, credit: 0, monthlyValues: {} };
+        cur.debit += debit;
+        cur.credit += credit;
+        cur.monthlyValues[monthKey] = (cur.monthlyValues[monthKey] || 0) + net;
+        byAccount.set(name, cur);
+        totalDebit += debit;
+        totalCredit += credit;
+      }
+    };
+    visit(rows);
+  }
+  return {
+    accounts: Array.from(byAccount.entries()).map(([name, v]) => ({
+      name, monthlyValues: v.monthlyValues, debit: v.debit, credit: v.credit,
+    } as any)),
+    totalDebit, totalCredit,
+  };
+}
+
 /** Apply the right QB-shape normalizer based on data_type. Returns input untouched if already normalized. */
 function maybeNormalizeQbData(dataType: string, sourceType: string, data: any): any {
-  if (sourceType !== "qbtojson") return data;
+  const looksRawMonthly = isRawQbMonthlyArray(data);
+  const looksRawTb = hasMonthlyReports(data);
+  // Run normalization for qbtojson OR for any source that happens to carry raw QB shapes
+  // (e.g. quickbooks_api / unified_api proxying QB Reports verbatim).
+  if (sourceType !== "qbtojson" && !looksRawMonthly && !looksRawTb) return data;
   try {
-    if (dataType === "income_statement" && isRawQbMonthlyArray(data)) {
+    if (dataType === "income_statement" && looksRawMonthly) {
       return normalizeQbPnlMonthly(data);
     }
-    if (dataType === "balance_sheet" && isRawQbMonthlyArray(data)) {
+    if (dataType === "balance_sheet" && looksRawMonthly) {
       return normalizeQbBalanceSheetMonthly(data);
+    }
+    if (dataType === "cash_flow" && looksRawMonthly) {
+      return normalizeQbCashFlowMonthly(data);
+    }
+    if (dataType === "trial_balance" && looksRawTb) {
+      return normalizeQbTrialBalance(data);
     }
   } catch (e) {
     console.warn(`maybeNormalizeQbData(${dataType}) failed:`, e);
