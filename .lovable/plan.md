@@ -1,90 +1,100 @@
-## What "N/A — no comparable data" means
+## The real root cause (different from the previous plan)
 
-The card is saying: *we couldn't tie any line of the 1120-S back to a comparable number in your books for this year*. It's not that your books are empty — it's that the comparison engine is filtering them out incorrectly.
+While inspecting the actual `processed_data` rows for this project, I found the previous plan was wrong about *why* nothing was matching. The qbtojson rows exist with `period_end = NULL` (as expected), but their `data` payload is the raw **QuickBooks Reports API shape**, not the normalized accounts/`monthlyValues` shape the comparison engine reads.
 
-## What I found in this project (fa0768ca…)
+Actual shapes in DB for project `fa0768ca-…be3ede`:
 
-You actually have plenty of data for 2023, 2024, and 2025:
+| `data_type` | `source_type` | Actual `data` shape |
+|---|---|---|
+| `income_statement` | `qbtojson` | Array of 36 `{ month: "YYYY-MM", report: { rows, header, columns }, startDate, endDate }` |
+| `balance_sheet` | `qbtojson` | Same — array of 36 monthly QB BalanceSheet reports |
+| `cash_flow` | `qbtojson` | Same — array of 36 monthly QB CashFlow reports |
+| `trial_balance` | `qbtojson` | `{ summary, monthlyReports: [ { year, month, report, … } x 36 ] }` |
+| `general_ledger` | `qbtojson` | `{ rows, header, columns }` — single multi-year report |
 
-| Source | 2023 | 2024 | 2025 |
-|---|---|---|---|
-| `canonical_transactions` total | 5,065 | 5,380 | 28,575 |
-| of which `general_ledger` rows | 0 | 0 | 22,685 |
-| of which `income_statement` snapshots | 1,780 | 1,850 | 1,975 |
-| of which `bank_transactions` | 1,995 | 2,175 | 2,470 |
-| `processed_data` IS/BS per-year aggregate | ✓ (qbtojson, `period_end=NULL`) | ✓ | ✓ |
+What the comparison engine reads:
 
-Stored tax-return analyses in the DB right now:
+```
+incomeStatement.revenue.accounts[i].monthlyValues["YYYY-MM"]
+incomeStatement.expenses.accounts[i].monthlyValues[...]
+incomeStatement.cogs.accounts[...]
+balanceSheet.<bucket>.accounts[...].monthlyValues[...]
+```
 
-| Year | Comparisons | Score | Notes |
-|---|---|---|---|
-| 2023 | 1 | -1 | stale — ran before the rewrite |
-| 2024 | 1 | -1 | stale — ran before the rewrite |
-| 2025 | 4 | 75 | new code, but only 4 cmps out of ~20 expected |
+That shape does not exist for this project. So `sumISMonthly`, `matchISAccounts`, `getBsEoyByMatcher`, M-1, M-2, Schedule L all return 0 silently — exactly the "regression to 3 tautological comparisons" I observed. The previous rewrite added year-scoping and diagnostics for a shape that's never present in real data.
 
-So three different bugs are stacked on top of each other.
+## Fix: normalize at read time inside the edge function
 
-## Root causes
+Add a one-stop adapter that converts the raw QB report shapes into the engine's expected `{revenue, cogs, expenses}` / `{assets, liabilities, equity}` / `{accounts: [{name, monthlyValues}]}` shape, keyed by `YYYY-MM`. Apply it whenever the resolver picks a qbtojson row.
 
-**1. `processed_data` year filter throws away the only good source.**
-`parse-tax-return` filters `processed_data` by `period_end IN [yearStart, yearEnd]`. The qbtojson full-history `income_statement` and `balance_sheet` rows have `period_end = NULL` (they're keyed by `monthlyValues`, not by period), so they get rejected. Fallback picks the most-recent unified_api row, which is **March–May 2026** — a single month tagged "(period mismatch)". For 2023/2024/2025 we end up comparing a 1120-S against one month of 2026.
+No DB schema changes. No changes to extraction. No changes to the QB ingestion pipeline. Only `supabase/functions/parse-tax-return/index.ts` and the existing UI diagnostics block.
 
-**2. `sumISMonthly` doesn't filter by year.**
-Even when the qbtojson IS is reached, `sumISMonthly('revenue')` sums *every* month of *every* year in `monthlyValues`. A 2023 return's $1.05M gross receipts then gets compared to 36 months of revenue — always a "significant variance".
+### 1. New normalizers (server, inside `parse-tax-return/index.ts`)
 
-**3. `canonical_transactions` aggregation double-counts.**
-The matchers sum `amount_abs` across every row in the tax year. But for 2023/2024 the only "GL-like" rows are monthly IS/BS snapshots (60 rows per account = 12 months × 5 buckets in some cases, or repeated per-month cumulative balances). Summing them inflates totals by 12–60×, so they never match the tax return and the engine either skips them or marks them all as "significant variance".
+- `normalizeQbPnlMonthly(rows: QbMonthlyPnL[]): IncomeStatement`
+  - Walks each `{month, report}` entry, flattens `report.rows` (handling QB's nested `Section`/`Data`/`Summary` row types).
+  - Buckets by top-level section header text: `Income` → `revenue`, `Cost of Goods Sold` → `cogs`, `Expenses` / `Other Expense` → `expenses`. Net section subtotals are skipped.
+  - Per leaf account, accumulates `monthlyValues["YYYY-MM"] = signedAmount`. Sign follows QB convention (revenue positive, expenses positive on debit).
+  - Output is exactly `{ revenue: { accounts: [...] }, cogs: {...}, expenses: {...}, totalRevenue, netIncome }`.
+- `normalizeQbBalanceSheetMonthly(rows: QbMonthlyBS[]): BalanceSheet`
+  - Same idea, bucketed into `assets`, `liabilities`, `equity` by QB section. `monthlyValues["YYYY-MM"]` holds the **end-of-month** balance (BS is point-in-time, so the last value of each month, not a sum).
+- `normalizeQbTrialBalance(payload): TrialBalance`
+  - Reads `monthlyReports[].report.rows` → per account `{ debit, credit }` per month.
+- `normalizeQbGeneralLedger(payload): { transactions: [...] }`
+  - Flattens `rows` into `{ date, account, amount, memo }` rows the existing `glByAccount` / `matchAccounts` logic already understands.
 
-**4. The 2023/2024 cards on screen are still showing the pre-rewrite result** (score `-1`, 1 comparison). They haven't been re-analyzed since the engine was rewritten — but re-analyzing alone won't fix it until causes 1–3 are addressed.
+All four are pure, ~50–80 lines each, with shared row-walking helpers.
 
-## Plan
+### 2. Hook normalizers into the resolver
 
-### A. Fix the year resolution for `processed_data` (server)
+In the existing `pickProcessedData(dataType)` block:
 
-In `supabase/functions/parse-tax-return/index.ts`:
+- After selecting a qbtojson row (the aggregate-period branch), pass it through the matching normalizer before returning. The rest of the file works unchanged because it now sees the expected shape.
+- For unified_api monthly rows (already normalized today), no change.
+- Keep the existing year-scoping in `sumISMonthly` and `getBsEoyByMatcher` — they're correct, they just had no data to iterate.
 
-- Treat qbtojson `income_statement` / `balance_sheet` / `trial_balance` / `general_ledger` rows with `period_end = NULL` as **full-history aggregates**, not "no period". Use them directly when present, instead of falling back to the most recent unified_api month.
-- Prefer (in order): (a) row whose `period_end` is inside the tax year, (b) qbtojson aggregate (`period_end IS NULL`, source `qbtojson`), (c) latest with mismatch flag.
+### 3. Restore + harden the Shareholder Distributions comparison
 
-### B. Year-scope the income statement and balance sheet helpers
+Currently 2025 regressed from 4 → 3 comparisons because the Distributions branch checks `m2.distributionsCash + m2.distributionsProperty` against book Distributions, and book Distributions came from the BS `equity` bucket, which was empty. Once (1) and (2) land, the equity bucket exists, so this fires again. Add an explicit `if (!bookDistributions) skippedFields.push({...})` so the regression can't happen silently next time.
 
-- `sumISMonthly(group, year)` — filter `monthlyValues` keys to `YYYY-*` for the tax year before summing. Same for `isNetIncome` → use only that year's months.
-- `getBsEoyByMatcher(year)` — pick the December key of the tax year (or last available key ≤ `yearEnd`), not the absolute last key in `monthlyValues`.
+### 4. Replace silent skips with explicit diagnostics
 
-### C. De-duplicate `canonical_transactions` aggregation
+Every comparison that today does `if (matched.total === 0) continue;` becomes:
 
-- When `source_type IN ('income_statement','balance_sheet','cash_flow','trial_balance')`, these are **monthly snapshots**, not journal entries. Exclude them from the `glByAccount` aggregation — they're already covered by the IS/BS helpers in (B).
-- Keep `general_ledger`, `bank_transactions`, `credit_card_transactions`, `journal_entries`, and `qbtojson` GL rows in the aggregation.
-- For years with **no** true GL source (2023, 2024 here), fall back to the IS processed_data for P&L deduction comparisons instead of GL matchers, and label the source "Income Statement (per-year)".
+```ts
+if (matched.total === 0) {
+  skippedFields.push({ field: label, reason: hasGL
+    ? `No GL account matched ${matcherKey}`
+    : `No IS account matched ${matcherKey}` });
+  continue;
+}
+```
 
-### D. Surface *why* a row is N/A, not just "N/A"
+Same treatment for the M-1, M-2, and Schedule L branches when their book counterpart is 0/missing. `analysisDiagnostics.skippedFields` already exists in the type — just populate it everywhere instead of in only two places.
 
-In `TaxReturnInsightsCard.tsx`, when `overallScore === null`, replace the single "no comparable data" line with a short reason list built from server-provided diagnostics, e.g.:
-- ✅ Income Statement found for 2023 (qbtojson, 12 months)
-- ✅ Balance Sheet found for 2023 (qbtojson, EOY 2023-12)
-- ⚠️ No detailed General Ledger for 2023 — using IS aggregates for deductions
-- ❌ 0 comparisons produced — explain which extracted fields had no counterpart
+### 5. UI: show skippedFields in the card
 
-Server adds an `analysisDiagnostics: { sources: [...], skippedFields: [...] }` block to the stored analysis; UI renders it under the score.
+`TaxReturnInsightsCard.tsx` currently renders only `sources`. Add a collapsible "Skipped checks (N)" section under the score listing each `{field, reason}` so silent failures surface to the user immediately. Stale-result auto-reanalyze logic already added stays.
 
-### E. Auto-reanalyze stale rows
+### 6. Verification (mandatory before claiming done)
 
-Currently 2023 and 2024 still hold pre-rewrite results (`overallScore: -1`). Add a one-shot: when the card loads and the stored result has `overallScore === -1` or is missing the new `analysisDiagnostics` field, the UI auto-invokes `parse-tax-return` once (silent, with a small "Updating analysis…" indicator) so the user doesn't have to click Re-analyze on every old card.
+For each of the 3 stored returns (2023, 2024, 2025):
 
-### Files
+1. Call `parse-tax-return` and capture `comparisons.length`, `overallScore`, and `skippedFields.length`.
+2. Spot-check one revenue and one expense comparison per year: log `matched.accounts` and `comparisonValue`, manually confirm the matched accounts in the QB monthly report sum to that value for that year.
+3. Confirm Distributions comparison reappears for 2025 (the row that regressed). Confirm at least one M-1 and one Schedule L comparison fires for each year.
+4. Expected post-fix counts: 2025 ≈ 12–18 comparisons; 2023/2024 ≈ 8–12 each. Anything below those should show up as `skippedFields` rows with a real reason.
 
-- `supabase/functions/parse-tax-return/index.ts` — A, B, C, plus emit `analysisDiagnostics`
-- `src/components/wizard/sections/TaxReturnInsightsCard.tsx` — D (render diagnostics)
-- `src/components/wizard/sections/DocumentUploadSection.tsx` — E (auto-reanalyze stale)
+The fix is only "done" when those three checks pass — not when HTTP 200 + `variance: 0` show up.
 
-### Out of scope
+## Files touched
 
-- No DB schema changes.
-- No changes to extraction (PDF → JSON) — only to the comparison engine and UI.
-- Bank-statement-only reconciliation (matching deposits to gross receipts) is a separate, larger piece of work and not included here.
+- `supabase/functions/parse-tax-return/index.ts` — add 4 normalizers, wire into resolver, populate `skippedFields` on every skip, restore Distributions guard.
+- `src/components/wizard/sections/TaxReturnInsightsCard.tsx` — render `skippedFields` block.
 
-## Expected result after fix
+## Out of scope
 
-For this project's three returns:
-- **2025**: comparisons jump from 4 to ~15–18 (full P&L deductions vs GL, Schedule L vs BS EOY 2025-12, M-1, M-2). Real consistency score.
-- **2024 / 2023**: ~10–12 comparisons each, driven by per-year IS/BS aggregates from the qbtojson rows that today are being silently dropped. Score reflects actual book-vs-return alignment instead of "N/A".
+- DB schema changes, ingestion changes, PDF extraction changes.
+- Normalizing unified_api shapes (already normalized).
+- Bank-statement-only reconciliation.
+- Any change to the year resolver beyond passing qbtojson rows through the new normalizers (the previous plan's resolver tweaks already shipped and are correct).
