@@ -1,28 +1,55 @@
 /**
  * commit-workbook-upload
  *
- * Applies a resolved diff payload from parse-workbook-upload to projects.wizard_data.
- * Re-checks the revision counter at write time and rejects if the project advanced
- * since parse (unless `force: true`). Always bumps `projects.revision` on success.
+ * Three-way merge of offline edits (mine) against the current DB state (theirs),
+ * using the base snapshot embedded at export time. If the same field changed
+ * both online and offline, returns a CONFLICTS response unless `force=true`
+ * or per-conflict resolutions are supplied.
  *
- * Phase 1: handles adjustment amount changes only.
+ * Atomic write — re-checks revision counter at update time and bumps it on success.
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+interface BaseAdjustment {
+  id: string;
+  type: string;
+  label: string;
+  tbAccountNumber?: string;
+  intent?: string;
+  notes?: string;
+  periodValues: Record<string, number>;
+}
 
 interface CommitPayload {
   projectId: string;
   exportedFromRevision: number;
   force?: boolean;
-  adjustmentDiffs: Array<{
-    id: string;
-    changes: { periodId: string; newValue: number }[];
-  }>;
+  base: {
+    trialBalance: Record<string, Record<string, number>>;
+    adjustments: Record<string, BaseAdjustment>;
+  };
+  mine: {
+    trialBalance: Record<string, Record<string, number>>;
+    adjustmentsChanged: Record<string, Record<string, number>>;
+    adjustmentsDeleted: string[];
+    adjustmentsAdded: BaseAdjustment[];
+  };
+  /** Optional per-conflict resolutions: conflictId -> "mine" | "theirs" */
+  resolutions?: Record<string, "mine" | "theirs">;
+}
+
+interface FieldConflict {
+  kind: "tb" | "adjustment_amount" | "adjustment_deleted_vs_edited";
+  label: string;
+  conflictId: string;
+  base: number | string | null;
+  mine: number | string | null;
+  theirs: number | string | null;
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -30,6 +57,64 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
+}
+
+/** Extract current TB and adjustments from wizard_data into a normalized shape. */
+function extractCurrentState(wd: Record<string, unknown>): {
+  trialBalance: Record<string, Record<string, number>>;
+  adjustments: Record<string, BaseAdjustment>;
+  adjustmentsArrayPath: "ddAdjustments" | "top";
+} {
+  // Trial balance — may live as an array of entries at wd.trialBalance
+  const tbSource = (wd.trialBalance ?? []) as Array<Record<string, unknown>>;
+  const trialBalance: Record<string, Record<string, number>> = {};
+  if (Array.isArray(tbSource)) {
+    for (const e of tbSource) {
+      const id = String(e.accountId ?? "");
+      if (!id) continue;
+      const balances = (e.balances as Record<string, unknown>) || {};
+      const out: Record<string, number> = {};
+      for (const [k, v] of Object.entries(balances)) {
+        const n = Number(v);
+        if (Number.isFinite(n)) out[k] = n;
+      }
+      trialBalance[id] = out;
+    }
+  }
+
+  let adjustmentsArrayPath: "ddAdjustments" | "top" = "ddAdjustments";
+  let rawAdj: Array<Record<string, unknown>> = [];
+  const ddAdj = wd.ddAdjustments as Record<string, unknown> | undefined;
+  if (ddAdj?.adjustments && Array.isArray(ddAdj.adjustments)) {
+    rawAdj = ddAdj.adjustments as Array<Record<string, unknown>>;
+    adjustmentsArrayPath = "ddAdjustments";
+  } else if (Array.isArray(wd.adjustments)) {
+    rawAdj = wd.adjustments as Array<Record<string, unknown>>;
+    adjustmentsArrayPath = "top";
+  }
+
+  const adjustments: Record<string, BaseAdjustment> = {};
+  for (const a of rawAdj) {
+    const id = String(a.id ?? "");
+    if (!id) continue;
+    const pv = (a.periodValues ?? a.periodAmounts ?? a.amounts ?? {}) as Record<string, unknown>;
+    const periodValues: Record<string, number> = {};
+    for (const [k, v] of Object.entries(pv)) {
+      const n = Number(v);
+      if (Number.isFinite(n)) periodValues[k] = n;
+    }
+    adjustments[id] = {
+      id,
+      type: String(a.type ?? a.block ?? ""),
+      label: String(a.label ?? a.description ?? ""),
+      tbAccountNumber: a.tbAccountNumber ? String(a.tbAccountNumber) : undefined,
+      intent: a.intent ? String(a.intent) : undefined,
+      notes: a.notes ? String(a.notes) : undefined,
+      periodValues,
+    };
+  }
+
+  return { trialBalance, adjustments, adjustmentsArrayPath };
 }
 
 Deno.serve(async (req: Request) => {
@@ -54,11 +139,11 @@ Deno.serve(async (req: Request) => {
     }
 
     const payload = await req.json().catch(() => null) as CommitPayload | null;
-    if (!payload?.projectId || !Array.isArray(payload.adjustmentDiffs)) {
+    if (!payload?.projectId || !payload?.base || !payload?.mine) {
       return jsonResponse({ ok: false, error: "Invalid payload" }, 400);
     }
+    const resolutions = payload.resolutions ?? {};
 
-    // Lock-free optimistic concurrency: read revision, check, write, re-check.
     const { data: row, error: readErr } = await supabase
       .from("projects")
       .select("id, revision, wizard_data")
@@ -70,64 +155,233 @@ Deno.serve(async (req: Request) => {
     }
 
     const currentRevision = (row.revision as number | null) ?? 0;
-    if (!payload.force && currentRevision !== payload.exportedFromRevision) {
+    const wd = (row.wizard_data as Record<string, unknown>) || {};
+    const current = extractCurrentState(wd);
+    const { base, mine } = payload;
+    const autoMerged = currentRevision !== payload.exportedFromRevision;
+
+    // ---- Three-way merge ----
+    const conflicts: FieldConflict[] = [];
+
+    // TB cell conflicts
+    const finalTB: Record<string, Record<string, number>> = {};
+    // Start from current state (theirs)
+    for (const [acct, cells] of Object.entries(current.trialBalance)) {
+      finalTB[acct] = { ...cells };
+    }
+    // Apply mine edits with conflict detection
+    for (const [acct, cells] of Object.entries(mine.trialBalance)) {
+      const baseRow = base.trialBalance?.[acct] ?? {};
+      const theirsRow = current.trialBalance[acct] ?? {};
+      for (const [pid, mineVal] of Object.entries(cells)) {
+        const baseVal = baseRow[pid] ?? 0;
+        const theirsVal = theirsRow[pid] ?? 0;
+        const theirsChanged = Math.abs(theirsVal - baseVal) > 0.005;
+        if (theirsChanged && Math.abs(theirsVal - mineVal) > 0.005) {
+          const conflictId = `tb::${acct}::${pid}`;
+          const pick = resolutions[conflictId];
+          if (pick === "mine") {
+            finalTB[acct] = { ...(finalTB[acct] ?? {}), [pid]: mineVal };
+          } else if (pick === "theirs") {
+            // already in finalTB
+          } else if (payload.force) {
+            finalTB[acct] = { ...(finalTB[acct] ?? {}), [pid]: mineVal };
+          } else {
+            conflicts.push({
+              kind: "tb",
+              label: `TB ${acct} · ${pid}`,
+              conflictId,
+              base: baseVal,
+              mine: mineVal,
+              theirs: theirsVal,
+            });
+          }
+        } else {
+          // No conflict — apply mine
+          finalTB[acct] = { ...(finalTB[acct] ?? {}), [pid]: mineVal };
+        }
+      }
+    }
+
+    // Adjustment conflicts (amount changes)
+    const finalAdj: Record<string, BaseAdjustment> = {};
+    for (const [id, a] of Object.entries(current.adjustments)) {
+      finalAdj[id] = { ...a, periodValues: { ...a.periodValues } };
+    }
+
+    for (const [id, mineCells] of Object.entries(mine.adjustmentsChanged)) {
+      const baseAdj = base.adjustments?.[id];
+      const theirsAdj = current.adjustments[id];
+      if (!theirsAdj) {
+        // Adjustment was deleted online; mine edited it — flag conflict
+        const conflictId = `adj_del::${id}`;
+        const pick = resolutions[conflictId];
+        if (pick === "mine" || payload.force) {
+          // Resurrect with mine values, using base as scaffolding
+          if (baseAdj) {
+            finalAdj[id] = { ...baseAdj, periodValues: { ...baseAdj.periodValues, ...mineCells } };
+          }
+        } else if (pick === "theirs") {
+          // already absent
+        } else {
+          conflicts.push({
+            kind: "adjustment_deleted_vs_edited",
+            label: `Adjustment "${baseAdj?.label ?? id}" deleted online but edited offline`,
+            conflictId,
+            base: "exists",
+            mine: "edited",
+            theirs: "deleted",
+          });
+        }
+        continue;
+      }
+      for (const [pid, mineVal] of Object.entries(mineCells)) {
+        const baseVal = baseAdj?.periodValues?.[pid] ?? 0;
+        const theirsVal = theirsAdj.periodValues[pid] ?? 0;
+        const theirsChanged = Math.abs(theirsVal - baseVal) > 0.005;
+        if (theirsChanged && Math.abs(theirsVal - mineVal) > 0.005) {
+          const conflictId = `adj::${id}::${pid}`;
+          const pick = resolutions[conflictId];
+          if (pick === "mine" || payload.force) {
+            finalAdj[id].periodValues[pid] = mineVal;
+          } else if (pick === "theirs") {
+            // keep theirs
+          } else {
+            conflicts.push({
+              kind: "adjustment_amount",
+              label: `${theirsAdj.type} · ${theirsAdj.label} · ${pid}`,
+              conflictId,
+              base: baseVal,
+              mine: mineVal,
+              theirs: theirsVal,
+            });
+          }
+        } else {
+          finalAdj[id].periodValues[pid] = mineVal;
+        }
+      }
+    }
+
+    // Adjustment deletions (mine deleted, was theirs edited?)
+    for (const id of mine.adjustmentsDeleted) {
+      const baseAdj = base.adjustments?.[id];
+      const theirsAdj = current.adjustments[id];
+      if (!theirsAdj) continue; // already gone
+      // Did theirs edit any cell vs base?
+      const baseVals = baseAdj?.periodValues ?? {};
+      let theirsEdited = false;
+      const allKeys = new Set([...Object.keys(baseVals), ...Object.keys(theirsAdj.periodValues)]);
+      for (const k of allKeys) {
+        if (Math.abs((baseVals[k] ?? 0) - (theirsAdj.periodValues[k] ?? 0)) > 0.005) {
+          theirsEdited = true;
+          break;
+        }
+      }
+      if (theirsEdited) {
+        const conflictId = `adj_del::${id}`;
+        const pick = resolutions[conflictId];
+        if (pick === "mine" || payload.force) {
+          delete finalAdj[id];
+        } else if (pick === "theirs") {
+          // keep
+        } else {
+          conflicts.push({
+            kind: "adjustment_deleted_vs_edited",
+            label: `Adjustment "${theirsAdj.label}" deleted offline but edited online`,
+            conflictId,
+            base: "exists",
+            mine: "deleted",
+            theirs: "edited",
+          });
+        }
+      } else {
+        delete finalAdj[id];
+      }
+    }
+
+    // Adjustment additions (always apply — no conflicts possible)
+    for (const a of mine.adjustmentsAdded) {
+      finalAdj[a.id] = a;
+    }
+
+    if (conflicts.length > 0) {
       return jsonResponse({
         ok: false,
-        error: "REVISION_DRIFT",
-        message: "The workbook was modified online while you were editing offline. Re-review the diff or pass force=true.",
-        currentRevision,
+        error: "CONFLICTS",
+        conflicts,
         exportedFromRevision: payload.exportedFromRevision,
+        currentRevision,
       }, 409);
     }
 
-    // Apply adjustment changes to wizard_data
-    const wd = (row.wizard_data as Record<string, unknown>) || {};
-    const ddAdj = (wd.ddAdjustments as Record<string, unknown>) || {};
-    const adjustments = ((ddAdj.adjustments ?? wd.adjustments ?? []) as Array<Record<string, unknown>>).map(a => ({ ...a }));
-
-    let applied = 0;
-    const adjById = new Map<string, Record<string, unknown>>();
-    for (const a of adjustments) {
-      if (a?.id) adjById.set(String(a.id), a);
+    // ---- Build the new wizard_data ----
+    const tbArray: Array<Record<string, unknown>> = [];
+    // Preserve existing TB entry metadata (account name, fs type, etc.)
+    const existingTbArr = (wd.trialBalance as Array<Record<string, unknown>>) || [];
+    const existingTbById = new Map(existingTbArr.map(e => [String(e.accountId ?? ""), e]));
+    const tbIds = new Set([...Object.keys(finalTB), ...existingTbById.keys()]);
+    for (const id of tbIds) {
+      const existing = existingTbById.get(id) ?? { accountId: id };
+      tbArray.push({ ...existing, balances: finalTB[id] ?? existing.balances ?? {} });
     }
 
-    for (const diff of payload.adjustmentDiffs) {
-      const adj = adjById.get(diff.id);
-      if (!adj) continue;
-      const periodValues = { ...((adj.periodValues ?? adj.periodAmounts ?? adj.amounts ?? {}) as Record<string, unknown>) };
-      for (const change of diff.changes) {
-        periodValues[change.periodId] = change.newValue;
-        applied++;
-      }
-      adj.periodValues = periodValues;
-      // Keep legacy aliases in sync if they existed
-      if ("periodAmounts" in adj) adj.periodAmounts = periodValues;
-      if ("amounts" in adj && !("periodValues" in adj)) adj.amounts = periodValues;
+    // Preserve metadata on existing adjustments
+    const existingAdjArr = current.adjustmentsArrayPath === "ddAdjustments"
+      ? (((wd.ddAdjustments as Record<string, unknown>)?.adjustments as Array<Record<string, unknown>>) ?? [])
+      : ((wd.adjustments as Array<Record<string, unknown>>) ?? []);
+    const existingAdjById = new Map(existingAdjArr.map(a => [String(a.id ?? ""), a]));
+    const adjArray: Array<Record<string, unknown>> = [];
+    for (const [id, a] of Object.entries(finalAdj)) {
+      const existing = existingAdjById.get(id) ?? {};
+      const merged: Record<string, unknown> = {
+        ...existing,
+        id,
+        type: a.type,
+        block: a.type, // legacy alias
+        label: a.label,
+        description: a.label, // legacy alias
+        tbAccountNumber: a.tbAccountNumber ?? existing.tbAccountNumber,
+        intent: a.intent ?? existing.intent,
+        notes: a.notes ?? existing.notes,
+        periodValues: a.periodValues,
+        periodAmounts: a.periodValues,
+        amounts: a.periodValues,
+      };
+      adjArray.push(merged);
     }
 
-    const nextDdAdj = { ...ddAdj, adjustments };
-    const nextWizard = { ...wd, ddAdjustments: nextDdAdj };
-    // Mirror at top level if that was the source path
-    if (wd.adjustments && !wd.ddAdjustments) {
-      (nextWizard as Record<string, unknown>).adjustments = adjustments;
+    const nextWizard: Record<string, unknown> = { ...wd, trialBalance: tbArray };
+    if (current.adjustmentsArrayPath === "ddAdjustments") {
+      nextWizard.ddAdjustments = {
+        ...((wd.ddAdjustments as Record<string, unknown>) ?? {}),
+        adjustments: adjArray,
+      };
+    } else {
+      nextWizard.adjustments = adjArray;
     }
 
     const nextRevision = currentRevision + 1;
-
     const { error: updateErr } = await supabase
       .from("projects")
       .update({ wizard_data: nextWizard, revision: nextRevision })
       .eq("id", payload.projectId)
-      .eq("revision", currentRevision); // atomic check
+      .eq("revision", currentRevision);
 
     if (updateErr) {
       return jsonResponse({ ok: false, error: "Failed to save changes", details: updateErr.message }, 500);
     }
 
+    const tbCellsApplied = Object.values(mine.trialBalance).reduce((s, m) => s + Object.keys(m).length, 0);
     return jsonResponse({
       ok: true,
       newRevision: nextRevision,
-      adjustmentChangesApplied: applied,
+      applied: {
+        tbCells: tbCellsApplied,
+        adjustmentsChanged: Object.keys(mine.adjustmentsChanged).length,
+        adjustmentsAdded: mine.adjustmentsAdded.length,
+        adjustmentsDeleted: mine.adjustmentsDeleted.length,
+      },
+      autoMerged,
     }, 200);
   } catch (err) {
     console.error("commit-workbook-upload error:", err);
