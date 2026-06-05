@@ -3,6 +3,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.87.1";
 import * as XLSX from "npm:xlsx@0.18.5";
 
 import { aiFetch, ensureZdrEnabled } from "../_shared/zdrGuard.ts";
+import { normalizeAndPersist } from "../_shared/normalized-contracts.ts";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-api-key, x-service-name, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
@@ -524,42 +525,40 @@ You MUST call the \`return_payroll_extraction\` tool with the extracted data. Do
       console.log(`Derived period coverage: ${periodStart} to ${periodEnd}`);
     }
 
-    // Store in processed_data
-    const { error: insertError } = await supabase
-      .from('processed_data')
-      .insert({
-        project_id: projectId,
-        user_id: document.user_id,
-        source_type: 'ai_payroll_extraction',
-        data_type: 'payroll',
-        source_document_id: documentId,
-        period_start: periodStart,
-        period_end: periodEnd,
-        data: {
-          ...extractionResult,
-          documentName: document.name,
-          extractedAt: new Date().toISOString(),
-          crossValidation: {
-            comparisons,
-            flags,
-            overallScore,
-            totals: {
-              salaryWages: totalSalaryWages,
-              payrollTaxes: totalPayrollTaxes,
-              benefits: totalBenefits,
-              ownerCompensation: totalOwnerComp,
-              totalPayroll,
-            },
+    // Store in processed_data via shared normalizer
+    const persistResult = await normalizeAndPersist(supabase, {
+      projectId,
+      userId: document.user_id,
+      sourceDocumentId: documentId,
+      dataType: 'payroll',
+      source: 'ai_document_extraction',
+      rawAiOutput: {
+        ...extractionResult,
+        crossValidation: {
+          comparisons,
+          flags,
+          overallScore,
+          totals: {
+            salaryWages: totalSalaryWages,
+            payrollTaxes: totalPayrollTaxes,
+            benefits: totalBenefits,
+            ownerCompensation: totalOwnerComp,
+            totalPayroll,
           },
         },
-        record_count: totalItems,
-        validation_status: extractionResult.confidence === 'high' ? 'validated' : 'pending',
-      });
-
-    if (insertError) {
-      console.error('Failed to insert processed_data:', insertError);
-    } else {
+      },
+      documentName: document.name,
+      modelUsed: 'anthropic/claude-sonnet-4',
+      confidence: extractionResult.confidence,
+      warnings: extractionResult.warnings,
+      rawFindings: extractionResult.rawFindings ?? null,
+      periodStart,
+      periodEnd,
+    });
+    if (persistResult.ok) {
       console.log('Successfully stored payroll extraction in processed_data');
+    } else {
+      console.error('Failed to persist normalized payroll:', persistResult.errors);
     }
 
     // Update document status
