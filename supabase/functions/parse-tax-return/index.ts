@@ -1167,18 +1167,82 @@ serve(async (req) => {
 
     // P&L deduction-account matchers (used against canonical_transactions)
     const PL_MATCHERS: Record<string, { match: RegExp[]; exclude?: RegExp[] }> = {
-      salariesWages: { match: [/salar/i, /\bwages?\b/i, /\bpayroll\b/i], exclude: [/officer/i, /owner/i, /payroll tax/i, /shareholder/i] },
-      officerCompensation: { match: [/officer/i, /owner.*comp/i, /shareholder.*comp/i, /\bowners draw\b/i] },
-      repairs: { match: [/repair/i, /maintenance/i] },
+      salariesWages: {
+        match: [
+          /salar/i, /\bwages?\b/i, /\bpayroll\b/i,
+          /\bw[- ]?2\b/i, /\bgusto\b/i, /\badp\b/i, /paychex/i, /justworks/i, /rippling/i,
+          /payroll expense/i, /employee comp/i, /staff (cost|wage|pay)/i, /labor expense/i,
+        ],
+        exclude: [/officer/i, /owner/i, /payroll tax/i, /shareholder/i, /contract labor/i],
+      },
+      officerCompensation: {
+        match: [
+          /officer/i, /owner.*comp/i, /shareholder.*comp/i, /\bowners?\s+draw\b/i,
+          /officer salar/i, /officer wage/i, /owner salar/i, /owner wage/i,
+          /shareholder salar/i, /shareholder wage/i, /\bowner pay\b/i,
+          /\bs[- ]?corp.*(salary|wage|comp)/i,
+        ],
+      },
+      repairs: {
+        match: [
+          /repair/i, /maintenance/i,
+          /\br\s*&\s*m\b/i, /\br\/m\b/i, /upkeep/i, /janitorial/i, /\bcleaning\b/i,
+          /\bservice contract/i, /\bgroundskeep/i, /landscap/i,
+        ],
+        exclude: [/customer service/i, /internet service/i, /professional service/i],
+      },
       badDebts: { match: [/bad debt/i, /uncollect/i, /write.?off/i] },
-      rent: { match: [/\brent\b/i, /\blease\b/i], exclude: [/rental income/i, /rent income/i] },
-      taxes: { match: [/\btax(es)?\b/i, /licens/i], exclude: [/income tax/i, /deferred tax/i] },
-      interestExpense: { match: [/interest expen/i, /^interest$/i, /finance charg/i] },
-      depreciation: { match: [/deprec/i, /amortiz/i] },
+      rent: {
+        match: [
+          /\brent\b/i, /\blease\b/i,
+          /\brental expense/i, /office space/i, /storage (rent|fee)/i,
+          /equipment lease/i, /vehicle lease/i, /\brent expense/i,
+        ],
+        exclude: [/rental income/i, /rent income/i, /prepaid rent/i],
+      },
+      taxes: {
+        match: [
+          /\btax(es)?\b/i, /licens/i,
+          /\bbusiness license/i, /\bpermit/i, /regulatory fee/i,
+          /\bfranchise tax/i, /\bproperty tax/i, /\bpayroll tax/i, /\bexcise tax/i,
+        ],
+        exclude: [/income tax/i, /deferred tax/i, /tax refund/i],
+      },
+      interestExpense: {
+        match: [
+          /interest expen/i, /^interest$/i, /finance charg/i,
+          /\bloan interest/i, /credit card interest/i, /mortgage interest/i,
+          /line of credit/i, /\bloc interest/i,
+        ],
+        exclude: [/interest income/i],
+      },
+      depreciation: {
+        match: [
+          /deprec/i, /amortiz/i,
+          /section 179/i, /bonus depreciation/i,
+        ],
+      },
       depletion: { match: [/deplet/i] },
-      advertising: { match: [/advertis/i, /marketing/i, /promot/i] },
-      pension: { match: [/pension/i, /401\s*\(?k\)?/i, /retirement plan/i, /profit shar/i] },
-      employeeBenefit: { match: [/employee benefit/i, /health insur/i, /\bmedical\b/i, /dental/i, /vision insur/i] },
+      advertising: {
+        match: [
+          /advertis/i, /marketing/i, /promot/i,
+          /\bads\b/i, /google ads/i, /facebook ads/i, /social media/i,
+          /sponsorship/i, /trade show/i, /\bbranding\b/i, /seo expense/i,
+        ],
+      },
+      pension: {
+        match: [
+          /pension/i, /401\s*\(?k\)?/i, /retirement plan/i, /profit shar/i,
+          /simple ira/i, /sep[- ]?ira/i, /\broth\b/i, /employer match/i,
+        ],
+      },
+      employeeBenefit: {
+        match: [
+          /employee benefit/i, /health insur/i, /\bmedical\b/i, /dental/i, /vision insur/i,
+          /\bhsa\b/i, /\bfsa\b/i, /life insurance/i, /disability insurance/i,
+          /worker.?s? comp/i, /\bpto\b/i, /staff (meal|event|gift)/i,
+        ],
+      },
     };
 
     // Balance-sheet matchers (used against processed_data.balance_sheet / trial_balance EOY values)
