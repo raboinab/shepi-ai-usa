@@ -375,8 +375,8 @@ export const TaxReturnInsightsCard = ({ analysis, className }: TaxReturnInsights
                     </TableHeader>
                     <TableBody>
                       {orderedCategories.map((cat) => (
-                        <>
-                          <TableRow key={`hdr-${cat}`} className="bg-muted/40">
+                        <Fragment key={`grp-${cat}`}>
+                          <TableRow className="bg-muted/40">
                             <TableCell colSpan={5} className="text-xs font-semibold uppercase tracking-wide text-muted-foreground py-1.5">
                               {CATEGORY_LABELS[cat] || cat}
                             </TableCell>
@@ -408,7 +408,7 @@ export const TaxReturnInsightsCard = ({ analysis, className }: TaxReturnInsights
                               </TableCell>
                             </TableRow>
                           ))}
-                        </>
+                        </Fragment>
                       ))}
                     </TableBody>
                   </Table>
