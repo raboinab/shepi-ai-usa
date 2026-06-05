@@ -129,8 +129,16 @@ export function WorkbookUploadButton({ projectId, onCommitted, className }: Prop
         },
       });
 
-      // Edge function returns 409 for conflicts — supabase-js exposes it via error
-      const payload = data as { ok?: boolean; error?: string; message?: string; conflicts?: FieldConflict[]; applied?: Record<string, number>; autoMerged?: boolean };
+      // supabase-js wraps non-2xx (e.g. 409 CONFLICTS) in error; body is in error.context
+      let payload: { ok?: boolean; error?: string; message?: string; conflicts?: FieldConflict[]; applied?: Record<string, number>; autoMerged?: boolean } | null =
+        (data as typeof payload) ?? null;
+      if (error && (error as { context?: Response }).context) {
+        try {
+          payload = await (error as { context: Response }).context.clone().json();
+        } catch {
+          // fall through
+        }
+      }
 
       if (payload?.error === "CONFLICTS" && Array.isArray(payload.conflicts)) {
         setReviewOpen(false);
