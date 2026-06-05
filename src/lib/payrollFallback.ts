@@ -2,28 +2,27 @@
  * Helpers for converting `processed_data` rows (data_type = 'payroll')
  * into the `PayrollFallbackData` shape consumed by the workbook payroll grid.
  *
- * Used by useProjectDealData (live merge) and ExportCenterSection (build-time merge).
+ * Delegates shape detection to readNormalized() — handles both v1 envelopes
+ * and legacy rows.
  */
 import { supabase } from "@/integrations/supabase/client";
+import { readNormalized } from "@/lib/normalized-contracts";
 import type { PayrollFallbackData } from "@/lib/workbook-types";
 
-type Item = { name: string; monthlyValues: Record<string, number> };
-
-/** Map a processed_data row's `data.extractedData` into PayrollFallbackData. */
+/** Map a processed_data row's `data` into PayrollFallbackData. */
 export function buildPayrollFallbackFromProcessedData(
-  record: { data?: unknown } | null | undefined
+  record: { data?: unknown } | null | undefined,
 ): PayrollFallbackData | null {
-  const data = record?.data as Record<string, unknown> | undefined;
-  const extracted = data?.extractedData as Record<string, unknown> | undefined;
-  if (!extracted) return null;
+  if (!record?.data) return null;
+  const payload = readNormalized("payroll", record.data);
+  if (!payload) return null;
 
   const fb: PayrollFallbackData = {
-    salaryWages: (extracted.salaryWages as Item[]) || [],
-    ownerCompensation: (extracted.ownerCompensation as Item[]) || [],
-    payrollTaxes: (extracted.payrollTaxes as Item[]) || [],
-    benefits: (extracted.benefits as Item[]) || [],
+    salaryWages: payload.salaryWages,
+    ownerCompensation: payload.ownerCompensation,
+    payrollTaxes: payload.payrollTaxes,
+    benefits: payload.benefits,
   };
-
   const hasAny =
     fb.salaryWages.length +
       fb.ownerCompensation.length +
@@ -35,7 +34,7 @@ export function buildPayrollFallbackFromProcessedData(
 
 /** Fetch the most recent payroll extraction for a project and return its fallback shape. */
 export async function fetchLatestPayrollFallback(
-  projectId: string
+  projectId: string,
 ): Promise<PayrollFallbackData | null> {
   const { data, error } = await supabase
     .from("processed_data")

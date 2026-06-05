@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.87.1";
 
 import { aiFetch, ensureZdrEnabled } from "../_shared/zdrGuard.ts";
+import { normalizeAndPersist } from "../_shared/normalized-contracts.ts";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-api-key, x-service-name, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
@@ -341,28 +342,23 @@ Return your response as a valid JSON object with this exact structure:
     const assetCount = extractionResult.extractedData.assets.length;
     console.log(`Extracted ${assetCount} fixed assets with ${extractionResult.confidence} confidence`);
 
-    // Store in processed_data
-    const { error: insertError } = await supabase
-      .from('processed_data')
-      .insert({
-        project_id: projectId,
-        user_id: document.user_id,
-        source_type: 'ai_fixed_assets_extraction',
-        data_type: 'fixed_assets',
-        source_document_id: documentId,
-        data: {
-          ...extractionResult,
-          documentName: document.name,
-          extractedAt: new Date().toISOString(),
-        },
-        record_count: assetCount,
-        validation_status: extractionResult.confidence === 'high' ? 'validated' : 'pending',
-      });
-
-    if (insertError) {
-      console.error('Failed to insert processed_data:', insertError);
-    } else {
+    const persistResult = await normalizeAndPersist(supabase, {
+      projectId,
+      userId: document.user_id,
+      sourceDocumentId: documentId,
+      dataType: 'fixed_assets',
+      source: 'ai_document_extraction',
+      rawAiOutput: extractionResult,
+      documentName: document.name,
+      modelUsed: 'anthropic/claude-sonnet-4',
+      confidence: extractionResult.confidence,
+      warnings: extractionResult.warnings,
+      rawFindings: extractionResult.rawFindings ?? null,
+    });
+    if (persistResult.ok) {
       console.log('Successfully stored fixed assets extraction in processed_data');
+    } else {
+      console.error('Failed to persist normalized fixed assets:', persistResult.errors);
     }
 
     // Update document status
