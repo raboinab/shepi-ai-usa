@@ -199,6 +199,8 @@ interface ComparisonResult {
   matchedAccounts?: string[];
   /** Optional short note (e.g. "period mismatch", "no GL counterpart") */
   note?: string;
+  /** Informational rows that should display but not affect the consistency score */
+  excludeFromScore?: boolean;
 }
 
 interface AnalysisDiagnostics {
@@ -1335,8 +1337,9 @@ serve(async (req) => {
       matchedAccounts?: string[];
       note?: string;
       flagMessage?: string;
+      excludeFromScore?: boolean;
     }) => {
-      const { field, taxValue, comparisonValue, source, category, threshold = 0.05, matchedAccounts, note, flagMessage } = args;
+      const { field, taxValue, comparisonValue, source, category, threshold = 0.05, matchedAccounts, note, flagMessage, excludeFromScore } = args;
       if (taxValue === null || taxValue === undefined) return;
       if (comparisonValue === null || comparisonValue === 0) {
         // Skip rows where we have no comparable counterpart — they pollute the table
@@ -1355,8 +1358,9 @@ serve(async (req) => {
         category,
         matchedAccounts,
         note,
+        excludeFromScore,
       });
-      if (flagMessage && Math.abs(variance) > threshold) flags.push(flagMessage);
+      if (flagMessage && Math.abs(variance) > threshold && !excludeFromScore) flags.push(flagMessage);
     };
 
     const pushReviewOnly = (args: {
@@ -1454,7 +1458,8 @@ serve(async (req) => {
           source: isSourceLabel,
           category: "income_p1",
           threshold: 0.10,
-          note: "Books 'Other Income' section vs sum of Schedule K interest, dividends, capital gains, and other income items.",
+          note: "Informational only — books 'Other Income' bucket and Schedule K line items (interest, dividends, capital gains, etc.) are structurally different categorizations. Excluded from consistency score.",
+          excludeFromScore: true,
         });
       }
     }
@@ -1521,50 +1526,66 @@ serve(async (req) => {
     const fixedAssetsDoc: any = wizardData.fixedAssets || processedData.fixed_assets;
     const debtScheduleDoc: any = wizardData.debtSchedule || processedData.debt_schedule;
 
-    const sumYearScopedMonthly = (accounts: any[]): { total: number; yearScoped: boolean } => {
+    // Resolve a payroll accounts array from any of the shapes we've shipped:
+    //   raw processed_data: { extractedData: { salaryWages: [...], ownerCompensation: [...] } }
+    //   PayrollFallbackData (wizardData.payroll): { salaryWages: [...], ownerCompensation: [...] }
+    //   legacy:              { salaryWages: { accounts: [...] }, ownerComp: { accounts: [...] } }
+    const resolvePayrollAccounts = (group: 'salaryWages' | 'ownerCompensation'): any[] => {
+      if (!payrollDoc) return [];
+      // Real extractor shape
+      const fromExtracted = payrollDoc.extractedData?.[group];
+      if (Array.isArray(fromExtracted)) return fromExtracted;
+      // PayrollFallbackData shape
+      if (Array.isArray(payrollDoc[group])) return payrollDoc[group];
+      // Legacy { accounts: [] } shape
+      if (Array.isArray(payrollDoc[group]?.accounts)) return payrollDoc[group].accounts;
+      // Alternate legacy alias "ownerComp"
+      if (group === 'ownerCompensation') {
+        if (Array.isArray(payrollDoc.ownerComp)) return payrollDoc.ownerComp;
+        if (Array.isArray(payrollDoc.ownerComp?.accounts)) return payrollDoc.ownerComp.accounts;
+        if (Array.isArray(payrollDoc.extractedData?.ownerComp)) return payrollDoc.extractedData.ownerComp;
+      }
+      return [];
+    };
+
+    const sumYearScopedMonthly = (accounts: any[]): { total: number; yearScoped: boolean; annualTotal: number } => {
       let total = 0;
+      let annualTotal = 0;
       let anyYearKey = false;
-      let anyValue = false;
       for (const a of accounts) {
         const monthly = a?.monthlyValues || {};
-        const keys = Object.keys(monthly);
-        const hasAny = keys.length > 0;
-        if (!hasAny) continue;
-        anyValue = true;
-        for (const k of keys) {
+        for (const k of Object.keys(monthly)) {
+          const v = Math.abs(Number(monthly[k]) || 0);
+          annualTotal += v;
           if (k.startsWith(yearMonthPrefix)) {
-            total += Math.abs(Number(monthly[k]) || 0);
+            total += v;
             anyYearKey = true;
           }
         }
       }
-      // If accounts had monthlyValues but no keys for taxYear, treat as 0/yearScoped.
-      // If they had no monthlyValues at all, caller will fall back to annual totals.
-      return { total, yearScoped: anyValue ? true : false };
+      return { total, yearScoped: anyYearKey, annualTotal };
     };
 
     const getPayrollOwnerComp = (): ExtFallback => {
-      if (!payrollDoc?.ownerComp?.accounts || !Array.isArray(payrollDoc.ownerComp.accounts)) {
-        return { total: 0, yearScoped: false, source: "Payroll — Owner Comp (uploaded)" };
+      const accounts = resolvePayrollAccounts('ownerCompensation');
+      if (!accounts.length) {
+        return { total: 0, yearScoped: false, source: "Payroll — Owner Compensation (uploaded)" };
       }
-      const { total, yearScoped } = sumYearScopedMonthly(payrollDoc.ownerComp.accounts);
-      if (total > 0) return { total, yearScoped, source: "Payroll — Owner Comp (uploaded)" };
-      // Annual fallback
-      const annual = payrollDoc.ownerComp.accounts.reduce((s: number, a: any) =>
-        s + (Object.values(a.monthlyValues || {}) as number[]).reduce((x: number, y) => x + (Number(y) || 0), 0), 0);
-      return { total: Math.abs(annual), yearScoped: false, source: "Payroll — Owner Comp (uploaded; no year scoping)" };
+      const { total, yearScoped, annualTotal } = sumYearScopedMonthly(accounts);
+      if (total > 0) return { total, yearScoped, source: "Payroll — Owner Compensation (uploaded)" };
+      if (annualTotal > 0) return { total: annualTotal, yearScoped: false, source: "Payroll — Owner Compensation (uploaded; no year scoping)" };
+      return { total: 0, yearScoped: false, source: "Payroll — Owner Compensation (uploaded)" };
     };
 
     const getPayrollSalaries = (): ExtFallback => {
-      if (!payrollDoc) return { total: 0, yearScoped: false, source: "Payroll Reports (uploaded)" };
-      if (payrollDoc.salaryWages?.accounts && Array.isArray(payrollDoc.salaryWages.accounts)) {
-        const { total, yearScoped } = sumYearScopedMonthly(payrollDoc.salaryWages.accounts);
+      const accounts = resolvePayrollAccounts('salaryWages');
+      if (accounts.length) {
+        const { total, yearScoped, annualTotal } = sumYearScopedMonthly(accounts);
         if (total > 0) return { total, yearScoped, source: "Payroll Reports (uploaded)" };
-        const annual = payrollDoc.salaryWages.accounts.reduce((s: number, a: any) =>
-          s + (Object.values(a.monthlyValues || {}) as number[]).reduce((x: number, y) => x + (Number(y) || 0), 0), 0);
-        if (Math.abs(annual) > 0) return { total: Math.abs(annual), yearScoped: false, source: "Payroll Reports (uploaded; no year scoping)" };
+        if (annualTotal > 0) return { total: annualTotal, yearScoped: false, source: "Payroll Reports (uploaded; no year scoping)" };
       }
-      const arr = Array.isArray(payrollDoc) ? payrollDoc : payrollDoc.employees;
+      // Last-ditch: an employees array
+      const arr = Array.isArray(payrollDoc) ? payrollDoc : payrollDoc?.employees;
       if (Array.isArray(arr)) {
         const total = arr.reduce((s: number, e: any) =>
           s + (Number(e.salary) || Number(e.totalCompensation) || Number(e.grossPay) || Number(e.wages) || 0), 0);
@@ -1573,45 +1594,96 @@ serve(async (req) => {
       return { total: 0, yearScoped: false, source: "Payroll Reports (uploaded)" };
     };
 
+    const resolveFixedAssetList = (): any[] => {
+      if (!fixedAssetsDoc) return [];
+      if (Array.isArray(fixedAssetsDoc)) return fixedAssetsDoc;
+      if (Array.isArray(fixedAssetsDoc.assets)) return fixedAssetsDoc.assets;
+      if (Array.isArray(fixedAssetsDoc.extractedData?.assets)) return fixedAssetsDoc.extractedData.assets;
+      return [];
+    };
+
     const getFixedAssetDepreciation = (): ExtFallback => {
-      if (!fixedAssetsDoc) return { total: 0, yearScoped: false, source: "Fixed Assets Schedule (uploaded)" };
-      const list = Array.isArray(fixedAssetsDoc) ? fixedAssetsDoc : (fixedAssetsDoc.assets || []);
-      if (!Array.isArray(list) || list.length === 0) return { total: 0, yearScoped: false, source: "Fixed Assets Schedule (uploaded)" };
-      // Year-scoped: prefer assets in service by taxYear and not disposed before taxYear
+      const list = resolveFixedAssetList();
+      if (!list.length) return { total: 0, yearScoped: false, source: "Fixed Assets Schedule (uploaded)" };
       let yearTotal = 0;
-      let yearMatched = false;
+      let anyComputed = false;
       for (const a of list) {
-        const inService = Number(a.inServiceYear) || (a.inServiceDate ? new Date(a.inServiceDate).getFullYear() : null);
-        const disposed = Number(a.disposalYear) || (a.disposalDate ? new Date(a.disposalDate).getFullYear() : null);
-        if (inService !== null && inService <= taxYear && (disposed === null || disposed >= taxYear)) {
-          const v = Number(a.currentYearDepreciation) || Number(a.annualDepreciation) || 0;
-          if (v) { yearTotal += Math.abs(v); yearMatched = true; }
+        // Prefer precomputed fields if extractor populates them in the future
+        const precomputed = Number(a.currentYearDepreciation) || Number(a.annualDepreciation) || 0;
+        const cost = Math.abs(Number(a.cost) || 0);
+        // usefulLife may be "7 years", "7", or numeric
+        const lifeRaw = a.usefulLife ?? a.life ?? a.usefulLifeYears;
+        const life = typeof lifeRaw === 'number' ? lifeRaw : parseInt(String(lifeRaw ?? ''), 10);
+        const annual = precomputed > 0 ? precomputed : (life > 0 && cost > 0 ? cost / life : 0);
+        if (annual <= 0) continue;
+        const acqStr = a.dateAcquired || a.acquisitionDate || a.acquiredOn || a.inServiceDate;
+        const acqYear = a.inServiceYear ? Number(a.inServiceYear)
+          : (acqStr ? new Date(acqStr).getFullYear() : NaN);
+        const disposalYear = a.disposalYear ? Number(a.disposalYear)
+          : (a.disposalDate ? new Date(a.disposalDate).getFullYear() : null);
+        // Include if acquired by tax year, not disposed before tax year,
+        // and not fully depreciated by tax year (acqYear + life > taxYear).
+        const fullyDepYear = Number.isFinite(acqYear) && life > 0 ? acqYear + life : Infinity;
+        const inService = !Number.isFinite(acqYear) || acqYear <= taxYear;
+        const notDisposed = disposalYear === null || disposalYear >= taxYear;
+        const stillDepreciating = fullyDepYear > taxYear;
+        if (inService && notDisposed && stillDepreciating) {
+          yearTotal += annual;
+          anyComputed = true;
         }
       }
-      if (yearMatched && yearTotal > 0) return { total: yearTotal, yearScoped: true, source: "Fixed Assets Schedule (uploaded)" };
-      const annual = list.reduce((s: number, a: any) =>
-        s + Math.abs(Number(a.currentYearDepreciation) || Number(a.annualDepreciation) || 0), 0);
-      return { total: annual, yearScoped: false, source: annual > 0 ? "Fixed Assets Schedule (uploaded; no year scoping)" : "Fixed Assets Schedule (uploaded)" };
+      if (anyComputed) return { total: yearTotal, yearScoped: true, source: "Fixed Assets Schedule (uploaded)" };
+      return { total: 0, yearScoped: false, source: "Fixed Assets Schedule (uploaded)" };
+    };
+
+    const resolveDebtList = (): any[] => {
+      if (!debtScheduleDoc) return [];
+      if (Array.isArray(debtScheduleDoc)) return debtScheduleDoc;
+      if (Array.isArray(debtScheduleDoc.debts)) return debtScheduleDoc.debts;
+      if (Array.isArray(debtScheduleDoc.extractedData?.debts)) return debtScheduleDoc.extractedData.debts;
+      return [];
     };
 
     const getDebtScheduleInterest = (): ExtFallback => {
-      if (!debtScheduleDoc) return { total: 0, yearScoped: false, source: "Debt Schedule (uploaded)" };
-      const list = Array.isArray(debtScheduleDoc) ? debtScheduleDoc : (debtScheduleDoc.debts || []);
-      if (!Array.isArray(list) || list.length === 0) return { total: 0, yearScoped: false, source: "Debt Schedule (uploaded)" };
-      // Year-specific field if available, e.g. interestByYear[taxYear]
+      const list = resolveDebtList();
+      if (!list.length) return { total: 0, yearScoped: false, source: "Debt Schedule (uploaded)" };
       let yearTotal = 0;
-      let yearMatched = false;
+      let anyByYear = false;
+      let estimated = 0;
       for (const d of list) {
+        // Year-specific precomputed field if available
         const byYear = d.interestByYear?.[taxYear] ?? d.annualInterestByYear?.[taxYear];
         if (byYear !== undefined && byYear !== null) {
           yearTotal += Math.abs(Number(byYear) || 0);
-          yearMatched = true;
+          anyByYear = true;
+          continue;
+        }
+        const precomputed = Number(d.annualInterest) || Number(d.interestExpense) || 0;
+        const maturityYear = d.maturityDate ? new Date(d.maturityDate).getFullYear() : null;
+        const originationYear = d.originationDate ? new Date(d.originationDate).getFullYear() : null;
+        // Include if debt was outstanding during tax year
+        const outstanding =
+          (maturityYear === null || maturityYear >= taxYear) &&
+          (originationYear === null || originationYear <= taxYear);
+        if (!outstanding) continue;
+        if (precomputed > 0) {
+          estimated += Math.abs(precomputed);
+        } else {
+          const rate = Number(d.interestRate) || 0;
+          const orig = Math.abs(Number(d.originalAmount) || 0);
+          const curr = Math.abs(Number(d.currentBalance) || 0);
+          const avg = orig && curr ? (orig + curr) / 2 : (orig || curr);
+          const annual = avg * (rate / 100);
+          if (annual > 0) estimated += annual;
         }
       }
-      if (yearMatched && yearTotal > 0) return { total: yearTotal, yearScoped: true, source: "Debt Schedule (uploaded)" };
-      const annual = list.reduce((s: number, d: any) =>
-        s + Math.abs(Number(d.annualInterest) || Number(d.interestExpense) || 0), 0);
-      return { total: annual, yearScoped: false, source: annual > 0 ? "Debt Schedule (uploaded; no year scoping)" : "Debt Schedule (uploaded)" };
+      if (anyByYear && yearTotal > 0) {
+        return { total: yearTotal, yearScoped: true, source: "Debt Schedule (uploaded)" };
+      }
+      if (estimated > 0) {
+        return { total: estimated, yearScoped: false, source: "Debt Schedule (uploaded, estimated from rate × avg balance)" };
+      }
+      return { total: 0, yearScoped: false, source: "Debt Schedule (uploaded)" };
     };
 
     const EXT_FALLBACKS: Record<string, () => ExtFallback> = {
@@ -1620,12 +1692,28 @@ serve(async (req) => {
       depreciation: getFixedAssetDepreciation,
       interestExpense: getDebtScheduleInterest,
     };
-    const EXT_TIP: Record<string, string> = {
+    // Distinguish "doc missing" (actionable upload tip) from "doc uploaded but had no
+    // matching rows for this year" (extraction review needed).
+    const EXT_DOC_PRESENT: Record<string, () => boolean> = {
+      officerCompensation: () => resolvePayrollAccounts('ownerCompensation').length > 0,
+      salariesWages: () => resolvePayrollAccounts('salaryWages').length > 0
+        || Array.isArray(payrollDoc) || Array.isArray(payrollDoc?.employees),
+      depreciation: () => resolveFixedAssetList().length > 0,
+      interestExpense: () => resolveDebtList().length > 0,
+    };
+    const EXT_TIP_MISSING: Record<string, string> = {
       officerCompensation: "Tip: upload a payroll register or W-3 for this year to enable a direct comparison.",
       salariesWages: "Tip: upload a payroll register or W-3 for this year to enable a direct comparison.",
       depreciation: "Tip: upload a fixed assets / depreciation schedule for this year to enable a direct comparison.",
       interestExpense: "Tip: upload a debt schedule for this year to enable a direct comparison.",
     };
+    const EXT_TIP_EMPTY: Record<string, string> = {
+      officerCompensation: "Note: uploaded payroll register had no Owner Compensation rows for this year — extraction may need review.",
+      salariesWages: "Note: uploaded payroll register had no Salaries & Wages rows for this year — extraction may need review.",
+      depreciation: "Note: uploaded fixed assets schedule had no assets depreciating in this year — extraction may need review.",
+      interestExpense: "Note: uploaded debt schedule had no debts outstanding in this year — extraction may need review.",
+    };
+
 
     // Pseudo-GL synthesis: when no canonical_transactions exist for the year
     // (e.g. qbtojson-only or quickbooks_api-only projects), populate glByAccount
@@ -1744,7 +1832,11 @@ serve(async (req) => {
           const hint = considered.length
             ? ` Considered accounts that did not match: ${considered.slice(0, 5).map((n) => `"${n}"`).join(', ')}${considered.length > 5 ? `, +${considered.length - 5} more` : ''}.`
             : '';
-          const tip = EXT_TIP[taxKey] ? ` ${EXT_TIP[taxKey]}` : '';
+          const docPresent = EXT_DOC_PRESENT[taxKey]?.() ?? false;
+          const tipText = EXT_FALLBACKS[taxKey]
+            ? (docPresent ? EXT_TIP_EMPTY[taxKey] : EXT_TIP_MISSING[taxKey])
+            : '';
+          const tip = tipText ? ` ${tipText}` : '';
           pushReviewOnly({
             field: label,
             taxValue: taxVal,
@@ -2228,6 +2320,7 @@ serve(async (req) => {
     let totalComparisons = 0;
     for (const comp of comparisons) {
       if (comp.status === 'missing_data' || comp.status === 'review_only') continue;
+      if (comp.excludeFromScore) continue;
       totalComparisons += 1;
       if (comp.status === 'match') matchCount += 1;
       else if (comp.status === 'minor_variance') matchCount += 0.7;
