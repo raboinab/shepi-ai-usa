@@ -1,100 +1,90 @@
-## The real root cause (different from the previous plan)
+## Goal
 
-While inspecting the actual `processed_data` rows for this project, I found the previous plan was wrong about *why* nothing was matching. The qbtojson rows exist with `period_end = NULL` (as expected), but their `data` payload is the raw **QuickBooks Reports API shape**, not the normalized accounts/`monthlyValues` shape the comparison engine reads.
+Close the remaining gaps so `parse-tax-return` produces the same comparison set regardless of whether a project's financial data came from uploaded documents, `qbtojson`, or `quickbooks_api` / `unified_api`. Then verify against the 3 returns already stored for project `fa0768ca-…be3ede` (2023, 2024, 2025).
 
-Actual shapes in DB for project `fa0768ca-…be3ede`:
+## What already works
 
-| `data_type` | `source_type` | Actual `data` shape |
-|---|---|---|
-| `income_statement` | `qbtojson` | Array of 36 `{ month: "YYYY-MM", report: { rows, header, columns }, startDate, endDate }` |
-| `balance_sheet` | `qbtojson` | Same — array of 36 monthly QB BalanceSheet reports |
-| `cash_flow` | `qbtojson` | Same — array of 36 monthly QB CashFlow reports |
-| `trial_balance` | `qbtojson` | `{ summary, monthlyReports: [ { year, month, report, … } x 36 ] }` |
-| `general_ledger` | `qbtojson` | `{ rows, header, columns }` — single multi-year report |
+- qbtojson **Income Statement** and **Balance Sheet** are normalized at read time via `maybeNormalizeQbData` → comparisons fire correctly.
+- `skippedFields` is populated for most no-match branches and rendered in `TaxReturnInsightsCard`.
+- Year-scoped GL aggregation from `canonical_transactions` (when present) feeds P&L matchers.
 
-What the comparison engine reads:
+## What's still broken or incomplete
 
-```
-incomeStatement.revenue.accounts[i].monthlyValues["YYYY-MM"]
-incomeStatement.expenses.accounts[i].monthlyValues[...]
-incomeStatement.cogs.accounts[...]
-balanceSheet.<bucket>.accounts[...].monthlyValues[...]
-```
+1. **qbtojson Cash Flow** is never normalized. No comparison reads it today, but the helper is missing from the "all sources work" claim.
+2. **qbtojson Trial Balance** is never normalized. `wizardData.trialBalance` / `processedData.trial_balance` is consulted by some BS fallbacks (`getBsEoyByMatcher` only reads `balance_sheet`, but several callers in the wizard chain pass TB through). On a TB-only project, every BS comparison silently skips.
+3. **GL fallback for qbtojson-only projects**: when `canonical_transactions` has no rows for the year, `hasGL = false` and every P&L matcher in the loop at line 1286 falls through to `{total: 0}` and emits a skip. We already have monthly IS account data after normalization — we should synthesize a pseudo-GL aggregate (`{name → abs total}`) from the normalized IS so `matchAccounts` works without `canonical_transactions`.
+4. **quickbooks_api / unified_api shape probe**: `maybeNormalizeQbData` early-returns whenever `sourceType !== "qbtojson"`. If those rows happen to land in the raw QB Reports shape (which they often do — the unified API proxies QB reports), they bypass normalization. Detect raw shape regardless of `source_type` label.
+5. **Distributions / M-2 regression guard** — already added but worth re-verifying on 2025 once items 3–4 land.
 
-That shape does not exist for this project. So `sumISMonthly`, `matchISAccounts`, `getBsEoyByMatcher`, M-1, M-2, Schedule L all return 0 silently — exactly the "regression to 3 tautological comparisons" I observed. The previous rewrite added year-scoping and diagnostics for a shape that's never present in real data.
+## Changes
 
-## Fix: normalize at read time inside the edge function
+All edits live in `supabase/functions/parse-tax-return/index.ts`. No DB schema changes. No ingestion changes.
 
-Add a one-stop adapter that converts the raw QB report shapes into the engine's expected `{revenue, cogs, expenses}` / `{assets, liabilities, equity}` / `{accounts: [{name, monthlyValues}]}` shape, keyed by `YYYY-MM`. Apply it whenever the resolver picks a qbtojson row.
+### 1. Add two normalizers next to the existing pair
 
-No DB schema changes. No changes to extraction. No changes to the QB ingestion pipeline. Only `supabase/functions/parse-tax-return/index.ts` and the existing UI diagnostics block.
+- `normalizeQbCashFlowMonthly(months)` → `{ operating: NormalizedSection, investing: NormalizedSection, financing: NormalizedSection, netChange: number }`. Same `walkQbLeaves` helper; bucket by `group` in {`OperatingActivities`, `InvestingActivities`, `FinancingActivities`}.
+- `normalizeQbTrialBalance(payload)` → `{ accounts: [{ name, debit, credit, monthlyValues }] }`. Reads `payload.monthlyReports[].report.rows`, accumulates debit/credit per account per month, plus a single EOY value for `monthlyValues[YYYY-12]`.
 
-### 1. New normalizers (server, inside `parse-tax-return/index.ts`)
+### 2. Generalize the shape probe
 
-- `normalizeQbPnlMonthly(rows: QbMonthlyPnL[]): IncomeStatement`
-  - Walks each `{month, report}` entry, flattens `report.rows` (handling QB's nested `Section`/`Data`/`Summary` row types).
-  - Buckets by top-level section header text: `Income` → `revenue`, `Cost of Goods Sold` → `cogs`, `Expenses` / `Other Expense` → `expenses`. Net section subtotals are skipped.
-  - Per leaf account, accumulates `monthlyValues["YYYY-MM"] = signedAmount`. Sign follows QB convention (revenue positive, expenses positive on debit).
-  - Output is exactly `{ revenue: { accounts: [...] }, cogs: {...}, expenses: {...}, totalRevenue, netIncome }`.
-- `normalizeQbBalanceSheetMonthly(rows: QbMonthlyBS[]): BalanceSheet`
-  - Same idea, bucketed into `assets`, `liabilities`, `equity` by QB section. `monthlyValues["YYYY-MM"]` holds the **end-of-month** balance (BS is point-in-time, so the last value of each month, not a sum).
-- `normalizeQbTrialBalance(payload): TrialBalance`
-  - Reads `monthlyReports[].report.rows` → per account `{ debit, credit }` per month.
-- `normalizeQbGeneralLedger(payload): { transactions: [...] }`
-  - Flattens `rows` into `{ date, account, amount, memo }` rows the existing `glByAccount` / `matchAccounts` logic already understands.
-
-All four are pure, ~50–80 lines each, with shared row-walking helpers.
-
-### 2. Hook normalizers into the resolver
-
-In the existing `pickProcessedData(dataType)` block:
-
-- After selecting a qbtojson row (the aggregate-period branch), pass it through the matching normalizer before returning. The rest of the file works unchanged because it now sees the expected shape.
-- For unified_api monthly rows (already normalized today), no change.
-- Keep the existing year-scoping in `sumISMonthly` and `getBsEoyByMatcher` — they're correct, they just had no data to iterate.
-
-### 3. Restore + harden the Shareholder Distributions comparison
-
-Currently 2025 regressed from 4 → 3 comparisons because the Distributions branch checks `m2.distributionsCash + m2.distributionsProperty` against book Distributions, and book Distributions came from the BS `equity` bucket, which was empty. Once (1) and (2) land, the equity bucket exists, so this fires again. Add an explicit `if (!bookDistributions) skippedFields.push({...})` so the regression can't happen silently next time.
-
-### 4. Replace silent skips with explicit diagnostics
-
-Every comparison that today does `if (matched.total === 0) continue;` becomes:
+Replace the `sourceType !== "qbtojson"` early return in `maybeNormalizeQbData` with:
 
 ```ts
-if (matched.total === 0) {
-  skippedFields.push({ field: label, reason: hasGL
-    ? `No GL account matched ${matcherKey}`
-    : `No IS account matched ${matcherKey}` });
-  continue;
+const looksRawQb = isRawQbMonthlyArray(data) || hasMonthlyReports(data);
+if (sourceType !== "qbtojson" && !looksRawQb) return data;
+```
+
+`hasMonthlyReports(data)` returns true when `data?.monthlyReports?.[0]?.report?.rows` exists (qbtojson TB shape, occasionally produced by `quickbooks_api`).
+
+Wire `cash_flow` and `trial_balance` cases into the switch.
+
+### 3. Synthesize pseudo-GL from normalized IS when canonical_transactions is empty
+
+After the `glByAccount` build at line 1005:
+
+```ts
+if (!hasGL && processedData.income_statement?.revenue?.accounts) {
+  for (const group of ["revenue","cogs","expenses"] as const) {
+    for (const a of processedData.income_statement[group]?.accounts ?? []) {
+      const yearTotal = Object.entries(a.monthlyValues ?? {})
+        .filter(([k]) => k.startsWith(yearMonthPrefix))
+        .reduce((s, [,v]) => s + Math.abs(Number(v) || 0), 0);
+      if (yearTotal === 0) continue;
+      glByAccount.set(a.name, { signed: yearTotal, abs: yearTotal, type: group });
+    }
+  }
+  hasGL = glByAccount.size > 0;
+  if (hasGL) skippedFields.push({ field: "GL source", reason: "Synthesized from normalized Income Statement (no canonical_transactions for year)" });
 }
 ```
 
-Same treatment for the M-1, M-2, and Schedule L branches when their book counterpart is 0/missing. `analysisDiagnostics.skippedFields` already exists in the type — just populate it everywhere instead of in only two places.
+This lets `matchAccounts` resolve P&L matchers for qbtojson-only projects.
 
-### 5. UI: show skippedFields in the card
+### 4. Emit explicit skip on TB-only fallthrough
 
-`TaxReturnInsightsCard.tsx` currently renders only `sources`. Add a collapsible "Skipped checks (N)" section under the score listing each `{field, reason}` so silent failures surface to the user immediately. Stale-result auto-reanalyze logic already added stays.
+If `processedData.balance_sheet` is missing but `processedData.trial_balance` exists with EOY balances, derive a synthetic BS-shaped object from the TB normalizer output and feed `getBsEoyByMatcher`. Otherwise log a `skippedFields` row stating "Balance Sheet missing; TB present but not yet wired" — surfaces the gap rather than silently scoring 0.
 
-### 6. Verification (mandatory before claiming done)
+### 5. Verification (mandatory before declaring done)
 
-For each of the 3 stored returns (2023, 2024, 2025):
+Invoke `parse-tax-return` for each of the 3 returns and record:
+- `comparisons.length`
+- `overallScore`
+- `skippedFields.length` (and the reasons)
+- Counts of P&L, Schedule L, M-1, M-2, Distributions comparisons
 
-1. Call `parse-tax-return` and capture `comparisons.length`, `overallScore`, and `skippedFields.length`.
-2. Spot-check one revenue and one expense comparison per year: log `matched.accounts` and `comparisonValue`, manually confirm the matched accounts in the QB monthly report sum to that value for that year.
-3. Confirm Distributions comparison reappears for 2025 (the row that regressed). Confirm at least one M-1 and one Schedule L comparison fires for each year.
-4. Expected post-fix counts: 2025 ≈ 12–18 comparisons; 2023/2024 ≈ 8–12 each. Anything below those should show up as `skippedFields` rows with a real reason.
+Expected post-fix targets:
+- 2025: ≥ 12 comparisons, Distributions row present, ≥ 1 M-1 calc check, ≥ 3 Schedule L rows.
+- 2023 / 2024: ≥ 8 comparisons each, ≥ 2 Schedule L rows each.
+- Every remaining 0-match branch shows up in `skippedFields` with a concrete reason — no silent skips.
 
-The fix is only "done" when those three checks pass — not when HTTP 200 + `variance: 0` show up.
-
-## Files touched
-
-- `supabase/functions/parse-tax-return/index.ts` — add 4 normalizers, wire into resolver, populate `skippedFields` on every skip, restore Distributions guard.
-- `src/components/wizard/sections/TaxReturnInsightsCard.tsx` — render `skippedFields` block.
+Spot-check one revenue and one expense match per year against the QB monthly report sum to confirm pseudo-GL totals are correct.
 
 ## Out of scope
 
-- DB schema changes, ingestion changes, PDF extraction changes.
-- Normalizing unified_api shapes (already normalized).
-- Bank-statement-only reconciliation.
-- Any change to the year resolver beyond passing qbtojson rows through the new normalizers (the previous plan's resolver tweaks already shipped and are correct).
+- DB schema changes, ingestion changes, PDF extractor changes.
+- Building the BS-from-TB synthesizer if no project actually needs it (will skip cleanly via `skippedFields` instead).
+- Touching any other edge function.
+
+## Files touched
+
+- `supabase/functions/parse-tax-return/index.ts` — two new normalizers, generalized shape probe, pseudo-GL fallback, explicit TB-only skip diagnostic.
