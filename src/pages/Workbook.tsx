@@ -191,7 +191,9 @@ const Workbook = () => {
           onExport={handleExport}
           onActiveTabChange={setActiveTab}
           projectId={id}
+          onUploadCommitted={fetchProject}
         />
+
       </main>
 
       {showChat && projectDataForChat && (
