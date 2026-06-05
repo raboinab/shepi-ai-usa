@@ -847,8 +847,12 @@ export const DocumentUploadSection = ({
           }
           return [...prev, newAnalysis];
         });
-        if (!silent) toast.success("Tax return re-analyzed with latest data.");
       }
+      // Always refetch from processed_data so the card reflects the freshest stored
+      // analysis (covers async/queued returns and any post-write enrichment).
+      await fetchTaxReturnInsights();
+      if (!silent) toast.success("Tax return re-analyzed with latest data.");
+
     } catch (err) {
       console.warn("Re-analyze tax return failed:", err);
       if (!silent) toast.error("Failed to re-analyze tax return");
