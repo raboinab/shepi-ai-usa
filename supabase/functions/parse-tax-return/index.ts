@@ -738,8 +738,8 @@ function walkQbLeaves(rows: any, onLeaf: (colData: any[]) => void, onSection?: (
 }
 
 function normalizeQbPnlMonthly(months: any[]): NormalizedIS {
-  const buckets: Record<"revenue" | "cogs" | "expenses", Map<string, Record<string, number>>> = {
-    revenue: new Map(), cogs: new Map(), expenses: new Map(),
+  const buckets: Record<"revenue" | "otherIncome" | "cogs" | "expenses", Map<string, Record<string, number>>> = {
+    revenue: new Map(), otherIncome: new Map(), cogs: new Map(), expenses: new Map(),
   };
   let totalRevenue = 0;
   let netIncome = 0;
@@ -764,6 +764,8 @@ function normalizeQbPnlMonthly(months: any[]): NormalizedIS {
         const mv = buckets[bucket].get(name) || {};
         mv[monthKey] = (mv[monthKey] || 0) + amt;
         buckets[bucket].set(name, mv);
+        // totalRevenue tracks operating revenue only (Line 1a counterpart).
+        // Other Income is non-operating and intentionally excluded.
         if (bucket === "revenue") totalRevenue += amt;
       });
     }
@@ -771,7 +773,7 @@ function normalizeQbPnlMonthly(months: any[]): NormalizedIS {
   const sec = (b: Map<string, Record<string, number>>): NormalizedSection => ({
     accounts: Array.from(b.entries()).map(([name, mv]) => ({ name, monthlyValues: mv })),
   });
-  return { revenue: sec(buckets.revenue), cogs: sec(buckets.cogs), expenses: sec(buckets.expenses), totalRevenue, netIncome };
+  return { revenue: sec(buckets.revenue), otherIncome: sec(buckets.otherIncome), cogs: sec(buckets.cogs), expenses: sec(buckets.expenses), totalRevenue, netIncome };
 }
 
 function normalizeQbBalanceSheetMonthly(months: any[]): NormalizedBS {
