@@ -1113,7 +1113,7 @@ serve(async (req) => {
       const bsAvailable = !!(wizardData.balanceSheet || processedData.balance_sheet);
       const bsLabel = processedDataPeriodMismatch.balance_sheet ? "Balance Sheet (period mismatch)" : "Balance Sheet";
 
-      const schLRows: Array<[string, keyof BalanceSheetEoy, keyof typeof BS_MATCHERS, number?]> = [
+      const schLRows: Array<[string, keyof typeof eoy, keyof typeof BS_MATCHERS, number?]> = [
         ["Cash (L-1)", "cash", "cash", 0.05],
         ["A/R (L-2)", "accountsReceivable", "accountsReceivable", 0.05],
         ["Inventories (L-3)", "inventories", "inventories", 0.05],
