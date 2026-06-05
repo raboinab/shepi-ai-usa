@@ -601,5 +601,4 @@ export const FIELD_CATALOGUE = {
   ] as const,
   supporting_document: ["documentType", "amounts", "dates", "parties", "keyTerms", "summary", "processingMode"] as const,
   journal_entries: ["entries", "count"] as const,
-  tax_return_analysis: ["detectedType", "extractedText", "keyInfo", "summary"] as const,
 };
