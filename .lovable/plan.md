@@ -1,71 +1,64 @@
 ## Goal
 
-Stop the remaining false-positive variances on the tax return analysis page (Officer Comp / Salaries showing $0 in books, Repairs / Rents / Depreciation / Advertising swinging ±40–400% year over year) by:
+When a tax-return deduction line lands $0 in the books (GL + Income Statement), fall back to comparison against uploaded external documents (payroll registers, fixed assets schedule, debt schedule) before emitting a review-only row. This closes the gap where payroll runs through Gusto/ADP and never hits the GL, depreciation is tracked off-book on a fixed asset schedule, or interest is tracked in a debt schedule.
 
-1. Broadening the book-account keyword matchers to cover common QB naming variants.
-2. Handling the S-corp payroll edge case where books don't split Officer vs. Salaries.
-3. Giving users visibility into *which* book accounts were considered (and which were ignored) so misclassifications become reviewable instead of silent.
+## Where the changes go
 
-No frontend changes are required — the existing comparison table already renders `matchedAccounts` and `skippedFields`.
-
-## Where the problem lives
-
-`supabase/functions/parse-tax-return/index.ts`
-
-- **Lines 1169–1182** — `PL_MATCHERS`: the deduction-side regex sets.
-- **Lines 1473–1533** — the deduction loop that calls `matchAccounts` / `matchISAccounts` and emits `pushReviewOnly` when matches return $0.
-- **Helpers** `matchAccounts` and `matchISAccounts` (used to scan canonical_transactions and IS-bucket accounts respectively).
+`supabase/functions/parse-tax-return/index.ts` — deduction loop at lines ~1574–1631 plus four small reducer helpers.
 
 ## Changes
 
-### 1. Broaden `PL_MATCHERS`
+### 1. Extract four reducer helpers (top of analyzer block, near `matchISAccounts`)
 
-Extend each regex set with common QB naming variants observed in the wild. Keep exclude patterns to avoid double-counting (e.g., "Rental Income" stays out of "Rents"). Approximate additions:
+```
+getPayrollOwnerComp(year)        → number    // from wizardData.payroll.ownerComp.accounts, year-scoped via monthlyValues YYYY-MM prefix
+getPayrollSalaries(year)         → number    // from wizardData.payroll.salaryWages.accounts OR employees[]/array forms, year-scoped
+getFixedAssetDepreciation(year)  → number    // sum of currentYearDepreciation / annualDepreciation, year-scoped if asset has year field, else annual
+getDebtScheduleInterest(year)    → number    // sum of annualInterest / interestExpense, year-scoped if available, else annual
+```
 
-| Bucket | Add to `match` |
-|---|---|
-| `salariesWages` | `/\bw[- ]?2\b/i`, `/\bgusto\b/i`, `/\bpayroll expense/i`, `/\bemployee comp/i`, `/staff (cost|wage)/i`, `/labor expense/i` |
-| `officerCompensation` | `/officer salar/i`, `/officer wage/i`, `/owner salar/i`, `/owner wage/i`, `/shareholder salar/i`, `/shareholder wage/i`, `/\bowner pay\b/i`, `/\bs[- ]?corp.*(salary|wage|comp)/i` |
-| `repairs` | `/\br\s*&\s*m\b/i`, `/\br\/m\b/i`, `/upkeep/i`, `/janitorial/i`, `/cleaning/i`, `/\bservice contract/i` (with exclude `/customer service/i`, `/internet service/i`) |
-| `rent` | `/\brental expense/i`, `/office space/i`, `/storage (rent|fee)/i`, `/equipment lease/i`, `/vehicle lease/i` |
-| `taxes` | `/\bbusiness license/i`, `/\bpermit/i`, `/regulatory fee/i`, `/\bfranchise tax/i`, `/\bproperty tax/i`, `/\bpayroll tax/i` (NOTE: keep `payroll tax` IN here, OUT of salaries) |
-| `interestExpense` | `/\bloan interest/i`, `/\bcredit card interest/i`, `/mortgage interest/i`, `/line of credit/i` |
-| `depreciation` | `/\bdep\b/i` (narrow, with `\b`), `/section 179/i`, `/bonus depreciation/i` |
-| `advertising` | `/\bads\b/i`, `/google ads/i`, `/facebook ads/i`, `/social media/i`, `/sponsorship/i`, `/trade show/i`, `/branding/i`, `/seo expense/i` |
-| `pension` | `/simple ira/i`, `/sep[- ]?ira/i`, `/roth/i`, `/employer match/i` |
-| `employeeBenefit` | `/\bhsa\b/i`, `/\bfsa\b/i`, `/life insurance/i`, `/disability insurance/i`, `/worker.?s? comp/i`, `/pto\b/i`, `/staff (meal|event|gift)/i` |
+Each returns `{ total: number; yearScoped: boolean; source: string }` so the row can show the right source label and a "(no year scoping)" hint when only annual totals exist.
 
-These are additive — no existing matches change.
+### 2. Per-line external-document fallback in the deduction loop
 
-### 2. S-corp combined-payroll fallback (Officer Comp + Salaries)
+Before the existing `pushReviewOnly` push when `matched.total === 0`, check the tax key and consult the matching helper:
 
-When **both** `officerCompensation` and `salariesWages` are extracted from the tax return but **one of them lands $0 in books**, run a single combined match against `[...salariesWages.match, ...officerCompensation.match]` and compare the *combined* tax amount against the *combined* book amount as one extra diagnostic row labeled "Combined Payroll (Officer + Salaries)". This catches the common case where a small S-corp books all payroll to one bucket (e.g., "Gusto - Payroll Expenses") rather than splitting officer vs. staff.
+| Tax key | Helper | Source label |
+|---|---|---|
+| `officerCompensation` | `getPayrollOwnerComp` | `Payroll Reports — Owner Comp (uploaded)` |
+| `salariesWages` | `getPayrollSalaries` | `Payroll Reports (uploaded)` |
+| `depreciation` | `getFixedAssetDepreciation` | `Fixed Assets Schedule (uploaded)` |
+| `interestExpense` | `getDebtScheduleInterest` | `Debt Schedule (uploaded)` |
 
-The two per-line rows still emit (so the split mismatch is visible), but the combined row prevents the headline consistency score from being dragged down twice when the books are just structurally flat.
+If the helper returns a positive total, emit a `pushCompare` row (not review-only) with the original threshold and a `flagMessage` that notes "books had $0 for this line; matched against uploaded {source}".
 
-### 3. Surface unmatched IS account names
+### 3. Combined Payroll fallback row
 
-In the `matched.total === 0` branch (line 1504), enrich the `pushReviewOnly` note with a short list of expense accounts the matcher *considered but rejected*. Specifically:
+The combined Officer+Salaries fallback added in the previous change should also include `getPayrollOwnerComp(year) + getPayrollSalaries(year)` in its book-side total when the keyword match returns $0. This makes the combined row work even for projects with no payroll account in books at all.
 
-- Pull the list of IS expense accounts for the year (already loaded for `matchISAccounts`).
-- Append: `Considered accounts that did not match: "Acct A", "Acct B", … (truncate at 5).`
+### 4. Review-only "tip" when no fallback document exists
 
-This converts "books show $0" into a reviewable hint — the user can see "oh, I have a `Contract Labor` account that wasn't matched as salaries" and either rename or update the matcher next iteration.
+When `matched.total === 0` AND the external-document helper also returns 0 AND the tax key is one of the four supported, append a tip to the review-only note:
 
-### 4. Regression check
+> Tip: upload a payroll register / fixed assets schedule / debt schedule for this year to enable a direct comparison.
 
-After deploy, re-analyze 2023, 2024, 2025 for project `fa0768ca-96f9-4ded-b498-f64ca5be3ede`. Expected effect:
+This converts a silent dead-end into an actionable next step.
 
-- Officer Comp / Salaries: either match real book accounts now, OR show a non-zero "Combined Payroll" row with a reasonable variance, OR show $0 with a list of considered accounts (legitimately unmatched — actionable).
-- R&M, Rents, Depreciation, Advertising: variances should compress as additional accounts come into the match buckets. Years where books are genuinely missing categories will keep their variance — that's the correct behavior.
-- Consistency scores should move into the 60–80% range for this project; remaining gaps are real and reviewable.
+### 5. Year scoping caveats
+
+- Payroll: `monthlyValues` keys (`YYYY-MM`) are filtered to the tax year. If only annual totals exist (no `monthlyValues`), use the annual total and mark `yearScoped: false`.
+- Fixed assets: prefer `currentYearDepreciation` when the asset's `inServiceYear` ≤ taxYear and not disposed; otherwise sum all. Mark `yearScoped` accordingly.
+- Debt schedule: same pattern — prefer year-specific interest fields if present.
+
+When `yearScoped` is false, the row's source label becomes e.g. `Payroll Reports (uploaded; no year scoping)` and the flagMessage gets a `— variance may reflect multi-year totals` suffix.
 
 ## Out of scope
 
-- No prompt / extractor changes.
-- No DB / migration changes.
-- No frontend changes — `matchedAccounts` and `skippedFields` already render.
-- No changes to balance-sheet (`BS_MATCHERS`) — only P&L deduction matchers.
+- No new document categories — only uses payroll / fixed assets / debt schedules already in `wizardData`.
+- No prompt or extractor changes.
+- No frontend changes — `source` and `flagMessage` already render on the comparison table.
+- No M-1 / Schedule K / Schedule L changes.
+- No further matcher-regex changes (the previous broadening stays as-is).
 
 ## Files touched
 
@@ -73,4 +66,12 @@ After deploy, re-analyze 2023, 2024, 2025 for project `fa0768ca-96f9-4ded-b498-f
 
 ## Effort
 
-~80–120 LOC, single edge function deploy.
+~80–120 LOC. Single edge function deploy. No migration.
+
+## Regression check
+
+Re-analyze 2023 / 2024 / 2025 on project `fa0768ca-96f9-4ded-b498-f64ca5be3ede`:
+- If payroll reports were uploaded: Officer Comp and Salaries rows switch from review-only ($0 books) to real comparison rows sourced from "Payroll Reports (uploaded)".
+- If no payroll docs were uploaded: review-only row keeps the "considered accounts" hint AND gets the new "upload a payroll register…" tip.
+- Same pattern for Depreciation (Fixed Assets Schedule) and Interest (Debt Schedule).
+- Consistency scores recover further as legitimate matches replace $0-in-books gaps.
