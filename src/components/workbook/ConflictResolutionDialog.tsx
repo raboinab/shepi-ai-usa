@@ -18,7 +18,12 @@ import { Label } from "@/components/ui/label";
 import { AlertTriangle } from "lucide-react";
 
 export interface FieldConflict {
-  kind: "tb" | "adjustment_amount" | "adjustment_deleted_vs_edited";
+  kind:
+    | "tb"
+    | "adjustment_amount"
+    | "adjustment_deleted_vs_edited"
+    | "fixed_asset_field"
+    | "fixed_asset_deleted_vs_edited";
   label: string;
   conflictId: string;
   base: number | string | null;
