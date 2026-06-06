@@ -490,13 +490,18 @@ Deno.serve(async (req: Request) => {
 
     const { tbEdits, warnings: tbWarnings } = parseTrialBalance(wb, meta);
     const { changed, deleted, added, warnings: adjWarnings } = parseAdjustments(wb, meta);
+    const {
+      changed: faChanged,
+      deleted: faDeleted,
+      added: faAdded,
+      warnings: faWarnings,
+    } = parseFixedAssets(wb, meta);
 
     // Soft warnings for tabs we know about but don't round-trip this phase
     const deferredTabsSeen: string[] = [];
     for (const t of [
       "AR Aging",
       "AP Aging",
-      "Fixed Assets",
       "Top Customers by Year",
       "Top Vendors by Year",
       "Due Diligence Information",
@@ -510,6 +515,9 @@ Deno.serve(async (req: Request) => {
       adjustmentsChanged: changed,
       adjustmentsDeleted: deleted,
       adjustmentsAdded: added,
+      fixedAssetsChanged: faChanged,
+      fixedAssetsDeleted: faDeleted,
+      fixedAssetsAdded: faAdded,
     };
 
     const tbCellsChanged = Object.values(tbEdits).reduce((s, m) => s + Object.keys(m).length, 0);
@@ -528,9 +536,12 @@ Deno.serve(async (req: Request) => {
         adjustmentsChanged: Object.keys(changed).length,
         adjustmentsAdded: added.length,
         adjustmentsDeleted: deleted.length,
+        fixedAssetsChanged: Object.keys(faChanged).length,
+        fixedAssetsAdded: faAdded.length,
+        fixedAssetsDeleted: faDeleted.length,
         deferredTabsSeen,
       },
-      warnings: [...tbWarnings, ...adjWarnings],
+      warnings: [...tbWarnings, ...adjWarnings, ...faWarnings],
     }, 200);
   } catch (err) {
     console.error("parse-workbook-upload error:", err);
