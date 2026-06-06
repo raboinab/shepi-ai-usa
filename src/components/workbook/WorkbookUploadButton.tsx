@@ -171,12 +171,15 @@ export function WorkbookUploadButton({ projectId, onCommitted, className }: Prop
         return;
       }
 
-      const a = payload.applied ?? { tbCells: 0, adjustmentsChanged: 0, adjustmentsAdded: 0, adjustmentsDeleted: 0 };
+      const a = payload.applied ?? { tbCells: 0, adjustmentsChanged: 0, adjustmentsAdded: 0, adjustmentsDeleted: 0, fixedAssetsChanged: 0, fixedAssetsAdded: 0, fixedAssetsDeleted: 0 };
       const parts: string[] = [];
       if (a.tbCells) parts.push(`${a.tbCells} TB cells`);
       if (a.adjustmentsChanged) parts.push(`${a.adjustmentsChanged} adjustments edited`);
       if (a.adjustmentsAdded) parts.push(`${a.adjustmentsAdded} added`);
       if (a.adjustmentsDeleted) parts.push(`${a.adjustmentsDeleted} deleted`);
+      if (a.fixedAssetsChanged) parts.push(`${a.fixedAssetsChanged} fixed assets edited`);
+      if (a.fixedAssetsAdded) parts.push(`${a.fixedAssetsAdded} fixed assets added`);
+      if (a.fixedAssetsDeleted) parts.push(`${a.fixedAssetsDeleted} fixed assets deleted`);
       toast({
         title: payload.autoMerged ? "Workbook updated (auto-merged)" : "Workbook updated",
         description: parts.join(" · ") || "No changes applied.",
