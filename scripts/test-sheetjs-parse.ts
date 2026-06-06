@@ -36,7 +36,12 @@ function buildMock(): DealData {
         amounts: { [pid(2024,3)]: 25000 } },
     ],
     reclassifications: [], tbIndex: new Map(), monthDates: periods.map(p => p.date),
-    arAging: {}, apAging: {}, fixedAssets: [], topCustomers: {}, topVendors: {},
+    arAging: {}, apAging: {},
+    fixedAssets: [
+      { description: "Forklift #1", category: "Equipment", acquisitionDate: "2022-05-15", cost: 30000, accumulatedDepreciation: 12000, netBookValue: 18000 },
+      { description: "Delivery Van", category: "Vehicles", acquisitionDate: "2021-08-01", cost: 45000, accumulatedDepreciation: 22000, netBookValue: 23000 },
+    ],
+    topCustomers: {}, topVendors: {},
     addbacks: {} as DealData["addbacks"],
   };
 }
