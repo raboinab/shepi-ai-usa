@@ -194,7 +194,9 @@ export function WorkbookUploadButton({ projectId, onCommitted, className }: Prop
 
   const summary = parseResult?.summary;
   const totalChanges = summary
-    ? summary.tbCellsChanged + summary.adjustmentsChanged + summary.adjustmentsAdded + summary.adjustmentsDeleted
+    ? summary.tbCellsChanged
+      + summary.adjustmentsChanged + summary.adjustmentsAdded + summary.adjustmentsDeleted
+      + summary.fixedAssetsChanged + summary.fixedAssetsAdded + summary.fixedAssetsDeleted
     : 0;
 
   return (
