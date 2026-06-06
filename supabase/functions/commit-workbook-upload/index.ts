@@ -77,11 +77,14 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-/** Extract current TB and adjustments from wizard_data into a normalized shape. */
+/** Extract current TB, adjustments, fixed assets from wizard_data. */
 function extractCurrentState(wd: Record<string, unknown>): {
   trialBalance: Record<string, Record<string, number>>;
   adjustments: Record<string, BaseAdjustment>;
   adjustmentsArrayPath: "ddAdjustments" | "top";
+  fixedAssets: Record<string, BaseFixedAsset>;
+  /** Whether wd.fixedAssets was wrapped as {assets: []} or a bare array */
+  fixedAssetsWrapped: boolean;
 } {
   // Trial balance — may live as an array of entries at wd.trialBalance
   const tbSource = (wd.trialBalance ?? []) as Array<Record<string, unknown>>;
@@ -132,7 +135,32 @@ function extractCurrentState(wd: Record<string, unknown>): {
     };
   }
 
-  return { trialBalance, adjustments, adjustmentsArrayPath };
+  // Fixed assets — bare array or {assets: [...]} wrapper
+  const faRaw = wd.fixedAssets;
+  let faArr: Array<Record<string, unknown>> = [];
+  let fixedAssetsWrapped = false;
+  if (Array.isArray(faRaw)) {
+    faArr = faRaw as Array<Record<string, unknown>>;
+  } else if (faRaw && typeof faRaw === "object" && Array.isArray((faRaw as Record<string, unknown>).assets)) {
+    faArr = (faRaw as Record<string, unknown>).assets as Array<Record<string, unknown>>;
+    fixedAssetsWrapped = true;
+  }
+  const fixedAssets: Record<string, BaseFixedAsset> = {};
+  for (const fa of faArr) {
+    const description = String(fa.description ?? fa.name ?? "").trim();
+    if (!description) continue;
+    const key = description.toLowerCase();
+    fixedAssets[key] = {
+      description,
+      category: String(fa.category ?? ""),
+      acquisitionDate: String(fa.acquisitionDate ?? fa.dateAcquired ?? ""),
+      cost: Number(fa.cost ?? fa.originalCost ?? 0) || 0,
+      accumulatedDepreciation: Number(fa.accumulatedDepreciation ?? fa.accumDepr ?? 0) || 0,
+      netBookValue: Number(fa.netBookValue ?? fa.nbv ?? 0) || 0,
+    };
+  }
+
+  return { trialBalance, adjustments, adjustmentsArrayPath, fixedAssets, fixedAssetsWrapped };
 }
 
 Deno.serve(async (req: Request) => {
