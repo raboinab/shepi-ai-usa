@@ -262,6 +262,9 @@ export function WorkbookUploadButton({ projectId, onCommitted, className }: Prop
                     {summary.adjustmentsChanged > 0 && <li>• {summary.adjustmentsChanged} adjustments with amount changes</li>}
                     {summary.adjustmentsAdded > 0 && <li>• {summary.adjustmentsAdded} new adjustments added</li>}
                     {summary.adjustmentsDeleted > 0 && <li>• {summary.adjustmentsDeleted} adjustments deleted</li>}
+                    {summary.fixedAssetsChanged > 0 && <li>• {summary.fixedAssetsChanged} fixed assets edited</li>}
+                    {summary.fixedAssetsAdded > 0 && <li>• {summary.fixedAssetsAdded} fixed assets added</li>}
+                    {summary.fixedAssetsDeleted > 0 && <li>• {summary.fixedAssetsDeleted} fixed assets deleted</li>}
                   </ul>
                 </div>
               )}
