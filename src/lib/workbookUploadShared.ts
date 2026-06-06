@@ -4,7 +4,7 @@
  * and the conflict resolution dialog.
  */
 
-export const WORKBOOK_SCHEMA_VERSION = "1.1";
+export const WORKBOOK_SCHEMA_VERSION = "1.2";
 export const META_SHEET_NAME = "__shepi_meta";
 
 /** Base snapshot of the writable portion of wizard_data at export time.
@@ -15,6 +15,8 @@ export interface WorkbookBaseSnapshot {
   trialBalance: Record<string, Record<string, number>>;
   /** Adjustments keyed by id */
   adjustments: Record<string, BaseAdjustment>;
+  /** Fixed assets keyed by lowercased description */
+  fixedAssets: Record<string, BaseFixedAsset>;
 }
 
 export interface BaseAdjustment {
@@ -27,6 +29,15 @@ export interface BaseAdjustment {
   periodValues: Record<string, number>;
 }
 
+export interface BaseFixedAsset {
+  description: string;
+  category: string;
+  acquisitionDate: string;
+  cost: number;
+  accumulatedDepreciation: number;
+  netBookValue: number;
+}
+
 /** A single edit detected in the uploaded workbook (mine = user's offline change). */
 export interface MineEdits {
   /** Map of accountId -> periodId -> new balance (only changed cells) */
@@ -37,6 +48,10 @@ export interface MineEdits {
   adjustmentsDeleted: string[];
   /** Adjustments newly added in workbook (no matching base id) */
   adjustmentsAdded: BaseAdjustment[];
+  /** Fixed asset field-level changes keyed by lowercased description */
+  fixedAssetsChanged: Record<string, Partial<BaseFixedAsset>>;
+  fixedAssetsDeleted: string[];
+  fixedAssetsAdded: BaseFixedAsset[];
 }
 
 export interface ParseResultOk {
@@ -53,6 +68,9 @@ export interface ParseResultOk {
     adjustmentsChanged: number;
     adjustmentsAdded: number;
     adjustmentsDeleted: number;
+    fixedAssetsChanged: number;
+    fixedAssetsAdded: number;
+    fixedAssetsDeleted: number;
     deferredTabsSeen: string[];
   };
   warnings: string[];
@@ -69,7 +87,12 @@ export type ParseResult = ParseResultOk | ParseResultErr;
 /** Conflict payload returned by commit-workbook-upload when force=false and
  *  the same field changed both online (theirs) and offline (mine). */
 export interface FieldConflict {
-  kind: "tb" | "adjustment_amount" | "adjustment_deleted_vs_edited";
+  kind:
+    | "tb"
+    | "adjustment_amount"
+    | "adjustment_deleted_vs_edited"
+    | "fixed_asset_field"
+    | "fixed_asset_deleted_vs_edited";
   /** Human-readable label, e.g. "Cash · Jan 2024" or "MA · Owner Comp · Mar 2024" */
   label: string;
   /** Stable id for resolution mapping */
@@ -96,6 +119,9 @@ export interface CommitSuccessResponse {
     adjustmentsChanged: number;
     adjustmentsAdded: number;
     adjustmentsDeleted: number;
+    fixedAssetsChanged: number;
+    fixedAssetsAdded: number;
+    fixedAssetsDeleted: number;
   };
   /** True if changes from theirs were auto-merged in (no overlap). */
   autoMerged: boolean;
