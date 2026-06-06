@@ -18,7 +18,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const SUPPORTED_SCHEMA_VERSIONS = new Set(["1.1"]);
+const SUPPORTED_SCHEMA_VERSIONS = new Set(["1.1", "1.2"]);
 const META_SHEET_NAME = "__shepi_meta";
 
 interface BaseAdjustment {
@@ -31,9 +31,19 @@ interface BaseAdjustment {
   periodValues: Record<string, number>;
 }
 
+interface BaseFixedAsset {
+  description: string;
+  category: string;
+  acquisitionDate: string;
+  cost: number;
+  accumulatedDepreciation: number;
+  netBookValue: number;
+}
+
 interface WorkbookBaseSnapshot {
   trialBalance: Record<string, Record<string, number>>;
   adjustments: Record<string, BaseAdjustment>;
+  fixedAssets: Record<string, BaseFixedAsset>;
 }
 
 interface MetaSheet {
@@ -43,6 +53,7 @@ interface MetaSheet {
   exportedAt: string;
   periods: { id: string; label: string; shortLabel: string }[];
   adjustmentDirectory: { id: string; type: string; label: string }[];
+  fixedAssetDirectory: { key: string; description: string }[];
   snapshot: WorkbookBaseSnapshot;
 }
 
@@ -51,6 +62,9 @@ interface MineEdits {
   adjustmentsChanged: Record<string, Record<string, number>>;
   adjustmentsDeleted: string[];
   adjustmentsAdded: BaseAdjustment[];
+  fixedAssetsChanged: Record<string, Partial<BaseFixedAsset>>;
+  fixedAssetsDeleted: string[];
+  fixedAssetsAdded: BaseFixedAsset[];
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
