@@ -47,7 +47,7 @@ function buildMock(): DealData {
 }
 
 // ─── Verbatim port of the edge-function parser ───
-const SUPPORTED = new Set(["1.1"]);
+const SUPPORTED = new Set(["1.1", "1.2"]);
 function parseMeta(wb: XLSX.WorkBook) {
   const ws = wb.Sheets[META_SHEET_NAME]; if (!ws) throw new Error("no meta");
   const g = (a: string) => { const c = ws[a]; return c ? String(c.v ?? "").trim() : ""; };
@@ -56,7 +56,8 @@ function parseMeta(wb: XLSX.WorkBook) {
   const projectId = g("B2"); const exportedFromRevision = Number(g("B3") || "0");
   const periods: { id: string; label: string; shortLabel: string }[] = [];
   const adjustmentDirectory: { id: string; type: string; label: string }[] = [];
-  const chunks: string[] = []; let section: "" | "periods" | "adjustments" | "snapshot" = ""; let empty = 0;
+  const fixedAssetDirectory: { key: string; description: string }[] = [];
+  const chunks: string[] = []; let section: "" | "periods" | "adjustments" | "fixedAssets" | "snapshot" = ""; let empty = 0;
   for (let r = 6; r < 200000; r++) {
     const a = (ws[`A${r}`] ? String(ws[`A${r}`].v ?? "") : "").trim();
     const b = (ws[`B${r}`] ? String(ws[`B${r}`].v ?? "") : "").trim();
@@ -65,14 +66,16 @@ function parseMeta(wb: XLSX.WorkBook) {
     empty = 0;
     if (a === "__periods__") { section = "periods"; continue; }
     if (a === "__adjustments__") { section = "adjustments"; continue; }
+    if (a === "__fixedAssets__") { section = "fixedAssets"; continue; }
     if (a === "__snapshot__") { section = "snapshot"; continue; }
     if (a === "__snapshot_end__") break;
-    if (a === "periodId" || a === "id") continue;
+    if (a === "periodId" || a === "id" || a === "key") continue;
     if (section === "periods" && a) periods.push({ id: a, label: b, shortLabel: c || b });
     else if (section === "adjustments" && a) adjustmentDirectory.push({ id: a, type: b, label: c });
+    else if (section === "fixedAssets" && a) fixedAssetDirectory.push({ key: a, description: b });
     else if (section === "snapshot" && a) chunks.push(a);
   }
-  return { schemaVersion, projectId, exportedFromRevision, periods, adjustmentDirectory, snapshot: JSON.parse(chunks.join("")) };
+  return { schemaVersion, projectId, exportedFromRevision, periods, adjustmentDirectory, fixedAssetDirectory, snapshot: JSON.parse(chunks.join("")) };
 }
 
 function rowsOf(ws: XLSX.WorkSheet): unknown[][] {
