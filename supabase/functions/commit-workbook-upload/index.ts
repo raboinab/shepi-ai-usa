@@ -350,6 +350,119 @@ Deno.serve(async (req: Request) => {
       finalAdj[a.id] = a;
     }
 
+    // ---- Fixed Asset three-way merge ----
+    const FA_FIELDS: (keyof BaseFixedAsset)[] = [
+      "category",
+      "acquisitionDate",
+      "cost",
+      "accumulatedDepreciation",
+      "netBookValue",
+    ];
+    const faEq = (field: keyof BaseFixedAsset, a: unknown, b: unknown): boolean => {
+      if (field === "cost" || field === "accumulatedDepreciation" || field === "netBookValue") {
+        return Math.abs(Number(a ?? 0) - Number(b ?? 0)) <= 0.005;
+      }
+      return String(a ?? "") === String(b ?? "");
+    };
+    const finalFA: Record<string, BaseFixedAsset> = {};
+    for (const [k, fa] of Object.entries(current.fixedAssets)) finalFA[k] = { ...fa };
+
+    const baseFA = (base as { fixedAssets?: Record<string, BaseFixedAsset> }).fixedAssets ?? {};
+    const mineFAChanged = mine.fixedAssetsChanged ?? {};
+    const mineFADeleted = mine.fixedAssetsDeleted ?? [];
+    const mineFAAdded = mine.fixedAssetsAdded ?? [];
+
+    for (const [key, diff] of Object.entries(mineFAChanged)) {
+      const baseRow = baseFA[key];
+      const theirsRow = current.fixedAssets[key];
+      if (!theirsRow) {
+        const conflictId = `fa_del::${key}`;
+        const pick = resolutions[conflictId];
+        if (pick === "mine" || payload.force) {
+          if (baseRow) finalFA[key] = { ...baseRow, ...diff };
+        } else if (pick === "theirs") {
+          // stays absent
+        } else {
+          conflicts.push({
+            kind: "fixed_asset_deleted_vs_edited",
+            label: `Fixed asset "${baseRow?.description ?? key}" deleted online but edited offline`,
+            conflictId,
+            base: "exists",
+            mine: "edited",
+            theirs: "deleted",
+          });
+        }
+        continue;
+      }
+      for (const field of FA_FIELDS) {
+        if (!(field in diff)) continue;
+        const mineVal = (diff as Record<string, unknown>)[field] as never;
+        const baseVal = baseRow ? (baseRow[field] as never) : (undefined as never);
+        const theirsVal = theirsRow[field] as never;
+        const theirsChanged = baseRow ? !faEq(field, theirsVal, baseVal) : true;
+        if (theirsChanged && !faEq(field, theirsVal, mineVal)) {
+          const conflictId = `fa::${key}::${field}`;
+          const pick = resolutions[conflictId];
+          if (pick === "mine" || payload.force) {
+            (finalFA[key] as Record<string, unknown>)[field] = mineVal;
+          } else if (pick === "theirs") {
+            // keep
+          } else {
+            conflicts.push({
+              kind: "fixed_asset_field",
+              label: `${theirsRow.description} · ${field}`,
+              conflictId,
+              base: (baseVal as number | string | null) ?? null,
+              mine: (mineVal as number | string | null) ?? null,
+              theirs: (theirsVal as number | string | null) ?? null,
+            });
+          }
+        } else {
+          (finalFA[key] as Record<string, unknown>)[field] = mineVal;
+        }
+      }
+    }
+
+    for (const key of mineFADeleted) {
+      const baseRow = baseFA[key];
+      const theirsRow = current.fixedAssets[key];
+      if (!theirsRow) continue;
+      let theirsEdited = false;
+      if (baseRow) {
+        for (const field of FA_FIELDS) {
+          if (!faEq(field, baseRow[field], theirsRow[field])) { theirsEdited = true; break; }
+        }
+      } else {
+        theirsEdited = true; // theirs added it after export
+      }
+      if (theirsEdited) {
+        const conflictId = `fa_del::${key}`;
+        const pick = resolutions[conflictId];
+        if (pick === "mine" || payload.force) {
+          delete finalFA[key];
+        } else if (pick === "theirs") {
+          // keep
+        } else {
+          conflicts.push({
+            kind: "fixed_asset_deleted_vs_edited",
+            label: `Fixed asset "${theirsRow.description}" deleted offline but edited online`,
+            conflictId,
+            base: "exists",
+            mine: "deleted",
+            theirs: "edited",
+          });
+        }
+      } else {
+        delete finalFA[key];
+      }
+    }
+
+    for (const fa of mineFAAdded) {
+      const key = (fa.description || "").toLowerCase().trim();
+      if (!key) continue;
+      finalFA[key] = fa;
+    }
+
     if (conflicts.length > 0) {
       return jsonResponse({
         ok: false,
