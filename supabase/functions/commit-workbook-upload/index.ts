@@ -509,6 +509,32 @@ Deno.serve(async (req: Request) => {
       adjArray.push(merged);
     }
 
+    // Preserve metadata on existing fixed assets (description used as natural key for matching).
+    const existingFaArr: Array<Record<string, unknown>> = (() => {
+      const raw = wd.fixedAssets;
+      if (Array.isArray(raw)) return raw as Array<Record<string, unknown>>;
+      if (raw && typeof raw === "object" && Array.isArray((raw as Record<string, unknown>).assets)) {
+        return (raw as Record<string, unknown>).assets as Array<Record<string, unknown>>;
+      }
+      return [];
+    })();
+    const existingFaByKey = new Map(
+      existingFaArr.map(e => [String(e.description ?? e.name ?? "").toLowerCase().trim(), e]),
+    );
+    const faArrayOut: Array<Record<string, unknown>> = [];
+    for (const [key, fa] of Object.entries(finalFA)) {
+      const existing = existingFaByKey.get(key) ?? {};
+      faArrayOut.push({
+        ...existing,
+        description: fa.description,
+        category: fa.category,
+        acquisitionDate: fa.acquisitionDate,
+        cost: fa.cost,
+        accumulatedDepreciation: fa.accumulatedDepreciation,
+        netBookValue: fa.netBookValue,
+      });
+    }
+
     const nextWizard: Record<string, unknown> = { ...wd, trialBalance: tbArray };
     if (current.adjustmentsArrayPath === "ddAdjustments") {
       nextWizard.ddAdjustments = {
@@ -517,6 +543,14 @@ Deno.serve(async (req: Request) => {
       };
     } else {
       nextWizard.adjustments = adjArray;
+    }
+    if (current.fixedAssetsWrapped) {
+      nextWizard.fixedAssets = {
+        ...((wd.fixedAssets as Record<string, unknown>) ?? {}),
+        assets: faArrayOut,
+      };
+    } else {
+      nextWizard.fixedAssets = faArrayOut;
     }
 
     const nextRevision = currentRevision + 1;
@@ -539,6 +573,9 @@ Deno.serve(async (req: Request) => {
         adjustmentsChanged: Object.keys(mine.adjustmentsChanged).length,
         adjustmentsAdded: mine.adjustmentsAdded.length,
         adjustmentsDeleted: mine.adjustmentsDeleted.length,
+        fixedAssetsChanged: Object.keys(mineFAChanged).length,
+        fixedAssetsAdded: mineFAAdded.length,
+        fixedAssetsDeleted: mineFADeleted.length,
       },
       autoMerged,
     }, 200);
