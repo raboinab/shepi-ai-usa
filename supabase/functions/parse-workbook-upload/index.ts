@@ -341,6 +341,91 @@ function parseAdjustments(
   return { changed, deleted, added, warnings };
 }
 
+function parseFixedAssets(
+  wb: XLSX.WorkBook,
+  meta: MetaSheet,
+): {
+  changed: Record<string, Partial<BaseFixedAsset>>;
+  deleted: string[];
+  added: BaseFixedAsset[];
+  warnings: string[];
+} {
+  const warnings: string[] = [];
+  const changed: Record<string, Partial<BaseFixedAsset>> = {};
+  const added: BaseFixedAsset[] = [];
+  const seen = new Set<string>();
+
+  const ws = wb.Sheets["Fixed Assets"];
+  if (!ws) return { changed, deleted: [], added, warnings };
+  const rows = rowsOf(ws);
+  if (rows.length < 2) return { changed, deleted: [], added, warnings };
+
+  const headers = rows[0].map(h => String(h ?? "").trim().toLowerCase());
+  const descIdx = headers.findIndex(h => h === "description");
+  const catIdx = headers.findIndex(h => h === "category");
+  const dateIdx = headers.findIndex(h => h === "acquired" || h === "acquisition date" || h === "date");
+  const costIdx = headers.findIndex(h => h === "cost" || h === "original cost");
+  const deprIdx = headers.findIndex(h => h === "accum depr" || h === "accumulated depreciation");
+  const nbvIdx = headers.findIndex(h => h === "net book value" || h === "nbv");
+
+  if (descIdx < 0) {
+    warnings.push("Could not find Description column in Fixed Assets sheet.");
+    return { changed, deleted: [], added, warnings };
+  }
+
+  const cellDate = (v: unknown): string => {
+    if (v == null || v === "") return "";
+    if (v instanceof Date) return v.toISOString().slice(0, 10);
+    return String(v).trim();
+  };
+  const cellNum = (v: unknown): number => {
+    if (v == null || v === "") return 0;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const close = (a: number, b: number) => Math.abs(a - b) <= 0.005;
+
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row) continue;
+    const desc = String(row[descIdx] ?? "").trim();
+    if (!desc) continue;
+    if (/^total/i.test(desc)) continue;
+    const key = desc.toLowerCase();
+
+    const wbRow: BaseFixedAsset = {
+      description: desc,
+      category: catIdx >= 0 ? String(row[catIdx] ?? "").trim() : "",
+      acquisitionDate: dateIdx >= 0 ? cellDate(row[dateIdx]) : "",
+      cost: costIdx >= 0 ? cellNum(row[costIdx]) : 0,
+      accumulatedDepreciation: deprIdx >= 0 ? cellNum(row[deprIdx]) : 0,
+      netBookValue: nbvIdx >= 0 ? cellNum(row[nbvIdx]) : 0,
+    };
+
+    const base = meta.snapshot.fixedAssets[key];
+    if (!base) {
+      added.push(wbRow);
+      continue;
+    }
+    seen.add(key);
+    const diff: Partial<BaseFixedAsset> = {};
+    if (catIdx >= 0 && wbRow.category !== base.category) diff.category = wbRow.category;
+    if (dateIdx >= 0 && wbRow.acquisitionDate !== base.acquisitionDate) diff.acquisitionDate = wbRow.acquisitionDate;
+    if (costIdx >= 0 && !close(wbRow.cost, base.cost)) diff.cost = wbRow.cost;
+    if (deprIdx >= 0 && !close(wbRow.accumulatedDepreciation, base.accumulatedDepreciation)) {
+      diff.accumulatedDepreciation = wbRow.accumulatedDepreciation;
+    }
+    if (nbvIdx >= 0 && !close(wbRow.netBookValue, base.netBookValue)) diff.netBookValue = wbRow.netBookValue;
+    if (Object.keys(diff).length > 0) changed[key] = diff;
+  }
+
+  const deleted: string[] = [];
+  for (const d of meta.fixedAssetDirectory) {
+    if (!seen.has(d.key)) deleted.push(d.key);
+  }
+  return { changed, deleted, added, warnings };
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
