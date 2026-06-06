@@ -32,6 +32,15 @@ interface BaseAdjustment {
   periodValues: Record<string, number>;
 }
 
+interface BaseFixedAsset {
+  description: string;
+  category: string;
+  acquisitionDate: string;
+  cost: number;
+  accumulatedDepreciation: number;
+  netBookValue: number;
+}
+
 interface ParseResult {
   ok: true;
   schemaVersion: string;
@@ -44,16 +53,23 @@ interface ParseResult {
     adjustmentsChanged: Record<string, Record<string, number>>;
     adjustmentsDeleted: string[];
     adjustmentsAdded: BaseAdjustment[];
+    fixedAssetsChanged: Record<string, Partial<BaseFixedAsset>>;
+    fixedAssetsDeleted: string[];
+    fixedAssetsAdded: BaseFixedAsset[];
   };
   base: {
     trialBalance: Record<string, Record<string, number>>;
     adjustments: Record<string, BaseAdjustment>;
+    fixedAssets: Record<string, BaseFixedAsset>;
   };
   summary: {
     tbCellsChanged: number;
     adjustmentsChanged: number;
     adjustmentsAdded: number;
     adjustmentsDeleted: number;
+    fixedAssetsChanged: number;
+    fixedAssetsAdded: number;
+    fixedAssetsDeleted: number;
     deferredTabsSeen: string[];
   };
   warnings: string[];
