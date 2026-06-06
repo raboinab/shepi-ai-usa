@@ -32,6 +32,15 @@ interface BaseAdjustment {
   periodValues: Record<string, number>;
 }
 
+interface BaseFixedAsset {
+  description: string;
+  category: string;
+  acquisitionDate: string;
+  cost: number;
+  accumulatedDepreciation: number;
+  netBookValue: number;
+}
+
 interface ParseResult {
   ok: true;
   schemaVersion: string;
@@ -44,16 +53,23 @@ interface ParseResult {
     adjustmentsChanged: Record<string, Record<string, number>>;
     adjustmentsDeleted: string[];
     adjustmentsAdded: BaseAdjustment[];
+    fixedAssetsChanged: Record<string, Partial<BaseFixedAsset>>;
+    fixedAssetsDeleted: string[];
+    fixedAssetsAdded: BaseFixedAsset[];
   };
   base: {
     trialBalance: Record<string, Record<string, number>>;
     adjustments: Record<string, BaseAdjustment>;
+    fixedAssets: Record<string, BaseFixedAsset>;
   };
   summary: {
     tbCellsChanged: number;
     adjustmentsChanged: number;
     adjustmentsAdded: number;
     adjustmentsDeleted: number;
+    fixedAssetsChanged: number;
+    fixedAssetsAdded: number;
+    fixedAssetsDeleted: number;
     deferredTabsSeen: string[];
   };
   warnings: string[];
@@ -155,12 +171,15 @@ export function WorkbookUploadButton({ projectId, onCommitted, className }: Prop
         return;
       }
 
-      const a = payload.applied ?? { tbCells: 0, adjustmentsChanged: 0, adjustmentsAdded: 0, adjustmentsDeleted: 0 };
+      const a = payload.applied ?? { tbCells: 0, adjustmentsChanged: 0, adjustmentsAdded: 0, adjustmentsDeleted: 0, fixedAssetsChanged: 0, fixedAssetsAdded: 0, fixedAssetsDeleted: 0 };
       const parts: string[] = [];
       if (a.tbCells) parts.push(`${a.tbCells} TB cells`);
       if (a.adjustmentsChanged) parts.push(`${a.adjustmentsChanged} adjustments edited`);
       if (a.adjustmentsAdded) parts.push(`${a.adjustmentsAdded} added`);
       if (a.adjustmentsDeleted) parts.push(`${a.adjustmentsDeleted} deleted`);
+      if (a.fixedAssetsChanged) parts.push(`${a.fixedAssetsChanged} fixed assets edited`);
+      if (a.fixedAssetsAdded) parts.push(`${a.fixedAssetsAdded} fixed assets added`);
+      if (a.fixedAssetsDeleted) parts.push(`${a.fixedAssetsDeleted} fixed assets deleted`);
       toast({
         title: payload.autoMerged ? "Workbook updated (auto-merged)" : "Workbook updated",
         description: parts.join(" · ") || "No changes applied.",
@@ -178,7 +197,9 @@ export function WorkbookUploadButton({ projectId, onCommitted, className }: Prop
 
   const summary = parseResult?.summary;
   const totalChanges = summary
-    ? summary.tbCellsChanged + summary.adjustmentsChanged + summary.adjustmentsAdded + summary.adjustmentsDeleted
+    ? summary.tbCellsChanged
+      + summary.adjustmentsChanged + summary.adjustmentsAdded + summary.adjustmentsDeleted
+      + summary.fixedAssetsChanged + summary.fixedAssetsAdded + summary.fixedAssetsDeleted
     : 0;
 
   return (
@@ -241,6 +262,9 @@ export function WorkbookUploadButton({ projectId, onCommitted, className }: Prop
                     {summary.adjustmentsChanged > 0 && <li>• {summary.adjustmentsChanged} adjustments with amount changes</li>}
                     {summary.adjustmentsAdded > 0 && <li>• {summary.adjustmentsAdded} new adjustments added</li>}
                     {summary.adjustmentsDeleted > 0 && <li>• {summary.adjustmentsDeleted} adjustments deleted</li>}
+                    {summary.fixedAssetsChanged > 0 && <li>• {summary.fixedAssetsChanged} fixed assets edited</li>}
+                    {summary.fixedAssetsAdded > 0 && <li>• {summary.fixedAssetsAdded} fixed assets added</li>}
+                    {summary.fixedAssetsDeleted > 0 && <li>• {summary.fixedAssetsDeleted} fixed assets deleted</li>}
                   </ul>
                 </div>
               )}

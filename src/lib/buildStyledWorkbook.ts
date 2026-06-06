@@ -474,6 +474,21 @@ function writeMetaSheet(
     row++;
   }
 
+  // Fixed asset directory (description key, used for matching workbook rows back to base entries)
+  row += 1;
+  ws.getCell(`A${row}`).value = "__fixedAssets__";
+  row++;
+  ws.getCell(`A${row}`).value = "key";
+  ws.getCell(`B${row}`).value = "description";
+  row++;
+  for (const fa of dealData.fixedAssets) {
+    const key = (fa.description || "").toLowerCase().trim();
+    if (!key) continue;
+    ws.getCell(`A${row}`).value = key;
+    ws.getCell(`B${row}`).value = fa.description;
+    row++;
+  }
+
   // Base snapshot of writable wizard_data, JSON-encoded, chunked across cells
   row += 1;
   ws.getCell(`A${row}`).value = "__snapshot__";
@@ -495,7 +510,20 @@ function writeMetaSheet(
       periodValues: { ...a.amounts },
     };
   }
-  const snapshot = { trialBalance: tbSnap, adjustments: adjSnap };
+  const faSnap: Record<string, unknown> = {};
+  for (const fa of dealData.fixedAssets) {
+    const key = (fa.description || "").toLowerCase().trim();
+    if (!key) continue;
+    faSnap[key] = {
+      description: fa.description,
+      category: fa.category,
+      acquisitionDate: fa.acquisitionDate,
+      cost: fa.cost,
+      accumulatedDepreciation: fa.accumulatedDepreciation,
+      netBookValue: fa.netBookValue,
+    };
+  }
+  const snapshot = { trialBalance: tbSnap, adjustments: adjSnap, fixedAssets: faSnap };
   const json = JSON.stringify(snapshot);
   // Chunk to stay well under Excel's 32767-char cell limit
   const CHUNK = 30000;

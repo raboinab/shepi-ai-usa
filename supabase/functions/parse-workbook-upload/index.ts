@@ -18,7 +18,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const SUPPORTED_SCHEMA_VERSIONS = new Set(["1.1"]);
+const SUPPORTED_SCHEMA_VERSIONS = new Set(["1.1", "1.2"]);
 const META_SHEET_NAME = "__shepi_meta";
 
 interface BaseAdjustment {
@@ -31,9 +31,19 @@ interface BaseAdjustment {
   periodValues: Record<string, number>;
 }
 
+interface BaseFixedAsset {
+  description: string;
+  category: string;
+  acquisitionDate: string;
+  cost: number;
+  accumulatedDepreciation: number;
+  netBookValue: number;
+}
+
 interface WorkbookBaseSnapshot {
   trialBalance: Record<string, Record<string, number>>;
   adjustments: Record<string, BaseAdjustment>;
+  fixedAssets: Record<string, BaseFixedAsset>;
 }
 
 interface MetaSheet {
@@ -43,6 +53,7 @@ interface MetaSheet {
   exportedAt: string;
   periods: { id: string; label: string; shortLabel: string }[];
   adjustmentDirectory: { id: string; type: string; label: string }[];
+  fixedAssetDirectory: { key: string; description: string }[];
   snapshot: WorkbookBaseSnapshot;
 }
 
@@ -51,6 +62,9 @@ interface MineEdits {
   adjustmentsChanged: Record<string, Record<string, number>>;
   adjustmentsDeleted: string[];
   adjustmentsAdded: BaseAdjustment[];
+  fixedAssetsChanged: Record<string, Partial<BaseFixedAsset>>;
+  fixedAssetsDeleted: string[];
+  fixedAssetsAdded: BaseFixedAsset[];
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -85,7 +99,8 @@ function parseMetaSheet(wb: XLSX.WorkBook): MetaSheet | { error: string } {
 
   const periods: MetaSheet["periods"] = [];
   const adjustmentDirectory: MetaSheet["adjustmentDirectory"] = [];
-  let section: "" | "periods" | "adjustments" | "snapshot" = "";
+  const fixedAssetDirectory: MetaSheet["fixedAssetDirectory"] = [];
+  let section: "" | "periods" | "adjustments" | "fixedAssets" | "snapshot" = "";
   const snapshotChunks: string[] = [];
 
   // Walk rows until we hit a snapshot_end sentinel or 3 consecutive empties
@@ -106,14 +121,17 @@ function parseMetaSheet(wb: XLSX.WorkBook): MetaSheet | { error: string } {
 
     if (aTrim === "__periods__") { section = "periods"; continue; }
     if (aTrim === "__adjustments__") { section = "adjustments"; continue; }
+    if (aTrim === "__fixedAssets__") { section = "fixedAssets"; continue; }
     if (aTrim === "__snapshot__") { section = "snapshot"; continue; }
     if (aTrim === "__snapshot_end__") break;
-    if (aTrim === "periodId" || aTrim === "accountId" || aTrim === "id") continue;
+    if (aTrim === "periodId" || aTrim === "accountId" || aTrim === "id" || aTrim === "key") continue;
 
     if (section === "periods" && aTrim) {
       periods.push({ id: aTrim, label: b, shortLabel: c || b });
     } else if (section === "adjustments" && aTrim) {
       adjustmentDirectory.push({ id: aTrim, type: b, label: c });
+    } else if (section === "fixedAssets" && aTrim) {
+      fixedAssetDirectory.push({ key: aTrim, description: b });
     } else if (section === "snapshot" && a) {
       // Preserve original (untrimmed) content — JSON may have leading spaces
       snapshotChunks.push(a);
@@ -129,11 +147,12 @@ function parseMetaSheet(wb: XLSX.WorkBook): MetaSheet | { error: string } {
     snapshot = JSON.parse(json);
     if (!snapshot.trialBalance) snapshot.trialBalance = {};
     if (!snapshot.adjustments) snapshot.adjustments = {};
+    if (!snapshot.fixedAssets) snapshot.fixedAssets = {};
   } catch (err) {
     return { error: `Could not parse embedded base snapshot: ${String(err)}` };
   }
 
-  return { schemaVersion, projectId, exportedFromRevision, exportedAt, periods, adjustmentDirectory, snapshot };
+  return { schemaVersion, projectId, exportedFromRevision, exportedAt, periods, adjustmentDirectory, fixedAssetDirectory, snapshot };
 }
 
 function rowsOf(ws: XLSX.WorkSheet): unknown[][] {
@@ -322,6 +341,91 @@ function parseAdjustments(
   return { changed, deleted, added, warnings };
 }
 
+function parseFixedAssets(
+  wb: XLSX.WorkBook,
+  meta: MetaSheet,
+): {
+  changed: Record<string, Partial<BaseFixedAsset>>;
+  deleted: string[];
+  added: BaseFixedAsset[];
+  warnings: string[];
+} {
+  const warnings: string[] = [];
+  const changed: Record<string, Partial<BaseFixedAsset>> = {};
+  const added: BaseFixedAsset[] = [];
+  const seen = new Set<string>();
+
+  const ws = wb.Sheets["Fixed Assets"];
+  if (!ws) return { changed, deleted: [], added, warnings };
+  const rows = rowsOf(ws);
+  if (rows.length < 2) return { changed, deleted: [], added, warnings };
+
+  const headers = rows[0].map(h => String(h ?? "").trim().toLowerCase());
+  const descIdx = headers.findIndex(h => h === "description");
+  const catIdx = headers.findIndex(h => h === "category");
+  const dateIdx = headers.findIndex(h => h === "acquired" || h === "acquisition date" || h === "date");
+  const costIdx = headers.findIndex(h => h === "cost" || h === "original cost");
+  const deprIdx = headers.findIndex(h => h === "accum depr" || h === "accumulated depreciation");
+  const nbvIdx = headers.findIndex(h => h === "net book value" || h === "nbv");
+
+  if (descIdx < 0) {
+    warnings.push("Could not find Description column in Fixed Assets sheet.");
+    return { changed, deleted: [], added, warnings };
+  }
+
+  const cellDate = (v: unknown): string => {
+    if (v == null || v === "") return "";
+    if (v instanceof Date) return v.toISOString().slice(0, 10);
+    return String(v).trim();
+  };
+  const cellNum = (v: unknown): number => {
+    if (v == null || v === "") return 0;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const close = (a: number, b: number) => Math.abs(a - b) <= 0.005;
+
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row) continue;
+    const desc = String(row[descIdx] ?? "").trim();
+    if (!desc) continue;
+    if (/^total/i.test(desc)) continue;
+    const key = desc.toLowerCase();
+
+    const wbRow: BaseFixedAsset = {
+      description: desc,
+      category: catIdx >= 0 ? String(row[catIdx] ?? "").trim() : "",
+      acquisitionDate: dateIdx >= 0 ? cellDate(row[dateIdx]) : "",
+      cost: costIdx >= 0 ? cellNum(row[costIdx]) : 0,
+      accumulatedDepreciation: deprIdx >= 0 ? cellNum(row[deprIdx]) : 0,
+      netBookValue: nbvIdx >= 0 ? cellNum(row[nbvIdx]) : 0,
+    };
+
+    const base = meta.snapshot.fixedAssets[key];
+    if (!base) {
+      added.push(wbRow);
+      continue;
+    }
+    seen.add(key);
+    const diff: Partial<BaseFixedAsset> = {};
+    if (catIdx >= 0 && wbRow.category !== base.category) diff.category = wbRow.category;
+    if (dateIdx >= 0 && wbRow.acquisitionDate !== base.acquisitionDate) diff.acquisitionDate = wbRow.acquisitionDate;
+    if (costIdx >= 0 && !close(wbRow.cost, base.cost)) diff.cost = wbRow.cost;
+    if (deprIdx >= 0 && !close(wbRow.accumulatedDepreciation, base.accumulatedDepreciation)) {
+      diff.accumulatedDepreciation = wbRow.accumulatedDepreciation;
+    }
+    if (nbvIdx >= 0 && !close(wbRow.netBookValue, base.netBookValue)) diff.netBookValue = wbRow.netBookValue;
+    if (Object.keys(diff).length > 0) changed[key] = diff;
+  }
+
+  const deleted: string[] = [];
+  for (const d of meta.fixedAssetDirectory) {
+    if (!seen.has(d.key)) deleted.push(d.key);
+  }
+  return { changed, deleted, added, warnings };
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -386,13 +490,18 @@ Deno.serve(async (req: Request) => {
 
     const { tbEdits, warnings: tbWarnings } = parseTrialBalance(wb, meta);
     const { changed, deleted, added, warnings: adjWarnings } = parseAdjustments(wb, meta);
+    const {
+      changed: faChanged,
+      deleted: faDeleted,
+      added: faAdded,
+      warnings: faWarnings,
+    } = parseFixedAssets(wb, meta);
 
     // Soft warnings for tabs we know about but don't round-trip this phase
     const deferredTabsSeen: string[] = [];
     for (const t of [
       "AR Aging",
       "AP Aging",
-      "Fixed Assets",
       "Top Customers by Year",
       "Top Vendors by Year",
       "Due Diligence Information",
@@ -406,6 +515,9 @@ Deno.serve(async (req: Request) => {
       adjustmentsChanged: changed,
       adjustmentsDeleted: deleted,
       adjustmentsAdded: added,
+      fixedAssetsChanged: faChanged,
+      fixedAssetsDeleted: faDeleted,
+      fixedAssetsAdded: faAdded,
     };
 
     const tbCellsChanged = Object.values(tbEdits).reduce((s, m) => s + Object.keys(m).length, 0);
@@ -424,9 +536,12 @@ Deno.serve(async (req: Request) => {
         adjustmentsChanged: Object.keys(changed).length,
         adjustmentsAdded: added.length,
         adjustmentsDeleted: deleted.length,
+        fixedAssetsChanged: Object.keys(faChanged).length,
+        fixedAssetsAdded: faAdded.length,
+        fixedAssetsDeleted: faDeleted.length,
         deferredTabsSeen,
       },
-      warnings: [...tbWarnings, ...adjWarnings],
+      warnings: [...tbWarnings, ...adjWarnings, ...faWarnings],
     }, 200);
   } catch (err) {
     console.error("parse-workbook-upload error:", err);

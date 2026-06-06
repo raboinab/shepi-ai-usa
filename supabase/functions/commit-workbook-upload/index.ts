@@ -25,6 +25,15 @@ interface BaseAdjustment {
   periodValues: Record<string, number>;
 }
 
+interface BaseFixedAsset {
+  description: string;
+  category: string;
+  acquisitionDate: string;
+  cost: number;
+  accumulatedDepreciation: number;
+  netBookValue: number;
+}
+
 interface CommitPayload {
   projectId: string;
   exportedFromRevision: number;
@@ -32,19 +41,28 @@ interface CommitPayload {
   base: {
     trialBalance: Record<string, Record<string, number>>;
     adjustments: Record<string, BaseAdjustment>;
+    fixedAssets: Record<string, BaseFixedAsset>;
   };
   mine: {
     trialBalance: Record<string, Record<string, number>>;
     adjustmentsChanged: Record<string, Record<string, number>>;
     adjustmentsDeleted: string[];
     adjustmentsAdded: BaseAdjustment[];
+    fixedAssetsChanged: Record<string, Partial<BaseFixedAsset>>;
+    fixedAssetsDeleted: string[];
+    fixedAssetsAdded: BaseFixedAsset[];
   };
   /** Optional per-conflict resolutions: conflictId -> "mine" | "theirs" */
   resolutions?: Record<string, "mine" | "theirs">;
 }
 
 interface FieldConflict {
-  kind: "tb" | "adjustment_amount" | "adjustment_deleted_vs_edited";
+  kind:
+    | "tb"
+    | "adjustment_amount"
+    | "adjustment_deleted_vs_edited"
+    | "fixed_asset_field"
+    | "fixed_asset_deleted_vs_edited";
   label: string;
   conflictId: string;
   base: number | string | null;
@@ -59,11 +77,14 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-/** Extract current TB and adjustments from wizard_data into a normalized shape. */
+/** Extract current TB, adjustments, fixed assets from wizard_data. */
 function extractCurrentState(wd: Record<string, unknown>): {
   trialBalance: Record<string, Record<string, number>>;
   adjustments: Record<string, BaseAdjustment>;
   adjustmentsArrayPath: "ddAdjustments" | "top";
+  fixedAssets: Record<string, BaseFixedAsset>;
+  /** Whether wd.fixedAssets was wrapped as {assets: []} or a bare array */
+  fixedAssetsWrapped: boolean;
 } {
   // Trial balance — may live as an array of entries at wd.trialBalance
   const tbSource = (wd.trialBalance ?? []) as Array<Record<string, unknown>>;
@@ -114,7 +135,32 @@ function extractCurrentState(wd: Record<string, unknown>): {
     };
   }
 
-  return { trialBalance, adjustments, adjustmentsArrayPath };
+  // Fixed assets — bare array or {assets: [...]} wrapper
+  const faRaw = wd.fixedAssets;
+  let faArr: Array<Record<string, unknown>> = [];
+  let fixedAssetsWrapped = false;
+  if (Array.isArray(faRaw)) {
+    faArr = faRaw as Array<Record<string, unknown>>;
+  } else if (faRaw && typeof faRaw === "object" && Array.isArray((faRaw as Record<string, unknown>).assets)) {
+    faArr = (faRaw as Record<string, unknown>).assets as Array<Record<string, unknown>>;
+    fixedAssetsWrapped = true;
+  }
+  const fixedAssets: Record<string, BaseFixedAsset> = {};
+  for (const fa of faArr) {
+    const description = String(fa.description ?? fa.name ?? "").trim();
+    if (!description) continue;
+    const key = description.toLowerCase();
+    fixedAssets[key] = {
+      description,
+      category: String(fa.category ?? ""),
+      acquisitionDate: String(fa.acquisitionDate ?? fa.dateAcquired ?? ""),
+      cost: Number(fa.cost ?? fa.originalCost ?? 0) || 0,
+      accumulatedDepreciation: Number(fa.accumulatedDepreciation ?? fa.accumDepr ?? 0) || 0,
+      netBookValue: Number(fa.netBookValue ?? fa.nbv ?? 0) || 0,
+    };
+  }
+
+  return { trialBalance, adjustments, adjustmentsArrayPath, fixedAssets, fixedAssetsWrapped };
 }
 
 Deno.serve(async (req: Request) => {
@@ -304,6 +350,119 @@ Deno.serve(async (req: Request) => {
       finalAdj[a.id] = a;
     }
 
+    // ---- Fixed Asset three-way merge ----
+    const FA_FIELDS: (keyof BaseFixedAsset)[] = [
+      "category",
+      "acquisitionDate",
+      "cost",
+      "accumulatedDepreciation",
+      "netBookValue",
+    ];
+    const faEq = (field: keyof BaseFixedAsset, a: unknown, b: unknown): boolean => {
+      if (field === "cost" || field === "accumulatedDepreciation" || field === "netBookValue") {
+        return Math.abs(Number(a ?? 0) - Number(b ?? 0)) <= 0.005;
+      }
+      return String(a ?? "") === String(b ?? "");
+    };
+    const finalFA: Record<string, BaseFixedAsset> = {};
+    for (const [k, fa] of Object.entries(current.fixedAssets)) finalFA[k] = { ...fa };
+
+    const baseFA = (base as { fixedAssets?: Record<string, BaseFixedAsset> }).fixedAssets ?? {};
+    const mineFAChanged = mine.fixedAssetsChanged ?? {};
+    const mineFADeleted = mine.fixedAssetsDeleted ?? [];
+    const mineFAAdded = mine.fixedAssetsAdded ?? [];
+
+    for (const [key, diff] of Object.entries(mineFAChanged)) {
+      const baseRow = baseFA[key];
+      const theirsRow = current.fixedAssets[key];
+      if (!theirsRow) {
+        const conflictId = `fa_del::${key}`;
+        const pick = resolutions[conflictId];
+        if (pick === "mine" || payload.force) {
+          if (baseRow) finalFA[key] = { ...baseRow, ...diff };
+        } else if (pick === "theirs") {
+          // stays absent
+        } else {
+          conflicts.push({
+            kind: "fixed_asset_deleted_vs_edited",
+            label: `Fixed asset "${baseRow?.description ?? key}" deleted online but edited offline`,
+            conflictId,
+            base: "exists",
+            mine: "edited",
+            theirs: "deleted",
+          });
+        }
+        continue;
+      }
+      for (const field of FA_FIELDS) {
+        if (!(field in diff)) continue;
+        const mineVal = (diff as Record<string, unknown>)[field] as never;
+        const baseVal = baseRow ? (baseRow[field] as never) : (undefined as never);
+        const theirsVal = theirsRow[field] as never;
+        const theirsChanged = baseRow ? !faEq(field, theirsVal, baseVal) : true;
+        if (theirsChanged && !faEq(field, theirsVal, mineVal)) {
+          const conflictId = `fa::${key}::${field}`;
+          const pick = resolutions[conflictId];
+          if (pick === "mine" || payload.force) {
+            (finalFA[key] as Record<string, unknown>)[field] = mineVal;
+          } else if (pick === "theirs") {
+            // keep
+          } else {
+            conflicts.push({
+              kind: "fixed_asset_field",
+              label: `${theirsRow.description} · ${field}`,
+              conflictId,
+              base: (baseVal as number | string | null) ?? null,
+              mine: (mineVal as number | string | null) ?? null,
+              theirs: (theirsVal as number | string | null) ?? null,
+            });
+          }
+        } else {
+          (finalFA[key] as Record<string, unknown>)[field] = mineVal;
+        }
+      }
+    }
+
+    for (const key of mineFADeleted) {
+      const baseRow = baseFA[key];
+      const theirsRow = current.fixedAssets[key];
+      if (!theirsRow) continue;
+      let theirsEdited = false;
+      if (baseRow) {
+        for (const field of FA_FIELDS) {
+          if (!faEq(field, baseRow[field], theirsRow[field])) { theirsEdited = true; break; }
+        }
+      } else {
+        theirsEdited = true; // theirs added it after export
+      }
+      if (theirsEdited) {
+        const conflictId = `fa_del::${key}`;
+        const pick = resolutions[conflictId];
+        if (pick === "mine" || payload.force) {
+          delete finalFA[key];
+        } else if (pick === "theirs") {
+          // keep
+        } else {
+          conflicts.push({
+            kind: "fixed_asset_deleted_vs_edited",
+            label: `Fixed asset "${theirsRow.description}" deleted offline but edited online`,
+            conflictId,
+            base: "exists",
+            mine: "deleted",
+            theirs: "edited",
+          });
+        }
+      } else {
+        delete finalFA[key];
+      }
+    }
+
+    for (const fa of mineFAAdded) {
+      const key = (fa.description || "").toLowerCase().trim();
+      if (!key) continue;
+      finalFA[key] = fa;
+    }
+
     if (conflicts.length > 0) {
       return jsonResponse({
         ok: false,
@@ -350,6 +509,32 @@ Deno.serve(async (req: Request) => {
       adjArray.push(merged);
     }
 
+    // Preserve metadata on existing fixed assets (description used as natural key for matching).
+    const existingFaArr: Array<Record<string, unknown>> = (() => {
+      const raw = wd.fixedAssets;
+      if (Array.isArray(raw)) return raw as Array<Record<string, unknown>>;
+      if (raw && typeof raw === "object" && Array.isArray((raw as Record<string, unknown>).assets)) {
+        return (raw as Record<string, unknown>).assets as Array<Record<string, unknown>>;
+      }
+      return [];
+    })();
+    const existingFaByKey = new Map(
+      existingFaArr.map(e => [String(e.description ?? e.name ?? "").toLowerCase().trim(), e]),
+    );
+    const faArrayOut: Array<Record<string, unknown>> = [];
+    for (const [key, fa] of Object.entries(finalFA)) {
+      const existing = existingFaByKey.get(key) ?? {};
+      faArrayOut.push({
+        ...existing,
+        description: fa.description,
+        category: fa.category,
+        acquisitionDate: fa.acquisitionDate,
+        cost: fa.cost,
+        accumulatedDepreciation: fa.accumulatedDepreciation,
+        netBookValue: fa.netBookValue,
+      });
+    }
+
     const nextWizard: Record<string, unknown> = { ...wd, trialBalance: tbArray };
     if (current.adjustmentsArrayPath === "ddAdjustments") {
       nextWizard.ddAdjustments = {
@@ -358,6 +543,14 @@ Deno.serve(async (req: Request) => {
       };
     } else {
       nextWizard.adjustments = adjArray;
+    }
+    if (current.fixedAssetsWrapped) {
+      nextWizard.fixedAssets = {
+        ...((wd.fixedAssets as Record<string, unknown>) ?? {}),
+        assets: faArrayOut,
+      };
+    } else {
+      nextWizard.fixedAssets = faArrayOut;
     }
 
     const nextRevision = currentRevision + 1;
@@ -380,6 +573,9 @@ Deno.serve(async (req: Request) => {
         adjustmentsChanged: Object.keys(mine.adjustmentsChanged).length,
         adjustmentsAdded: mine.adjustmentsAdded.length,
         adjustmentsDeleted: mine.adjustmentsDeleted.length,
+        fixedAssetsChanged: Object.keys(mineFAChanged).length,
+        fixedAssetsAdded: mineFAAdded.length,
+        fixedAssetsDeleted: mineFADeleted.length,
       },
       autoMerged,
     }, 200);

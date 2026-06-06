@@ -36,13 +36,18 @@ function buildMock(): DealData {
         amounts: { [pid(2024,3)]: 25000 } },
     ],
     reclassifications: [], tbIndex: new Map(), monthDates: periods.map(p => p.date),
-    arAging: {}, apAging: {}, fixedAssets: [], topCustomers: {}, topVendors: {},
+    arAging: {}, apAging: {},
+    fixedAssets: [
+      { description: "Forklift #1", category: "Equipment", acquisitionDate: "2022-05-15", cost: 30000, accumulatedDepreciation: 12000, netBookValue: 18000 },
+      { description: "Delivery Van", category: "Vehicles", acquisitionDate: "2021-08-01", cost: 45000, accumulatedDepreciation: 22000, netBookValue: 23000 },
+    ],
+    topCustomers: {}, topVendors: {},
     addbacks: {} as DealData["addbacks"],
   };
 }
 
 // ─── Verbatim port of the edge-function parser ───
-const SUPPORTED = new Set(["1.1"]);
+const SUPPORTED = new Set(["1.1", "1.2"]);
 function parseMeta(wb: XLSX.WorkBook) {
   const ws = wb.Sheets[META_SHEET_NAME]; if (!ws) throw new Error("no meta");
   const g = (a: string) => { const c = ws[a]; return c ? String(c.v ?? "").trim() : ""; };
@@ -51,7 +56,8 @@ function parseMeta(wb: XLSX.WorkBook) {
   const projectId = g("B2"); const exportedFromRevision = Number(g("B3") || "0");
   const periods: { id: string; label: string; shortLabel: string }[] = [];
   const adjustmentDirectory: { id: string; type: string; label: string }[] = [];
-  const chunks: string[] = []; let section: "" | "periods" | "adjustments" | "snapshot" = ""; let empty = 0;
+  const fixedAssetDirectory: { key: string; description: string }[] = [];
+  const chunks: string[] = []; let section: "" | "periods" | "adjustments" | "fixedAssets" | "snapshot" = ""; let empty = 0;
   for (let r = 6; r < 200000; r++) {
     const a = (ws[`A${r}`] ? String(ws[`A${r}`].v ?? "") : "").trim();
     const b = (ws[`B${r}`] ? String(ws[`B${r}`].v ?? "") : "").trim();
@@ -60,14 +66,16 @@ function parseMeta(wb: XLSX.WorkBook) {
     empty = 0;
     if (a === "__periods__") { section = "periods"; continue; }
     if (a === "__adjustments__") { section = "adjustments"; continue; }
+    if (a === "__fixedAssets__") { section = "fixedAssets"; continue; }
     if (a === "__snapshot__") { section = "snapshot"; continue; }
     if (a === "__snapshot_end__") break;
-    if (a === "periodId" || a === "id") continue;
+    if (a === "periodId" || a === "id" || a === "key") continue;
     if (section === "periods" && a) periods.push({ id: a, label: b, shortLabel: c || b });
     else if (section === "adjustments" && a) adjustmentDirectory.push({ id: a, type: b, label: c });
+    else if (section === "fixedAssets" && a) fixedAssetDirectory.push({ key: a, description: b });
     else if (section === "snapshot" && a) chunks.push(a);
   }
-  return { schemaVersion, projectId, exportedFromRevision, periods, adjustmentDirectory, snapshot: JSON.parse(chunks.join("")) };
+  return { schemaVersion, projectId, exportedFromRevision, periods, adjustmentDirectory, fixedAssetDirectory, snapshot: JSON.parse(chunks.join("")) };
 }
 
 function rowsOf(ws: XLSX.WorkSheet): unknown[][] {
@@ -140,6 +148,39 @@ function parseAdj(wb: XLSX.WorkBook, meta: ReturnType<typeof parseMeta>) {
   return { changed, deleted, added };
 }
 
+function parseFA(wb: XLSX.WorkBook, meta: ReturnType<typeof parseMeta>) {
+  const changed: Record<string, Record<string, unknown>> = {};
+  const added: { description: string; cost: number }[] = [];
+  const seen = new Set<string>();
+  const ws = wb.Sheets["Fixed Assets"];
+  if (!ws) return { changed, deleted: [] as string[], added };
+  const rows = rowsOf(ws);
+  const hdr = rows[0].map(h => String(h ?? "").trim().toLowerCase());
+  const descIdx = hdr.findIndex(h => h === "description");
+  const costIdx = hdr.findIndex(h => h === "cost" || h === "original cost");
+  const deprIdx = hdr.findIndex(h => h === "accum depr" || h === "accumulated depreciation");
+  const nbvIdx = hdr.findIndex(h => h === "net book value" || h === "nbv");
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r]; if (!row) continue;
+    const desc = String(row[descIdx] ?? "").trim();
+    if (!desc || /^total/i.test(desc)) continue;
+    const key = desc.toLowerCase();
+    const base = (meta.snapshot.fixedAssets ?? {})[key];
+    const cost = Number(row[costIdx] ?? 0);
+    const depr = Number(row[deprIdx] ?? 0);
+    const nbv = Number(row[nbvIdx] ?? 0);
+    if (!base) { added.push({ description: desc, cost }); continue; }
+    seen.add(key);
+    const diff: Record<string, unknown> = {};
+    if (Math.abs(cost - base.cost) > 0.005) diff.cost = cost;
+    if (Math.abs(depr - base.accumulatedDepreciation) > 0.005) diff.accumulatedDepreciation = depr;
+    if (Math.abs(nbv - base.netBookValue) > 0.005) diff.netBookValue = nbv;
+    if (Object.keys(diff).length) changed[key] = diff;
+  }
+  const deleted = meta.fixedAssetDirectory.filter(d => !seen.has(d.key)).map(d => d.key);
+  return { changed, deleted, added };
+}
+
 // ─── Mutate workbook like a real user editing in Excel ───
 function mutate(wb: ExcelJS.Workbook) {
   // (1) TB: Cash · Feb 60000 → 65000
@@ -160,7 +201,6 @@ function mutate(wb: ExcelJS.Workbook) {
     const marCol = hv.findIndex((v, i) => i > 0 && /Mar.*24|2024-03/.test(String(v ?? "")));
     const janCol = hv.findIndex((v, i) => i > 0 && /Jan.*24|2024-01/.test(String(v ?? "")));
 
-    // Edit + Delete (clear row contents)
     const rowsToClear: number[] = [];
     ws.eachRow((row, idx) => {
       if (idx <= hr) return;
@@ -173,9 +213,7 @@ function mutate(wb: ExcelJS.Workbook) {
       row.eachCell({ includeEmpty: true }, c => { c.value = null; });
     }
 
-    // Add a new row below existing data (only in DD Adjustments I for simplicity)
     if (sn === "DD Adjustments I" && labelCol > 0 && typeCol > 0 && janCol > 0) {
-      // find last non-empty row
       let last = hr;
       ws.eachRow((row, idx) => {
         if (idx > hr && String(row.getCell(labelCol).value ?? "").trim()) last = Math.max(last, idx);
@@ -186,12 +224,41 @@ function mutate(wb: ExcelJS.Workbook) {
       newRow.getCell(janCol).value = 5000;
     }
   }
+
+  // (5) FA edit Forklift cost 30000 → 32000, (6) DELETE Delivery Van, (7) ADD new asset
+  const fa = wb.getWorksheet("Fixed Assets");
+  if (fa) {
+    const hv = fa.getRow(1).values as unknown[];
+    const descCol = hv.findIndex((v, i) => i > 0 && String(v ?? "").toLowerCase().trim() === "description");
+    const costCol = hv.findIndex((v, i) => i > 0 && /^cost$/i.test(String(v ?? "").trim()));
+    const catCol = hv.findIndex((v, i) => i > 0 && String(v ?? "").toLowerCase().trim() === "category");
+    const deprCol = hv.findIndex((v, i) => i > 0 && /accum/i.test(String(v ?? "")));
+    const nbvCol = hv.findIndex((v, i) => i > 0 && /net book/i.test(String(v ?? "")));
+    const rowsToClear: number[] = [];
+    let lastRow = 1;
+    fa.eachRow((row, idx) => {
+      if (idx === 1) return;
+      const desc = String(row.getCell(descCol).value ?? "").trim();
+      if (!desc || /^total/i.test(desc)) return;
+      lastRow = Math.max(lastRow, idx);
+      if (desc === "Forklift #1" && costCol > 0) row.getCell(costCol).value = 32000;
+      if (desc === "Delivery Van") rowsToClear.push(idx);
+    });
+    for (const r of rowsToClear) fa.getRow(r).eachCell({ includeEmpty: true }, c => { c.value = null; });
+    // Add new asset
+    const nr = fa.getRow(lastRow + 1);
+    if (descCol > 0) nr.getCell(descCol).value = "Office Printer";
+    if (catCol > 0) nr.getCell(catCol).value = "Office Equipment";
+    if (costCol > 0) nr.getCell(costCol).value = 1200;
+    if (deprCol > 0) nr.getCell(deprCol).value = 300;
+    if (nbvCol > 0) nr.getCell(nbvCol).value = 900;
+  }
 }
 
 async function run() {
   console.log("Building workbook…");
   const wb = await buildStyledWorkbook({ dealData: buildMock(), roundTripMeta: { projectId: "test-uuid", revision: 1 } });
-  console.log("Mutating (TB edit, adj edit, adj delete, adj add)…");
+  console.log("Mutating (TB + adj + FA: edit/delete/add)…");
   mutate(wb);
   const buf = await wb.xlsx.writeBuffer();
 
@@ -200,19 +267,26 @@ async function run() {
   const meta = parseMeta(wb2);
   const tbEdits = parseTB(wb2, meta);
   const { changed, deleted, added } = parseAdj(wb2, meta);
+  const fa = parseFA(wb2, meta);
 
   console.log("\nResults:");
   console.log("  TB edits:", JSON.stringify(tbEdits));
-  console.log("  Changed:", JSON.stringify(changed));
-  console.log("  Deleted:", JSON.stringify(deleted));
-  console.log("  Added:", JSON.stringify(added));
+  console.log("  Adj changed:", JSON.stringify(changed));
+  console.log("  Adj deleted:", JSON.stringify(deleted));
+  console.log("  Adj added:", JSON.stringify(added));
+  console.log("  FA changed:", JSON.stringify(fa.changed));
+  console.log("  FA deleted:", JSON.stringify(fa.deleted));
+  console.log("  FA added:", JSON.stringify(fa.added));
 
   const fail = (m: string) => { throw new Error("❌ " + m); };
   if (tbEdits["6100"]?.["2024-02"] !== 65000) fail("TB Cash Feb edit not detected");
   if (changed["adj-1"]?.["2024-03"] !== 15000) fail("Owner Comp Mar edit not detected");
   if (!deleted.includes("adj-2")) fail("One-time Legal deletion not detected");
   if (!added.some(a => a.label === "Travel Personalized" && a.type === "MA" && a.periodValues["2024-01"] === 5000)) fail("New adjustment not detected");
+  if (fa.changed["forklift #1"]?.cost !== 32000) fail("Forklift cost edit not detected");
+  if (!fa.deleted.includes("delivery van")) fail("Delivery Van deletion not detected");
+  if (!fa.added.some(a => a.description === "Office Printer" && a.cost === 1200)) fail("New fixed asset not detected");
 
-  console.log("\n✅ All parser branches verified against SheetJS.");
+  console.log("\n✅ All parser branches verified against SheetJS (TB + Adjustments + Fixed Assets).");
 }
 run().catch(e => { console.error(e); process.exit(1); });
