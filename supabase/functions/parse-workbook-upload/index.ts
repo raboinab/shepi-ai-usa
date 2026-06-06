@@ -99,7 +99,8 @@ function parseMetaSheet(wb: XLSX.WorkBook): MetaSheet | { error: string } {
 
   const periods: MetaSheet["periods"] = [];
   const adjustmentDirectory: MetaSheet["adjustmentDirectory"] = [];
-  let section: "" | "periods" | "adjustments" | "snapshot" = "";
+  const fixedAssetDirectory: MetaSheet["fixedAssetDirectory"] = [];
+  let section: "" | "periods" | "adjustments" | "fixedAssets" | "snapshot" = "";
   const snapshotChunks: string[] = [];
 
   // Walk rows until we hit a snapshot_end sentinel or 3 consecutive empties
@@ -120,14 +121,17 @@ function parseMetaSheet(wb: XLSX.WorkBook): MetaSheet | { error: string } {
 
     if (aTrim === "__periods__") { section = "periods"; continue; }
     if (aTrim === "__adjustments__") { section = "adjustments"; continue; }
+    if (aTrim === "__fixedAssets__") { section = "fixedAssets"; continue; }
     if (aTrim === "__snapshot__") { section = "snapshot"; continue; }
     if (aTrim === "__snapshot_end__") break;
-    if (aTrim === "periodId" || aTrim === "accountId" || aTrim === "id") continue;
+    if (aTrim === "periodId" || aTrim === "accountId" || aTrim === "id" || aTrim === "key") continue;
 
     if (section === "periods" && aTrim) {
       periods.push({ id: aTrim, label: b, shortLabel: c || b });
     } else if (section === "adjustments" && aTrim) {
       adjustmentDirectory.push({ id: aTrim, type: b, label: c });
+    } else if (section === "fixedAssets" && aTrim) {
+      fixedAssetDirectory.push({ key: aTrim, description: b });
     } else if (section === "snapshot" && a) {
       // Preserve original (untrimmed) content — JSON may have leading spaces
       snapshotChunks.push(a);
@@ -143,11 +147,12 @@ function parseMetaSheet(wb: XLSX.WorkBook): MetaSheet | { error: string } {
     snapshot = JSON.parse(json);
     if (!snapshot.trialBalance) snapshot.trialBalance = {};
     if (!snapshot.adjustments) snapshot.adjustments = {};
+    if (!snapshot.fixedAssets) snapshot.fixedAssets = {};
   } catch (err) {
     return { error: `Could not parse embedded base snapshot: ${String(err)}` };
   }
 
-  return { schemaVersion, projectId, exportedFromRevision, exportedAt, periods, adjustmentDirectory, snapshot };
+  return { schemaVersion, projectId, exportedFromRevision, exportedAt, periods, adjustmentDirectory, fixedAssetDirectory, snapshot };
 }
 
 function rowsOf(ws: XLSX.WorkSheet): unknown[][] {
