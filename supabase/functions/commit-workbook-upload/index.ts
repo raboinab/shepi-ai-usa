@@ -25,6 +25,15 @@ interface BaseAdjustment {
   periodValues: Record<string, number>;
 }
 
+interface BaseFixedAsset {
+  description: string;
+  category: string;
+  acquisitionDate: string;
+  cost: number;
+  accumulatedDepreciation: number;
+  netBookValue: number;
+}
+
 interface CommitPayload {
   projectId: string;
   exportedFromRevision: number;
@@ -32,19 +41,28 @@ interface CommitPayload {
   base: {
     trialBalance: Record<string, Record<string, number>>;
     adjustments: Record<string, BaseAdjustment>;
+    fixedAssets: Record<string, BaseFixedAsset>;
   };
   mine: {
     trialBalance: Record<string, Record<string, number>>;
     adjustmentsChanged: Record<string, Record<string, number>>;
     adjustmentsDeleted: string[];
     adjustmentsAdded: BaseAdjustment[];
+    fixedAssetsChanged: Record<string, Partial<BaseFixedAsset>>;
+    fixedAssetsDeleted: string[];
+    fixedAssetsAdded: BaseFixedAsset[];
   };
   /** Optional per-conflict resolutions: conflictId -> "mine" | "theirs" */
   resolutions?: Record<string, "mine" | "theirs">;
 }
 
 interface FieldConflict {
-  kind: "tb" | "adjustment_amount" | "adjustment_deleted_vs_edited";
+  kind:
+    | "tb"
+    | "adjustment_amount"
+    | "adjustment_deleted_vs_edited"
+    | "fixed_asset_field"
+    | "fixed_asset_deleted_vs_edited";
   label: string;
   conflictId: string;
   base: number | string | null;
