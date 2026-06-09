@@ -147,6 +147,7 @@ Your task: Review each account and identify any that are MISCLASSIFIED — i.e.,
 
   basePrompt += `\n\nFor each misclassification found, return a JSON object using the tool provided.
 Only flag accounts where you have meaningful confidence (>= 0.6) the classification is wrong.
+\`from_line_item\` and \`to_line_item\` MUST be one of these exact strings (case-sensitive): "${FS_LINE_ITEMS_LIST}".
 If no reclassifications are needed, return an empty suggestions array.`;
 
   return basePrompt;
