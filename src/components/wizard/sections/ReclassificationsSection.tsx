@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SummaryCard } from "../shared/SummaryCard";
 import { Plus, Trash2, ArrowRight, CheckCircle, AlertCircle, Sparkles } from "lucide-react";
-import { FS_LINE_ITEMS, FS_LINE_ITEMS_BY_TYPE } from "@/lib/fsLineItems";
+import { FS_LINE_ITEMS, FS_LINE_ITEMS_BY_TYPE, normalizeFsLineItem } from "@/lib/fsLineItems";
 import { ReclassificationAIDiscoverySection } from "./ReclassificationAIDiscoverySection";
 
 interface Reclassification {
@@ -77,20 +77,30 @@ export const ReclassificationsSection = ({ data, updateData, projectId, onGuideC
     const aiAnalysis = flagged.ai_analysis || {};
     const accountParts = (flagged.account_name || '').split(' ');
     const accountNumber = accountParts[0] || '';
-    
+
+    const rawFrom = (aiAnalysis.suggested_from_line_item as string) || '';
+    const rawTo = (aiAnalysis.suggested_to_line_item as string) || '';
+    const fromFsLineItem = normalizeFsLineItem(rawFrom);
+    const toFsLineItem = normalizeFsLineItem(rawTo);
+
+    let description = flagged.flag_reason || 'AI-suggested reclassification';
+    if ((rawFrom && !fromFsLineItem) || (rawTo && !toFsLineItem)) {
+      description = `⚠️ Verify From/To — AI suggested: "${rawFrom || '?'}" → "${rawTo || '?'}". ${description}`;
+    }
+
     const newReclassification: Reclassification = {
       id: crypto.randomUUID(),
       accountNumber,
       accountDescription: flagged.description || flagged.account_name,
-      fromFsLineItem: (aiAnalysis.suggested_from_line_item as string) || '',
-      toFsLineItem: (aiAnalysis.suggested_to_line_item as string) || '',
+      fromFsLineItem,
+      toFsLineItem,
       amount: Math.abs(flagged.amount || 0),
-      description: flagged.flag_reason || 'AI-suggested reclassification',
+      description,
       sourceType: 'ai-suggested',
     };
-    
+
     updateData({ reclassifications: [...reclassifications, newReclassification] });
-    
+
     toast({ title: "Reclassification added", description: flagged.account_name || flagged.description });
     setActiveTab("manual");
     setHighlightId(newReclassification.id);
