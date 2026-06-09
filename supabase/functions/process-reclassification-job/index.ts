@@ -19,6 +19,24 @@ const BATCH_TIMEOUT_MS = 150_000;
 const MAX_RETRIES = 1;
 const RETRY_BACKOFF_MS = 3_000;
 
+// Mirror of src/lib/fsLineItems.ts FS_LINE_ITEMS — must stay in sync.
+const FS_LINE_ITEMS = [
+  "Cash and cash equivalents",
+  "Accounts receivable",
+  "Other current assets",
+  "Fixed assets",
+  "Other assets",
+  "Current liabilities",
+  "Other current liabilities",
+  "Long term liabilities",
+  "Equity",
+  "Revenue",
+  "Cost of Goods Sold",
+  "Operating expenses",
+  "Other expense (income)",
+] as const;
+const FS_LINE_ITEMS_LIST = FS_LINE_ITEMS.join('", "');
+
 // Helper function to get classification context via RAG
 async function getClassificationContext(supabase: any, params: {
   projectId: string,
