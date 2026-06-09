@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SummaryCard } from "../shared/SummaryCard";
 import { Plus, Trash2, ArrowRight, CheckCircle, AlertCircle, Sparkles } from "lucide-react";
-import { FS_LINE_ITEMS, FS_LINE_ITEMS_BY_TYPE } from "@/lib/fsLineItems";
+import { FS_LINE_ITEMS, FS_LINE_ITEMS_BY_TYPE, normalizeFsLineItem } from "@/lib/fsLineItems";
 import { ReclassificationAIDiscoverySection } from "./ReclassificationAIDiscoverySection";
 
 interface Reclassification {
