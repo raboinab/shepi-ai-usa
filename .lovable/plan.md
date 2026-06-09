@@ -1,74 +1,52 @@
-# Fix: AI reclassifications lose From/To on accept
+## Diagnosis (starting-month specific)
 
-## What's actually happening
+In `src/components/wizard/sections/ProofOfCashSection.tsx`, each monthly Proof-of-Cash row has four balance fields. For the **first month of the review period** (Jan 2023 on project `fa0768ca-…`), here's what's actually happening:
 
-The data IS being saved when you click "Convert to Reclassification" — but the From/To dropdowns render blank because the values don't match any option in the list.
-
-The Reclassifications section's From/To dropdowns are populated from a fixed list of 14 canonical FS line items in `src/lib/fsLineItems.ts`:
-
-```
-Revenue, Cost of Goods Sold, Operating expenses, Other expense (income),
-Cash and cash equivalents, Accounts receivable, Other current assets,
-Fixed assets, Other assets, Current liabilities, Other current liabilities,
-Long term liabilities, Equity
-```
-
-The AI in `supabase/functions/process-reclassification-job/index.ts` is prompted with the schema fields `from_line_item` / `to_line_item` typed as free-form `string` (no enum constraint). Looking at your project's real rows in `flagged_transactions.ai_analysis`, the AI is returning things like:
-
-| account_name | suggested_from_line_item | suggested_to_line_item |
+| Field | Source | Status for month 1 |
 | --- | --- | --- |
-| Opening Balance Equity | `Equity - Opening Balance Equity` | `Retained Earnings / appropriate equity or source account` |
-| Depreciation | `Operating Expenses` *(capital E)* | `Depreciation & Amortization (separate line)` |
-| Job Expenses:Job Materials | `Operating Expenses` | `Cost of Goods Sold / Cost of Revenue` |
-| Refunds-Allowances | `Revenue` ✅ | `Contra-Revenue (Returns & Allowances)` |
+| `beginningBalance` (bank) | `stmt.summary.openingBalance` of the matched statement (line 203) | Data is in the DB (Jan 2023 = $453,477.08 + $151,100.98 = **$604,578.06**). If the UI shows `0`, the period-match at lines 180-194 isn't finding the Jan statement. |
+| `endingBankBalance` | `stmt.summary.closingBalance` | Same matching path — if beginning is 0, ending is probably also 0 for month 1. |
+| `beginningBookBalance` | **Nothing** (hardcoded `0` at line 97, never assigned) | Always 0 for every month, especially month 1. |
+| `endingBookBalance` | **Nothing** (hardcoded `0` at line 100, never assigned) | Always 0. |
 
-None of those — even "Operating Expenses" with a capital E — match the canonical "Operating expenses" exactly, so when `handleConvertToReclassification` in `ReclassificationsSection.tsx:81` writes them into `fromFsLineItem` / `toFsLineItem`, the shadcn `<Select>` can't find a matching `<SelectItem value=…>` and renders the placeholder. To you it looks empty; downstream the workbook also can't bucket the amount because the calculations key off the exact canonical string.
-
-So it's two layered problems:
-1. **AI prompt doesn't constrain output** to the 14 allowed values.
-2. **Conversion doesn't normalize** what the AI returned.
+Plus an upstream data fact I confirmed: the earliest `trial_balance` row in `processed_data` is for period_end `2023-01-31`. **There is no Dec 2022 TB**, so the book-side opening for month 1 has no natural source from the trial balance alone.
 
 ## Fix
 
-Both layers, in one PR.
+### 1. Bank-side first-month fix (period matching)
+In `ProofOfCashSection.tsx`, lines 180-194, the matcher parses `stmt.periodStart`/`periodEnd` with a local-date helper but parses `p.startDate`/`p.endDate` with the same helper only when present, then falls back to `new Date(year, month-1, 1)`. If `period.startDate` is `undefined` AND the period object doesn't carry `year`/`month` (some legacy projects), the matcher silently skips month 1. Add a third fallback: compare `stmt.periodStart.substring(0,7)` (e.g. `"2023-01"`) against `period.id` or `period.label`. That guarantees the Jan statement maps to the Jan period even when date fields are missing.
 
-### 1. Constrain the AI to the canonical 14 (prevents future drift)
-In `supabase/functions/process-reclassification-job/index.ts`:
-- Add an `FS_LINE_ITEMS` constant mirroring `src/lib/fsLineItems.ts`.
-- Change the `from_line_item` and `to_line_item` schema entries from `{ type: "string" }` to `{ type: "string", enum: [...FS_LINE_ITEMS] }`.
-- Add a brief line to the system prompt: *"`from_line_item` and `to_line_item` MUST be one of these exact strings: …"*.
+### 2. Books-side: populate Beginning/Ending Book Balance from the trial balance
+Add a second `useEffect` (mirrors the existing statement effect) that, for every period × bank account row, writes:
 
-### 2. Normalize at convert time (fixes the rows already in the DB)
-In `src/components/wizard/sections/ReclassificationsSection.tsx`, before assigning `fromFsLineItem` / `toFsLineItem` in `handleConvertToReclassification` (lines 85–86), pass each value through a small `normalizeFsLineItem(s)` helper that:
-- Returns the exact match if it's already canonical.
-- Otherwise tries a case-insensitive match (catches "Operating Expenses" → "Operating expenses").
-- Otherwise applies a tight keyword map covering the patterns I saw in your data:
-  - `/cogs|cost of goods|cost of revenue|job cost|job material|job labor|cost of labor/i` → `Cost of Goods Sold`
-  - `/operating expense|opex|sg&a|sga|overhead/i` → `Operating expenses`
-  - `/depreciation|amortization|d&a/i` → `Operating expenses` *(D&A stays inside opex in our 14-line model)*
-  - `/contra.?revenue|refund|return|allowance|discount/i` → `Revenue`
-  - `/other income|interest earned|non.?operating|below.?the.?line/i` → `Other expense (income)`
-  - `/equity|retained earnings|opening balance|owner.?s? draw/i` → `Equity`
-  - `/current liab|sales tax payable|ap|accounts payable/i` → `Current liabilities`
-  - `/long.?term|note payable|loan payable|debt/i` → `Long term liabilities`
-  - `/fixed asset|pp&e|equipment|building|vehicle/i` → `Fixed assets`
-  - `/cash/i` → `Cash and cash equivalents`
-  - `/receivable|ar/i` → `Accounts receivable`
-  - `/suspense|clearing|unapplied|deferred/i` → `Other current liabilities`
-- Falls back to empty string if nothing matches (same as today's behavior — user picks manually).
+- `endingBookBalance` = `calc.sumByLineItem(tb, "Cash and cash equivalents", periodId)` for that period.
+- `beginningBookBalance` = the prior period's `endingBookBalance`.
 
-The helper lives next to `FS_LINE_ITEMS` in `src/lib/fsLineItems.ts` so the edge function and the UI can share it (the edge function gets a copy since it can't import from `src/`).
+Allocation when there are multiple bank accounts: split the GL cash total proportionally by each account's `endingBankBalance` for that period, so the row total still ties to TB.
 
-### 3. Visible signal when normalization failed
-If `normalizeFsLineItem` returns `""` (i.e., AI gave a string we couldn't map), set the row's description to prepend `"⚠️ Verify From/To — AI suggested: <original string> → <original string>"` so you know which converted rows need a manual pick rather than wondering why they're blank.
+Only overwrite when `bookDataSource !== "manual"` so user-entered values stick.
 
-## What I'm NOT changing
-- The `flagged_transactions` table or the 31 rows already there — re-running the AI analysis after the prompt change is enough, and the normalizer handles the existing converted rows the next time the user re-converts.
-- The 14-item `FS_LINE_ITEMS` list itself. If you want D&A as its own line, that's a separate, larger change to the workbook bucketing.
-- The accept/dismiss/convert state machine.
+### 3. First-month book opening (the unavoidable gap)
+For period 0, the prior TB doesn't exist. Derive the opening as:
+
+```
+beginningBookBalance[period 0] = endingBookBalance[period 0]
+                                 − depositsPerBook[period 0]
+                                 + withdrawalsPerBook[period 0]
+```
+
+If `depositsPerBook` / `withdrawalsPerBook` aren't populated yet, fall back to the **bank** activity for month 1 (`endingBankBalance − totalCredits + totalDebits`) and surface a small inline hint: *"Month 1 book opening derived from bank activity — confirm against your prior period close."* This keeps the row non-zero and reconciling while flagging the assumption.
+
+## Out of scope
+
+- The Workbook → Proof of Cash tab (`ProofOfCashTab.tsx`) — no "Beginning Balance" row exists there; nothing to change.
+- The 14-bucket FS Line Items contract — untouched.
+- COA — untouched.
 
 ## Verification
-- Re-run "Analyze with AI" on this project; confirm new `flagged_transactions` rows have `ai_analysis.suggested_from_line_item` / `_to_line_item` strictly in the 14-item list.
-- Convert one of the existing rows (e.g. "Depreciation") and confirm the From dropdown shows "Operating expenses" and the To dropdown shows "Operating expenses" (since D&A maps there in our model) — the warning prefix appears on the description.
-- Convert "Job Expenses:Job Materials" and confirm From = "Operating expenses", To = "Cost of Goods Sold".
-- Open the workbook QoE tab and confirm the reclassification amount now actually moves between the two FS line items in the columns instead of being a no-op.
+
+1. Open the wizard Proof of Cash on project `fa0768ca-…`.
+2. Confirm Jan 2023 row shows **Beginning Bank ≈ $604,578**, **Ending Bank ≈ $604,544** (matches DB).
+3. Confirm Jan 2023 **Beginning Book** is non-zero and equals `Ending Book − Deposits + Withdrawals`.
+4. Confirm Feb 2023 **Beginning Book** equals Jan 2023 **Ending Book**.
+5. Edit a book-side value manually, re-render, confirm it isn't overwritten.

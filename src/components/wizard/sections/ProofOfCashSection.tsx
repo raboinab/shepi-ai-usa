@@ -410,10 +410,6 @@ export const ProofOfCashSection = ({
     const monthRows = periods.map((period, idx) => {
       const prevPeriodId = idx > 0 ? periods[idx - 1].id : null;
       const glEnding = tb ? calc.sumByLineItemWithReclass(tb, reclass, "Cash and cash equivalents", period.id) : 0;
-      const glBeginning = prevPeriodId && tb
-        ? calc.sumByLineItemWithReclass(tb, reclass, "Cash and cash equivalents", prevPeriodId)
-        : (idx === 0 ? sumPriorByLineItem("Cash and cash equivalents") : 0);
-      const glChange = glEnding - glBeginning;
 
       const bank = bankByPeriod.get(period.id);
       const bankOpening = bank?.openingBalance ?? 0;
@@ -421,6 +417,20 @@ export const ProofOfCashSection = ({
       const bankChange = bankClosing - bankOpening;
       const totalCredits = bank?.totalCredits ?? 0;
       const totalDebits = bank?.totalDebits ?? 0;
+
+      // GL beginning cash:
+      //   - subsequent periods: prior period's TB ending cash
+      //   - period 0: prior balance derived from GL activity (when available)
+      //     fallback: glEnding - bank net change for month 1 (assumes books move with bank
+      //     when no prior TB / GL detail exists, which is the standard analyst convention)
+      let glBeginning = prevPeriodId && tb
+        ? calc.sumByLineItemWithReclass(tb, reclass, "Cash and cash equivalents", prevPeriodId)
+        : (idx === 0 ? sumPriorByLineItem("Cash and cash equivalents") : 0);
+      if (idx === 0 && glBeginning === 0 && bank && (bankOpening !== 0 || bankClosing !== 0)) {
+        glBeginning = glEnding - bankChange;
+      }
+      const glChange = glEnding - glBeginning;
+
 
       const cls = classificationByPeriod.get(period.id);
       const interbank = cls?.interbank ?? 0;
