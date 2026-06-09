@@ -169,6 +169,7 @@ Common reclassification patterns to look for:
 
 For each misclassification found, return a JSON object using the tool provided.
 Only flag accounts where you have meaningful confidence (>= 0.6) the classification is wrong.
+\`from_line_item\` and \`to_line_item\` MUST be one of these exact strings (case-sensitive): "${FS_LINE_ITEMS_LIST}".
 If no reclassifications are needed, return an empty suggestions array.`;
 
 const toolDefinition = {
