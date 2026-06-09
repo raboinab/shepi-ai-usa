@@ -181,8 +181,16 @@ const toolDefinition = {
                   "reclass_other",
                 ],
               },
-              from_line_item: { type: "string", description: "Current FS line item / category" },
-              to_line_item: { type: "string", description: "Suggested correct FS line item / category" },
+              from_line_item: {
+                type: "string",
+                enum: FS_LINE_ITEMS,
+                description: "Current FS line item — MUST be one of the allowed values exactly",
+              },
+              to_line_item: {
+                type: "string",
+                enum: FS_LINE_ITEMS,
+                description: "Suggested correct FS line item — MUST be one of the allowed values exactly",
+              },
               reason: { type: "string", description: "Why this account is misclassified" },
               confidence: { type: "number", description: "Confidence score 0-1" },
               balance: { type: "number", description: "The account balance amount" },
