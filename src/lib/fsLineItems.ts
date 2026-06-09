@@ -80,6 +80,11 @@ export function normalizeFsLineItem(raw: string | null | undefined): string {
     [/receivable|\bar\b/i, "Accounts receivable"],
     [/suspense|clearing|unapplied|deferred|prepaid/i, "Other current assets"],
     [/^revenue$|^sales$|income.*revenue|^income$/i, "Revenue"],
+    // Last-resort catch-alls for bare/ambiguous AI strings (keep AFTER specific patterns)
+    [/\bincome\b|\brevenue\b/i, "Revenue"],
+    [/\bliabilit(y|ies)\b/i, "Current liabilities"],
+    [/\bexpense(s)?\b/i, "Operating expenses"],
+    [/\basset(s)?\b/i, "Other current assets"],
   ];
 
   for (const [re, target] of rules) {
