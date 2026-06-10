@@ -1,52 +1,51 @@
-## Diagnosis (starting-month specific)
+# Reclass EBITDA Treatment Fix
 
-In `src/components/wizard/sections/ProofOfCashSection.tsx`, each monthly Proof-of-Cash row has four balance fields. For the **first month of the review period** (Jan 2023 on project `fa0768ca-…`), here's what's actually happening:
+## Problem
 
-| Field | Source | Status for month 1 |
-| --- | --- | --- |
-| `beginningBalance` (bank) | `stmt.summary.openingBalance` of the matched statement (line 203) | Data is in the DB (Jan 2023 = $453,477.08 + $151,100.98 = **$604,578.06**). If the UI shows `0`, the period-match at lines 180-194 isn't finding the Jan statement. |
-| `endingBankBalance` | `stmt.summary.closingBalance` | Same matching path — if beginning is 0, ending is probably also 0 for month 1. |
-| `beginningBookBalance` | **Nothing** (hardcoded `0` at line 97, never assigned) | Always 0 for every month, especially month 1. |
-| `endingBookBalance` | **Nothing** (hardcoded `0` at line 100, never assigned) | Always 0. |
+Reclassifications currently shift Reported and Adjusted EBITDA on the QoE Summary cards and EBITDA Trend chart even when both sides of the reclass live inside EBITDA categories. The ledger contract (`src/types/qoeLedger.ts`) defines reclasses as `effectType: "PresentationOnly"`, so a balanced reclass between two EBITDA-included line items must net to zero EBITDA impact.
 
-Plus an upstream data fact I confirmed: the earliest `trial_balance` row in `processed_data` is for period_end `2023-01-31`. **There is no Dec 2022 TB**, so the book-side opening for month 1 has no natural source from the trial balance alone.
+Root cause: the EBITDA overlay sums reclass impact across **all five IS categories**, including `"Other expense (income)"`, which lives *below* the EBITDA line. That makes the overlay non-zero for every reclass, even balanced ones.
 
-## Fix
+## Policy
 
-### 1. Bank-side first-month fix (period matching)
-In `ProofOfCashSection.tsx`, lines 180-194, the matcher parses `stmt.periodStart`/`periodEnd` with a local-date helper but parses `p.startDate`/`p.endDate` with the same helper only when present, then falls back to `new Date(year, month-1, 1)`. If `period.startDate` is `undefined` AND the period object doesn't carry `year`/`month` (some legacy projects), the matcher silently skips month 1. Add a third fallback: compare `stmt.periodStart.substring(0,7)` (e.g. `"2023-01"`) against `period.id` or `period.label`. That guarantees the Jan statement maps to the Jan period even when date fields are missing.
+A reclass changes EBITDA **only when it crosses the EBITDA line**:
 
-### 2. Books-side: populate Beginning/Ending Book Balance from the trial balance
-Add a second `useEffect` (mirrors the existing statement effect) that, for every period × bank account row, writes:
+- **EBITDA-included categories**: `Revenue`, `Cost of Goods Sold`, `Operating expenses`, `Payroll & Related`
+- **Below-the-line (EBITDA-excluded)**: `Other expense (income)` (and any future interest/tax/D&A buckets)
 
-- `endingBookBalance` = `calc.sumByLineItem(tb, "Cash and cash equivalents", periodId)` for that period.
-- `beginningBookBalance` = the prior period's `endingBookBalance`.
+Intra-EBITDA reclasses (e.g., OpEx ↔ Payroll, Revenue ↔ COGS) sum to zero across the four EBITDA categories and therefore leave EBITDA unchanged. Cross-line reclasses (e.g., OpEx ↔ Other expense) move only one side's amount across the four EBITDA categories, so EBITDA correctly shifts by that amount.
 
-Allocation when there are multiple bank accounts: split the GL cash total proportionally by each account's `endingBankBalance` for that period, so the row total still ties to TB.
+Net income, gross profit, revenue, OpEx, etc. continue to reflect every reclass (they already do via their own per-category overlays).
 
-Only overwrite when `bookDataSource !== "manual"` so user-entered values stick.
+## Changes
 
-### 3. First-month book opening (the unavoidable gap)
-For period 0, the prior TB doesn't exist. Derive the opening as:
+### 1. `src/lib/qoeMetrics.ts`
+- Remove `otherReclass` from the `reportedEBITDA` / `adjustedEBITDA` accumulation.
+- Keep `otherReclass` for `netIncome` (net income is below the EBITDA line and must reflect all IS reclasses).
+- The new `totalISReclass` used for EBITDA becomes: `revReclass + cogsReclass + opexReclass + payrollReclass` (no `otherReclass`).
 
-```
-beginningBookBalance[period 0] = endingBookBalance[period 0]
-                                 − depositsPerBook[period 0]
-                                 + withdrawalsPerBook[period 0]
-```
+### 2. `src/lib/reclassHelpers.ts`
+- Add a new constant `EBITDA_CATEGORIES = ["Revenue", "Cost of Goods Sold", "Operating expenses", "Payroll & Related"]` (excludes `"Other expense (income)"`).
+- `reclassAwareReportedEBITDA` and `reclassAwareAdjustedEBITDA` use `EBITDA_CATEGORIES` instead of `IS_CATEGORIES` for their overlay.
+- `reclassAwareNetIncome` keeps using `IS_CATEGORIES` (correct — includes everything).
+- All other helpers unchanged.
 
-If `depositsPerBook` / `withdrawalsPerBook` aren't populated yet, fall back to the **bank** activity for month 1 (`endingBankBalance − totalCredits + totalDebits`) and surface a small inline hint: *"Month 1 book opening derived from bank activity — confirm against your prior period close."* This keeps the row non-zero and reconciling while flagging the assumption.
+### 3. Tests
+- Add a focused test in `src/lib/qoeMetrics.test.ts` (or a new `reclassHelpers.test.ts`):
+  - Given a balanced reclass that moves $10k from `Operating expenses` to `Payroll & Related`: EBITDA delta = 0.
+  - Given a reclass that moves $10k from `Operating expenses` to `Other expense (income)`: EBITDA increases by $10k; Net Income unchanged.
+  - Given a reclass that moves $10k from `Revenue` to `Other expense (income)` (modeled as negative income reclass): EBITDA decreases by $10k; Net Income unchanged.
 
-## Out of scope
+## Out of Scope
 
-- The Workbook → Proof of Cash tab (`ProofOfCashTab.tsx`) — no "Beginning Balance" row exists there; nothing to change.
-- The 14-bucket FS Line Items contract — untouched.
-- COA — untouched.
+- `src/lib/workbook-grid-builders.ts` per-category overlays — already category-specific and correct for the workbook grids (P&L rows reflect reclasses; EBITDA in those grids should be re-verified separately if the user sees a mismatch there, but no change requested here).
+- Per-period workbook EBITDA rows, breakdown grids, PDF exporter — not part of this request.
+- The `ProofOfCashSection` book-beginning fix from the prior turn — already shipped.
+- Underlying `Reclassification` data model and bucket-balance validation — unchanged.
 
 ## Verification
 
-1. Open the wizard Proof of Cash on project `fa0768ca-…`.
-2. Confirm Jan 2023 row shows **Beginning Bank ≈ $604,578**, **Ending Bank ≈ $604,544** (matches DB).
-3. Confirm Jan 2023 **Beginning Book** is non-zero and equals `Ending Book − Deposits + Withdrawals`.
-4. Confirm Feb 2023 **Beginning Book** equals Jan 2023 **Ending Book**.
-5. Edit a book-side value manually, re-render, confirm it isn't overwritten.
+After implementation, on the user's project (`fa0768ca-…`):
+1. QoE Summary "Reported EBITDA" and "Adjusted EBITDA" cards should match the values from before any reclasses were added, **unless** at least one reclass crosses between an EBITDA category and `Other expense (income)`.
+2. EBITDA Trend chart lines should not jump when a purely-intra-EBITDA reclass is added/removed.
+3. Net Income and the P&L line items on the workbook grids continue to reflect every reclass.
