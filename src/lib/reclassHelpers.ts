@@ -84,7 +84,7 @@ export function reclassAwareAdjustedEBITDA(
   tb: TrialBalanceEntry[], rc: Reclassification[], adj: Adjustment[], pids: string[], ab: AddbackMapping
 ): number {
   const raw = -pids.reduce((s, p) => s + calc.calcAdjustedEBITDA(tb, adj, p, ab), 0);
-  return raw + -reclassOverlay(rc, pids, IS_CATEGORIES);
+  return raw + -reclassOverlay(rc, pids, EBITDA_CATEGORIES);
 }
 
 /**
