@@ -10,6 +10,7 @@ import { SummaryCard } from "../shared/SummaryCard";
 import { Plus, Trash2, ArrowRight, CheckCircle, AlertCircle, Sparkles } from "lucide-react";
 import { FS_LINE_ITEMS, FS_LINE_ITEMS_BY_TYPE, normalizeFsLineItem } from "@/lib/fsLineItems";
 import { ReclassificationAIDiscoverySection } from "./ReclassificationAIDiscoverySection";
+import { CrossLineReclassCallout } from "./CrossLineReclassCallout";
 
 interface Reclassification {
   id: string;
