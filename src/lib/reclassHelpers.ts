@@ -30,9 +30,14 @@ const IS_CATEGORIES = ["Revenue", "Cost of Goods Sold", "Operating expenses", "P
 export const EBITDA_CATEGORIES = ["Revenue", "Cost of Goods Sold", "Operating expenses", "Payroll & Related"];
 
 /** True if a reclass moves an amount across the EBITDA line (EBITDA category ↔ below-the-line). */
-export function isCrossLineReclass(rc: { fromFsLineItem?: string; toFsLineItem?: string }): boolean {
-  const from = rc.fromFsLineItem ?? "";
-  const to = rc.toFsLineItem ?? "";
+export function isCrossLineReclass(rc: {
+  fromFsLineItem?: string;
+  toFsLineItem?: string;
+  fromAccount?: string;
+  toAccount?: string;
+}): boolean {
+  const from = rc.fromFsLineItem ?? rc.fromAccount ?? "";
+  const to = rc.toFsLineItem ?? rc.toAccount ?? "";
   if (!from || !to) return false;
   const fromIn = EBITDA_CATEGORIES.includes(from);
   const toIn = EBITDA_CATEGORIES.includes(to);
