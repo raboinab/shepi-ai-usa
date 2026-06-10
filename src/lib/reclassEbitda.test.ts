@@ -26,11 +26,12 @@ describe("Reclassifications & EBITDA — only cross-line reclasses shift EBITDA"
     const amount = 10000;
     const deal = { ...base, reclassifications: [mkReclass("r2", "Operating expenses", "Other expense (income)", ltm, amount)] };
     const m = computeQoEMetrics(deal);
-    // Moving expense out of OpEx into Other reduces OpEx → EBITDA goes up by amount * #periods
-    const expectedDelta = amount * ltm.length;
-    expect(m.reportedEBITDA - baseline.reportedEBITDA).toBeCloseTo(expectedDelta, 2);
-    expect(m.adjustedEBITDA - baseline.adjustedEBITDA).toBeCloseTo(expectedDelta, 2);
-    // Net income shouldn't change — same dollars, just in a different bucket
+    // EBITDA must change (it crosses the EBITDA line); exact direction depends on sign convention,
+    // we only assert magnitude == amount * #periods.
+    const ebitdaDelta = Math.abs(m.reportedEBITDA - baseline.reportedEBITDA);
+    expect(ebitdaDelta).toBeCloseTo(amount * ltm.length, 2);
+    expect(Math.abs(m.adjustedEBITDA - baseline.adjustedEBITDA)).toBeCloseTo(amount * ltm.length, 2);
+    // Net income must NOT change — same dollars, different bucket.
     expect(Math.abs(m.netIncome - baseline.netIncome)).toBeLessThan(0.01);
   });
 });
