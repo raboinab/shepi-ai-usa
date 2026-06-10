@@ -5,6 +5,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { computeQoEMetrics } from "@/lib/qoeMetrics";
 import * as calc from "@/lib/calculations";
 import * as rh from "@/lib/reclassHelpers";
+import { EBITDA_CATEGORIES, isCrossLineReclass } from "@/lib/reclassHelpers";
 import type { DealData } from "@/lib/workbook-types";
 
 interface QoESummarySectionProps {
@@ -14,11 +15,37 @@ interface QoESummarySectionProps {
 export const QoESummarySection = ({ dealData }: QoESummarySectionProps) => {
   const metrics = computeQoEMetrics(dealData);
 
-  const ebitdaComparison = [
-    { name: "Reported", value: metrics.reportedEBITDA },
-    { name: "Adjustments", value: metrics.totalAdjustments },
-    { name: "Adjusted", value: metrics.adjustedEBITDA },
-  ];
+  // Compute the EBITDA delta caused by cross-line reclasses over the LTM scope.
+  // Display-positive: positive => reclasses increased EBITDA, negative => reduced it.
+  const reclassEbitdaImpact = (() => {
+    if (!dealData) return 0;
+    const rc = dealData.reclassifications ?? [];
+    if (rc.length === 0) return 0;
+    let raw = 0;
+    for (const pid of metrics.ltmPeriodIds) {
+      for (const cat of EBITDA_CATEGORIES) {
+        raw += calc.sumReclassImpact(rc, cat, pid);
+      }
+    }
+    // TB convention: negate for display-positive EBITDA
+    return -raw;
+  })();
+
+  const crossLineCount = (dealData?.reclassifications ?? []).filter(isCrossLineReclass).length;
+  const reportedEBITDAPre = metrics.reportedEBITDA - reclassEbitdaImpact;
+
+  const ebitdaComparison = reclassEbitdaImpact !== 0
+    ? [
+        { name: "Reported (pre-reclass)", value: reportedEBITDAPre },
+        { name: "Reclass impact", value: reclassEbitdaImpact },
+        { name: "Adjustments", value: metrics.totalAdjustments },
+        { name: "Adjusted", value: metrics.adjustedEBITDA },
+      ]
+    : [
+        { name: "Reported", value: metrics.reportedEBITDA },
+        { name: "Adjustments", value: metrics.totalAdjustments },
+        { name: "Adjusted", value: metrics.adjustedEBITDA },
+      ];
 
   // Build per-FY trend data
   const trendData = (() => {
@@ -41,6 +68,13 @@ export const QoESummarySection = ({ dealData }: QoESummarySectionProps) => {
     ? `${((metrics.totalAdjustments / metrics.reportedEBITDA) * 100).toFixed(1)}%`
     : "N/A";
 
+  const fmt = (n: number) =>
+    new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+
+  const reportedSubtitle = reclassEbitdaImpact !== 0
+    ? `${reclassEbitdaImpact >= 0 ? "+" : ""}${fmt(reclassEbitdaImpact)} from ${crossLineCount} cross-line reclass${crossLineCount === 1 ? "" : "es"}`
+    : "As stated in financials";
+
   return (
     <div className="space-y-6">
       <div>
@@ -53,7 +87,7 @@ export const QoESummarySection = ({ dealData }: QoESummarySectionProps) => {
           title="Reported EBITDA"
           value={metrics.reportedEBITDA}
           icon={DollarSign}
-          subtitle="As stated in financials"
+          subtitle={reportedSubtitle}
         />
         <SummaryCard
           title="Total Adjustments"
