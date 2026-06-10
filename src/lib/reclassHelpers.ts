@@ -27,7 +27,22 @@ function reclassOverlay(
 const IS_CATEGORIES = ["Revenue", "Cost of Goods Sold", "Operating expenses", "Payroll & Related", "Other expense (income)"];
 // EBITDA excludes "Other expense (income)" — that bucket is below the EBITDA line,
 // so reclasses crossing into it correctly shift EBITDA, while intra-EBITDA reclasses net to zero.
-const EBITDA_CATEGORIES = ["Revenue", "Cost of Goods Sold", "Operating expenses", "Payroll & Related"];
+export const EBITDA_CATEGORIES = ["Revenue", "Cost of Goods Sold", "Operating expenses", "Payroll & Related"];
+
+/** True if a reclass moves an amount across the EBITDA line (EBITDA category ↔ below-the-line). */
+export function isCrossLineReclass(rc: {
+  fromFsLineItem?: string;
+  toFsLineItem?: string;
+  fromAccount?: string;
+  toAccount?: string;
+}): boolean {
+  const from = rc.fromFsLineItem ?? rc.fromAccount ?? "";
+  const to = rc.toFsLineItem ?? rc.toAccount ?? "";
+  if (!from || !to) return false;
+  const fromIn = EBITDA_CATEGORIES.includes(from);
+  const toIn = EBITDA_CATEGORIES.includes(to);
+  return fromIn !== toIn;
+}
 
 /** Display-positive LTM revenue including reclass impacts */
 export function reclassAwareRevenue(tb: TrialBalanceEntry[], rc: Reclassification[], pids: string[]): number {

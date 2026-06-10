@@ -1,51 +1,54 @@
-# Reclass EBITDA Treatment Fix
+# Reclass Review + EBITDA Reclass Visibility
 
-## Problem
+## Context
 
-Reclassifications currently shift Reported and Adjusted EBITDA on the QoE Summary cards and EBITDA Trend chart even when both sides of the reclass live inside EBITDA categories. The ledger contract (`src/types/qoeLedger.ts`) defines reclasses as `effectType: "PresentationOnly"`, so a balanced reclass between two EBITDA-included line items must net to zero EBITDA impact.
+After the EBITDA reclass policy fix (only cross-line reclasses shift EBITDA), Reported EBITDA on this deal dropped because two AI-suggested reclasses move amounts from `Revenue` → `Other expense (income)`:
 
-Root cause: the EBITDA overlay sums reclass impact across **all five IS categories**, including `"Other expense (income)"`, which lives *below* the EBITDA line. That makes the overlay non-zero for every reclass, even balanced ones.
+| # | Amount | Rationale (AI) |
+|---|--------|----------------|
+| 1 | $4,224 | "Portfolio/investment income is non-operating… belongs below the line." |
+| 2 | $69,018 | "Large catch-all credit, may contain gains on asset sales / one-time items." |
 
-## Policy
+Both are **directionally correct QoE treatment** if the underlying accounts really are non-operating. The $69k one is flagged by the AI itself as "investigate" — it could be legitimate other income, or it could be misclassified operating revenue. Either way, the user needs an easy way to see and audit cross-line reclasses.
 
-A reclass changes EBITDA **only when it crosses the EBITDA line**:
+## Part A — Manual review surface (the "is this correct" workflow)
 
-- **EBITDA-included categories**: `Revenue`, `Cost of Goods Sold`, `Operating expenses`, `Payroll & Related`
-- **Below-the-line (EBITDA-excluded)**: `Other expense (income)` (and any future interest/tax/D&A buckets)
+Today the reclass list shows every reclass uniformly; nothing visually flags which ones change EBITDA. Add a lightweight callout in the **Reclassifications** wizard section:
 
-Intra-EBITDA reclasses (e.g., OpEx ↔ Payroll, Revenue ↔ COGS) sum to zero across the four EBITDA categories and therefore leave EBITDA unchanged. Cross-line reclasses (e.g., OpEx ↔ Other expense) move only one side's amount across the four EBITDA categories, so EBITDA correctly shifts by that amount.
+1. Filter reclasses where `fromFsLineItem` and `toFsLineItem` land on opposite sides of the EBITDA line (using the same `EBITDA_CATEGORIES` set from `reclassHelpers.ts`).
+2. Render an amber `Card` at the top of the section titled **"Cross-line reclasses (affect EBITDA)"** listing each with: amount, from → to, source (AI vs manual), and description.
+3. Each row has **Approve / Revert** buttons that call the existing reclass mutation helpers (no new data model).
 
-Net income, gross profit, revenue, OpEx, etc. continue to reflect every reclass (they already do via their own per-category overlays).
+Source of truth: the existing `reclassifications` array; no schema change.
 
-## Changes
+## Part B — QoE Summary visibility
 
-### 1. `src/lib/qoeMetrics.ts`
-- Remove `otherReclass` from the `reportedEBITDA` / `adjustedEBITDA` accumulation.
-- Keep `otherReclass` for `netIncome` (net income is below the EBITDA line and must reflect all IS reclasses).
-- The new `totalISReclass` used for EBITDA becomes: `revReclass + cogsReclass + opexReclass + payrollReclass` (no `otherReclass`).
+In `src/components/wizard/sections/QoESummarySection.tsx`:
 
-### 2. `src/lib/reclassHelpers.ts`
-- Add a new constant `EBITDA_CATEGORIES = ["Revenue", "Cost of Goods Sold", "Operating expenses", "Payroll & Related"]` (excludes `"Other expense (income)"`).
-- `reclassAwareReportedEBITDA` and `reclassAwareAdjustedEBITDA` use `EBITDA_CATEGORIES` instead of `IS_CATEGORIES` for their overlay.
-- `reclassAwareNetIncome` keeps using `IS_CATEGORIES` (correct — includes everything).
-- All other helpers unchanged.
+1. Compute `crossLineReclassImpact` = `reclassAwareReportedEBITDA - reclassAwareReportedEBITDA-without-reclass`. Since `EBITDA_CATEGORIES` overlay only fires for cross-line moves, this equals the EBITDA delta caused by reclasses.
+2. Insert a new bar **"Reclass impact"** into `ebitdaComparison` between "Reported" and "Adjustments", so the bridge becomes:
+   `Reported (pre-reclass) → Reclass impact → Adjustments → Adjusted`.
+3. The "Reported EBITDA" summary card gets a tooltip / subtitle: *"Includes $X from N cross-line reclasses"* when non-zero, linking to the Reclassifications section.
 
-### 3. Tests
-- Add a focused test in `src/lib/qoeMetrics.test.ts` (or a new `reclassHelpers.test.ts`):
-  - Given a balanced reclass that moves $10k from `Operating expenses` to `Payroll & Related`: EBITDA delta = 0.
-  - Given a reclass that moves $10k from `Operating expenses` to `Other expense (income)`: EBITDA increases by $10k; Net Income unchanged.
-  - Given a reclass that moves $10k from `Revenue` to `Other expense (income)` (modeled as negative income reclass): EBITDA decreases by $10k; Net Income unchanged.
+## Part C — Per-reclass EBITDA delta in the workbook (read-only)
+
+In the reclassifications grid (`src/components/workbook/tabs/…` — locate the existing reclass tab), add a derived "EBITDA Δ" column:
+- `0` for intra-EBITDA rows
+- `±amount` for cross-line rows (sign per from/to direction)
+
+No data model change; purely a display column.
 
 ## Out of Scope
 
-- `src/lib/workbook-grid-builders.ts` per-category overlays — already category-specific and correct for the workbook grids (P&L rows reflect reclasses; EBITDA in those grids should be re-verified separately if the user sees a mismatch there, but no change requested here).
-- Per-period workbook EBITDA rows, breakdown grids, PDF exporter — not part of this request.
-- The `ProofOfCashSection` book-beginning fix from the prior turn — already shipped.
-- Underlying `Reclassification` data model and bucket-balance validation — unchanged.
+- Changing the policy itself (already approved last turn).
+- Rewriting AI reclass suggestion logic.
+- Per-period EBITDA bridge waterfalls in the PDF exporter — defer.
+- Net Income surfaces — already correctly reflect all reclasses.
 
 ## Verification
 
-After implementation, on the user's project (`fa0768ca-…`):
-1. QoE Summary "Reported EBITDA" and "Adjusted EBITDA" cards should match the values from before any reclasses were added, **unless** at least one reclass crosses between an EBITDA category and `Other expense (income)`.
-2. EBITDA Trend chart lines should not jump when a purely-intra-EBITDA reclass is added/removed.
-3. Net Income and the P&L line items on the workbook grids continue to reflect every reclass.
+1. On project `fa0768ca-…`: the new amber callout in Reclassifications lists exactly the two Revenue → Other (income) reclasses.
+2. QoE Summary EBITDA Bridge shows a visible "Reclass impact" bar matching the delta between pre- and post-reclass Reported EBITDA.
+3. Reverting one of the two cross-line reclasses immediately removes its row from the callout and shrinks the "Reclass impact" bar.
+4. Reverting a purely intra-EBITDA reclass leaves "Reclass impact" unchanged (still zero contribution from that reclass).
+5. Existing `reclassEbitda.test.ts` continues to pass; add one test asserting `crossLineReclassImpact` equals the sum of cross-line reclass amounts (with correct signs).

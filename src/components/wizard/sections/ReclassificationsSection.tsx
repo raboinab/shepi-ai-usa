@@ -10,6 +10,7 @@ import { SummaryCard } from "../shared/SummaryCard";
 import { Plus, Trash2, ArrowRight, CheckCircle, AlertCircle, Sparkles } from "lucide-react";
 import { FS_LINE_ITEMS, FS_LINE_ITEMS_BY_TYPE, normalizeFsLineItem } from "@/lib/fsLineItems";
 import { ReclassificationAIDiscoverySection } from "./ReclassificationAIDiscoverySection";
+import { CrossLineReclassCallout } from "./CrossLineReclassCallout";
 
 interface Reclassification {
   id: string;
@@ -154,7 +155,11 @@ export const ReclassificationsSection = ({ data, updateData, projectId, onGuideC
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="manual" className="mt-6">
+        <TabsContent value="manual" className="mt-6 space-y-4">
+          <CrossLineReclassCallout
+            reclassifications={reclassifications}
+            onRevert={deleteReclassification}
+          />
           <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Reclassification Entries</CardTitle>
