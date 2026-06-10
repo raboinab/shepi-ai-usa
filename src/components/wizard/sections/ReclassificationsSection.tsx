@@ -155,7 +155,11 @@ export const ReclassificationsSection = ({ data, updateData, projectId, onGuideC
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="manual" className="mt-6">
+        <TabsContent value="manual" className="mt-6 space-y-4">
+          <CrossLineReclassCallout
+            reclassifications={reclassifications}
+            onRevert={deleteReclassification}
+          />
           <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Reclassification Entries</CardTitle>
