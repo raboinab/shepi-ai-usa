@@ -76,7 +76,7 @@ export function reclassAwareReportedEBITDA(
   tb: TrialBalanceEntry[], rc: Reclassification[], pids: string[], ab: AddbackMapping
 ): number {
   const raw = -pids.reduce((s, p) => s + calc.calcReportedEBITDA(tb, p, ab), 0);
-  return raw + -reclassOverlay(rc, pids, IS_CATEGORIES);
+  return raw + -reclassOverlay(rc, pids, EBITDA_CATEGORIES);
 }
 
 /** Display-positive adjusted EBITDA including reclass impacts */
