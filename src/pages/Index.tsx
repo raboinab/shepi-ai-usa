@@ -17,19 +17,19 @@ import { HOMEPAGE_FAQ, buildFaqJsonLd, groupFaqByCategory } from "@/data/homepag
 
 const Index = () => {
   const __seoTags = useSEO({
-    title: "AI Quality of Earnings Software | QoE Platform | Shepi",
-    description: "AI quality of earnings analysis for M&A due diligence. Upload financials and get EBITDA adjustments and lender-ready QoE reports in hours.",
+    title: "AI Quality of Earnings Software | QoE Analysis Platform | Shepi",
+    description: "AI quality of earnings analysis for M&A due diligence. Upload financials, get EBITDA adjustments and lender-ready QoE reports in hours. Quality of earnings AI built for deal teams, PE firms, and searchers.",
     canonical: "https://shepi.ai/",
     ogImage: "/og-image.png",
     jsonLd: [
       {
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
-        name: "shepi",
+        name: "Shepi — AI Quality of Earnings Software",
         applicationCategory: "BusinessApplication",
         operatingSystem: "Web",
         description:
-          "AI-assisted Quality of Earnings analysis for M&A due diligence. Upload financials, get EBITDA adjustments, working capital analysis, and lender-ready QoE reports in hours.",
+          "AI quality of earnings analysis for M&A due diligence. Upload financials, get EBITDA adjustments and lender-ready QoE reports in hours. Quality of earnings AI built for deal teams, PE firms, and searchers.",
         url: "https://shepi.ai/",
         publisher: {
           "@type": "Organization",
