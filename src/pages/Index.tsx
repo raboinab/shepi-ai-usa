@@ -860,7 +860,7 @@ const Index = () => {
       </section>
 
       {/* How It Works Section */}
-      <section id="how-it-works" className="bg-secondary py-20 md:py-28 px-6 md:px-12">
+      <section id="how-it-works" className="bg-background py-20 md:py-28 px-6 md:px-12">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-16">
             <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4 block">Process</span>
