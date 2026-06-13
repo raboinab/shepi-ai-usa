@@ -29,3 +29,4 @@ dist-ssr
 supabase/.temp/
 .vercel
 .env*.local
+.vite-react-ssg-temp/
