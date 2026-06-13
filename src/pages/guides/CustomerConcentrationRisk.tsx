@@ -33,7 +33,7 @@ export default function CustomerConcentrationRisk() {
   return (
     <ContentPageLayout
       title="Customer Concentration Risk Analysis for M&A"
-      seoTitle="Customer Concentration Risk — Analysis Guide for M&A | Shepi"
+      seoTitle="Customer Concentration Risk in M&A Due Diligence | Shepi"
       seoDescription="Analyze customer concentration risk in acquisitions. Thresholds, top customer analysis, mitigating factors, and pricing concentration into the deal."
       canonical="https://shepi.ai/guides/customer-concentration-risk"
       breadcrumbs={[

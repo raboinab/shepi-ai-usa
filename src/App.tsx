@@ -71,6 +71,9 @@ const QualityOfEarningsTemplate = lazy(() => import("./pages/QualityOfEarningsTe
 const QualityOfEarningsChecklist = lazy(() => import("./pages/QualityOfEarningsChecklist"));
 const ScopeOfWork = lazy(() => import("./pages/ScopeOfWork"));
 const ForAiAgents = lazy(() => import("./pages/ForAiAgents"));
+const EtaQoeCost = lazy(() => import("./pages/EtaQoeCost"));
+const SbaLoanQoe = lazy(() => import("./pages/SbaLoanQoe"));
+const CpaFirmVsShepi = lazy(() => import("./pages/compare/CpaFirmVsShepi"));
 const CpaPartners = lazy(() => import("./pages/CpaPartners"));
 const ForCpas = lazy(() => import("./pages/ForCpas"));
 const AdminLayout = lazy(() => import("./layouts/AdminLayout").then(m => ({ default: m.AdminLayout })));
@@ -207,6 +210,9 @@ export const routes: RouteRecord[] = [
       { path: "quality-of-earnings-checklist", element: wrap(<QualityOfEarningsChecklist />) },
       { path: "scope", element: wrap(<ScopeOfWork />) },
       { path: "for-ai-agents", element: wrap(<ForAiAgents />) },
+      { path: "eta-qoe-cost", element: wrap(<EtaQoeCost />) },
+      { path: "sba-loan-qoe", element: wrap(<SbaLoanQoe />) },
+      { path: "compare/cpa-firm-vs-shepi", element: wrap(<CpaFirmVsShepi />) },
 
       // Admin
       {
@@ -300,4 +306,7 @@ export const prerenderPaths = [
   "/quality-of-earnings-template",
   "/quality-of-earnings-checklist",
   "/scope",
+  "/eta-qoe-cost",
+  "/sba-loan-qoe",
+  "/compare/cpa-firm-vs-shepi",
 ];

@@ -193,6 +193,8 @@ export default function IndependentSearchers() {
 
       <h2>Related Resources</h2>
       <RelatedResourceCards links={[
+        { to: "/eta-qoe-cost", label: "ETA QoE Cost (2026)" },
+        { to: "/compare/cpa-firm-vs-shepi", label: "CPA Firm vs Shepi for ETA Buyers" },
         { to: "/guides/ai-wont-do-your-qoe", label: "AI Won't Do Your QoE Analysis For You" },
         { to: "/guides/quality-of-earnings", label: "What Is a Quality of Earnings Report?" },
         { to: "/guides/due-diligence-checklist", label: "Financial Due Diligence Checklist" },
