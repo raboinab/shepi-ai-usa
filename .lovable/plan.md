@@ -1,77 +1,66 @@
 
-# SEO push: title fix + 3 new pages + directory submission copy
+# Plan: Make accuracy a front-door positioning pillar
 
-Three parallel workstreams. All visible homepage and existing-page copy stays unchanged unless explicitly listed.
+## The argument we're making
 
-## Part A — Ship the drafted title fix (Lever 1)
+A human doing QoE in Excel **will** make errors. Not might — will. Broken references, sign flips, fat-finger transpositions, formula drift when a row gets inserted, copy/paste between tabs that silently drops a number. shepi removes that surface area: data flows from source → structured ledger → adjustments → outputs without a human retyping numbers, and every computation is the same deterministic formula every time. That is a real, defensible, differentiating claim.
 
-Apply the worktree plan at `.claude/worktrees/epic-kare/.lovable/plan.md` to main. The homepage `useSEO` title is currently "AI Quality of Earnings Software | QoE **Platform** | Shepi" — the drafted version says "QoE **Analysis** Platform". Aligning everything to the drafted strings.
+What we will **not** claim:
+- "The computer is never wrong" (warranty exposure, contradicts Terms)
+- "Error-free QoE" or "guaranteed accuracy" (UPL/E&O risk, collides with the core memory rule that shepi is analytical software, not attestation)
+- Anything implying outputs don't need human review (contradicts DFY review value prop and the AI-assist FAQ)
 
-1. **`index.html`** — no `<title>` or `<meta name="description">` currently live here (per-route owns them via `useSEO`). Update the static OG fallbacks only:
-   - `og:title` → `AI Quality of Earnings Software | QoE Analysis Platform | Shepi`
-   - `og:description` → `AI quality of earnings analysis for M&A due diligence. EBITDA adjustments, working-capital, and lender-ready QoE reports in hours. Quality of earnings AI for deal teams.`
-   - `og:image:alt` mirrors the new title.
-2. **`src/pages/Index.tsx`** — update `useSEO({...})`:
-   - `title` → `AI Quality of Earnings Software | QoE Analysis Platform | Shepi`
-   - `description` → `AI quality of earnings analysis for M&A due diligence. Upload financials, get EBITDA adjustments and lender-ready QoE reports in hours. Quality of earnings AI built for deal teams, PE firms, and searchers.`
-   - SoftwareApplication JSON-LD `name` → `Shepi — AI Quality of Earnings Software`; `description` → same as above.
-3. **`src/pages/features/QoESoftware.tsx`** — `seoTitle` → `Quality of Earnings AI Software | AI QoE Analysis Tool | Shepi` (58 chars); `seoDescription` rewritten to lead with "Quality of Earnings AI software" and stay 80–160 chars with terminal punctuation (to pass `src/test/seo-guides.test.ts`).
-4. **`src/hooks/useSEO.tsx`** — unmount fallback title → `AI Quality of Earnings Software | QoE Analysis Platform | Shepi`.
-5. **Guide test cleanup** — `src/pages/guides/CustomerConcentrationRisk.tsx` `seoTitle` is 62 chars, fails the ≤60 SEO regression test. Shorten to `Customer Concentration Risk in M&A Due Diligence | Shepi` (56 chars).
-6. Delete `.claude/worktrees/epic-kare/.lovable/plan.md` (consumed).
+Safe, sharp framing we *will* use: **"No retyping. No broken formulas. Same math, every time."** Plus the concrete failure modes Excel/manual workflows have that shepi structurally prevents.
 
-## Part B — Three new searcher-intent pages (Lever 4)
+## What ships
 
-Three new routes targeting queries we already get impressions for. Each ranks for a tight, high-intent term; existing parent pages stay live and get an internal link to the new dedicated page.
+### 1. New page: `/accuracy` (a.k.a. "Why shepi is more accurate than a human in Excel")
+Full content page, in the SEO content-page pattern (uses `ContentPageLayout`, `HeroCallout`, `ComparisonTable`, `BenefitGrid`, `StepList`, `AccordionFAQ`, `RelatedResourceCards`). Sections:
 
-| Route | H1 | Primary keyword | Carved from |
-| --- | --- | --- | --- |
-| `/eta-qoe-cost` | "ETA Quality of Earnings Cost (2026)" | eta qoe cost | `/use-cases/independent-searchers` |
-| `/sba-loan-qoe` | "Quality of Earnings for SBA Loans" | qoe sba lender | `/use-cases/lenders` |
-| `/compare/cpa-firm-vs-shepi` | "QoE Providers for ETA Buyers: CPA Firm vs Shepi" | best qoe providers for eta | new comparison |
+- **Hero callout**: "A spreadsheet trusts whoever typed last. shepi doesn't."
+- **The human-error surface in a manual QoE** — concrete list: broken cell refs, inserted-row formula drift, sign convention flips, tab-to-tab copy/paste, manual reclass entries, period misalignment, hand-keyed bank tie-outs.
+- **What shepi removes structurally** — source-doc → parsed ledger (no retype), one canonical chart-of-accounts mapping, deterministic adjustment engine (same inputs → same outputs every run), single source of truth feeding workbook + PDF + dashboards (no export drift), full audit trail on every number.
+- **Comparison table**: failure mode × Excel/manual × shepi DIY × shepi DFY.
+- **Where humans still belong** — judgment calls (which adjustments qualify, normalization assumptions, narrative). DFY adds a licensed CPA reviewing those judgments. Frames human-in-the-loop as a feature, not a hedge.
+- **FAQ**: "Does shepi guarantee accuracy?" (No — and here's the honest reason), "What about the AI?" (AI suggests, humans approve, math is deterministic), "Is this an audit?" (No — link to /scope).
+- **JSON-LD Article**, canonical `https://shepi.ai/accuracy`, breadcrumbs, related-resource cards to `/compare/shepi-vs-excel`, `/compare/ai-qoe-vs-traditional`, `/guides/quality-of-earnings`, `/pricing`.
 
-Each page uses the existing typographic content components (`ContentPageLayout`, `HeroCallout`, `StatRow`, `ComparisonTable`, `AccordionFAQ`, `RelatedResourceCards`) — same pattern as `src/pages/features/QoESoftware.tsx`. Standard structure:
+### 2. Homepage: add an "Accuracy" section
+Inline section on `Index.tsx` using the existing bg-background/bg-secondary alternation + serif heading + eyebrow pattern (per memory). Three-bullet structure:
+- No retyping — data flows from source documents into the model
+- No broken formulas — deterministic engine, same math every time
+- One source of truth — workbook, PDF, dashboards all read the same numbers
 
-- TOC + HeroCallout with one-sentence answer to the search query (so it can win a featured snippet)
-- Cost/comparison table grounded in `PRICING` (no hardcoded numbers — import from `src/lib/pricing.ts`)
-- 4–6 FAQ items rendered as visible Accordion AND emitted as FAQPage JSON-LD via `useSEO({ jsonLd })` (same dual-source pattern Index.tsx uses)
-- Article + BreadcrumbList JSON-LD
-- RelatedResourceCards back to the parent use-case page + 2 relevant guides
-- `seoTitle` ≤60 chars ending `| Shepi`, `seoDescription` 80–160 chars ending in `.` (passes `src/test/seo-guides.test.ts` — extend the test glob to cover these new files)
+CTA → `/accuracy`.
 
-Wiring:
-- Register routes in `src/App.tsx` (same `wrap()` pattern around line 172/177).
-- Add to the prerender list (`src/App.tsx` around line 285 and any SSG entry list).
-- Add 3 entries to `public/sitemap.xml` with `priority` 0.8.
-- Add an internal link from `/use-cases/independent-searchers` → `/eta-qoe-cost`, `/use-cases/lenders` → `/sba-loan-qoe`, homepage pricing/FAQ area → `/compare/cpa-firm-vs-shepi`.
+### 3. Strengthen `/compare/shepi-vs-excel`
+Reframe the existing Excel comparison around the same error-surface argument and link to `/accuracy` as the deeper read. Keep current structure, sharpen the copy.
 
-Content sourcing: pull facts/numbers/phrasing from the existing parent use-case pages and `src/data/homepageFaq.ts` so we don't invent claims. Tone matches the rest of the marketing site (analytical QoE software, **not** CPA attestation — per project memory).
+### 4. Routing + SEO plumbing
+- Add `/accuracy` to `src/App.tsx`
+- Add to `PRERENDER_PATHS` (so it static-renders for crawlers)
+- Add to `public/sitemap.xml` with `lastmod` today
+- SEO title under 60 chars, meta description under 160 chars, single H1, JSON-LD Article schema
 
-## Part C — Directory submission copy (no code changes)
+### 5. Light nav surfacing
+Add "Accuracy" as a link in the resources/footer nav so it's reachable without search.
 
-Write `/mnt/documents/shepi-directory-submissions.md` with reusable copy blocks ready to paste into each directory's submission form:
+## Out of scope (deliberately)
 
-- Vendor identity: name, tagline, website, support email, founded year, HQ, employees range
-- 50-char description, 160-char description, 500-char description, 1500-char description
-- Category taxonomy mapped per directory (G2: "Quality of Earnings"/"M&A Due Diligence"/"Financial Analysis"; Capterra similar; TAAFT/AI Tool Hunt: "AI for Finance"/"Accounting AI"; Product Hunt: "Productivity"/"FinTech")
-- Feature bullets (8), use-case bullets (5)
-- Pricing summary from `src/lib/pricing.ts`
-- Screenshot shot-list (5 specific app surfaces to capture) with target dimensions per directory
-- One paragraph per directory tailored to its audience (G2 reviewer-focused, Product Hunt launch-narrative, TAAFT AI-angle)
-- Submission URL + account-creation notes per directory
+- Any "guarantee," "error-free," "100% accurate," "computer is never wrong" language — flagged and rejected upfront.
+- Touching Terms, /scope, or the AI-Won't-Do-Your-QoE guide. Those exist precisely to keep us legally clean and are doing their job.
+- Removing the DFY CPA-review value prop. Accuracy positioning *strengthens* DFY ("the math is deterministic; a CPA reviews the judgment calls").
+- Backend/wizard/workbook code changes. This is positioning + presentation only.
 
-Delivered as a `<presentation-artifact>`; the user pastes from it.
+## Files to be touched
 
-## Out of scope
+- **New**: `src/pages/Accuracy.tsx`
+- **Edit**: `src/App.tsx` (route + PRERENDER_PATHS), `public/sitemap.xml`, `src/pages/Index.tsx` (new section), `src/pages/compare/ShepiVsExcel.tsx` (sharpen copy + cross-link), nav/footer component (add link)
 
-- Lever 2 (Request Indexing in GSC) — manual click work in Search Console, not codeable here. We can wire the GSC connector and script `urlInspection.index.publish` later if the user wants automation.
-- Lever 3 execution itself — Part C produces the *copy*; submitting to each directory is manual.
-- Lever 5 (backlink outreach) — out of scope for code.
+## Success criteria
 
-## Verification
-
-- `bun test src/test/seo-guides.test.ts` passes (CustomerConcentrationRisk shortened; new pages conform).
-- `bunx tsc --noEmit` clean.
-- Manually visit `/eta-qoe-cost`, `/sba-loan-qoe`, `/compare/cpa-firm-vs-shepi` in preview: TOC works, FAQ accordion renders, internal links resolve, `<title>` matches `seoTitle`, `view-source` shows JSON-LD.
-- `public/sitemap.xml` includes the 3 new URLs with `https://shepi.ai` host.
-- `/mnt/documents/shepi-directory-submissions.md` exists and renders.
+- `/accuracy` live, prerendered, in sitemap, indexable
+- Homepage has a visible Accuracy section above the fold of the mid-page scroll
+- ShepiVsExcel cross-links to /accuracy
+- No language anywhere implies warranty, attestation, or "error-free" outputs
+- Build passes, no broken links
