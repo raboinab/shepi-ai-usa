@@ -12,6 +12,8 @@ import type { TransferTotals } from "@/hooks/useTransferClassification";
 import type { MockBankStatement } from "@/lib/mockDeal";
 import { Spinner } from "@/components/ui/spinner";
 import { useAdjustmentProofs } from "@/hooks/useAdjustmentProofs";
+import { WorkbookUploadButton } from "./WorkbookUploadButton";
+
 
 // Lazy-loaded tab components
 const SetupTab = lazy(() => import("./tabs/SetupTab").then(m => ({ default: m.SetupTab })));
@@ -52,7 +54,9 @@ interface WorkbookShellProps {
   mockTransferClassifications?: Map<string, TransferTotals>;
   onActiveTabChange?: (tabId: string) => void;
   projectId?: string;
+  onUploadCommitted?: () => void;
 }
+
 
 // DD Adjustments tabs need special wrappers for tabIndex + proofMap
 function DDAdjustments1Tab(props: { dealData: DealData; onDataChange?: (data: DealData) => void; proofMap?: Map<string, import("@/hooks/useAdjustmentProofs").AdjustmentProofSet> }) {
@@ -110,7 +114,7 @@ const TAB_COMPONENTS: Record<string, React.ComponentType<{ dealData: DealData; o
   "wip-schedule": WIPScheduleTab,
 };
 
-export function WorkbookShell({ dealData, onDataChange, saving, onExport, mockBankStatements, mockTransferClassifications, onActiveTabChange, projectId }: WorkbookShellProps) {
+export function WorkbookShell({ dealData, onDataChange, saving, onExport, mockBankStatements, mockTransferClassifications, onActiveTabChange, projectId, onUploadCommitted }: WorkbookShellProps) {
   const [activeTab, setActiveTab] = useState(WORKBOOK_TABS[0].id);
   const tabStripRef = useRef<HTMLDivElement>(null);
   const { proofMap } = useAdjustmentProofs(projectId);
@@ -160,7 +164,15 @@ export function WorkbookShell({ dealData, onDataChange, saving, onExport, mockBa
               Export XLSX
             </Button>
           )}
+          {projectId && (
+            <WorkbookUploadButton
+              projectId={projectId}
+              onCommitted={onUploadCommitted}
+              className="gap-1.5 h-8 text-xs bg-transparent border-[hsl(var(--workbook-gold))] text-[hsl(var(--workbook-gold))] hover:bg-[hsl(var(--workbook-gold))] hover:text-[hsl(var(--workbook-navy))]"
+            />
+          )}
         </div>
+
       </div>
 
       {/* Tab content */}

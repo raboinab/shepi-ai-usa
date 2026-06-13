@@ -328,13 +328,21 @@ export interface BuildOptions {
   docSources?: DocSourceItem[];
   /** Optional cover/title overrides */
   watermark?: string;
+  /** Round-trip metadata: project id and current revision counter */
+  roundTripMeta?: { projectId: string; revision: number };
 }
+
+// Re-export for backward compat with anything still importing from this file
+export { WORKBOOK_SCHEMA_VERSION, META_SHEET_NAME } from "./workbookUploadShared";
+import { WORKBOOK_SCHEMA_VERSION as _SCHEMA_VER, META_SHEET_NAME as _META_NAME } from "./workbookUploadShared";
+
 
 /**
  * Build the full styled workbook in memory. Caller saves it.
  */
 export async function buildStyledWorkbook(opts: BuildOptions): Promise<ExcelJS.Workbook> {
-  const { dealData, pocBankData, docSources, watermark } = opts;
+  const { dealData, pocBankData, docSources, watermark, roundTripMeta } = opts;
+
 
   const wb = new ExcelJS.Workbook();
   wb.creator = "Shepi";
@@ -368,7 +376,6 @@ export async function buildStyledWorkbook(opts: BuildOptions): Promise<ExcelJS.W
   const usedNames = new Set<string>(["Cover", "Contents"]);
   const sheetsBuilt: { id: string; label: string; sheetName: string }[] = [];
 
-  // Color-code tabs by section
   const tabColorFor = (id: string): string => {
     if (id.startsWith("dd-adjustments") || id === "qoe-analysis") return GOLD;
     if (id.includes("working-capital") || id === "nwc-analysis" || id === "proof-of-cash" || id === "free-cash-flow")
@@ -404,11 +411,129 @@ export async function buildStyledWorkbook(opts: BuildOptions): Promise<ExcelJS.W
     }
   }
 
-  // --- Table of contents (appended at end; ExcelJS preserves insertion order) ---
   const toc = wb.addWorksheet("Contents", {
     properties: { tabColor: { argb: GOLD } },
   });
   buildTOCSheet(toc, sheetsBuilt);
 
+  if (roundTripMeta) {
+    writeMetaSheet(wb, dealData, roundTripMeta);
+  }
+
   return wb;
 }
+
+/**
+ * Hidden machine-readable sheet for the offline round-trip flow.
+ * Schema 1.1 embeds a JSON base snapshot of the writable wizard_data so
+ * the committer can perform a true three-way merge.
+ */
+function writeMetaSheet(
+  wb: ExcelJS.Workbook,
+  dealData: DealData,
+  meta: { projectId: string; revision: number }
+): void {
+  const ws = wb.addWorksheet(_META_NAME, { state: "hidden" });
+
+  ws.getCell("A1").value = "shepiWorkbook";
+  ws.getCell("B1").value = _SCHEMA_VER;
+  ws.getCell("A2").value = "projectId";
+  ws.getCell("B2").value = meta.projectId;
+  ws.getCell("A3").value = "exportedFromRevision";
+  ws.getCell("B3").value = meta.revision;
+  ws.getCell("A4").value = "exportedAt";
+  ws.getCell("B4").value = new Date().toISOString();
+
+  // Period keys (id, full label, short label) — parser matches column headers
+  let row = 6;
+  ws.getCell(`A${row}`).value = "__periods__";
+  row++;
+  ws.getCell(`A${row}`).value = "periodId";
+  ws.getCell(`B${row}`).value = "label";
+  ws.getCell(`C${row}`).value = "shortLabel";
+  row++;
+  for (const p of dealData.deal.periods) {
+    ws.getCell(`A${row}`).value = p.id;
+    ws.getCell(`B${row}`).value = p.label;
+    ws.getCell(`C${row}`).value = p.shortLabel;
+    row++;
+  }
+
+  // Adjustment id directory (label/type, used for matching workbook rows back to base ids)
+  row += 1;
+  ws.getCell(`A${row}`).value = "__adjustments__";
+  row++;
+  ws.getCell(`A${row}`).value = "id";
+  ws.getCell(`B${row}`).value = "type";
+  ws.getCell(`C${row}`).value = "label";
+  row++;
+  for (const adj of dealData.adjustments) {
+    ws.getCell(`A${row}`).value = adj.id;
+    ws.getCell(`B${row}`).value = adj.type;
+    ws.getCell(`C${row}`).value = adj.label;
+    row++;
+  }
+
+  // Fixed asset directory (description key, used for matching workbook rows back to base entries)
+  row += 1;
+  ws.getCell(`A${row}`).value = "__fixedAssets__";
+  row++;
+  ws.getCell(`A${row}`).value = "key";
+  ws.getCell(`B${row}`).value = "description";
+  row++;
+  for (const fa of dealData.fixedAssets) {
+    const key = (fa.description || "").toLowerCase().trim();
+    if (!key) continue;
+    ws.getCell(`A${row}`).value = key;
+    ws.getCell(`B${row}`).value = fa.description;
+    row++;
+  }
+
+  // Base snapshot of writable wizard_data, JSON-encoded, chunked across cells
+  row += 1;
+  ws.getCell(`A${row}`).value = "__snapshot__";
+  row++;
+
+  const tbSnap: Record<string, Record<string, number>> = {};
+  for (const entry of dealData.trialBalance) {
+    tbSnap[entry.accountId] = { ...entry.balances };
+  }
+  const adjSnap: Record<string, unknown> = {};
+  for (const a of dealData.adjustments) {
+    adjSnap[a.id] = {
+      id: a.id,
+      type: a.type,
+      label: a.label,
+      tbAccountNumber: a.tbAccountNumber,
+      intent: a.intent,
+      notes: a.notes,
+      periodValues: { ...a.amounts },
+    };
+  }
+  const faSnap: Record<string, unknown> = {};
+  for (const fa of dealData.fixedAssets) {
+    const key = (fa.description || "").toLowerCase().trim();
+    if (!key) continue;
+    faSnap[key] = {
+      description: fa.description,
+      category: fa.category,
+      acquisitionDate: fa.acquisitionDate,
+      cost: fa.cost,
+      accumulatedDepreciation: fa.accumulatedDepreciation,
+      netBookValue: fa.netBookValue,
+    };
+  }
+  const snapshot = { trialBalance: tbSnap, adjustments: adjSnap, fixedAssets: faSnap };
+  const json = JSON.stringify(snapshot);
+  // Chunk to stay well under Excel's 32767-char cell limit
+  const CHUNK = 30000;
+  for (let i = 0; i < json.length; i += CHUNK) {
+    ws.getCell(`A${row}`).value = json.slice(i, i + CHUNK);
+    row++;
+  }
+  // Sentinel so the parser knows where the snapshot ends
+  ws.getCell(`A${row}`).value = "__snapshot_end__";
+
+  ws.state = "hidden";
+}
+

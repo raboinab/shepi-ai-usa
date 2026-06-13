@@ -19,6 +19,24 @@ const BATCH_TIMEOUT_MS = 150_000;
 const MAX_RETRIES = 1;
 const RETRY_BACKOFF_MS = 3_000;
 
+// Mirror of src/lib/fsLineItems.ts FS_LINE_ITEMS — must stay in sync.
+const FS_LINE_ITEMS = [
+  "Cash and cash equivalents",
+  "Accounts receivable",
+  "Other current assets",
+  "Fixed assets",
+  "Other assets",
+  "Current liabilities",
+  "Other current liabilities",
+  "Long term liabilities",
+  "Equity",
+  "Revenue",
+  "Cost of Goods Sold",
+  "Operating expenses",
+  "Other expense (income)",
+] as const;
+const FS_LINE_ITEMS_LIST = FS_LINE_ITEMS.join('", "');
+
 // Helper function to get classification context via RAG
 async function getClassificationContext(supabase: any, params: {
   projectId: string,
@@ -129,6 +147,7 @@ Your task: Review each account and identify any that are MISCLASSIFIED — i.e.,
 
   basePrompt += `\n\nFor each misclassification found, return a JSON object using the tool provided.
 Only flag accounts where you have meaningful confidence (>= 0.6) the classification is wrong.
+\`from_line_item\` and \`to_line_item\` MUST be one of these exact strings (case-sensitive): "${FS_LINE_ITEMS_LIST}".
 If no reclassifications are needed, return an empty suggestions array.`;
 
   return basePrompt;
@@ -150,6 +169,7 @@ Common reclassification patterns to look for:
 
 For each misclassification found, return a JSON object using the tool provided.
 Only flag accounts where you have meaningful confidence (>= 0.6) the classification is wrong.
+\`from_line_item\` and \`to_line_item\` MUST be one of these exact strings (case-sensitive): "${FS_LINE_ITEMS_LIST}".
 If no reclassifications are needed, return an empty suggestions array.`;
 
 const toolDefinition = {
@@ -181,8 +201,16 @@ const toolDefinition = {
                   "reclass_other",
                 ],
               },
-              from_line_item: { type: "string", description: "Current FS line item / category" },
-              to_line_item: { type: "string", description: "Suggested correct FS line item / category" },
+              from_line_item: {
+                type: "string",
+                enum: FS_LINE_ITEMS,
+                description: "Current FS line item — MUST be one of the allowed values exactly",
+              },
+              to_line_item: {
+                type: "string",
+                enum: FS_LINE_ITEMS,
+                description: "Suggested correct FS line item — MUST be one of the allowed values exactly",
+              },
               reason: { type: "string", description: "Why this account is misclassified" },
               confidence: { type: "number", description: "Confidence score 0-1" },
               balance: { type: "number", description: "The account balance amount" },

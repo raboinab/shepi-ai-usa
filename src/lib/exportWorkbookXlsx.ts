@@ -9,6 +9,7 @@ import type { ProofOfCashBankData } from "./workbook-grid-builders";
 import type { DocSourceItem } from "./workbook-grid-builders/buildDataSourcesGrid";
 import { derivePriorBalances } from "./derivePriorBalances";
 import { fetchProofOfCashBankData } from "./fetchPocBankData";
+import { supabase } from "@/integrations/supabase/client";
 
 interface ExportOptions {
   dealData: DealData;
@@ -34,17 +35,21 @@ export async function exportWorkbookXlsx({ dealData, projectId, filename, onProg
 
   let pocBankData: ProofOfCashBankData | undefined;
   let docSources: DocSourceItem[] | undefined;
+  let roundTripMeta: { projectId: string; revision: number } | undefined;
   if (resolvedProjectId) {
-    const [bankData, sources] = await Promise.all([
+    const [bankData, sources, revRes] = await Promise.all([
       fetchProofOfCashBankData(resolvedProjectId),
       fetchDocumentSources(resolvedProjectId),
+      supabase.from("projects").select("revision").eq("id", resolvedProjectId).maybeSingle(),
     ]);
     pocBankData = bankData;
     docSources = sources;
+    const revision = (revRes.data as { revision?: number } | null)?.revision ?? 0;
+    roundTripMeta = { projectId: resolvedProjectId, revision };
   }
 
   onProgress?.(2, 3, "Styling workbook");
-  const wb = await buildStyledWorkbook({ dealData, pocBankData, docSources });
+  const wb = await buildStyledWorkbook({ dealData, pocBankData, docSources, roundTripMeta });
 
   onProgress?.(3, 3, "Saving file");
   const buffer = await wb.xlsx.writeBuffer();
@@ -65,3 +70,4 @@ export async function exportWorkbookXlsx({ dealData, projectId, filename, onProg
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+

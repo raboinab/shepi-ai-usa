@@ -67,13 +67,16 @@ export function computeQoEMetrics(dealData: DealData | null | undefined): QoEMet
       revenue += -revReclass;
       grossProfit += -(revReclass + cogsReclass);
 
-      // Net income: all IS reclass impacts
+      // Net income: all IS reclass impacts (above and below the EBITDA line)
       const totalISReclass = revReclass + cogsReclass + opexReclass + payrollReclass + otherReclass;
       netIncome += -totalISReclass;
 
-      // EBITDA: same IS impacts apply to both reported and adjusted
-      reportedEBITDA += -totalISReclass;
-      adjustedEBITDA += -totalISReclass;
+      // EBITDA: only the four EBITDA-included categories. Intra-EBITDA reclasses
+      // (e.g., OpEx ↔ Payroll) net to zero; reclasses that cross into
+      // "Other expense (income)" correctly shift EBITDA.
+      const ebitdaReclass = revReclass + cogsReclass + opexReclass + payrollReclass;
+      reportedEBITDA += -ebitdaReclass;
+      adjustedEBITDA += -ebitdaReclass;
     }
   }
 

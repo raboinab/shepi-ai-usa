@@ -199,6 +199,8 @@ interface ComparisonResult {
   matchedAccounts?: string[];
   /** Optional short note (e.g. "period mismatch", "no GL counterpart") */
   note?: string;
+  /** Informational rows that should display but not affect the consistency score */
+  excludeFromScore?: boolean;
 }
 
 interface AnalysisDiagnostics {
@@ -695,13 +697,16 @@ function isRawQbReport(data: any): boolean {
 
 interface NormalizedAccount { name: string; monthlyValues: Record<string, number>; }
 interface NormalizedSection { accounts: NormalizedAccount[]; }
-interface NormalizedIS { revenue: NormalizedSection; cogs: NormalizedSection; expenses: NormalizedSection; totalRevenue: number; netIncome: number; }
+interface NormalizedIS { revenue: NormalizedSection; otherIncome: NormalizedSection; cogs: NormalizedSection; expenses: NormalizedSection; totalRevenue: number; netIncome: number; }
 interface NormalizedBS { assets: NormalizedSection; liabilities: NormalizedSection; equity: NormalizedSection; }
 
-function bucketIsSection(group: string, header: string): "revenue" | "cogs" | "expenses" | null {
+function bucketIsSection(group: string, header: string): "revenue" | "otherIncome" | "cogs" | "expenses" | null {
   const g = (group || "").toLowerCase();
   const h = (header || "").toLowerCase();
-  if (g === "income" || g === "otherincome" || h === "income" || h === "other income") return "revenue";
+  // Keep operating revenue (Line 1a counterpart) separate from non-operating Other Income
+  // (interest, dividends, gains) which belong on Schedule K, not Page 1.
+  if (g === "otherincome" || h === "other income") return "otherIncome";
+  if (g === "income" || h === "income") return "revenue";
   if (g === "cogs" || h.includes("cost of goods")) return "cogs";
   if (g === "expenses" || g === "otherexpenses" || h === "expenses" || h === "other expenses") return "expenses";
   return null; // ignore GrossProfit, NetIncome, NetOperatingIncome, NetOtherIncome
@@ -735,8 +740,8 @@ function walkQbLeaves(rows: any, onLeaf: (colData: any[]) => void, onSection?: (
 }
 
 function normalizeQbPnlMonthly(months: any[]): NormalizedIS {
-  const buckets: Record<"revenue" | "cogs" | "expenses", Map<string, Record<string, number>>> = {
-    revenue: new Map(), cogs: new Map(), expenses: new Map(),
+  const buckets: Record<"revenue" | "otherIncome" | "cogs" | "expenses", Map<string, Record<string, number>>> = {
+    revenue: new Map(), otherIncome: new Map(), cogs: new Map(), expenses: new Map(),
   };
   let totalRevenue = 0;
   let netIncome = 0;
@@ -761,6 +766,8 @@ function normalizeQbPnlMonthly(months: any[]): NormalizedIS {
         const mv = buckets[bucket].get(name) || {};
         mv[monthKey] = (mv[monthKey] || 0) + amt;
         buckets[bucket].set(name, mv);
+        // totalRevenue tracks operating revenue only (Line 1a counterpart).
+        // Other Income is non-operating and intentionally excluded.
         if (bucket === "revenue") totalRevenue += amt;
       });
     }
@@ -768,7 +775,7 @@ function normalizeQbPnlMonthly(months: any[]): NormalizedIS {
   const sec = (b: Map<string, Record<string, number>>): NormalizedSection => ({
     accounts: Array.from(b.entries()).map(([name, mv]) => ({ name, monthlyValues: mv })),
   });
-  return { revenue: sec(buckets.revenue), cogs: sec(buckets.cogs), expenses: sec(buckets.expenses), totalRevenue, netIncome };
+  return { revenue: sec(buckets.revenue), otherIncome: sec(buckets.otherIncome), cogs: sec(buckets.cogs), expenses: sec(buckets.expenses), totalRevenue, netIncome };
 }
 
 function normalizeQbBalanceSheetMonthly(months: any[]): NormalizedBS {
@@ -1162,18 +1169,82 @@ serve(async (req) => {
 
     // P&L deduction-account matchers (used against canonical_transactions)
     const PL_MATCHERS: Record<string, { match: RegExp[]; exclude?: RegExp[] }> = {
-      salariesWages: { match: [/salar/i, /\bwages?\b/i, /\bpayroll\b/i], exclude: [/officer/i, /owner/i, /payroll tax/i, /shareholder/i] },
-      officerCompensation: { match: [/officer/i, /owner.*comp/i, /shareholder.*comp/i, /\bowners draw\b/i] },
-      repairs: { match: [/repair/i, /maintenance/i] },
+      salariesWages: {
+        match: [
+          /salar/i, /\bwages?\b/i, /\bpayroll\b/i,
+          /\bw[- ]?2\b/i, /\bgusto\b/i, /\badp\b/i, /paychex/i, /justworks/i, /rippling/i,
+          /payroll expense/i, /employee comp/i, /staff (cost|wage|pay)/i, /labor expense/i,
+        ],
+        exclude: [/officer/i, /owner/i, /payroll tax/i, /shareholder/i, /contract labor/i],
+      },
+      officerCompensation: {
+        match: [
+          /officer/i, /owner.*comp/i, /shareholder.*comp/i, /\bowners?\s+draw\b/i,
+          /officer salar/i, /officer wage/i, /owner salar/i, /owner wage/i,
+          /shareholder salar/i, /shareholder wage/i, /\bowner pay\b/i,
+          /\bs[- ]?corp.*(salary|wage|comp)/i,
+        ],
+      },
+      repairs: {
+        match: [
+          /repair/i, /maintenance/i,
+          /\br\s*&\s*m\b/i, /\br\/m\b/i, /upkeep/i, /janitorial/i, /\bcleaning\b/i,
+          /\bservice contract/i, /\bgroundskeep/i, /landscap/i,
+        ],
+        exclude: [/customer service/i, /internet service/i, /professional service/i],
+      },
       badDebts: { match: [/bad debt/i, /uncollect/i, /write.?off/i] },
-      rent: { match: [/\brent\b/i, /\blease\b/i], exclude: [/rental income/i, /rent income/i] },
-      taxes: { match: [/\btax(es)?\b/i, /licens/i], exclude: [/income tax/i, /deferred tax/i] },
-      interestExpense: { match: [/interest expen/i, /^interest$/i, /finance charg/i] },
-      depreciation: { match: [/deprec/i, /amortiz/i] },
+      rent: {
+        match: [
+          /\brent\b/i, /\blease\b/i,
+          /\brental expense/i, /office space/i, /storage (rent|fee)/i,
+          /equipment lease/i, /vehicle lease/i, /\brent expense/i,
+        ],
+        exclude: [/rental income/i, /rent income/i, /prepaid rent/i],
+      },
+      taxes: {
+        match: [
+          /\btax(es)?\b/i, /licens/i,
+          /\bbusiness license/i, /\bpermit/i, /regulatory fee/i,
+          /\bfranchise tax/i, /\bproperty tax/i, /\bpayroll tax/i, /\bexcise tax/i,
+        ],
+        exclude: [/income tax/i, /deferred tax/i, /tax refund/i],
+      },
+      interestExpense: {
+        match: [
+          /interest expen/i, /^interest$/i, /finance charg/i,
+          /\bloan interest/i, /credit card interest/i, /mortgage interest/i,
+          /line of credit/i, /\bloc interest/i,
+        ],
+        exclude: [/interest income/i],
+      },
+      depreciation: {
+        match: [
+          /deprec/i, /amortiz/i,
+          /section 179/i, /bonus depreciation/i,
+        ],
+      },
       depletion: { match: [/deplet/i] },
-      advertising: { match: [/advertis/i, /marketing/i, /promot/i] },
-      pension: { match: [/pension/i, /401\s*\(?k\)?/i, /retirement plan/i, /profit shar/i] },
-      employeeBenefit: { match: [/employee benefit/i, /health insur/i, /\bmedical\b/i, /dental/i, /vision insur/i] },
+      advertising: {
+        match: [
+          /advertis/i, /marketing/i, /promot/i,
+          /\bads\b/i, /google ads/i, /facebook ads/i, /social media/i,
+          /sponsorship/i, /trade show/i, /\bbranding\b/i, /seo expense/i,
+        ],
+      },
+      pension: {
+        match: [
+          /pension/i, /401\s*\(?k\)?/i, /retirement plan/i, /profit shar/i,
+          /simple ira/i, /sep[- ]?ira/i, /\broth\b/i, /employer match/i,
+        ],
+      },
+      employeeBenefit: {
+        match: [
+          /employee benefit/i, /health insur/i, /\bmedical\b/i, /dental/i, /vision insur/i,
+          /\bhsa\b/i, /\bfsa\b/i, /life insurance/i, /disability insurance/i,
+          /worker.?s? comp/i, /\bpto\b/i, /staff (meal|event|gift)/i,
+        ],
+      },
     };
 
     // Balance-sheet matchers (used against processed_data.balance_sheet / trial_balance EOY values)
@@ -1266,8 +1337,9 @@ serve(async (req) => {
       matchedAccounts?: string[];
       note?: string;
       flagMessage?: string;
+      excludeFromScore?: boolean;
     }) => {
-      const { field, taxValue, comparisonValue, source, category, threshold = 0.05, matchedAccounts, note, flagMessage } = args;
+      const { field, taxValue, comparisonValue, source, category, threshold = 0.05, matchedAccounts, note, flagMessage, excludeFromScore } = args;
       if (taxValue === null || taxValue === undefined) return;
       if (comparisonValue === null || comparisonValue === 0) {
         // Skip rows where we have no comparable counterpart — they pollute the table
@@ -1286,8 +1358,9 @@ serve(async (req) => {
         category,
         matchedAccounts,
         note,
+        excludeFromScore,
       });
-      if (flagMessage && Math.abs(variance) > threshold) flags.push(flagMessage);
+      if (flagMessage && Math.abs(variance) > threshold && !excludeFromScore) flags.push(flagMessage);
     };
 
     const pushReviewOnly = (args: {
@@ -1322,7 +1395,7 @@ serve(async (req) => {
 
     // Year-scoped monthly summation. Only sums monthlyValues keys matching `${taxYear}-*`.
     // If no keys match the tax year, returns 0 (so we don't compare a 1120-S against the wrong year).
-    const sumISMonthly = (group: 'revenue' | 'cogs' | 'expenses'): number => {
+    const sumISMonthly = (group: 'revenue' | 'otherIncome' | 'cogs' | 'expenses'): number => {
       if (!incomeStatement) return 0;
       const accounts = incomeStatement[group]?.accounts;
       if (!Array.isArray(accounts)) return 0;
@@ -1361,7 +1434,36 @@ serve(async (req) => {
       category: "income_p1",
       threshold: 0.05,
       flagMessage: `Revenue variance between tax return and Income Statement exceeds 5%`,
+      note: "Compares to operating revenue only; non-operating Other Income (interest, dividends, gains) is tied out separately against Schedule K.",
     });
+
+    // ============ OTHER INCOME (Schedule K non-operating) ============
+    // Tie out QB's "Other Income" section to the Schedule K items that aggregate it on the return.
+    // Without this, Other Income silently inflated the Gross Receipts comparison (pre-fix bug).
+    const isOtherIncome = sumISMonthly('otherIncome');
+    if (isOtherIncome > 0 && extractedData.scheduleK) {
+      const k = extractedData.scheduleK;
+      const taxOtherIncomeSum =
+        (Number(k.interestIncome) || 0) +
+        (Number(k.ordinaryDividends) || 0) +
+        (Number(k.netShortTermCapitalGain) || 0) +
+        (Number(k.netLongTermCapitalGain) || 0) +
+        (Number(k.netSection1231Gain) || 0) +
+        (Number(k.otherIncomeLoss) || 0);
+      if (taxOtherIncomeSum > 0) {
+        pushCompare({
+          field: "Other Income (Schedule K non-operating)",
+          taxValue: taxOtherIncomeSum,
+          comparisonValue: isOtherIncome,
+          source: isSourceLabel,
+          category: "income_p1",
+          threshold: 0.10,
+          note: "Informational only — books 'Other Income' bucket and Schedule K line items (interest, dividends, capital gains, etc.) are structurally different categorizations. Excluded from consistency score.",
+          excludeFromScore: true,
+        });
+      }
+    }
+
 
     // Year-scoped matching against the Income Statement accounts (expenses + COGS).
     // Used both as a complement to GL and as a fallback when no GL is available for the year.
@@ -1393,7 +1495,235 @@ serve(async (req) => {
       }
       return { total, accounts: Array.from(new Set(accounts)) };
     };
+
+    // List year-scoped IS expense + COGS account names (used to surface "considered but
+    // unmatched" hints when a tax line lands $0 in books).
+    const listISExpenseAccountNames = (): string[] => {
+      if (!incomeStatement) return [];
+      const buckets = [incomeStatement.expenses?.accounts, incomeStatement.cogs?.accounts];
+      const names: string[] = [];
+      for (const b of buckets) {
+        if (!Array.isArray(b)) continue;
+        for (const a of b) {
+          const name = String(a?.name || a?.accountName || "").trim();
+          if (!name) continue;
+          const monthly = a?.monthlyValues || {};
+          const hasYearActivity = Object.keys(monthly).some((k) =>
+            k.startsWith(yearMonthPrefix) && Math.abs(Number(monthly[k]) || 0) > 0
+          );
+          if (hasYearActivity) names.push(name);
+        }
+      }
+      return Array.from(new Set(names));
+    };
     const hasIS = !!incomeStatement && isYearScoped;
+
+    // ---------- External-document fallback helpers ----------
+    // When books (GL + IS) show $0 for a deduction line, consult uploaded
+    // payroll / fixed assets / debt schedule documents before giving up.
+    type ExtFallback = { total: number; yearScoped: boolean; source: string };
+    const payrollDoc: any = wizardData.payroll || processedData.payroll;
+    const fixedAssetsDoc: any = wizardData.fixedAssets || processedData.fixed_assets;
+    const debtScheduleDoc: any = wizardData.debtSchedule || processedData.debt_schedule;
+
+    // Resolve a payroll accounts array from any of the shapes we've shipped:
+    //   raw processed_data: { extractedData: { salaryWages: [...], ownerCompensation: [...] } }
+    //   PayrollFallbackData (wizardData.payroll): { salaryWages: [...], ownerCompensation: [...] }
+    //   legacy:              { salaryWages: { accounts: [...] }, ownerComp: { accounts: [...] } }
+    const resolvePayrollAccounts = (group: 'salaryWages' | 'ownerCompensation'): any[] => {
+      if (!payrollDoc) return [];
+      // Real extractor shape
+      const fromExtracted = payrollDoc.extractedData?.[group];
+      if (Array.isArray(fromExtracted)) return fromExtracted;
+      // PayrollFallbackData shape
+      if (Array.isArray(payrollDoc[group])) return payrollDoc[group];
+      // Legacy { accounts: [] } shape
+      if (Array.isArray(payrollDoc[group]?.accounts)) return payrollDoc[group].accounts;
+      // Alternate legacy alias "ownerComp"
+      if (group === 'ownerCompensation') {
+        if (Array.isArray(payrollDoc.ownerComp)) return payrollDoc.ownerComp;
+        if (Array.isArray(payrollDoc.ownerComp?.accounts)) return payrollDoc.ownerComp.accounts;
+        if (Array.isArray(payrollDoc.extractedData?.ownerComp)) return payrollDoc.extractedData.ownerComp;
+      }
+      return [];
+    };
+
+    const sumYearScopedMonthly = (accounts: any[]): { total: number; yearScoped: boolean; annualTotal: number } => {
+      let total = 0;
+      let annualTotal = 0;
+      let anyYearKey = false;
+      for (const a of accounts) {
+        const monthly = a?.monthlyValues || {};
+        for (const k of Object.keys(monthly)) {
+          const v = Math.abs(Number(monthly[k]) || 0);
+          annualTotal += v;
+          if (k.startsWith(yearMonthPrefix)) {
+            total += v;
+            anyYearKey = true;
+          }
+        }
+      }
+      return { total, yearScoped: anyYearKey, annualTotal };
+    };
+
+    // Owner Compensation should reflect ONLY wages/salary paid to officer(s) —
+    // line 7 of Form 1120-S. Exclude rows that look like employer-side payroll
+    // taxes (FICA/Medicare/FUTA/SUTA/unemployment/workers comp), which some
+    // payroll extracts bundle into the ownerCompensation group.
+    const isPayrollTaxRow = (name: unknown): boolean => {
+      const s = String(name ?? '').toLowerCase();
+      if (!s) return false;
+      return /(fica|medicare|social security|payroll tax|unemploy|futa|suta|workers? comp|sui|fui)/i.test(s);
+    };
+    const getPayrollOwnerComp = (): ExtFallback => {
+      const all = resolvePayrollAccounts('ownerCompensation');
+      const accounts = all.filter((a: any) => !isPayrollTaxRow(a?.name ?? a?.account ?? a?.label));
+      if (!accounts.length) {
+        return { total: 0, yearScoped: false, source: "Payroll — Owner Compensation (uploaded)" };
+      }
+      const { total, yearScoped, annualTotal } = sumYearScopedMonthly(accounts);
+      if (total > 0) return { total, yearScoped, source: "Payroll — Owner Compensation (uploaded)" };
+      if (annualTotal > 0) return { total: annualTotal, yearScoped: false, source: "Payroll — Owner Compensation (uploaded; no year scoping)" };
+      return { total: 0, yearScoped: false, source: "Payroll — Owner Compensation (uploaded)" };
+    };
+
+    const getPayrollSalaries = (): ExtFallback => {
+      const accounts = resolvePayrollAccounts('salaryWages');
+      if (accounts.length) {
+        const { total, yearScoped, annualTotal } = sumYearScopedMonthly(accounts);
+        if (total > 0) return { total, yearScoped, source: "Payroll Reports (uploaded)" };
+        if (annualTotal > 0) return { total: annualTotal, yearScoped: false, source: "Payroll Reports (uploaded; no year scoping)" };
+      }
+      // Last-ditch: an employees array
+      const arr = Array.isArray(payrollDoc) ? payrollDoc : payrollDoc?.employees;
+      if (Array.isArray(arr)) {
+        const total = arr.reduce((s: number, e: any) =>
+          s + (Number(e.salary) || Number(e.totalCompensation) || Number(e.grossPay) || Number(e.wages) || 0), 0);
+        if (total > 0) return { total, yearScoped: false, source: "Payroll Reports (uploaded; no year scoping)" };
+      }
+      return { total: 0, yearScoped: false, source: "Payroll Reports (uploaded)" };
+    };
+
+    const resolveFixedAssetList = (): any[] => {
+      if (!fixedAssetsDoc) return [];
+      if (Array.isArray(fixedAssetsDoc)) return fixedAssetsDoc;
+      if (Array.isArray(fixedAssetsDoc.assets)) return fixedAssetsDoc.assets;
+      if (Array.isArray(fixedAssetsDoc.extractedData?.assets)) return fixedAssetsDoc.extractedData.assets;
+      return [];
+    };
+
+    const getFixedAssetDepreciation = (): ExtFallback => {
+      const list = resolveFixedAssetList();
+      if (!list.length) return { total: 0, yearScoped: false, source: "Fixed Assets Schedule (uploaded)" };
+      let yearTotal = 0;
+      let anyComputed = false;
+      for (const a of list) {
+        // Prefer precomputed fields if extractor populates them in the future
+        const precomputed = Number(a.currentYearDepreciation) || Number(a.annualDepreciation) || 0;
+        const cost = Math.abs(Number(a.cost) || 0);
+        // usefulLife may be "7 years", "7", or numeric
+        const lifeRaw = a.usefulLife ?? a.life ?? a.usefulLifeYears;
+        const life = typeof lifeRaw === 'number' ? lifeRaw : parseInt(String(lifeRaw ?? ''), 10);
+        const annual = precomputed > 0 ? precomputed : (life > 0 && cost > 0 ? cost / life : 0);
+        if (annual <= 0) continue;
+        const acqStr = a.dateAcquired || a.acquisitionDate || a.acquiredOn || a.inServiceDate;
+        const acqYear = a.inServiceYear ? Number(a.inServiceYear)
+          : (acqStr ? new Date(acqStr).getFullYear() : NaN);
+        const disposalYear = a.disposalYear ? Number(a.disposalYear)
+          : (a.disposalDate ? new Date(a.disposalDate).getFullYear() : null);
+        // Include if acquired by tax year, not disposed before tax year,
+        // and not fully depreciated by tax year (acqYear + life > taxYear).
+        const fullyDepYear = Number.isFinite(acqYear) && life > 0 ? acqYear + life : Infinity;
+        const inService = !Number.isFinite(acqYear) || acqYear <= taxYear;
+        const notDisposed = disposalYear === null || disposalYear >= taxYear;
+        const stillDepreciating = fullyDepYear > taxYear;
+        if (inService && notDisposed && stillDepreciating) {
+          yearTotal += annual;
+          anyComputed = true;
+        }
+      }
+      if (anyComputed) return { total: yearTotal, yearScoped: true, source: "Fixed Assets Schedule (uploaded)" };
+      return { total: 0, yearScoped: false, source: "Fixed Assets Schedule (uploaded)" };
+    };
+
+    const resolveDebtList = (): any[] => {
+      if (!debtScheduleDoc) return [];
+      if (Array.isArray(debtScheduleDoc)) return debtScheduleDoc;
+      if (Array.isArray(debtScheduleDoc.debts)) return debtScheduleDoc.debts;
+      if (Array.isArray(debtScheduleDoc.extractedData?.debts)) return debtScheduleDoc.extractedData.debts;
+      return [];
+    };
+
+    const getDebtScheduleInterest = (): ExtFallback => {
+      const list = resolveDebtList();
+      if (!list.length) return { total: 0, yearScoped: false, source: "Debt Schedule (uploaded)" };
+      let yearTotal = 0;
+      let anyByYear = false;
+      let estimated = 0;
+      for (const d of list) {
+        // Year-specific precomputed field if available
+        const byYear = d.interestByYear?.[taxYear] ?? d.annualInterestByYear?.[taxYear];
+        if (byYear !== undefined && byYear !== null) {
+          yearTotal += Math.abs(Number(byYear) || 0);
+          anyByYear = true;
+          continue;
+        }
+        const precomputed = Number(d.annualInterest) || Number(d.interestExpense) || 0;
+        const maturityYear = d.maturityDate ? new Date(d.maturityDate).getFullYear() : null;
+        const originationYear = d.originationDate ? new Date(d.originationDate).getFullYear() : null;
+        // Include if debt was outstanding during tax year
+        const outstanding =
+          (maturityYear === null || maturityYear >= taxYear) &&
+          (originationYear === null || originationYear <= taxYear);
+        if (!outstanding) continue;
+        if (precomputed > 0) {
+          estimated += Math.abs(precomputed);
+        } else {
+          const rate = Number(d.interestRate) || 0;
+          const orig = Math.abs(Number(d.originalAmount) || 0);
+          const curr = Math.abs(Number(d.currentBalance) || 0);
+          const avg = orig && curr ? (orig + curr) / 2 : (orig || curr);
+          const annual = avg * (rate / 100);
+          if (annual > 0) estimated += annual;
+        }
+      }
+      if (anyByYear && yearTotal > 0) {
+        return { total: yearTotal, yearScoped: true, source: "Debt Schedule (uploaded)" };
+      }
+      if (estimated > 0) {
+        return { total: estimated, yearScoped: false, source: "Debt Schedule (uploaded, estimated from rate × avg balance)" };
+      }
+      return { total: 0, yearScoped: false, source: "Debt Schedule (uploaded)" };
+    };
+
+    const EXT_FALLBACKS: Record<string, () => ExtFallback> = {
+      officerCompensation: getPayrollOwnerComp,
+      salariesWages: getPayrollSalaries,
+      depreciation: getFixedAssetDepreciation,
+      interestExpense: getDebtScheduleInterest,
+    };
+    // Distinguish "doc missing" (actionable upload tip) from "doc uploaded but had no
+    // matching rows for this year" (extraction review needed).
+    const EXT_DOC_PRESENT: Record<string, () => boolean> = {
+      officerCompensation: () => resolvePayrollAccounts('ownerCompensation').length > 0,
+      salariesWages: () => resolvePayrollAccounts('salaryWages').length > 0
+        || Array.isArray(payrollDoc) || Array.isArray(payrollDoc?.employees),
+      depreciation: () => resolveFixedAssetList().length > 0,
+      interestExpense: () => resolveDebtList().length > 0,
+    };
+    const EXT_TIP_MISSING: Record<string, string> = {
+      officerCompensation: "Tip: upload a payroll register or W-3 for this year to enable a direct comparison.",
+      salariesWages: "Tip: upload a payroll register or W-3 for this year to enable a direct comparison.",
+      depreciation: "Tip: upload a fixed assets / depreciation schedule for this year to enable a direct comparison.",
+      interestExpense: "Tip: upload a debt schedule for this year to enable a direct comparison.",
+    };
+    const EXT_TIP_EMPTY: Record<string, string> = {
+      officerCompensation: "Note: uploaded payroll register had no Owner Compensation rows for this year — extraction may need review.",
+      salariesWages: "Note: uploaded payroll register had no Salaries & Wages rows for this year — extraction may need review.",
+      depreciation: "Note: uploaded fixed assets schedule had no assets depreciating in this year — extraction may need review.",
+      interestExpense: "Note: uploaded debt schedule had no debts outstanding in this year — extraction may need review.",
+    };
+
 
     // Pseudo-GL synthesis: when no canonical_transactions exist for the year
     // (e.g. qbtojson-only or quickbooks_api-only projects), populate glByAccount
@@ -1401,7 +1731,7 @@ serve(async (req) => {
     // that don't already fall back to IS (Distributions, Interest income,
     // Charitable, COGS purchases).
     if (!hasGL && hasIS && incomeStatement) {
-      for (const group of ["revenue", "cogs", "expenses"] as const) {
+      for (const group of ["revenue", "otherIncome", "cogs", "expenses"] as const) {
         const accts = (incomeStatement as any)[group]?.accounts;
         if (!Array.isArray(accts)) continue;
         for (const a of accts) {
@@ -1453,6 +1783,12 @@ serve(async (req) => {
         ["Pension (17)", "pension", "pension", 0.10],
         ["Employee Benefits (18)", "employeeBenefit", "employeeBenefit", 0.10],
       ];
+      // Track payroll-line outcomes so we can emit a combined Officer+Salaries fallback row
+      // when an S-corp books everything to a single payroll bucket.
+      const payrollOutcome: Record<'officerCompensation' | 'salariesWages', { taxVal: number; bookVal: number } | null> = {
+        officerCompensation: null,
+        salariesWages: null,
+      };
       for (const [label, taxKey, matcherKey, thr] of deductionRows) {
         const taxVal = (extractedData as any)[taxKey] as number | null;
         if (taxVal === null || taxVal === undefined) continue;
@@ -1468,20 +1804,65 @@ serve(async (req) => {
             ? `Income Statement ${taxYear} (${matched.accounts.length} acct${matched.accounts.length === 1 ? '' : 's'})`
             : (hasGL ? "GL — no matching account" : `Income Statement ${taxYear} — no matching account`);
         }
+        if (taxKey === 'officerCompensation' || taxKey === 'salariesWages') {
+          payrollOutcome[taxKey] = { taxVal, bookVal: matched.total };
+        }
         if (matched.total === 0) {
+          // Before giving up, try the per-line external-document fallback (payroll,
+          // fixed assets, debt schedule) for the four tax keys we support.
+          const fallbackFn = EXT_FALLBACKS[taxKey];
+          if (fallbackFn) {
+            const ext = fallbackFn();
+            if (ext.total > 0) {
+              if (taxKey === 'officerCompensation' || taxKey === 'salariesWages') {
+                payrollOutcome[taxKey] = { taxVal, bookVal: ext.total };
+              }
+              const yearNote = ext.yearScoped ? '' : ' — variance may reflect multi-year totals';
+              // If the tax return reports $0 for this line AND our books-side value is only
+              // an estimate (e.g. debt-schedule rate × avg balance), treat the row as
+              // informational. A -100% "variance" against an estimate is not a real finding.
+              const isEstimated = /\bestimated\b/i.test(ext.source);
+              const informational = taxVal === 0 && isEstimated;
+              pushCompare({
+                field: label,
+                taxValue: taxVal,
+                comparisonValue: ext.total,
+                source: ext.source,
+                category: "deductions_p1",
+                threshold: thr,
+                excludeFromScore: informational || undefined,
+                note: informational
+                  ? `Tax return reports $0 for ${label}; books value is an estimate from the uploaded ${ext.source.replace(/ \(.*\)/, '')}. Informational only — excluded from consistency score.`
+                  : undefined,
+                flagMessage: informational
+                  ? undefined
+                  : `${label}: books had $0 for this line; matched against uploaded ${ext.source}${yearNote}. Variance vs. tax exceeds ${(thr! * 100).toFixed(0)}%.`,
+              });
+              continue;
+            }
+          }
           const reason = hasGL && hasIS
             ? `No GL or Income Statement account matched "${matcherKey}" for ${taxYear}`
             : hasGL
               ? `No GL account matched "${matcherKey}" for ${taxYear}`
               : `No Income Statement account matched "${matcherKey}" for ${taxYear}`;
           skippedFields.push({ field: label, reason });
-          // Surface the gap as a review_only row so a non-zero tax deduction with $0 in books
-          // doesn't silently disappear from the comparison table.
+          // Surface up to 5 expense accounts the matcher considered but rejected, so the
+          // user can spot misclassifications (e.g. "Contract Labor" not matched as wages).
+          const considered = hasIS ? listISExpenseAccountNames() : [];
+          const hint = considered.length
+            ? ` Considered accounts that did not match: ${considered.slice(0, 5).map((n) => `"${n}"`).join(', ')}${considered.length > 5 ? `, +${considered.length - 5} more` : ''}.`
+            : '';
+          const docPresent = EXT_DOC_PRESENT[taxKey]?.() ?? false;
+          const tipText = EXT_FALLBACKS[taxKey]
+            ? (docPresent ? EXT_TIP_EMPTY[taxKey] : EXT_TIP_MISSING[taxKey])
+            : '';
+          const tip = tipText ? ` ${tipText}` : '';
           pushReviewOnly({
             field: label,
             taxValue: taxVal,
             category: "deductions",
-            note: `Tax return reports ${taxVal.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })} but books show $0 for any account matching "${matcherKey}" in ${taxYear}.`,
+            note: `Tax return reports ${taxVal.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })} but books show $0 for any account matching "${matcherKey}" in ${taxYear}.${hint}${tip}`,
           });
           continue;
         }
@@ -1497,6 +1878,54 @@ serve(async (req) => {
           matchedAccounts: matched.accounts,
           flagMessage: `${label} variance vs. books exceeds ${(thr! * 100).toFixed(0)}%`,
         });
+      }
+
+      // S-corp combined-payroll fallback: when both Officer Comp and Salaries are present on
+      // the return but at least one came up $0 in books, run a single combined match so the
+      // headline score isn't dragged down by a structural book-side split that doesn't exist.
+      const oc = payrollOutcome.officerCompensation;
+      const sw = payrollOutcome.salariesWages;
+      if (oc && sw && (oc.bookVal === 0 || sw.bookVal === 0)) {
+        const combinedMatchers = [
+          ...PL_MATCHERS.officerCompensation.match,
+          ...PL_MATCHERS.salariesWages.match,
+        ];
+        const combinedExcludes = (PL_MATCHERS.salariesWages.exclude || []).filter(
+          (rx) => !/officer|owner|shareholder/i.test(rx.source)
+        );
+        let combined = hasGL ? matchAccounts(combinedMatchers, combinedExcludes) : { total: 0, accounts: [] as string[] };
+        let combinedSource = combined.accounts.length
+          ? `GL (${combined.accounts.length} acct${combined.accounts.length === 1 ? '' : 's'})`
+          : '';
+        if (combined.total === 0 && hasIS) {
+          combined = matchISAccounts(combinedMatchers, combinedExcludes);
+          combinedSource = combined.accounts.length
+            ? `Income Statement ${taxYear} (${combined.accounts.length} acct${combined.accounts.length === 1 ? '' : 's'})`
+            : '';
+        }
+        // If books are still empty, sum uploaded payroll documents (owner comp + salaries).
+        if (combined.total === 0) {
+          const ocExt = getPayrollOwnerComp();
+          const swExt = getPayrollSalaries();
+          const extTotal = ocExt.total + swExt.total;
+          if (extTotal > 0) {
+            combined = { total: extTotal, accounts: [] };
+            const yearScoped = ocExt.yearScoped && swExt.yearScoped;
+            combinedSource = `Payroll Reports (uploaded${yearScoped ? '' : '; no year scoping'})`;
+          }
+        }
+        if (combined.total > 0) {
+          pushCompare({
+            field: "Combined Payroll (Officer + Salaries) — fallback",
+            taxValue: oc.taxVal + sw.taxVal,
+            comparisonValue: combined.total,
+            source: combinedSource,
+            category: "deductions_p1",
+            threshold: 0.10,
+            matchedAccounts: combined.accounts,
+            flagMessage: "Combined payroll variance vs. books exceeds 10% — books may not split officer/staff compensation",
+          });
+        }
       }
     } else {
 
@@ -1912,6 +2341,7 @@ serve(async (req) => {
     let totalComparisons = 0;
     for (const comp of comparisons) {
       if (comp.status === 'missing_data' || comp.status === 'review_only') continue;
+      if (comp.excludeFromScore) continue;
       totalComparisons += 1;
       if (comp.status === 'match') matchCount += 1;
       else if (comp.status === 'minor_variance') matchCount += 0.7;

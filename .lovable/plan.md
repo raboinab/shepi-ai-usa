@@ -1,80 +1,54 @@
-## Diagnosis
+# Reclass Review + EBITDA Reclass Visibility
 
-Pulled the live data for project `fa0768ca…` and compared against what the screenshot is showing.
+## Context
 
-**What's actually in the DB (latest `tax_return_analysis` rows):**
+After the EBITDA reclass policy fix (only cross-line reclasses shift EBITDA), Reported EBITDA on this deal dropped because two AI-suggested reclasses move amounts from `Revenue` → `Other expense (income)`:
 
-| Year | Score | Comparisons | Sources picked |
-|------|-------|-------------|----------------|
-| 2023 | 56    | 9           | IS + BS = qbtojson aggregate, TB + GL = **period_mismatch** |
-| 2024 | 56    | 9           | IS + BS = qbtojson aggregate, TB + GL = **period_mismatch** |
-| 2025 | 100   | **3**       | IS + BS + TB + GL = in_year (single month) |
+| # | Amount | Rationale (AI) |
+|---|--------|----------------|
+| 1 | $4,224 | "Portfolio/investment income is non-operating… belongs below the line." |
+| 2 | $69,018 | "Large catch-all credit, may contain gains on asset sales / one-time items." |
 
-So the analyzer is producing real scores. The screenshot ("N/A — no comparable data", "Analyzed: 6/4/2026") is **stale UI** — the user is looking at a previous render; the most recent 2025 re-run finished at 15:05 today with score 100 and was never refetched.
+Both are **directionally correct QoE treatment** if the underlying accounts really are non-operating. The $69k one is flagged by the AI itself as "investigate" — it could be legitimate other income, or it could be misclassified operating revenue. Either way, the user needs an easy way to see and audit cross-line reclasses.
 
-But the underlying analyzer also has two real bugs that crater coverage:
+## Part A — Manual review surface (the "is this correct" workflow)
 
-### Bug 1 — Tax year 2025 picks a single month of unified_api data
-`processed_data` for `income_statement` / `balance_sheet` / `trial_balance` (source `unified_api`) stores **one row per month**. The resolver in `parse-tax-return/index.ts` (≈L1057-1067) does:
-```ts
-const inYear = rows.find(r => period_end inside 2025-01-01..2025-12-31)
-```
-This picks the first matching row (a single month), then proceeds as if that month *were* the full year. That's why 2025 has only 3 comparisons and unrealistically high score=100 — most matchers find $0 and silently skip via `pushCompare` (comparisonValue === 0 → return).
+Today the reclass list shows every reclass uniformly; nothing visually flags which ones change EBITDA. Add a lightweight callout in the **Reclassifications** wizard section:
 
-### Bug 2 — qbtojson multi-year aggregates with non-null period_end fall through to `period_mismatch`
-For TB and GL the qbtojson row has `period_start = 2023-01-31`, `period_end = 2025-12-31` (multi-year). The aggregate branch (L1069) only matches `!r.period_end && source_type === 'qbtojson'`. So the resolver skips it and lands in branch (c) "period_mismatch", which discards GL/TB matching for the right year. That's the "Only out-of-year data available" diagnostic in 2023 + 2024.
+1. Filter reclasses where `fromFsLineItem` and `toFsLineItem` land on opposite sides of the EBITDA line (using the same `EBITDA_CATEGORIES` set from `reclassHelpers.ts`).
+2. Render an amber `Card` at the top of the section titled **"Cross-line reclasses (affect EBITDA)"** listing each with: amount, from → to, source (AI vs manual), and description.
+3. Each row has **Approve / Revert** buttons that call the existing reclass mutation helpers (no new data model).
 
-### Bug 3 — UI doesn't auto-refetch after re-analyze if the invoke errors silently
-`handleReanalyzeTaxReturn` updates state only when `parseResult.analysis?.documentId` is present. If the edge function returns the bare object (current shape), the field is present, but if it ever returns `{ status:'queued' }` (e.g. the auto-reanalyze path), the card stays stale and shows yesterday's "Analyzed:" date.
+Source of truth: the existing `reclassifications` array; no schema change.
 
-## Plan
+## Part B — QoE Summary visibility
 
-### 1. Resolver: prefer broadest year-coverage source (parse-tax-return/index.ts ~L1040-1088)
+In `src/components/wizard/sections/QoESummarySection.tsx`:
 
-Replace the "pick first in_year" logic with:
+1. Compute `crossLineReclassImpact` = `reclassAwareReportedEBITDA - reclassAwareReportedEBITDA-without-reclass`. Since `EBITDA_CATEGORIES` overlay only fires for cross-line moves, this equals the EBITDA delta caused by reclasses.
+2. Insert a new bar **"Reclass impact"** into `ebitdaComparison` between "Reported" and "Adjustments", so the bridge becomes:
+   `Reported (pre-reclass) → Reclass impact → Adjustments → Adjusted`.
+3. The "Reported EBITDA" summary card gets a tooltip / subtitle: *"Includes $X from N cross-line reclasses"* when non-zero, linking to the Reclassifications section.
 
-1. **Multi-row in_year aggregation** — collect *all* rows with `period_start..period_end` overlapping the tax year, then:
-   - For IS/cashflow-style (additive) data: merge by appending monthlyValues maps so the full year is summed.
-   - For BS (point-in-time): pick the row whose `period_end` is closest to (but ≤) `yearEnd`.
-2. **Treat any row spanning ≥ 11 months as `aggregate`** even when `period_end` is non-null (covers the qbtojson TB/GL case). Concretely:
-   ```ts
-   const isMultiYearAggregate = (r) =>
-     r.source_type === 'qbtojson' &&
-     (!r.period_end ||
-      monthsBetween(r.period_start, r.period_end) >= 11);
-   ```
-3. Keep the existing single-row in_year branch as a fallback only when no aggregation is possible.
+## Part C — Per-reclass EBITDA delta in the workbook (read-only)
 
-Expected effect:
-- 2025: IS/BS/TB stitched from 7 unified_api months + qbtojson aggregate fill → real year totals → meaningful variance for Gross Receipts, Officer Comp, Salaries, etc.
-- 2023/2024: GL/TB no longer flagged "period_mismatch"; matchers run against the qbtojson multi-year aggregate scoped to that year.
+In the reclassifications grid (`src/components/workbook/tabs/…` — locate the existing reclass tab), add a derived "EBITDA Δ" column:
+- `0` for intra-EBITDA rows
+- `±amount` for cross-line rows (sign per from/to direction)
 
-### 2. Don't silently drop deduction comparisons when the matcher hits one account with $0
+No data model change; purely a display column.
 
-`pushCompare` skips on `comparisonValue === 0`. For deductions where the tax return reports a real number and the IS/GL shows $0, that's a *meaningful* variance (e.g. taxpayer claimed Officer Comp but the books show none). Emit it as a `review_only` row with note "Books show $0 for matched accounts" instead of silently dropping. (`parse-tax-return/index.ts` ~L1252-1257 + the deduction loop ~L1454-1463.)
+## Out of Scope
 
-### 3. Force a refetch after re-analyze (DocumentUploadSection.tsx ~L818-857)
+- Changing the policy itself (already approved last turn).
+- Rewriting AI reclass suggestion logic.
+- Per-period EBITDA bridge waterfalls in the PDF exporter — defer.
+- Net Income surfaces — already correctly reflect all reclasses.
 
-After `handleReanalyzeTaxReturn` finishes (success path or any returned object), call `fetchTaxReturnInsights()` to pull the freshest row from `processed_data` instead of relying on `parseResult.analysis`. Removes the "Analyzed: 6/4" stale-card case entirely.
+## Verification
 
-### 4. Smoke-test against the live project
-
-After redeploy, re-run `parse-tax-return` for all three documents on project `fa0768ca…` and verify:
-- 2025 produces >10 comparisons (was 3)
-- 2023/2024 source diagnostics flip TB + GL from `period_mismatch` → `aggregate`
-- Score is no longer 100 for 2025 once real account-level matching runs
-
-## Technical Details
-
-**Files**
-- `supabase/functions/parse-tax-return/index.ts` — resolver + zero-comparison handling
-- `src/components/wizard/sections/DocumentUploadSection.tsx` — refetch after re-analyze
-
-**Data assumptions verified via SQL**
-- `processed_data` for this project has 15 unified_api monthly IS rows (2025-06..2026-05), 15 monthly BS rows, 15 monthly TB rows; qbtojson aggregates exist for IS (array of 36 months), BS (array of 36), TB (`monthlyReports[36]`), GL (raw report shape).
-- canonical_transactions: not inspected in this debug pass; the existing `GL_SOURCE_TYPES` filter + `txn_date` range is unchanged.
-
-**Out of scope**
-- Re-architecting how unified_api stores monthly rows.
-- Changing the AI extraction prompt / Schedule K-L-M shape.
-- Cross-validation against `tax_return_analysis_v1` schema (per prior decision, tax return stays out of the normalized contract).
+1. On project `fa0768ca-…`: the new amber callout in Reclassifications lists exactly the two Revenue → Other (income) reclasses.
+2. QoE Summary EBITDA Bridge shows a visible "Reclass impact" bar matching the delta between pre- and post-reclass Reported EBITDA.
+3. Reverting one of the two cross-line reclasses immediately removes its row from the callout and shrinks the "Reclass impact" bar.
+4. Reverting a purely intra-EBITDA reclass leaves "Reclass impact" unchanged (still zero contribution from that reclass).
+5. Existing `reclassEbitda.test.ts` continues to pass; add one test asserting `crossLineReclassImpact` equals the sum of cross-line reclass amounts (with correct signs).
