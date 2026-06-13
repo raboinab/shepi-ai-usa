@@ -114,6 +114,7 @@ export default function Lenders() {
 
       <h2>Related Resources</h2>
       <RelatedResourceCards links={[
+        { to: "/sba-loan-qoe", label: "QoE for SBA Loans" },
         { to: "/use-cases/accountants-cpa", label: "QoE for Accountants & CPA Firms" },
         { to: "/use-cases/independent-searchers", label: "QoE for Independent Searchers" },
         { to: "/guides/quality-of-earnings", label: "What Is a QoE Report?" },
