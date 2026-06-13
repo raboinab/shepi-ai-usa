@@ -137,7 +137,7 @@ export default function ShepiVsExcel() {
       <h2 id="faq">FAQ</h2>
       <AccordionFAQ items={[
         { question: "Can I still use Excel alongside Shepi?", answer: "Absolutely. Many users export Shepi's output to Excel and perform additional custom analysis there. Shepi handles the structure and heavy lifting; you can extend it however you want." },
-        { question: "Isn't a careful analyst in Excel just as accurate?", answer: (<>Careful analysts still re-type numbers, still maintain formulas across tabs, and still reconcile a workbook against a separately-built PDF. The error surface is structural, not a matter of effort. See <a href=\"/accuracy\" className=\"text-primary underline underline-offset-4\">how shepi removes the human-error surface</a> for the full breakdown.</>) },
+        { question: "Isn't a careful analyst in Excel just as accurate?", answer: (<>Careful analysts still re-type numbers, still maintain formulas across tabs, and still reconcile a workbook against a separately-built PDF. The error surface is structural, not a matter of effort. See <Link to="/accuracy" className="text-primary underline underline-offset-4">how shepi removes the human-error surface</Link> for the full breakdown.</>) },
       ]} />
 
       <h2>Related Resources</h2>
