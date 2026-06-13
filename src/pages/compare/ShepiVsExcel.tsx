@@ -137,14 +137,15 @@ export default function ShepiVsExcel() {
       <h2 id="faq">FAQ</h2>
       <AccordionFAQ items={[
         { question: "Can I still use Excel alongside Shepi?", answer: "Absolutely. Many users export Shepi's output to Excel and perform additional custom analysis there. Shepi handles the structure and heavy lifting; you can extend it however you want." },
+        { question: "Isn't a careful analyst in Excel just as accurate?", answer: (<>Careful analysts still re-type numbers, still maintain formulas across tabs, and still reconcile a workbook against a separately-built PDF. The error surface is structural, not a matter of effort. See <Link to="/accuracy" className="text-primary underline underline-offset-4">how shepi removes the human-error surface</Link> for the full breakdown.</>) },
       ]} />
 
       <h2>Related Resources</h2>
       <RelatedResourceCards links={[
+        { to: "/accuracy", label: "How shepi Prevents Human Errors" },
         { to: "/compare/ai-qoe-vs-traditional", label: "AI QoE vs. Traditional CPA Firm" },
         { to: "/guides/quality-of-earnings", label: "What Is a QoE Report?" },
         { to: "/use-cases/independent-searchers", label: "QoE for Independent Searchers" },
-        { to: "/features/quickbooks-integration", label: "QuickBooks Integration" },
       ]} />
     </ContentPageLayout>
   );

@@ -808,6 +808,57 @@ const Index = () => {
         </div>
       </section>
 
+      {/* Accuracy Section */}
+      <section className="bg-background py-20 md:py-28 px-6 md:px-12">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-14">
+            <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4 block">Accuracy</span>
+            <h2 className="text-3xl md:text-4xl lg:text-5xl font-serif font-bold text-foreground mb-4">
+              A spreadsheet trusts whoever typed last. shepi doesn't.
+            </h2>
+            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+              Manual QoE work in Excel introduces errors at every step where a human touches a number. shepi removes those steps.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+            <Card className="p-7 border rounded-lg">
+              <div className="w-11 h-11 bg-primary/10 rounded-full flex items-center justify-center mb-4">
+                <Database className="w-5 h-5 text-primary" />
+              </div>
+              <h3 className="text-lg font-semibold text-foreground mb-2">No retyping</h3>
+              <p className="text-muted-foreground text-sm leading-relaxed">
+                Data flows from source documents into a structured ledger. There is no analyst re-keying trial balance values at 1 a.m.
+              </p>
+            </Card>
+            <Card className="p-7 border rounded-lg">
+              <div className="w-11 h-11 bg-primary/10 rounded-full flex items-center justify-center mb-4">
+                <Calculator className="w-5 h-5 text-primary" />
+              </div>
+              <h3 className="text-lg font-semibold text-foreground mb-2">No broken formulas</h3>
+              <p className="text-muted-foreground text-sm leading-relaxed">
+                The adjustment math is deterministic — same inputs, same outputs, every run. No inserted-row drift, no #REF!, no surprises.
+              </p>
+            </Card>
+            <Card className="p-7 border rounded-lg">
+              <div className="w-11 h-11 bg-primary/10 rounded-full flex items-center justify-center mb-4">
+                <Layers className="w-5 h-5 text-primary" />
+              </div>
+              <h3 className="text-lg font-semibold text-foreground mb-2">One source of truth</h3>
+              <p className="text-muted-foreground text-sm leading-relaxed">
+                Workbook, PDF report, and dashboards all read from the same data. The bridge always ties because it cannot not tie.
+              </p>
+            </Card>
+          </div>
+
+          <div className="text-center">
+            <Link to="/accuracy" className="text-primary font-medium hover:underline inline-flex items-center gap-1">
+              How shepi prevents the errors humans make <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
+        </div>
+      </section>
+
       {/* How It Works Section */}
       <section id="how-it-works" className="bg-background py-20 md:py-28 px-6 md:px-12">
         <div className="max-w-6xl mx-auto">
@@ -1234,6 +1285,7 @@ const Index = () => {
               <ul className="space-y-2">
                 <li><a href="#features" className="text-secondary/70 hover:text-secondary text-sm">Features</a></li>
                 <li><a href="#how-it-works" className="text-secondary/70 hover:text-secondary text-sm">How It Works</a></li>
+                <li><Link to="/accuracy" className="text-secondary/70 hover:text-secondary text-sm">Accuracy</Link></li>
                 <li><Link to="/pricing" className="text-secondary/70 hover:text-secondary text-sm">Pricing</Link></li>
               </ul>
             </div>
