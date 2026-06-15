@@ -1,53 +1,39 @@
-# Add Zero Data Retention section to Trust Center
+## A. Rename `/features/quickbooks-integration` → `/features/accounting-integration`
 
-Add a dedicated, visible "Zero Data Retention" section to `/security`. ZDR applies broadly across Shepi — not just to AI sub-processors — because financial data pulled from QuickBooks and uploaded documents is processed and returned, not retained for any secondary purpose.
+1. **Rename file**: `src/pages/features/QuickBooksIntegration.tsx` → `src/pages/features/AccountingIntegration.tsx`. Rename default export to `AccountingIntegration`. Update `canonical` and JSON-LD `mainEntityOfPage` to `https://shepi.ai/features/accounting-integration`.
+2. **`src/App.tsx`**:
+   - Rename lazy import identifier `QuickBooksIntegrationPage` → `AccountingIntegrationPage` and update import path.
+   - Change route path from `features/quickbooks-integration` to `features/accounting-integration`.
+   - Add redirect route: `<Route path="features/quickbooks-integration" element={<Navigate to="/features/accounting-integration" replace />} />` (import `Navigate` from `react-router-dom`).
+   - Update `prerenderPaths` entry to the new path.
+3. **`public/sitemap.xml`**: replace the URL entry.
+4. **Update internal `<Link to="...">`** in:
+   - `src/pages/Resources.tsx` (line 74)
+   - `src/pages/features/AIAssistant.tsx` (line 114)
+   - `src/pages/features/QoESoftware.tsx` (line 97)
+   - `src/pages/guides/DueDiligenceChecklist.tsx` (line 72)
+   Labels stay; only `to` prop changes.
 
-## Scope
+## B. Remove Intuit from subprocessor disclosures
 
-Single-file change to `src/pages/Security.tsx`. No new route, no uploaded document — contractual + architectural posture only.
+Rationale: Intuit/QuickBooks is a customer-controlled OAuth data source, not a Shepi subprocessor.
 
-## New section: "Zero Data Retention"
+1. **`src/pages/Subprocessors.tsx`** (lines 42–48): delete the entire `Intuit (QuickBooks)` entry.
+2. **`src/pages/Security.tsx`**:
+   - Line 174: remove `["Intuit (QuickBooks)", ...]` row from the inherited-certifications table.
+   - Line 43 (FAQ schema) & line 250 (rendered FAQ): change the list `(AWS, Supabase, Vercel, Stripe, Intuit)` → `(AWS, Supabase, Vercel, Stripe)`.
+3. **`src/pages/security/ResponsibleDisclosure.tsx`** (line 46): remove "Intuit" from the out-of-scope third-party list, leaving Supabase, Stripe, Vercel.
 
-Placed directly after the existing **Compliance & Certifications** section.
+## C. Project memory
 
-Content blocks:
+Add Core rule: *"Intuit/QuickBooks is a customer-controlled OAuth data source, not a Shepi subprocessor — do not list on /security or /subprocessors. Public marketing integration page lives at `/features/accounting-integration`; the old `/features/quickbooks-integration` URL redirects client-side."*
 
-1. **Eyebrow + heading**: "Data Handling · Zero Data Retention"
-2. **Lead paragraph** — plain English:
-   - Shepi is a processing engine, not a data warehouse. Customer financial data — QuickBooks pulls, uploaded statements, GL detail — is ingested, analyzed, and returned as deliverables. We do not retain it for secondary use, do not sell it, do not share it, and do not use it to train any model.
-   - For AI-assisted analysis, prompts route through Vercel AI Gateway to Anthropic and OpenAI under no-retention, no-training terms.
-3. **BenefitGrid (4 cards)** — what ZDR means at Shepi:
-   - **No model training** — Your data is never used to train foundation models or any Shepi model.
-   - **No retention beyond the engagement** — Customers can purge project data at any time; we retain only what's needed to deliver the project and meet legal/tax obligations.
-   - **No human review of customer data** — Internal staff do not browse customer data; access is role-scoped and audit-logged.
-   - **No secondary use** — Data is never repackaged, resold, or used for benchmarking, analytics products, or marketing.
-4. **ComparisonTable — "How each data flow is handled"**:
-   | Data flow | Retention posture |
-   |---|---|
-   | Prompts/completions to Claude or OpenAI via Vercel AI Gateway | Zero retention, zero training (upstream contractual) |
-   | Document text extracted for AI analysis | Processed in-request; not stored on AI sub-processor side |
-   | QuickBooks pulls + financial data in Postgres | Held only for the active engagement; purged on customer request; never sent to LLMs in raw form and never used to train models |
-   | Files at rest in Supabase Storage | Encrypted at rest; scoped to the project; deleted with the project |
-   | Application logs (Vercel, Supabase) | Operational only; standard short retention; no customer financial content |
-5. **Evidence / references** — small text block:
-   - Link to **Vercel AI Gateway data processing terms** (external)
-   - Link to **DPA §6 (AI Sub-processors)** (internal `/dpa`)
-   - Link to **Subprocessors** (internal `/subprocessors`)
-   - Note: "No separate ZDR contract is required — the no-retention posture flows from Shepi's architecture and Vercel AI Gateway's upstream agreements. Enterprise prospects can request the current data-flow diagram under NDA via security@shepi.ai."
+## Out of scope (untouched)
 
-## Supporting tweaks (same file)
+- All in-app product code: `useQuickBooksConnection`, `QuickBooksButton`, wizard sync banners, OAuth connect/sync flow, edge functions, Supabase types, lib utilities, mock data, admin diagnostics, types/workflow.
+- The word "intuition" (false-positive matches).
 
-- **At-a-Glance StatRow** — add a fourth stat: `Zero Data Retention`
-- **FAQ** — keep the existing "Do you train AI models on our data?" answer but append: "See the Zero Data Retention section above for the full data-flow breakdown."
-- **FAQ JSON-LD** — mirror the same appended sentence so search-result rich snippets stay aligned.
-- **SEO meta description** — append " · Zero Data Retention" if under 160 chars (trim other phrasing if needed).
+## Technical notes
 
-## What this does NOT change
-
-- No edits to `/dpa`, `/subprocessors`, `/privacy`, `/terms`.
-- No new route, no uploaded PDF, no badge.
-- No claim that Shepi has a signed standalone ZDR addendum — framing is "we inherit ZDR from Vercel AI Gateway upstream + we don't retain customer data ourselves by design," consistent with the inherited-compliance posture already established for SOC 2 / ISO 27001.
-
-## Files
-
-- `src/pages/Security.tsx` — add section, update StatRow, FAQ, FAQ JSON-LD, SEO description.
+- Redirect is React Router client-side `<Navigate replace>`, not a true HTTP 301 (Lovable hosting doesn't expose server redirect config). Acceptable since the URL has no significant external backlinks.
+- The QuickBooks OAuth connect and sync are unaffected — no in-app files touched.

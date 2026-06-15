@@ -94,7 +94,7 @@ export default function QoESoftware() {
         Quality of Earnings software automates the financial analysis process at the center of every M&A transaction. Instead of analysts manually building spreadsheets over weeks, QoE software ingests financial data, maps accounts to standardized categories, identifies <Link to="/guides/ebitda-adjustments">EBITDA adjustments</Link>, flags anomalies, and generates lender-ready deliverables.
       </p>
       <p>
-        Shepi is purpose-built for this workflow — from data ingestion through <Link to="/features/quickbooks-integration">accounting integration partners</Link> or file upload, to AI-powered analysis, to exportable QoE reports. It's not a general-purpose accounting tool retrofitted for M&A; it's a <strong>diligence engine built for transactions</strong>.
+        Shepi is purpose-built for this workflow — from data ingestion through <Link to="/features/accounting-integration">accounting integration partners</Link> or file upload, to AI-powered analysis, to exportable QoE reports. It's not a general-purpose accounting tool retrofitted for M&A; it's a <strong>diligence engine built for transactions</strong>.
       </p>
 
       <h2 id="who-its-for">Who Uses QoE Software?</h2>

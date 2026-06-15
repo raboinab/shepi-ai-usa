@@ -1,6 +1,6 @@
 // App root - route table for vite-react-ssg
 import { lazy, Suspense, ReactNode } from "react";
-import { Outlet } from "react-router-dom";
+import { Navigate, Outlet } from "react-router-dom";
 import type { RouteRecord } from "vite-react-ssg";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -43,7 +43,7 @@ const BusinessBrokers = lazy(() => import("./pages/use-cases/BusinessBrokers"));
 const Lenders = lazy(() => import("./pages/use-cases/Lenders"));
 const ShepiVsExcel = lazy(() => import("./pages/compare/ShepiVsExcel"));
 const AIvsTraditional = lazy(() => import("./pages/compare/AIvsTraditional"));
-const QuickBooksIntegrationPage = lazy(() => import("./pages/features/QuickBooksIntegration"));
+const AccountingIntegrationPage = lazy(() => import("./pages/features/AccountingIntegration"));
 const AIAssistantPage = lazy(() => import("./pages/features/AIAssistant"));
 const AIDueDiligencePage = lazy(() => import("./pages/features/AIDueDiligence"));
 const RevenueQualityAnalysis = lazy(() => import("./pages/guides/RevenueQualityAnalysis"));
@@ -184,7 +184,8 @@ export const routes: RouteRecord[] = [
       { path: "use-cases/lenders", element: wrap(<Lenders />) },
       { path: "compare/shepi-vs-excel", element: wrap(<ShepiVsExcel />) },
       { path: "compare/ai-qoe-vs-traditional", element: wrap(<AIvsTraditional />) },
-      { path: "features/quickbooks-integration", element: wrap(<QuickBooksIntegrationPage />) },
+      { path: "features/accounting-integration", element: wrap(<AccountingIntegrationPage />) },
+      { path: "features/quickbooks-integration", element: <Navigate to="/features/accounting-integration" replace /> },
       { path: "features/ai-assistant", element: wrap(<AIAssistantPage />) },
       { path: "features/ai-due-diligence", element: wrap(<AIDueDiligencePage />) },
       { path: "guides/revenue-quality-analysis", element: wrap(<RevenueQualityAnalysis />) },
@@ -304,7 +305,7 @@ export const prerenderPaths = [
   "/use-cases/lenders",
   "/compare/shepi-vs-excel",
   "/compare/ai-qoe-vs-traditional",
-  "/features/quickbooks-integration",
+  "/features/accounting-integration",
   "/features/ai-assistant",
   "/features/ai-due-diligence",
   "/features/qoe-software",

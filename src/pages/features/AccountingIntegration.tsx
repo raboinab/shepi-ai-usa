@@ -25,16 +25,16 @@ const jsonLd = {
   publisher: { "@type": "Organization", name: "Shepi", url: "https://shepi.ai" },
   datePublished: "2026-02-21",
   dateModified: "2026-02-21",
-  mainEntityOfPage: "https://shepi.ai/features/quickbooks-integration",
+  mainEntityOfPage: "https://shepi.ai/features/accounting-integration",
 };
 
-export default function QuickBooksIntegration() {
+export default function AccountingIntegration() {
   return (
     <ContentPageLayout
       title="Accounting Integration for Quality of Earnings"
       seoTitle="Accounting Integration for QoE Analysis | Shepi"
       seoDescription="Connect your accounting system directly to Shepi for seamless QoE analysis. Automatic trial balance import, account mapping, multi-period data, and secure OAuth."
-      canonical="https://shepi.ai/features/quickbooks-integration"
+      canonical="https://shepi.ai/features/accounting-integration"
       breadcrumbs={[
         { label: "Resources", href: "/resources" },
         { label: "Accounting Integration" },

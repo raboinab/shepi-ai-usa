@@ -69,7 +69,7 @@ export default function DueDiligenceChecklist() {
         { title: "Cash flow & bank statements", description: "Cash flow statements or bank statements for proof of cash analysis" },
       ]} />
       <p>
-        <strong>Tip:</strong> <Link to="/features/quickbooks-integration">Shepi's accounting integration</Link> can pull trial balance data directly, eliminating manual export errors.
+        <strong>Tip:</strong> <Link to="/features/accounting-integration">Shepi's accounting integration</Link> can pull trial balance data directly, eliminating manual export errors.
       </p>
 
       <h2 id="tax-documents">Tax Documents</h2>

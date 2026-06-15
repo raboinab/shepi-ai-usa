@@ -40,13 +40,6 @@ const subprocessors = [
     location: "United States",
   },
   {
-    name: "Intuit (QuickBooks)",
-    purpose: "OAuth source of accounting data when customer connects their accounting system",
-    dataProcessed: "Read-only GL, transactions, and chart of accounts",
-    certifications: "SOC 2 · ISO 27001",
-    location: "United States",
-  },
-  {
     name: "Termageddon",
     purpose: "Legal policy hosting",
     dataProcessed: "None (policies only)",
