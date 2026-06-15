@@ -27,7 +27,7 @@ const webPageSchema = {
   "@type": "WebPage",
   name: "Shepi Trust Center",
   description:
-    "Shepi runs on SOC 2 Type II and ISO 27001 certified infrastructure (AWS, Supabase, Vercel). Zero Data Retention across AI sub-processors and customer financials. Encryption, per-deal RLS isolation, read-only QuickBooks OAuth.",
+    "Shepi runs on SOC 2 Type II and ISO 27001 certified infrastructure (AWS, Supabase, Vercel). Zero Data Retention across AI sub-processors and customer financials. Encryption, per-deal RLS isolation, read-only accounting integration OAuth (e.g., QuickBooks).",
   url: "https://shepi.ai/security",
 };
 
@@ -72,7 +72,7 @@ const faqSchema = {
       name: "Does Shepi retain customer financial data?",
       acceptedAnswer: {
         "@type": "Answer",
-        text: "No, not for secondary use. Shepi is a processing engine: QuickBooks pulls, uploaded statements, and GL detail are ingested, analyzed, and returned as deliverables. We don't sell, share, repackage, or use customer data to train any model. Project data is held only for the active engagement and is purged on customer request.",
+        text: "No, not for secondary use. Shepi is a processing engine: data from any accounting integration (e.g., QuickBooks), uploaded statements, and GL detail are ingested, analyzed, and returned as deliverables. We don't sell, share, repackage, or use customer data to train any model. Project data is held only for the active engagement and is purged on customer request.",
       },
     },
     {
@@ -99,7 +99,7 @@ export default function Security() {
     <ContentPageLayout
       title="Trust Center"
       seoTitle="Trust Center — Security & Data Handling | Shepi"
-      seoDescription="Shepi runs on SOC 2 Type II and ISO 27001 certified infrastructure (AWS, Supabase, Vercel). Zero Data Retention across AI and customer financials. Per-deal RLS, read-only QuickBooks OAuth."
+      seoDescription="Shepi runs on SOC 2 Type II and ISO 27001 certified infrastructure (AWS, Supabase, Vercel). Zero Data Retention across AI and customer financials. Per-deal RLS, read-only accounting integration OAuth (e.g., QuickBooks)."
       canonical="https://shepi.ai/security"
       breadcrumbs={[{ label: "Security" }]}
       toc={toc}
@@ -108,7 +108,7 @@ export default function Security() {
       ogType="website"
     >
       <HeroCallout>
-        Built for diligence-grade data. Shepi handles seller financials, bank statements, and QuickBooks data with the controls a PE associate or SBA lender expects — and this page is an honest description of what's actually in place today, not marketing puffery.
+        Built for diligence-grade data. Shepi handles seller financials, bank statements, and accounting integration data (e.g., QuickBooks) with the controls a PE associate or SBA lender expects — and this page is an honest description of what's actually in place today, not marketing puffery.
       </HeroCallout>
 
       <h2 id="at-a-glance">At a Glance</h2>
@@ -125,7 +125,7 @@ export default function Security() {
         Customer data lives in a Postgres database hosted by Supabase on AWS infrastructure in the United States. Uploaded documents (bank statements, GLs, payroll, contracts) are stored in Supabase Storage in the same region. All traffic between your browser, our edge functions, and the database is encrypted in transit with TLS 1.2 or higher; storage at rest is AES-256.
       </p>
       <BenefitGrid benefits={[
-        { title: "What we collect", description: "Account email, organization name, billing details, the financial documents you upload, and the GL/bank data fetched from QuickBooks once you connect it." },
+        { title: "What we collect", description: "Account email, organization name, billing details, the financial documents you upload, and the GL/bank data fetched from your accounting integration (e.g., QuickBooks) once you connect it." },
         { title: "Where it lives", description: "Postgres on Supabase, US region. Documents in Supabase Storage, US region. No copies in third-party drives." },
         { title: "Retention defaults", description: "Project data is retained for the life of the account so you can re-open historical deals. You can delete a project and its documents from the dashboard at any time." },
         { title: "Customer-initiated deletion", description: "Project delete is one click. For full account deletion or a data export, email security@shepi.ai — handled within 30 days." },
