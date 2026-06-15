@@ -27,7 +27,7 @@ const webPageSchema = {
   "@type": "WebPage",
   name: "Shepi Trust Center",
   description:
-    "Shepi runs on SOC 2 Type II and ISO 27001 certified infrastructure (AWS, Supabase, Vercel). Zero Data Retention across AI sub-processors and customer financials. Encryption, per-deal RLS isolation, read-only accounting integration OAuth (e.g., QuickBooks).",
+    "Shepi runs on SOC 2 Type II and ISO 27001 certified infrastructure (AWS, Supabase, Vercel). Zero Data Retention across AI sub-processors and customer financials. Encryption, per-deal RLS isolation, read-only accounting integration OAuth.",
   url: "https://shepi.ai/security",
 };
 
