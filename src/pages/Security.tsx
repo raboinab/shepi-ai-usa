@@ -99,7 +99,7 @@ export default function Security() {
     <ContentPageLayout
       title="Trust Center"
       seoTitle="Trust Center — Security & Data Handling | Shepi"
-      seoDescription="Shepi runs on SOC 2 Type II and ISO 27001 certified infrastructure (AWS, Supabase, Vercel). Encryption, per-deal RLS isolation, read-only QuickBooks OAuth, and an honest list of what's still on the roadmap."
+      seoDescription="Shepi runs on SOC 2 Type II and ISO 27001 certified infrastructure (AWS, Supabase, Vercel). Zero Data Retention across AI and customer financials. Per-deal RLS, read-only QuickBooks OAuth."
       canonical="https://shepi.ai/security"
       breadcrumbs={[{ label: "Security" }]}
       toc={toc}
