@@ -50,7 +50,7 @@ export default function ResponsibleDisclosure() {
 
       <h2 id="report">How to Report</h2>
       <p>
-        Email <a href="mailto:security@shepi.ai">security@shepi.ai</a> with:
+        Email <a href="mailto:hello@shepi.ai">hello@shepi.ai</a> with:
       </p>
       <ul>
         <li>A description of the issue and its impact.</li>
@@ -89,7 +89,7 @@ export default function ResponsibleDisclosure() {
         We don't run a paid bug bounty today. We do publicly credit researchers (with your permission) on a hall-of-fame section we'll publish once we have entries to list. If your finding is material, we'll also send a small thank-you of our choice — said honestly, this is not a structured payout program.
       </p>
       <p>
-        Questions about this policy: <a href="mailto:security@shepi.ai">security@shepi.ai</a>. For everything else security-related, start at the <Link to="/security">Trust Center</Link>.
+        Questions about this policy: <a href="mailto:hello@shepi.ai">hello@shepi.ai</a>. For everything else security-related, start at the <Link to="/security">Trust Center</Link>.
       </p>
     </ContentPageLayout>
   );

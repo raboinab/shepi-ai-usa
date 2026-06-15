@@ -64,7 +64,7 @@ export function ProviderAgreementContent() {
           <li>encrypt any local copies of Client data at rest and use full-disk encryption on devices used for DFY work;</li>
           <li>keep all Client data within the United States;</li>
           <li>not transmit Client data to any third-party generative AI service or large language model other than the Platform itself;</li>
-          <li>notify security@shepi.ai promptly (and in any event within 24 hours of confirmation for an incident involving personal information, or 72 hours for any other security incident involving Client data) of any actual or suspected security incident; and</li>
+          <li>notify hello@shepi.ai promptly (and in any event within 24 hours of confirmation for an incident involving personal information, or 72 hours for any other security incident involving Client data) of any actual or suspected security incident; and</li>
           <li>securely delete Client data within 30 days of project completion, except for documents you are required to retain under professional standards.</li>
         </ul>
       </section>

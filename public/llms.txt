@@ -93,4 +93,4 @@ shepi is **analyst-in-the-loop**, not push-button QoE. It ingests financials (ge
 - Website: https://shepi.ai
 - Operator: SMB EDGE
 - Sales: hello@shepi.ai
-- Security: security@shepi.ai
+- Security: hello@shepi.ai
