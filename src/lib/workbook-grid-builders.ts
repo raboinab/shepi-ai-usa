@@ -316,14 +316,26 @@ export function buildBalanceSheetGrid(dealData: DealData): GridData {
   const columns = buildStandardColumns(dealData, "");
 
   const totalCA = (p: string) => s("Cash and cash equivalents", p) + s("Accounts receivable", p) + s("Other current assets", p);
-  const totalAssets = (p: string) => totalCA(p) + s("Fixed assets", p) + s("Other assets", p);
+  const totalNCA = (p: string) => s("Fixed assets", p) + s("Other assets", p);
+  const totalAssets = (p: string) => totalCA(p) + totalNCA(p);
   const totalCL = (p: string) => s("Current liabilities", p) + s("Other current liabilities", p);
-  const totalLiab = (p: string) => totalCL(p) + s("Long term liabilities", p);
+  const totalNCL = (p: string) => s("Long term liabilities", p);
+  const totalLiab = (p: string) => totalCL(p) + totalNCL(p);
+  const totalEquity = (p: string) => s("Equity", p);
+  const totalLE = (p: string) => totalLiab(p) + totalEquity(p);
 
   // WIP aggregates for memo lines
   const wipAgg = dealData.wipSchedule?.jobs?.length
     ? computeWIPAggregates(dealData)
     : null;
+
+  const allPeriodIds = [
+    ...dealData.deal.periods.map(p => p.id),
+    ...dealData.deal.aggregatePeriods.map(ap => ap.id),
+  ];
+  const balanceCheckPassed = allPeriodIds.every(pid =>
+    Math.abs(totalAssets(pid) + totalLE(pid)) < 1
+  );
 
   const rows: GridRow[] = [
     { id: "hdr-assets", type: "section-header", label: "ASSETS", cells: { label: "ASSETS" } },
@@ -336,6 +348,7 @@ export function buildBalanceSheetGrid(dealData: DealData): GridData {
     ] : []),
     { id: "fa", type: "data", indent: 1, cells: { label: "Fixed Assets", ...bc(p => s("Fixed assets", p)) } },
     { id: "oa", type: "data", indent: 1, cells: { label: "Other Assets", ...bc(p => s("Other assets", p)) } },
+    { id: "total-nca", type: "subtotal", cells: { label: "Total Non-Current Assets", ...bc(p => totalNCA(p)) } },
     { id: "total-assets", type: "total", cells: { label: "TOTAL ASSETS", ...bc(p => totalAssets(p)) } },
     { id: "s1", type: "spacer", cells: {} },
     { id: "hdr-liab", type: "section-header", label: "LIABILITIES", cells: { label: "LIABILITIES" } },
@@ -346,12 +359,22 @@ export function buildBalanceSheetGrid(dealData: DealData): GridData {
       { id: "wip-contract-liab", type: "data" as const, indent: 1, cells: { label: `  Memo: Contract Liabilities (Over-Billed)`, ...(() => { const c: Record<string, number> = {}; for (const p of dealData.deal.periods) c[p.id] = wipAgg.totalOverBilled; for (const ap of dealData.deal.aggregatePeriods) c[ap.id] = wipAgg.totalOverBilled; return c; })() } },
     ] : []),
     { id: "ltl", type: "data", indent: 1, cells: { label: "Long Term Liabilities", ...nbc(p => s("Long term liabilities", p)) } },
+    { id: "total-ncl", type: "subtotal", cells: { label: "Total Non-Current Liabilities", ...nbc(p => totalNCL(p)) } },
     { id: "total-liab", type: "subtotal", cells: { label: "Total Liabilities", ...nbc(p => totalLiab(p)) } },
     { id: "s2", type: "spacer", cells: {} },
     { id: "hdr-eq", type: "section-header", label: "EQUITY", cells: { label: "EQUITY" } },
-    { id: "equity", type: "data", indent: 1, cells: { label: "Total Equity", ...bc(p => totalAssets(p) + totalLiab(p)) } },
+    // Real equity from TB (credit balance → negate for positive display).
+    { id: "equity", type: "data", indent: 1, cells: { label: "Total Equity", ...nbc(p => totalEquity(p)) } },
     { id: "s3", type: "spacer", cells: {} },
-    { id: "total-le", type: "total", cells: { label: "TOTAL LIABILITIES & EQUITY", ...bc(p => totalAssets(p)) } },
+    { id: "total-le", type: "total", cells: { label: "TOTAL LIABILITIES & EQUITY", ...nbc(p => totalLE(p)) } },
+    // Real balance check — can actually fail when TB does not tie.
+    { id: "check", type: "check", checkPassed: balanceCheckPassed, cells: {
+      label: "Balance Check (Assets − L&E)",
+      ...bc(p => {
+        const diff = totalAssets(p) + totalLE(p);
+        return Math.abs(diff) < 0.01 ? 0 : diff;
+      }),
+    } },
   ];
 
   return { columns, rows, frozenColumns: 1 };
