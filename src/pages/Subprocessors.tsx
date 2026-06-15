@@ -41,7 +41,7 @@ const subprocessors = [
   },
   {
     name: "Intuit (QuickBooks)",
-    purpose: "OAuth source of accounting data when customer connects QBO",
+    purpose: "OAuth source of accounting data when customer connects their accounting system",
     dataProcessed: "Read-only GL, transactions, and chart of accounts",
     certifications: "SOC 2 · ISO 27001",
     location: "United States",

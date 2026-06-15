@@ -19,8 +19,8 @@ const toc = [
 const jsonLd = {
   "@context": "https://schema.org",
   "@type": "Article",
-  headline: "QuickBooks Integration for Quality of Earnings",
-  description: "How Shepi's QuickBooks integration streamlines QoE analysis — direct data pull, automatic account mapping, multi-period support, and secure OAuth connection.",
+  headline: "Accounting Integration for Quality of Earnings",
+  description: "How Shepi's accounting integration streamlines QoE analysis — direct data pull, automatic account mapping, multi-period support, and secure OAuth connection.",
   author: { "@type": "Organization", name: "Shepi", url: "https://shepi.ai" },
   publisher: { "@type": "Organization", name: "Shepi", url: "https://shepi.ai" },
   datePublished: "2026-02-21",
@@ -31,13 +31,13 @@ const jsonLd = {
 export default function QuickBooksIntegration() {
   return (
     <ContentPageLayout
-      title="QuickBooks Integration for Quality of Earnings"
-      seoTitle="QuickBooks Integration for QoE Analysis | Shepi"
-      seoDescription="Connect QuickBooks directly to Shepi for seamless QoE analysis. Automatic trial balance import, account mapping, multi-period data, and secure OAuth."
+      title="Accounting Integration for Quality of Earnings"
+      seoTitle="Accounting Integration for QoE Analysis | Shepi"
+      seoDescription="Connect your accounting system directly to Shepi for seamless QoE analysis. Automatic trial balance import, account mapping, multi-period data, and secure OAuth."
       canonical="https://shepi.ai/features/quickbooks-integration"
       breadcrumbs={[
         { label: "Resources", href: "/resources" },
-        { label: "QuickBooks Integration" },
+        { label: "Accounting Integration" },
       ]}
       toc={toc}
       jsonLd={jsonLd}
@@ -45,7 +45,7 @@ export default function QuickBooksIntegration() {
       heroAccent
     >
       <HeroCallout>
-        From raw QuickBooks data to structured QoE analysis in minutes — not hours of manual export and cleanup.
+        From raw accounting data to structured QoE analysis in minutes — not hours of manual export and cleanup.
       </HeroCallout>
 
       <StatRow stats={[
@@ -55,7 +55,7 @@ export default function QuickBooksIntegration() {
       ]} />
 
       <p className="text-lg">
-        QuickBooks Online is the accounting system for millions of small and mid-size businesses — the exact businesses being acquired in lower-middle-market M&A. Shepi's native QuickBooks integration eliminates the manual data export step, getting you from raw books to structured <Link to="/guides/quality-of-earnings">QoE analysis</Link> in minutes.
+        Cloud accounting systems power the vast majority of small and mid-size businesses — the exact businesses being acquired in lower-middle-market M&A. Shepi's accounting integration partners eliminate the manual data export step, getting you from raw books to structured <Link to="/guides/quality-of-earnings">QoE analysis</Link> in minutes.
       </p>
 
       <h2 id="overview">Overview</h2>
@@ -63,12 +63,12 @@ export default function QuickBooksIntegration() {
         Traditionally, the first step in any QoE analysis is requesting a trial balance export from the target company's accountant. This introduces delays (waiting for the accountant), errors (wrong date range, wrong basis, missing accounts), and friction (multiple rounds of "can you re-export with...").
       </p>
       <p>
-        Shepi's QuickBooks integration bypasses all of this. Connect directly to the target's QuickBooks account, select your periods, and pull clean, complete data automatically.
+        Shepi's accounting integration bypasses all of this. Connect directly to the target's accounting system through a supported integration partner, select your periods, and pull clean, complete data automatically.
       </p>
 
       <h2 id="how-it-works">How It Works</h2>
       <StepList steps={[
-        { title: "Connect", description: "Authenticate via QuickBooks OAuth — the target company or their accountant grants read-only access" },
+        { title: "Connect", description: "Authenticate via OAuth — the target company or their accountant grants read-only access through a supported accounting integration partner" },
         { title: "Select periods", description: "Choose the fiscal years and interim periods you need for analysis" },
         { title: "Import", description: "Shepi pulls trial balance, chart of accounts, and supporting data automatically" },
         { title: "Map", description: "Accounts are auto-mapped to standardized income statement and balance sheet categories" },
@@ -95,18 +95,18 @@ export default function QuickBooksIntegration() {
 
       <h2 id="security">Security & Privacy</h2>
       <BenefitGrid benefits={[
-        { title: "OAuth 2.0", description: "Industry-standard authentication — Shepi never sees or stores QuickBooks credentials" },
-        { title: "Read-only access", description: "Shepi can only read data; it cannot modify the QuickBooks file" },
+        { title: "OAuth 2.0", description: "Industry-standard authentication — Shepi never sees or stores accounting system credentials" },
+        { title: "Read-only access", description: "Shepi can only read data; it cannot modify the underlying accounting file" },
         { title: "Encrypted transit", description: "All data transferred over TLS 1.3" },
         { title: "Project isolation", description: "Imported data is tied to your project and invisible to other users" },
-        { title: "Revocable access", description: "The QuickBooks account owner can disconnect Shepi at any time from their settings" },
+        { title: "Revocable access", description: "The accounting system owner can disconnect Shepi at any time from their settings" },
       ]} />
 
       <h2 id="faq">FAQ</h2>
       <AccordionFAQ items={[
-        { question: "Does this work with QuickBooks Desktop?", answer: "Currently, the direct integration supports QuickBooks Online. For Desktop users, you can export trial balance data to CSV or Excel and upload it to Shepi manually." },
-        { question: "Does the target company need a Shepi account?", answer: "No. The target (or their accountant) only needs to authorize the QuickBooks connection. They don't need a Shepi account." },
-        { question: "Can I disconnect after importing?", answer: "Yes. Once data is imported, you can disconnect the QuickBooks connection. The imported data remains in your project." },
+        { question: "Does this work with desktop accounting software?", answer: "The direct integration supports cloud accounting platforms via supported accounting integration partners. For desktop systems, you can export trial balance data to CSV or Excel and upload it to Shepi manually." },
+        { question: "Does the target company need a Shepi account?", answer: "No. The target (or their accountant) only needs to authorize the accounting integration. They don't need a Shepi account." },
+        { question: "Can I disconnect after importing?", answer: "Yes. Once data is imported, you can disconnect the accounting integration. The imported data remains in your project." },
       ]} />
 
       <h2>Related Resources</h2>

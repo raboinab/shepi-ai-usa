@@ -248,7 +248,7 @@ export const ChartPanel = ({ dealData, wizardData, wizardReports }: ChartPanelPr
                   <Line yAxisId="right" type="monotone" dataKey="pct90plus" name="90+ Days %" stroke="hsl(var(--chart-1))" strokeWidth={2} dot={{ r: 3 }} strokeDasharray="5 5" />
                 </LineChart>
               </ResponsiveContainer>
-            ) : emptyState("Sync QuickBooks or upload multiple periods to see AR aging trends")}
+            ) : emptyState("Sync your accounting integration or upload multiple periods to see AR aging trends")}
           </TabsContent>
 
           {/* AP Aging Trend */}
@@ -272,7 +272,7 @@ export const ChartPanel = ({ dealData, wizardData, wizardReports }: ChartPanelPr
                   <Line yAxisId="right" type="monotone" dataKey="pct90plus" name="90+ Days %" stroke="hsl(var(--chart-1))" strokeWidth={2} dot={{ r: 3 }} strokeDasharray="5 5" />
                 </LineChart>
               </ResponsiveContainer>
-            ) : emptyState("Sync QuickBooks or upload multiple periods to see AP aging trends")}
+            ) : emptyState("Sync your accounting integration or upload multiple periods to see AP aging trends")}
           </TabsContent>
 
           {/* Customer Concentration Trend */}
@@ -292,7 +292,7 @@ export const ChartPanel = ({ dealData, wizardData, wizardReports }: ChartPanelPr
                   <Line type="monotone" dataKey="top5" name="Top 5 Customers %" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 3 }} />
                 </LineChart>
               </ResponsiveContainer>
-            ) : emptyState("Sync QuickBooks or upload customer data to see concentration trends")}
+            ) : emptyState("Sync your accounting integration or upload customer data to see concentration trends")}
           </TabsContent>
 
           {/* Vendor Concentration Trend */}
@@ -312,7 +312,7 @@ export const ChartPanel = ({ dealData, wizardData, wizardReports }: ChartPanelPr
                   <Line type="monotone" dataKey="top5" name="Top 5 Vendors %" stroke="hsl(var(--chart-3))" strokeWidth={2} dot={{ r: 3 }} />
                 </LineChart>
               </ResponsiveContainer>
-            ) : emptyState("Sync QuickBooks or upload vendor data to see concentration trends")}
+            ) : emptyState("Sync your accounting integration or upload vendor data to see concentration trends")}
           </TabsContent>
         </Tabs>
       </CardContent>
