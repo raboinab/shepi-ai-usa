@@ -11,15 +11,24 @@ import {
 
 const subprocessors = [
   {
-    name: "Lovable Cloud",
-    purpose: "Database, authentication, file storage, backend functions",
+    name: "Supabase (Lovable Cloud)",
+    purpose: "Database, authentication, file storage, edge functions",
     dataProcessed: "All user and project data",
-    location: "United States",
+    certifications: "SOC 2 Type II · HIPAA available",
+    location: "United States (AWS)",
+  },
+  {
+    name: "Amazon Web Services",
+    purpose: "Underlying compute, network, and storage for Supabase",
+    dataProcessed: "All user and project data (encrypted at rest)",
+    certifications: "SOC 1 / 2 / 3 Type II · ISO 27001 / 27017 / 27018 · PCI DSS L1 · HIPAA-eligible",
+    location: "United States (us-east)",
   },
   {
     name: "Stripe",
     purpose: "Payment processing",
     dataProcessed: "Billing information, email address",
+    certifications: "PCI DSS Level 1 · SOC 1 / 2 Type II",
     location: "United States",
   },
   {
@@ -27,18 +36,28 @@ const subprocessors = [
     purpose:
       "AI model routing for document parsing, financial analysis, narrative generation, and vector embeddings. Operates under a Zero Data Retention agreement; upstream model providers (Anthropic Claude, OpenAI) process requests as sub-processors under no-retention terms.",
     dataProcessed: "Financial data and document contents sent for analysis",
+    certifications: "SOC 2 Type II · ISO 27001 · GDPR",
+    location: "United States",
+  },
+  {
+    name: "Intuit (QuickBooks)",
+    purpose: "OAuth source of accounting data when customer connects QBO",
+    dataProcessed: "Read-only GL, transactions, and chart of accounts",
+    certifications: "SOC 2 · ISO 27001",
     location: "United States",
   },
   {
     name: "Termageddon",
     purpose: "Legal policy hosting",
     dataProcessed: "None (policies only)",
+    certifications: "—",
     location: "United States",
   },
   {
     name: "Usercentrics",
     purpose: "Cookie consent management",
     dataProcessed: "Cookie preferences, IP address",
+    certifications: "ISO 27001",
     location: "Germany (EU)",
   },
 ];
@@ -67,6 +86,7 @@ export default function Subprocessors() {
             <TableHead>Subprocessor</TableHead>
             <TableHead>Purpose</TableHead>
             <TableHead>Data Processed</TableHead>
+            <TableHead>Certifications</TableHead>
             <TableHead>Location</TableHead>
           </TableRow>
         </TableHeader>
@@ -76,6 +96,7 @@ export default function Subprocessors() {
               <TableCell className="font-medium">{sp.name}</TableCell>
               <TableCell>{sp.purpose}</TableCell>
               <TableCell>{sp.dataProcessed}</TableCell>
+              <TableCell className="text-sm">{sp.certifications}</TableCell>
               <TableCell>{sp.location}</TableCell>
             </TableRow>
           ))}
