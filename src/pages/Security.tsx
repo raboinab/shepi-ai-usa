@@ -117,6 +117,7 @@ export default function Security() {
         { value: "AES-256", label: "At rest" },
         { value: "SOC 2 + ISO 27001", label: "Certified infrastructure" },
         { value: "Per-deal RLS", label: "Tenant isolation" },
+        { value: "Zero retention", label: "AI + customer data" },
       ]} />
 
       <h2 id="data-handling">Data Handling</h2>
