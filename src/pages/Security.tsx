@@ -15,6 +15,7 @@ const toc = [
   { id: "ai", label: "AI & Customer Data" },
   { id: "infra", label: "Infrastructure" },
   { id: "compliance", label: "Compliance & Certifications" },
+  { id: "zdr", label: "Zero Data Retention" },
   { id: "gaps", label: "What We Don't Have Yet" },
   { id: "roadmap", label: "Roadmap" },
   { id: "contact", label: "Contact" },
@@ -26,7 +27,7 @@ const webPageSchema = {
   "@type": "WebPage",
   name: "Shepi Trust Center",
   description:
-    "Shepi runs on SOC 2 Type II and ISO 27001 certified infrastructure (AWS, Supabase, Vercel). Encryption, per-deal RLS isolation, QuickBooks OAuth scopes, and an honest list of what's still on the roadmap.",
+    "Shepi runs on SOC 2 Type II and ISO 27001 certified infrastructure (AWS, Supabase, Vercel). Zero Data Retention across AI sub-processors and customer financials. Encryption, per-deal RLS isolation, read-only QuickBooks OAuth.",
   url: "https://shepi.ai/security",
 };
 
@@ -63,7 +64,15 @@ const faqSchema = {
       name: "Does Shepi use my data to train AI models?",
       acceptedAnswer: {
         "@type": "Answer",
-        text: "No. LLM calls route through the Vercel AI Gateway under a zero-data-retention agreement. Upstream model providers (Anthropic, OpenAI) process requests as sub-processors under the same no-retention terms. Your data is not used to train any model.",
+        text: "No. LLM calls route through the Vercel AI Gateway under a zero-data-retention agreement. Upstream model providers (Anthropic, OpenAI) process requests as sub-processors under the same no-retention terms. Your data is not used to train any model. See the Zero Data Retention section above for the full data-flow breakdown.",
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Does Shepi retain customer financial data?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "No, not for secondary use. Shepi is a processing engine: QuickBooks pulls, uploaded statements, and GL detail are ingested, analyzed, and returned as deliverables. We don't sell, share, repackage, or use customer data to train any model. Project data is held only for the active engagement and is purged on customer request.",
       },
     },
     {
@@ -90,7 +99,7 @@ export default function Security() {
     <ContentPageLayout
       title="Trust Center"
       seoTitle="Trust Center — Security & Data Handling | Shepi"
-      seoDescription="Shepi runs on SOC 2 Type II and ISO 27001 certified infrastructure (AWS, Supabase, Vercel). Encryption, per-deal RLS isolation, read-only QuickBooks OAuth, and an honest list of what's still on the roadmap."
+      seoDescription="Shepi runs on SOC 2 Type II and ISO 27001 certified infrastructure (AWS, Supabase, Vercel). Zero Data Retention across AI and customer financials. Per-deal RLS, read-only QuickBooks OAuth."
       canonical="https://shepi.ai/security"
       breadcrumbs={[{ label: "Security" }]}
       toc={toc}
@@ -108,6 +117,7 @@ export default function Security() {
         { value: "AES-256", label: "At rest" },
         { value: "SOC 2 + ISO 27001", label: "Certified infrastructure" },
         { value: "Per-deal RLS", label: "Tenant isolation" },
+        { value: "Zero retention", label: "AI + customer data" },
       ]} />
 
       <h2 id="data-handling">Data Handling</h2>
@@ -181,6 +191,32 @@ export default function Security() {
         Shepi has not yet completed an independent SOC 2 or ISO 27001 audit. SOC 2 Type I is on the roadmap below. Enterprise prospects can request our current security questionnaire (CAIQ-lite format) and a summary of inherited controls under NDA — email <a href="mailto:security@shepi.ai">security@shepi.ai</a>.
       </p>
 
+      <h2 id="zdr">Zero Data Retention</h2>
+      <p>
+        Shepi is a processing engine, not a data warehouse. Customer financial data — QuickBooks pulls, uploaded statements, GL detail — is ingested, analyzed, and returned as deliverables. We do not retain it for secondary use, do not sell it, do not share it, and do not use it to train any model. For AI-assisted analysis, prompts route through the Vercel AI Gateway to Anthropic and OpenAI under no-retention, no-training terms.
+      </p>
+      <BenefitGrid benefits={[
+        { title: "No model training", description: "Your data is never used to train foundation models or any Shepi model." },
+        { title: "No retention beyond the engagement", description: "Customers can purge project data at any time; we retain only what's needed to deliver the project and meet legal or tax obligations." },
+        { title: "No human review of customer data", description: "Internal staff do not browse customer data. Access is role-scoped and audit-logged." },
+        { title: "No secondary use", description: "Data is never repackaged, resold, or used for benchmarking, analytics products, or marketing." },
+      ]} />
+      <h3>How each data flow is handled</h3>
+      <ComparisonTable
+        headers={["Data flow", "Retention posture"]}
+        rows={[
+          ["Prompts and completions to Claude or OpenAI via Vercel AI Gateway", "Zero retention, zero training (upstream contractual)"],
+          ["Document text extracted for AI analysis", "Processed in-request; not stored on AI sub-processor side"],
+          ["QuickBooks pulls + financial data in Postgres", "Held only for the active engagement; purged on customer request; never sent to LLMs in raw form and never used to train models"],
+          ["Files at rest in Supabase Storage", "Encrypted at rest; scoped to the project; deleted with the project"],
+          ["Application logs (Vercel, Supabase)", "Operational only; standard short retention; no customer financial content"],
+        ]}
+      />
+      <p>
+        No separate ZDR contract is required — the no-retention posture flows from Shepi's architecture and Vercel AI Gateway's upstream agreements with Anthropic and OpenAI. See <Link to="/dpa">DPA §6 (AI Sub-processors)</Link> and the full <Link to="/subprocessors">subprocessors list</Link>. Enterprise prospects can request the current data-flow diagram under NDA — email <a href="mailto:security@shepi.ai">security@shepi.ai</a>.
+      </p>
+
+
       <h2 id="gaps">What We Don't Have Yet</h2>
       <p>
         Overclaiming on security is a bigger risk than underclaiming, so here's the honest list of what we have <em>not</em> shipped:
@@ -214,7 +250,7 @@ export default function Security() {
         { question: "Is Shepi SOC 2 or ISO 27001 certified?", answer: "Shepi itself has not yet completed an independent SOC 2 or ISO 27001 audit — that's on the roadmap. However, every subprocessor that touches customer data (AWS, Supabase, Vercel, Stripe, Intuit) is SOC 2 Type II certified and most also hold ISO 27001. Shepi inherits the physical, network, and operational controls of those certified providers. See the Compliance section above for the full breakdown." },
         { question: "Do you inherit your providers' SOC 2 and ISO 27001 controls?", answer: "Yes. Inherited controls cover physical security, network and hardware controls, database hardening, backup operations, access logging, and edge delivery. Shepi is responsible for the application layer on top: RLS policies, role separation, secret management, code review, and edge function authorization." },
         { question: "Where is customer data stored?", answer: "Postgres database hosted by Supabase on AWS infrastructure in the United States. Uploaded documents live in Supabase Storage in the same region." },
-        { question: "Does Shepi use my data to train AI models?", answer: "No. LLM calls route through the Vercel AI Gateway under a zero-data-retention agreement. Upstream model providers process requests as sub-processors under the same no-retention terms." },
+        { question: "Does Shepi use my data to train AI models?", answer: "No. LLM calls route through the Vercel AI Gateway under a zero-data-retention agreement. Upstream model providers process requests as sub-processors under the same no-retention terms. See the Zero Data Retention section above for the full data-flow breakdown." },
         { question: "What QuickBooks permissions does Shepi request?", answer: "Read-only OAuth scopes for the accounting data needed to produce a Quality of Earnings analysis. Shepi never writes back to QuickBooks. You can disconnect at any time." },
         { question: "Can I delete my data?", answer: "Yes. Delete a project and its uploaded documents from the dashboard at any time. For full account deletion or a data export, email security@shepi.ai — handled within 30 days." },
         { question: "Do you sign DPAs?", answer: "Yes. Our standard DPA is summarized at /dpa. For a counter-signed copy, email security@shepi.ai." },
