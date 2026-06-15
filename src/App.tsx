@@ -76,6 +76,8 @@ const EtaQoeCost = lazy(() => import("./pages/EtaQoeCost"));
 const SbaLoanQoe = lazy(() => import("./pages/SbaLoanQoe"));
 const CpaFirmVsShepi = lazy(() => import("./pages/compare/CpaFirmVsShepi"));
 const Accuracy = lazy(() => import("./pages/Accuracy"));
+const Security = lazy(() => import("./pages/Security"));
+const ResponsibleDisclosure = lazy(() => import("./pages/security/ResponsibleDisclosure"));
 const CpaPartners = lazy(() => import("./pages/CpaPartners"));
 const ForCpas = lazy(() => import("./pages/ForCpas"));
 const AdminLayout = lazy(() => import("./layouts/AdminLayout").then(m => ({ default: m.AdminLayout })));
@@ -217,6 +219,8 @@ export const routes: RouteRecord[] = [
       { path: "sba-loan-qoe", element: wrap(<SbaLoanQoe />) },
       { path: "compare/cpa-firm-vs-shepi", element: wrap(<CpaFirmVsShepi />) },
       { path: "accuracy", element: wrap(<Accuracy />) },
+      { path: "security", element: wrap(<Security />) },
+      { path: "security/responsible-disclosure", element: wrap(<ResponsibleDisclosure />) },
 
       // Admin
       {
@@ -315,4 +319,6 @@ export const prerenderPaths = [
   "/sba-loan-qoe",
   "/compare/cpa-firm-vs-shepi",
   "/accuracy",
+  "/security",
+  "/security/responsible-disclosure",
 ];

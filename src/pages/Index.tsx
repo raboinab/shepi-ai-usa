@@ -1316,6 +1316,7 @@ const Index = () => {
                 <li><Link to="/eula" className="text-secondary/70 hover:text-secondary text-sm">EULA</Link></li>
                 <li><Link to="/dpa" className="text-secondary/70 hover:text-secondary text-sm">DPA</Link></li>
                 <li><Link to="/subprocessors" className="text-secondary/70 hover:text-secondary text-sm">Subprocessors</Link></li>
+                <li><Link to="/security" className="text-secondary/70 hover:text-secondary text-sm">Security</Link></li>
               </ul>
             </div>
           </div>
