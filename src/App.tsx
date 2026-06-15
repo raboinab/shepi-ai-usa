@@ -69,6 +69,7 @@ const QualityOfEarningsCost = lazy(() => import("./pages/QualityOfEarningsCost")
 const QualityOfEarningsSoftware = lazy(() => import("./pages/QualityOfEarningsSoftware"));
 const QualityOfEarningsTemplate = lazy(() => import("./pages/QualityOfEarningsTemplate"));
 const QualityOfEarningsChecklist = lazy(() => import("./pages/QualityOfEarningsChecklist"));
+const ProofOfCash = lazy(() => import("./pages/ProofOfCash"));
 const ScopeOfWork = lazy(() => import("./pages/ScopeOfWork"));
 const ForAiAgents = lazy(() => import("./pages/ForAiAgents"));
 const EtaQoeCost = lazy(() => import("./pages/EtaQoeCost"));
@@ -209,6 +210,7 @@ export const routes: RouteRecord[] = [
       { path: "quality-of-earnings-software", element: wrap(<QualityOfEarningsSoftware />) },
       { path: "quality-of-earnings-template", element: wrap(<QualityOfEarningsTemplate />) },
       { path: "quality-of-earnings-checklist", element: wrap(<QualityOfEarningsChecklist />) },
+      { path: "proof-of-cash", element: wrap(<ProofOfCash />) },
       { path: "scope", element: wrap(<ScopeOfWork />) },
       { path: "for-ai-agents", element: wrap(<ForAiAgents />) },
       { path: "eta-qoe-cost", element: wrap(<EtaQoeCost />) },
@@ -307,6 +309,7 @@ export const prerenderPaths = [
   "/quality-of-earnings-software",
   "/quality-of-earnings-template",
   "/quality-of-earnings-checklist",
+  "/proof-of-cash",
   "/scope",
   "/eta-qoe-cost",
   "/sba-loan-qoe",

@@ -47,7 +47,7 @@ export default function CashProofAnalysis() {
       heroAccent
     >
       <HeroCallout>
-        Cash doesn't lie — but the books might. Proof of cash is the ultimate validation test: if the GL and the bank don't agree, something is missing.
+        Cash doesn't lie — but the books might. Proof of cash is the ultimate validation test: if the GL and the bank don't agree, something is missing. (Looking for how shepi automates it? See the <Link to="/proof-of-cash">proof of cash software</Link> page.)
       </HeroCallout>
 
       <StatRow stats={[
