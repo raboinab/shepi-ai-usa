@@ -191,6 +191,32 @@ export default function Security() {
         Shepi has not yet completed an independent SOC 2 or ISO 27001 audit. SOC 2 Type I is on the roadmap below. Enterprise prospects can request our current security questionnaire (CAIQ-lite format) and a summary of inherited controls under NDA — email <a href="mailto:security@shepi.ai">security@shepi.ai</a>.
       </p>
 
+      <h2 id="zdr">Zero Data Retention</h2>
+      <p>
+        Shepi is a processing engine, not a data warehouse. Customer financial data — QuickBooks pulls, uploaded statements, GL detail — is ingested, analyzed, and returned as deliverables. We do not retain it for secondary use, do not sell it, do not share it, and do not use it to train any model. For AI-assisted analysis, prompts route through the Vercel AI Gateway to Anthropic and OpenAI under no-retention, no-training terms.
+      </p>
+      <BenefitGrid benefits={[
+        { title: "No model training", description: "Your data is never used to train foundation models or any Shepi model." },
+        { title: "No retention beyond the engagement", description: "Customers can purge project data at any time; we retain only what's needed to deliver the project and meet legal or tax obligations." },
+        { title: "No human review of customer data", description: "Internal staff do not browse customer data. Access is role-scoped and audit-logged." },
+        { title: "No secondary use", description: "Data is never repackaged, resold, or used for benchmarking, analytics products, or marketing." },
+      ]} />
+      <h3>How each data flow is handled</h3>
+      <ComparisonTable
+        headers={["Data flow", "Retention posture"]}
+        rows={[
+          ["Prompts and completions to Claude or OpenAI via Vercel AI Gateway", "Zero retention, zero training (upstream contractual)"],
+          ["Document text extracted for AI analysis", "Processed in-request; not stored on AI sub-processor side"],
+          ["QuickBooks pulls + financial data in Postgres", "Held only for the active engagement; purged on customer request; never sent to LLMs in raw form and never used to train models"],
+          ["Files at rest in Supabase Storage", "Encrypted at rest; scoped to the project; deleted with the project"],
+          ["Application logs (Vercel, Supabase)", "Operational only; standard short retention; no customer financial content"],
+        ]}
+      />
+      <p>
+        No separate ZDR contract is required — the no-retention posture flows from Shepi's architecture and Vercel AI Gateway's upstream agreements with Anthropic and OpenAI. See <Link to="/dpa">DPA §6 (AI Sub-processors)</Link> and the full <Link to="/subprocessors">subprocessors list</Link>. Enterprise prospects can request the current data-flow diagram under NDA — email <a href="mailto:security@shepi.ai">security@shepi.ai</a>.
+      </p>
+
+
       <h2 id="gaps">What We Don't Have Yet</h2>
       <p>
         Overclaiming on security is a bigger risk than underclaiming, so here's the honest list of what we have <em>not</em> shipped:
