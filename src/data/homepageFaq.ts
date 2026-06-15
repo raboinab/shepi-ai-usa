@@ -142,14 +142,14 @@ export const HOMEPAGE_FAQ: FaqEntry[] = [
     category: "How It Works",
     question: "What file formats can I upload?",
     answer:
-      "shepi is optimized for QuickBooks — the accounting system used by 80%+ of small businesses in the US. Connect directly to QuickBooks Online for automatic data import, or upload QuickBooks Desktop exports. We also accept PDF financial statements for AI extraction (tax returns, payroll reports, contracts, debt schedules) and standard Excel/CSV files for trial balance data.",
+      "shepi is optimized for the accounting systems that power small businesses in the US. Connect directly to supported accounting integration partners for automatic data import, or upload exports from your accounting system. We also accept PDF financial statements for AI extraction (tax returns, payroll reports, contracts, debt schedules) and standard Excel/CSV files for trial balance data.",
   },
   {
     id: "how-4",
     category: "How It Works",
-    question: "Can I connect directly to QuickBooks?",
+    question: "Can I connect directly to my accounting system?",
     answer:
-      "Yes — QuickBooks is our primary integration since it powers the vast majority of small business accounting in the US. Connect your client's QuickBooks Online account, select the periods you need, and shepi imports trial balance, chart of accounts, and general ledger data automatically. No manual exports, no format issues.",
+      "Yes — direct accounting integration is our primary ingestion path. Connect your client's account through a supported accounting integration partner, select the periods you need, and shepi imports trial balance, chart of accounts, and general ledger data automatically. No manual exports, no format issues.",
   },
   {
     id: "how-5",
