@@ -75,7 +75,7 @@ export default function AIDueDiligence() {
 
       <h2 id="workflow">Intelligent Due Diligence Workflow</h2>
       <StepList steps={[
-        { title: "Connect data sources", description: "Upload financial statements, connect QuickBooks, or import trial balance data" },
+        { title: "Connect data sources", description: "Upload financial statements, connect your accounting integration, or import trial balance data" },
         { title: "AI processes & maps", description: "Automatic account classification, period alignment, and data normalization" },
         { title: "Review flagged items", description: "AI surfaces potential adjustments, anomalies, and red flags for analyst review" },
         { title: "Apply professional judgment", description: "Accept, modify, or reject AI suggestions based on deal context and expertise" },

@@ -85,7 +85,7 @@ export default function EBITDAAutomation() {
 
       <h2 id="how-it-works">How It Works</h2>
       <StepList steps={[
-        { title: "Ingest financial data", description: "Connect QuickBooks, upload trial balance, or import GL export" },
+        { title: "Ingest financial data", description: "Connect your accounting integration, upload trial balance, or import GL export" },
         { title: "AI scans the ledger", description: "Pattern recognition identifies adjustment candidates across all accounts and periods" },
         { title: "Review candidates", description: "Each finding presented with category, amount, confidence score, and source transactions" },
         { title: "Apply judgment", description: "Accept, modify, or reject — you control the final adjusted EBITDA" },
