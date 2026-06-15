@@ -138,7 +138,7 @@ export default function ProofOfCash() {
 
       <h2 id="how">How Shepi's Proof of Cash Works</h2>
       <StepList steps={[
-        { title: "Upload bank statements and GL", description: "Connect QuickBooks for the GL, drop in PDF or CSV bank statements for each operating account" },
+        { title: "Upload bank statements and GL", description: "Connect your accounting integration for the GL, drop in PDF or CSV bank statements for each operating account" },
         { title: "Automatic matching", description: "Every deposit and disbursement matched to GL entries; transfers between owned accounts collapsed so they don't double-count" },
         { title: "Review the exception list", description: "Unmatched items, unsupported disbursements, and pattern flags surface in a single review queue with drill-through to source" },
         { title: "Export the schedule", description: "Proof of cash workbook tab and PDF slide export alongside the rest of the diligence deliverables — same source data, no re-keying" },

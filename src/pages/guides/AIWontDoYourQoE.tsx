@@ -65,7 +65,7 @@ export default function AIWontDoYourQoE() {
         AI is genuinely good at the painful, time-consuming parts of QoE — the parts that traditionally consume 70–80% of an engagement and produce no opinions, just structure:
       </p>
       <BenefitGrid benefits={[
-        { title: "Ingest messy financial exports", description: "Pull from QuickBooks, Xero, raw GL exports, bank statements, and trial balances — and reconcile them into a single canonical dataset" },
+        { title: "Ingest messy financial exports", description: "Pull from accounting integration partners, raw GL exports, bank statements, and trial balances — and reconcile them into a single canonical dataset" },
         { title: "Review the full population", description: "Scan 100% of GL transactions instead of sampling 5%. Catch the things sampling misses by definition" },
         { title: "Surface anomalies and exceptions", description: "Round-dollar entries, period-end clustering, related-party indicators, duplicate vendors, unusual journal entries — drafted as a queue for human review" },
         { title: "Draft adjustment support", description: "Identify candidate addbacks, pull the matching GL lines, link to source documents, and write the first draft of the narrative" },

@@ -65,7 +65,7 @@ export default function DueDiligenceChecklist() {
       <BenefitGrid benefits={[
         { title: "Income statements", description: "3–5 years, audited if available, plus year-to-date interim" },
         { title: "Balance sheets", description: "3–5 years with monthly/quarterly detail for most recent 2 years" },
-        { title: "Trial balance exports", description: "From accounting system (QuickBooks, Xero, etc.) with chart of accounts" },
+        { title: "Trial balance exports", description: "From your accounting system with chart of accounts" },
         { title: "Cash flow & bank statements", description: "Cash flow statements or bank statements for proof of cash analysis" },
       ]} />
       <p>

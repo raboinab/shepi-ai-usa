@@ -76,7 +76,7 @@ export default function AccountantsCPA() {
 
       <h2 id="workflow">Firm Workflow with Shepi</h2>
       <StepList steps={[
-        { title: "Data ingestion", description: "Connect directly to QuickBooks or upload financial statements. Shepi normalizes the data and maps accounts automatically." },
+        { title: "Data ingestion", description: "Connect directly to your accounting integration or upload financial statements. Shepi normalizes the data and maps accounts automatically." },
         { title: "Automated analysis", description: "The platform identifies potential EBITDA adjustments, flags unusual transactions, and builds multi-period trending." },
         { title: "Analyst review", description: "Your team reviews AI-identified adjustments, applies professional judgment, and adds deal-specific context." },
         { title: "Report generation", description: "Export lender-ready QoE reports with supporting schedules, adjustment summaries, and working capital analysis." },
