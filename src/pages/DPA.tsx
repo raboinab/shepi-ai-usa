@@ -186,10 +186,10 @@ export default function DPA() {
             the Controller, with reasonable notice. Audit requests should be
             directed to{" "}
             <a
-              href="mailto:privacy@shepi.ai"
+              href="mailto:hello@shepi.ai"
               className="text-primary hover:underline"
             >
-              privacy@shepi.ai
+              hello@shepi.ai
             </a>
             .
           </p>
