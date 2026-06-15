@@ -193,7 +193,7 @@ export default function Security() {
 
       <h2 id="zdr">Zero Data Retention</h2>
       <p>
-        Customer financial data — from any accounting integration (e.g., QuickBooks), uploaded statements, GL detail — is ingested, analyzed, and returned as deliverables. We do not retain it for secondary use, do not sell it, do not share it, and do not use it to train any model. For AI-assisted analysis, prompts route through the Vercel AI Gateway to Anthropic and OpenAI under no-retention, no-training terms.
+        Customer financial data — from any accounting integration (e.g., QuickBooks), uploaded statements, GL detail — is ingested, analyzed, and returned as deliverables. We do not retain it for secondary use, do not sell it, do not share it, and do not use it to train any model. For AI-assisted analysis, prompts route through the Vercel AI Gateway to Anthropic under no-retention, no-training terms.
       </p>
       <BenefitGrid benefits={[
         { title: "No model training", description: "Your data is never used to train foundation models or any Shepi model." },
@@ -205,7 +205,7 @@ export default function Security() {
       <ComparisonTable
         headers={["Data flow", "Retention posture"]}
         rows={[
-          ["Prompts and completions to Claude or OpenAI via Vercel AI Gateway", "Zero retention, zero training (upstream contractual)"],
+          ["Prompts and completions to Claude via Vercel AI Gateway", "Zero retention, zero training (upstream contractual)"],
           ["Document text extracted for AI analysis", "Processed in-request; not stored on AI sub-processor side"],
           ["Accounting integration data + financial data in Postgres", "Held only for the active engagement; purged on customer request; never sent to LLMs in raw form and never used to train models"],
           ["Files at rest in Supabase Storage", "Encrypted at rest; scoped to the project; deleted with the project"],
@@ -213,7 +213,7 @@ export default function Security() {
         ]}
       />
       <p>
-        No separate ZDR contract is required — the no-retention posture flows from Shepi's architecture and Vercel AI Gateway's upstream agreements with Anthropic and OpenAI. See <Link to="/dpa">DPA §6 (AI Sub-processors)</Link> and the full <Link to="/subprocessors">subprocessors list</Link>. Enterprise prospects can request the current data-flow diagram under NDA — email <a href="mailto:security@shepi.ai">security@shepi.ai</a>.
+        No separate ZDR contract is required — the no-retention posture flows from Shepi's architecture and Vercel AI Gateway's upstream agreement with Anthropic. See <Link to="/dpa">DPA §6 (AI Sub-processors)</Link> and the full <Link to="/subprocessors">subprocessors list</Link>. Enterprise prospects can request the current data-flow diagram under NDA — email <a href="mailto:security@shepi.ai">security@shepi.ai</a>.
       </p>
 
 
