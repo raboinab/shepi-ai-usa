@@ -52,7 +52,7 @@ export function BalanceSheetTab({ dealData }: TabProps) {
       { id: "s1", type: "spacer", cells: {} },
 
       { id: "hdr-liab", type: "section-header", label: "LIABILITIES", cells: { label: "LIABILITIES" } },
-      { id: "ap", type: "data", indent: 1, cells: { label: "Current Liabilities", ...nbc(p => totalCL(p) === 0 ? 0 : s("Current liabilities", p)) } },
+      { id: "ap", type: "data", indent: 1, cells: { label: "Current Liabilities", ...nbc(p => s("Current liabilities", p)) } },
       { id: "ocl", type: "data", indent: 1, cells: { label: "Other Current Liabilities", ...nbc(p => s("Other current liabilities", p)) } },
       { id: "total-cl", type: "subtotal", cells: { label: "Total Current Liabilities", ...nbc(p => totalCL(p)) } },
       { id: "ltl", type: "data", indent: 1, cells: { label: "Long Term Liabilities", ...nbc(p => s("Long term liabilities", p)) } },
