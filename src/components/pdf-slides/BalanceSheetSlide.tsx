@@ -49,7 +49,7 @@ export function BalanceSheetSlide({ metadata, pageNumber, totalPages, data }: Sl
         { key: "ltm", label: "LTM", align: "right" as const },
       ];
 
-  const BOLD_KEYS = ["total", "assets", "liabilities", "equity", "net"];
+  const BOLD_KEYS = ["total", "assets", "liabilities", "liability", "equity", "net", "non-current", "balance check"];
   const rows = hasData
     ? rawData.slice(1).map((row) => {
         const cells: Record<string, string | number | null> = {};
@@ -62,13 +62,14 @@ export function BalanceSheetSlide({ metadata, pageNumber, totalPages, data }: Sl
     : [
         { cells: { item: "Total Current Assets", fy1: "—", fy2: "—", ltm: "—" }, bold: true },
         { cells: { item: "Total Non-Current Assets", fy1: "—", fy2: "—", ltm: "—" }, bold: true },
-        { cells: { item: "Total Assets", fy1: "—", fy2: "—", ltm: "—" }, bold: true, highlight: true },
+        { cells: { item: "TOTAL ASSETS", fy1: "—", fy2: "—", ltm: "—" }, bold: true, highlight: true },
         { cells: {}, separator: true },
         { cells: { item: "Total Current Liabilities", fy1: "—", fy2: "—", ltm: "—" }, bold: true },
         { cells: { item: "Total Non-Current Liabilities", fy1: "—", fy2: "—", ltm: "—" }, bold: true },
         { cells: { item: "Total Liabilities", fy1: "—", fy2: "—", ltm: "—" }, bold: true, highlight: true },
         { cells: {}, separator: true },
         { cells: { item: "Total Equity", fy1: "—", fy2: "—", ltm: "—" }, bold: true, highlight: true },
+        { cells: { item: "TOTAL LIABILITIES & EQUITY", fy1: "—", fy2: "—", ltm: "—" }, bold: true, highlight: true },
       ];
 
   const narrative = hasData ? computeNarrative(rawData) : "";

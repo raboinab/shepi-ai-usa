@@ -1,66 +1,79 @@
+## Goal
 
-# Plan: Make accuracy a front-door positioning pillar
+Make the balance sheet correct and GAAP-presented across all three surfaces (web tab, XLSX, PDF). Eliminate the tautological balance check, add the missing non-current subtotals, and make the web tab consistent with the export pipeline.
 
-## The argument we're making
+## Scope correction
 
-A human doing QoE in Excel **will** make errors. Not might — will. Broken references, sign flips, fat-finger transpositions, formula drift when a row gets inserted, copy/paste between tabs that silently drops a number. shepi removes that surface area: data flows from source → structured ledger → adjustments → outputs without a human retyping numbers, and every computation is the same deterministic formula every time. That is a real, defensible, differentiating claim.
+Earlier diagnosis said `slideRenderer.ts:112` (`data: {}`) breaks the PDF. It does not — `createDataInjector` in `src/lib/pdf/index.ts` (lines 195-230) wraps every slide and merges `computedReports.balanceSheet.rawData` into `data` before render. The PDF renders real numbers when `computedReports` is populated; dashes only show when the report is missing/empty. We will leave that wiring alone but tighten the slide fallback so it matches the real grid shape.
 
-What we will **not** claim:
-- "The computer is never wrong" (warranty exposure, contradicts Terms)
-- "Error-free QoE" or "guaranteed accuracy" (UPL/E&O risk, collides with the core memory rule that shepi is analytical software, not attestation)
-- Anything implying outputs don't need human review (contradicts DFY review value prop and the AI-assist FAQ)
+## Changes
 
-Safe, sharp framing we *will* use: **"No retyping. No broken formulas. Same math, every time."** Plus the concrete failure modes Excel/manual workflows have that shepi structurally prevents.
+### 1. Real balance check (kills the tautology)
 
-## What ships
+In `src/lib/calculations.ts`, `calcTotalLiabilitiesAndEquity` already exists and returns `totalLiab + totalEquity` where `totalEquity = -sumByLineItem("Equity", p)`. Use this — not `calcTotalAssets` — as the L&E rollup. The check then becomes a true `Assets − (Liabilities + Equity)` test that can actually fail when the TB doesn't tie.
 
-### 1. New page: `/accuracy` (a.k.a. "Why shepi is more accurate than a human in Excel")
-Full content page, in the SEO content-page pattern (uses `ContentPageLayout`, `HeroCallout`, `ComparisonTable`, `BenefitGrid`, `StepList`, `AccordionFAQ`, `RelatedResourceCards`). Sections:
+Apply in both:
+- `src/components/workbook/tabs/BalanceSheetTab.tsx` — `total-le` row uses `calcTotalLiabilitiesAndEquity`; `check` row computes real `assets − l&e` and sets `checkPassed` from the result instead of hardcoding `true`.
+- `src/lib/workbook-grid-builders.ts::buildBalanceSheetGrid` — same: TOTAL L&E row uses `calcTotalLiabilitiesAndEquity`, plus add a Balance Check row (currently the grid builder has no check at all).
 
-- **Hero callout**: "A spreadsheet trusts whoever typed last. shepi doesn't."
-- **The human-error surface in a manual QoE** — concrete list: broken cell refs, inserted-row formula drift, sign convention flips, tab-to-tab copy/paste, manual reclass entries, period misalignment, hand-keyed bank tie-outs.
-- **What shepi removes structurally** — source-doc → parsed ledger (no retype), one canonical chart-of-accounts mapping, deterministic adjustment engine (same inputs → same outputs every run), single source of truth feeding workbook + PDF + dashboards (no export drift), full audit trail on every number.
-- **Comparison table**: failure mode × Excel/manual × shepi DIY × shepi DFY.
-- **Where humans still belong** — judgment calls (which adjustments qualify, normalization assumptions, narrative). DFY adds a licensed CPA reviewing those judgments. Frames human-in-the-loop as a feature, not a hedge.
-- **FAQ**: "Does shepi guarantee accuracy?" (No — and here's the honest reason), "What about the AI?" (AI suggests, humans approve, math is deterministic), "Is this an audit?" (No — link to /scope).
-- **JSON-LD Article**, canonical `https://shepi.ai/accuracy`, breadcrumbs, related-resource cards to `/compare/shepi-vs-excel`, `/compare/ai-qoe-vs-traditional`, `/guides/quality-of-earnings`, `/pricing`.
+Equity line also needs to switch to `calcTotalEquity` (i.e., `-sumByLineItem("Equity", p)`) instead of the current `assets + liabilities` derivation, otherwise equity is force-plugged and the check is still tautological.
 
-### 2. Homepage: add an "Accuracy" section
-Inline section on `Index.tsx` using the existing bg-background/bg-secondary alternation + serif heading + eyebrow pattern (per memory). Three-bullet structure:
-- No retyping — data flows from source documents into the model
-- No broken formulas — deterministic engine, same math every time
-- One source of truth — workbook, PDF, dashboards all read the same numbers
+### 2. GAAP non-current subtotals
 
-CTA → `/accuracy`.
+Add helpers in `src/lib/calculations.ts`:
+- `calcTotalNonCurrentAssets(tb, p) = sumByLineItem(tb, "Fixed assets", p) + sumByLineItem(tb, "Other assets", p)`
+- `calcTotalNonCurrentLiabilities(tb, p) = sumByLineItem(tb, "Long term liabilities", p)` (single line today, but named subtotal for presentation parity and future-proofing).
 
-### 3. Strengthen `/compare/shepi-vs-excel`
-Reframe the existing Excel comparison around the same error-surface argument and link to `/accuracy` as the deeper read. Keep current structure, sharpen the copy.
+Insert `subtotal` rows in both `BalanceSheetTab.tsx` and `buildBalanceSheetGrid`:
+- After Fixed Assets + Other Assets → "Total Non-Current Assets"
+- After Long Term Liabilities → "Total Non-Current Liabilities"
 
-### 4. Routing + SEO plumbing
-- Add `/accuracy` to `src/App.tsx`
-- Add to `PRERENDER_PATHS` (so it static-renders for crawlers)
-- Add to `public/sitemap.xml` with `lastmod` today
-- SEO title under 60 chars, meta description under 160 chars, single H1, JSON-LD Article schema
+Order becomes the standard classified-BS shape:
+```text
+ASSETS
+  Cash & Equivalents
+  Accounts Receivable
+  Other Current Assets
+  Total Current Assets
+  Fixed Assets
+  Other Assets
+  Total Non-Current Assets
+  TOTAL ASSETS
 
-### 5. Light nav surfacing
-Add "Accuracy" as a link in the resources/footer nav so it's reachable without search.
+LIABILITIES
+  Current Liabilities
+  Other Current Liabilities
+  Total Current Liabilities
+  Long Term Liabilities
+  Total Non-Current Liabilities
+  Total Liabilities
 
-## Out of scope (deliberately)
+EQUITY
+  Total Equity
+  TOTAL LIABILITIES & EQUITY
+  Balance Check (Assets − L&E)
+```
 
-- Any "guarantee," "error-free," "100% accurate," "computer is never wrong" language — flagged and rejected upfront.
-- Touching Terms, /scope, or the AI-Won't-Do-Your-QoE guide. Those exist precisely to keep us legally clean and are doing their job.
-- Removing the DFY CPA-review value prop. Accuracy positioning *strengthens* DFY ("the math is deterministic; a CPA reviews the judgment calls").
-- Backend/wizard/workbook code changes. This is positioning + presentation only.
+### 3. Web tab: use reclass-aware sums
 
-## Files to be touched
+Switch `BalanceSheetTab.tsx` from `calc.sumByLineItem` to `calc.sumByLineItemWithReclass(tb, dealData.reclassifications ?? [], lineItem, p)` so the on-screen tab matches the XLSX/PDF builders. Without this, any user reclassification silently diverges between screen and export.
 
-- **New**: `src/pages/Accuracy.tsx`
-- **Edit**: `src/App.tsx` (route + PRERENDER_PATHS), `public/sitemap.xml`, `src/pages/Index.tsx` (new section), `src/pages/compare/ShepiVsExcel.tsx` (sharpen copy + cross-link), nav/footer component (add link)
+### 4. Slide fallback parity
 
-## Success criteria
+In `src/components/pdf-slides/BalanceSheetSlide.tsx`, update the `hasData = false` placeholder rows to match the real grid shape (the new GAAP order above) so a missing-data render and a real render look structurally identical. Also widen `BOLD_KEYS` to keep "non-current" subtotals bolded.
 
-- `/accuracy` live, prerendered, in sitemap, indexable
-- Homepage has a visible Accuracy section above the fold of the mid-page scroll
-- ShepiVsExcel cross-links to /accuracy
-- No language anywhere implies warranty, attestation, or "error-free" outputs
-- Build passes, no broken links
+### 5. (Out of scope, flagged) BS Detailed
+
+`buildBSDetailedGrid` is a separate, more granular grid — it likely already needs the same treatment, but I'll touch only the summary surfaces in this change and call out the BS Detailed pass as a follow-up so this PR stays reviewable.
+
+## Verification
+
+- Use the existing demo deal: the balance check should show 0 (or a small rounding number) when the TB ties; deliberately edit one TB entry in mock data to confirm the check turns red.
+- Regenerate the demo PDF + XLSX via `bun run scripts/generate-demo-pdf.ts` and `bun run scripts/generate-demo-workbook.ts`; visually QA pages of the PDF (skill/pdf workflow) to confirm subtotals render and the slide table doesn't overflow.
+- Spot-check that columns still align after the two new subtotal rows (the table is column-driven so this is low risk, but worth eyeballing).
+
+## Technical notes
+
+- `calcTotalLiabilities` in `calculations.ts` returns a negative number (credit convention). `calcTotalLiabilitiesAndEquity = calcTotalLiabilities + calcTotalEquity`, where `calcTotalEquity = -sumByLineItem("Equity", p)`. For display in the grid, the `nbc` helper already negates, so the L&E row should be wired through `nbc(...)` (or its existing sign convention) consistently with how Total Liabilities is displayed. Verify sign once during implementation.
+- No schema changes. No new dependencies.
+- Memory rule respected: nothing here implies CPA attestation; this is presentation + arithmetic correctness only.
