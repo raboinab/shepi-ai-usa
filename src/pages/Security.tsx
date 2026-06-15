@@ -15,6 +15,7 @@ const toc = [
   { id: "ai", label: "AI & Customer Data" },
   { id: "infra", label: "Infrastructure" },
   { id: "compliance", label: "Compliance & Certifications" },
+  { id: "zdr", label: "Zero Data Retention" },
   { id: "gaps", label: "What We Don't Have Yet" },
   { id: "roadmap", label: "Roadmap" },
   { id: "contact", label: "Contact" },
