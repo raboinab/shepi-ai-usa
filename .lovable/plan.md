@@ -1,79 +1,68 @@
 ## Goal
 
-Make the balance sheet correct and GAAP-presented across all three surfaces (web tab, XLSX, PDF). Eliminate the tautological balance check, add the missing non-current subtotals, and make the web tab consistent with the export pipeline.
+Stand up `/proof-of-cash` as a top-level **category landing page** so shepi owns the term head-to-head with QoEAgent. Capability already ships (ProofOfCashTab, builder, PDF slide) and the deep methodology already lives at `/guides/cash-proof-analysis` — this page is the product/category claim layer above the guide.
 
-## Scope correction
+## Why top-level (not under /guides or /features)
 
-Earlier diagnosis said `slideRenderer.ts:112` (`data: {}`) breaks the PDF. It does not — `createDataInjector` in `src/lib/pdf/index.ts` (lines 195-230) wraps every slide and merges `computedReports.balanceSheet.rawData` into `data` before render. The PDF renders real numbers when `computedReports` is populated; dashes only show when the report is missing/empty. We will leave that wiring alone but tighten the slide fallback so it matches the real grid shape.
+QoEAgent uses "Proof of Cash AI" as their headline category. A guide at `/guides/...` competes for informational queries; a top-level money page at `/proof-of-cash` competes for category and product queries. Pattern matches existing `/quality-of-earnings-software`, `/quality-of-earnings-cost`, `/quality-of-earnings-template` — same depth, same ContentPageLayout shell.
 
-## Changes
+It also fixes the existing broken in-app link from `QualityOfEarningsSoftware.tsx:70` which already points at `/proof-of-cash`.
 
-### 1. Real balance check (kills the tautology)
+## What to build
 
-In `src/lib/calculations.ts`, `calcTotalLiabilitiesAndEquity` already exists and returns `totalLiab + totalEquity` where `totalEquity = -sumByLineItem("Equity", p)`. Use this — not `calcTotalAssets` — as the L&E rollup. The check then becomes a true `Assets − (Liabilities + Equity)` test that can actually fail when the TB doesn't tie.
+### New file: `src/pages/ProofOfCash.tsx`
 
-Apply in both:
-- `src/components/workbook/tabs/BalanceSheetTab.tsx` — `total-le` row uses `calcTotalLiabilitiesAndEquity`; `check` row computes real `assets − l&e` and sets `checkPassed` from the result instead of hardcoding `true`.
-- `src/lib/workbook-grid-builders.ts::buildBalanceSheetGrid` — same: TOTAL L&E row uses `calcTotalLiabilitiesAndEquity`, plus add a Balance Check row (currently the grid builder has no check at all).
+Use `ContentPageLayout` with the same shell as `QualityOfEarningsSoftware.tsx`:
 
-Equity line also needs to switch to `calcTotalEquity` (i.e., `-sumByLineItem("Equity", p)`) instead of the current `assets + liabilities` derivation, otherwise equity is force-plugged and the check is still tautological.
+- `seoTitle`: "Proof of Cash Software — GL-to-Bank Tie-Out Automated | Shepi"
+- `seoDescription`: under 160 chars, leads with "Proof of cash software that ties GL to bank statements automatically..."
+- `canonical`: `https://shepi.ai/proof-of-cash`
+- JSON-LD: `SoftwareApplication` + `FAQPage` (stacked, same pattern as QoE Software page)
+- Breadcrumbs: `[{ label: "Proof of Cash" }]`
+- `heroAccent`
 
-### 2. GAAP non-current subtotals
+Section outline (TOC drives anchors):
 
-Add helpers in `src/lib/calculations.ts`:
-- `calcTotalNonCurrentAssets(tb, p) = sumByLineItem(tb, "Fixed assets", p) + sumByLineItem(tb, "Other assets", p)`
-- `calcTotalNonCurrentLiabilities(tb, p) = sumByLineItem(tb, "Long term liabilities", p)` (single line today, but named subtotal for presentation parity and future-proofing).
+1. **What is proof of cash** — one-paragraph plain definition. Reframes the category in shepi's voice (GL-to-bank tie-out), then says "see the methodology guide" with a link to `/guides/cash-proof-analysis`.
+2. **What shepi's proof of cash automates** — 4-up `BenefitGrid`: bank statement ingestion → GL match → exception flagging → period-tying schedule. Each item maps to something the product actually does (no roadmap claims).
+3. **Software vs manual** — `ComparisonTable` (manual: 1–2 days, sampling, Excel pivots; shepi: minutes, 100% transactions, exception list with drill-through).
+4. **When you need it** — `BenefitGrid` of 3 deal types: search-fund/SBA (lenders require it), PE add-on screen, sell-side prep.
+5. **How it works** — `StepList`: upload bank statements + GL → automatic matching → review exceptions → export the proof-of-cash workbook tab + PDF slide.
+6. **Pricing CTA** — references `PRICING.perProject.display`, mirroring other money pages.
+7. **FAQ** — `AccordionFAQ` (4–5 Q&As, doubled into FAQPage JSON-LD).
+8. **Related** — `RelatedResourceCards` linking to the methodology guide, QoE Software, and QoE Checklist.
 
-Insert `subtotal` rows in both `BalanceSheetTab.tsx` and `buildBalanceSheetGrid`:
-- After Fixed Assets + Other Assets → "Total Non-Current Assets"
-- After Long Term Liabilities → "Total Non-Current Liabilities"
+No insurance/attestation/CPA-opinion language. Frame the deliverable as a workpaper/schedule — consistent with Core memory rules.
 
-Order becomes the standard classified-BS shape:
-```text
-ASSETS
-  Cash & Equivalents
-  Accounts Receivable
-  Other Current Assets
-  Total Current Assets
-  Fixed Assets
-  Other Assets
-  Total Non-Current Assets
-  TOTAL ASSETS
+### Routing
 
-LIABILITIES
-  Current Liabilities
-  Other Current Liabilities
-  Total Current Liabilities
-  Long Term Liabilities
-  Total Non-Current Liabilities
-  Total Liabilities
+`src/App.tsx` — add `{ path: "proof-of-cash", element: wrap(<ProofOfCash />) }` alongside the other P0 money pages (after `quality-of-earnings-template`). Lazy-import at top.
 
-EQUITY
-  Total Equity
-  TOTAL LIABILITIES & EQUITY
-  Balance Check (Assets − L&E)
-```
+### Sitemap
 
-### 3. Web tab: use reclass-aware sums
+`public/sitemap.xml` — add `<url><loc>https://shepi.ai/proof-of-cash</loc>...</url>` near the existing `/quality-of-earnings-software` entry. Keep `https://shepi.ai` apex per memory rule.
 
-Switch `BalanceSheetTab.tsx` from `calc.sumByLineItem` to `calc.sumByLineItemWithReclass(tb, dealData.reclassifications ?? [], lineItem, p)` so the on-screen tab matches the XLSX/PDF builders. Without this, any user reclassification silently diverges between screen and export.
+### Cross-links (low-risk, high-leverage)
 
-### 4. Slide fallback parity
+- `src/pages/QualityOfEarningsSoftware.tsx:70` — broken link to `/proof-of-cash` becomes live automatically; no edit needed.
+- `src/pages/guides/CashProofAnalysis.tsx` — add one sentence near the top linking up to `/proof-of-cash` as the product page (so the guide funnels to the category page and vice versa).
+- `src/pages/Index.tsx` — in the existing FAQ / "what you get" sections that mention "proof of cash" in plain text, convert the first mention to a `<Link to="/proof-of-cash">` so the homepage feeds equity into the new URL. One link only; don't over-link.
 
-In `src/components/pdf-slides/BalanceSheetSlide.tsx`, update the `hasData = false` placeholder rows to match the real grid shape (the new GAAP order above) so a missing-data render and a real render look structurally identical. Also widen `BOLD_KEYS` to keep "non-current" subtotals bolded.
+### Out of scope (explicitly)
 
-### 5. (Out of scope, flagged) BS Detailed
-
-`buildBSDetailedGrid` is a separate, more granular grid — it likely already needs the same treatment, but I'll touch only the summary surfaces in this change and call out the BS Detailed pass as a follow-up so this PR stays reviewable.
+- No `og:image` (avoiding placeholders per head-meta guidance).
+- No nav menu changes — existing footer/links surface the page once it's in the sitemap and cross-linked.
+- No `/agreement-extraction` or `/contract-extraction` page — capability isn't shipped.
+- No `BSDetailedTab` rework (carry-over from the prior plan).
 
 ## Verification
 
-- Use the existing demo deal: the balance check should show 0 (or a small rounding number) when the TB ties; deliberately edit one TB entry in mock data to confirm the check turns red.
-- Regenerate the demo PDF + XLSX via `bun run scripts/generate-demo-pdf.ts` and `bun run scripts/generate-demo-workbook.ts`; visually QA pages of the PDF (skill/pdf workflow) to confirm subtotals render and the slide table doesn't overflow.
-- Spot-check that columns still align after the two new subtotal rows (the table is column-driven so this is low risk, but worth eyeballing).
+- Visit `/proof-of-cash` in the preview: hero renders, TOC anchors jump, FAQ accordion opens, related-card links work.
+- Visit `/quality-of-earnings-software`: the in-text "proof of cash" link now resolves (was broken).
+- `view-source:` the page: confirm `<title>`, `<meta name="description">`, `canonical`, `og:url`, and stacked JSON-LD all self-reference `/proof-of-cash`.
+- Spot-check the new sitemap entry parses (no malformed XML).
 
 ## Technical notes
 
-- `calcTotalLiabilities` in `calculations.ts` returns a negative number (credit convention). `calcTotalLiabilitiesAndEquity = calcTotalLiabilities + calcTotalEquity`, where `calcTotalEquity = -sumByLineItem("Equity", p)`. For display in the grid, the `nbc` helper already negates, so the L&E row should be wired through `nbc(...)` (or its existing sign convention) consistently with how Total Liabilities is displayed. Verify sign once during implementation.
-- No schema changes. No new dependencies.
-- Memory rule respected: nothing here implies CPA attestation; this is presentation + arithmetic correctness only.
+- Pure additive: one new page file, one route line, one sitemap entry, ≤3 small cross-link edits. No schema/db changes, no new dependencies.
+- Uses existing `src/components/content/*` primitives (HeroCallout, StatRow, BenefitGrid, ComparisonTable, StepList, AccordionFAQ, RelatedResourceCards) and the `ContentPageLayout` shell — consistent with the typographic-SEO-page pattern in memory.
