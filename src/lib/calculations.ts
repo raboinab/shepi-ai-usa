@@ -350,10 +350,14 @@ export function calcTotalCurrentAssets(entries: TrialBalanceEntry[], periodId: s
          sumByLineItem(entries, "Other current assets", periodId);
 }
 
+export function calcTotalNonCurrentAssets(entries: TrialBalanceEntry[], periodId: string): number {
+  return sumByLineItem(entries, "Fixed assets", periodId) +
+         sumByLineItem(entries, "Other assets", periodId);
+}
+
 export function calcTotalAssets(entries: TrialBalanceEntry[], periodId: string): number {
   return calcTotalCurrentAssets(entries, periodId) +
-         sumByLineItem(entries, "Fixed assets", periodId) +
-         sumByLineItem(entries, "Other assets", periodId);
+         calcTotalNonCurrentAssets(entries, periodId);
 }
 
 export function calcTotalCurrentLiabilities(entries: TrialBalanceEntry[], periodId: string): number {
@@ -361,9 +365,13 @@ export function calcTotalCurrentLiabilities(entries: TrialBalanceEntry[], period
          sumByLineItem(entries, "Other current liabilities", periodId);
 }
 
+export function calcTotalNonCurrentLiabilities(entries: TrialBalanceEntry[], periodId: string): number {
+  return sumByLineItem(entries, "Long term liabilities", periodId);
+}
+
 export function calcTotalLiabilities(entries: TrialBalanceEntry[], periodId: string): number {
   return calcTotalCurrentLiabilities(entries, periodId) +
-         sumByLineItem(entries, "Long term liabilities", periodId);
+         calcTotalNonCurrentLiabilities(entries, periodId);
 }
 
 export function calcTotalEquity(entries: TrialBalanceEntry[], periodId: string): number {
