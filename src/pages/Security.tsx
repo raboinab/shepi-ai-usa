@@ -4,6 +4,7 @@ import { HeroCallout } from "@/components/content/HeroCallout";
 import { StatRow } from "@/components/content/StatRow";
 import { BenefitGrid } from "@/components/content/BenefitGrid";
 import { StepList } from "@/components/content/StepList";
+import { ComparisonTable } from "@/components/content/ComparisonTable";
 import { AccordionFAQ } from "@/components/content/AccordionFAQ";
 import { RelatedResourceCards } from "@/components/content/RelatedResourceCards";
 
@@ -13,6 +14,7 @@ const toc = [
   { id: "auth", label: "Authentication & Access" },
   { id: "ai", label: "AI & Customer Data" },
   { id: "infra", label: "Infrastructure" },
+  { id: "compliance", label: "Compliance & Certifications" },
   { id: "gaps", label: "What We Don't Have Yet" },
   { id: "roadmap", label: "Roadmap" },
   { id: "contact", label: "Contact" },
@@ -24,7 +26,7 @@ const webPageSchema = {
   "@type": "WebPage",
   name: "Shepi Trust Center",
   description:
-    "How Shepi handles customer financial data: encryption, isolation, QuickBooks OAuth scopes, retention, and what we don't have in place yet.",
+    "Shepi runs on SOC 2 Type II and ISO 27001 certified infrastructure (AWS, Supabase, Vercel). Encryption, per-deal RLS isolation, QuickBooks OAuth scopes, and an honest list of what's still on the roadmap.",
   url: "https://shepi.ai/security",
 };
 
@@ -34,10 +36,18 @@ const faqSchema = {
   mainEntity: [
     {
       "@type": "Question",
-      name: "Is Shepi SOC 2 certified?",
+      name: "Is Shepi SOC 2 or ISO 27001 certified?",
       acceptedAnswer: {
         "@type": "Answer",
-        text: "Not yet. We are scoping SOC 2 Type I and will publish the report once it's complete. In the meantime, this Trust Center page is an honest description of the controls that are actually in place today.",
+        text: "Shepi itself has not yet completed an independent SOC 2 or ISO 27001 audit — that's on our roadmap. However, every subprocessor that touches customer data (AWS, Supabase, Vercel, Stripe, Intuit) is SOC 2 Type II certified, and most also hold ISO 27001. Shepi inherits the physical, network, and operational controls of those certified providers.",
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Do you inherit your providers' SOC 2 and ISO 27001 controls?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "Yes. Inherited controls cover physical security, network and hardware controls, database hardening, backup operations, access logging, and edge delivery. Shepi is responsible for the application layer on top: RLS policies, role separation, secret management, code review, dependency scanning, and edge function authorization.",
       },
     },
     {
@@ -80,7 +90,7 @@ export default function Security() {
     <ContentPageLayout
       title="Trust Center"
       seoTitle="Trust Center — Security & Data Handling | Shepi"
-      seoDescription="How Shepi handles customer financial data: TLS, AES-256, per-deal RLS isolation, read-only QuickBooks OAuth, and an honest list of what we don't have yet."
+      seoDescription="Shepi runs on SOC 2 Type II and ISO 27001 certified infrastructure (AWS, Supabase, Vercel). Encryption, per-deal RLS isolation, read-only QuickBooks OAuth, and an honest list of what's still on the roadmap."
       canonical="https://shepi.ai/security"
       breadcrumbs={[{ label: "Security" }]}
       toc={toc}
@@ -96,8 +106,8 @@ export default function Security() {
       <StatRow stats={[
         { value: "TLS 1.2+", label: "In transit" },
         { value: "AES-256", label: "At rest" },
+        { value: "SOC 2 + ISO 27001", label: "Certified infrastructure" },
         { value: "Per-deal RLS", label: "Tenant isolation" },
-        { value: "Read-only", label: "QuickBooks OAuth scopes" },
       ]} />
 
       <h2 id="data-handling">Data Handling</h2>
@@ -138,12 +148,45 @@ export default function Security() {
         { title: "Subprocessors", description: <>Full list at <Link to="/subprocessors">/subprocessors</Link> — who has access to what, and why.</> as unknown as string },
       ]} />
 
+      <h2 id="compliance">Compliance & Certifications</h2>
+      <p>
+        Shepi runs on infrastructure that is independently audited to SOC 2 Type II and ISO 27001. The platform inherits the physical, network, and operational controls of every subprocessor that touches customer data. <strong>Shepi itself</strong> has not yet completed an independent SOC 2 or ISO 27001 audit — that's on the roadmap below. The distinction matters; here is exactly what is and isn't certified.
+      </p>
+
+      <h3>Infrastructure certifications (inherited)</h3>
+      <ComparisonTable
+        headers={["Provider", "Role", "Certifications", "What we inherit"]}
+        rows={[
+          ["AWS (us-east)", "Underlying compute, network, storage", "SOC 1 / 2 / 3 Type II · ISO 27001 / 27017 / 27018 · PCI DSS L1 · HIPAA-eligible", "Physical security, network controls, hardware lifecycle"],
+          ["Supabase", "Database, auth, storage, edge functions", "SOC 2 Type II · HIPAA available", "Database hardening, backup operations, access logging"],
+          ["Vercel", "Hosting, AI Gateway", "SOC 2 Type II · ISO 27001 · GDPR", "Edge delivery, build pipeline, zero-data-retention LLM routing"],
+          ["Stripe", "Billing", "PCI DSS L1 · SOC 1 / 2 Type II", "Cardholder data handling — Shepi never touches card numbers"],
+          ["Intuit (QuickBooks)", "OAuth source of GL data", "SOC 2 · ISO 27001", "OAuth flow, read-only scope enforcement"],
+        ]}
+      />
+
+      <h3>What Shepi itself controls</h3>
+      <p>
+        Certified infrastructure is necessary but not sufficient. The application layer on top is on us:
+      </p>
+      <BenefitGrid benefits={[
+        { title: "RLS policies", description: "Every customer-facing table enforces Postgres Row Level Security keyed to the authenticated user — no \"read all\" path from the client." },
+        { title: "Role separation", description: "Deal owner, collaborator, CPA reviewer, and admin roles live in a dedicated user_roles table with security-definer functions; never on the profile record." },
+        { title: "Secret management", description: "Service-role keys and third-party API credentials live in Supabase Edge Function secrets, never in client code, never in the database." },
+        { title: "Code review & dependency scanning", description: "Every change is reviewed before merge. Dependencies scanned for known vulnerabilities on each build." },
+      ]} />
+
+      <h3>Shepi's own audit status</h3>
+      <p>
+        Shepi has not yet completed an independent SOC 2 or ISO 27001 audit. SOC 2 Type I is on the roadmap below. Enterprise prospects can request our current security questionnaire (CAIQ-lite format) and a summary of inherited controls under NDA — email <a href="mailto:security@shepi.ai">security@shepi.ai</a>.
+      </p>
+
       <h2 id="gaps">What We Don't Have Yet</h2>
       <p>
         Overclaiming on security is a bigger risk than underclaiming, so here's the honest list of what we have <em>not</em> shipped:
       </p>
       <ul>
-        <li><strong>No SOC 2 report.</strong> Type I is on the roadmap below; we will publish the report when it's signed, not before.</li>
+        <li><strong>No independent SOC 2 report for Shepi itself.</strong> Type I is on the roadmap below. Underlying infrastructure (AWS, Supabase, Vercel) is SOC 2 Type II and ISO 27001 certified today.</li>
         <li><strong>No third-party penetration test report.</strong> We do internal review on every release; an external annual pen test is on the roadmap.</li>
         <li><strong>No HIPAA, PCI, or FedRAMP coverage.</strong> Shepi is not designed for protected health information, cardholder data, or federal-government workloads.</li>
         <li><strong>No SAML SSO.</strong> Email/password and Google OAuth today. SAML for DFY accounts is on the roadmap.</li>
@@ -168,7 +211,8 @@ export default function Security() {
 
       <h2 id="faq">Frequently Asked Questions</h2>
       <AccordionFAQ items={[
-        { question: "Is Shepi SOC 2 certified?", answer: "Not yet. We're scoping SOC 2 Type I and will publish the report once it's complete. This page is an honest description of the controls in place today." },
+        { question: "Is Shepi SOC 2 or ISO 27001 certified?", answer: "Shepi itself has not yet completed an independent SOC 2 or ISO 27001 audit — that's on the roadmap. However, every subprocessor that touches customer data (AWS, Supabase, Vercel, Stripe, Intuit) is SOC 2 Type II certified and most also hold ISO 27001. Shepi inherits the physical, network, and operational controls of those certified providers. See the Compliance section above for the full breakdown." },
+        { question: "Do you inherit your providers' SOC 2 and ISO 27001 controls?", answer: "Yes. Inherited controls cover physical security, network and hardware controls, database hardening, backup operations, access logging, and edge delivery. Shepi is responsible for the application layer on top: RLS policies, role separation, secret management, code review, and edge function authorization." },
         { question: "Where is customer data stored?", answer: "Postgres database hosted by Supabase on AWS infrastructure in the United States. Uploaded documents live in Supabase Storage in the same region." },
         { question: "Does Shepi use my data to train AI models?", answer: "No. LLM calls route through the Vercel AI Gateway under a zero-data-retention agreement. Upstream model providers process requests as sub-processors under the same no-retention terms." },
         { question: "What QuickBooks permissions does Shepi request?", answer: "Read-only OAuth scopes for the accounting data needed to produce a Quality of Earnings analysis. Shepi never writes back to QuickBooks. You can disconnect at any time." },
