@@ -40,7 +40,7 @@ const faqSchema = {
       name: "Is Shepi SOC 2 or ISO 27001 certified?",
       acceptedAnswer: {
         "@type": "Answer",
-        text: "Shepi itself has not yet completed an independent SOC 2 or ISO 27001 audit — that's on our roadmap. However, every subprocessor that touches customer data (AWS, Supabase, Vercel, Stripe, Intuit) is SOC 2 Type II certified, and most also hold ISO 27001. Shepi inherits the physical, network, and operational controls of those certified providers.",
+        text: "Shepi itself has not yet completed an independent SOC 2 or ISO 27001 audit — that's on our roadmap. However, every subprocessor that touches customer data (AWS, Supabase, Vercel, Stripe) is SOC 2 Type II certified, and most also hold ISO 27001. Shepi inherits the physical, network, and operational controls of those certified providers.",
       },
     },
     {
@@ -171,7 +171,7 @@ export default function Security() {
           ["Supabase", "Database, auth, storage, edge functions", "SOC 2 Type II · HIPAA available", "Database hardening, backup operations, access logging"],
           ["Vercel", "Hosting, AI Gateway", "SOC 2 Type II · ISO 27001 · GDPR", "Edge delivery, build pipeline, zero-data-retention LLM routing"],
           ["Stripe", "Billing", "PCI DSS L1 · SOC 1 / 2 Type II", "Cardholder data handling — Shepi never touches card numbers"],
-          ["Intuit (QuickBooks)", "OAuth source of GL data", "SOC 2 · ISO 27001", "OAuth flow, read-only scope enforcement"],
+          
         ]}
       />
 
@@ -247,7 +247,7 @@ export default function Security() {
 
       <h2 id="faq">Frequently Asked Questions</h2>
       <AccordionFAQ items={[
-        { question: "Is Shepi SOC 2 or ISO 27001 certified?", answer: "Shepi itself has not yet completed an independent SOC 2 or ISO 27001 audit — that's on the roadmap. However, every subprocessor that touches customer data (AWS, Supabase, Vercel, Stripe, Intuit) is SOC 2 Type II certified and most also hold ISO 27001. Shepi inherits the physical, network, and operational controls of those certified providers. See the Compliance section above for the full breakdown." },
+        { question: "Is Shepi SOC 2 or ISO 27001 certified?", answer: "Shepi itself has not yet completed an independent SOC 2 or ISO 27001 audit — that's on the roadmap. However, every subprocessor that touches customer data (AWS, Supabase, Vercel, Stripe) is SOC 2 Type II certified and most also hold ISO 27001. Shepi inherits the physical, network, and operational controls of those certified providers. See the Compliance section above for the full breakdown." },
         { question: "Do you inherit your providers' SOC 2 and ISO 27001 controls?", answer: "Yes. Inherited controls cover physical security, network and hardware controls, database hardening, backup operations, access logging, and edge delivery. Shepi is responsible for the application layer on top: RLS policies, role separation, secret management, code review, and edge function authorization." },
         { question: "Where is customer data stored?", answer: "Postgres database hosted by Supabase on AWS infrastructure in the United States. Uploaded documents live in Supabase Storage in the same region." },
         { question: "Does Shepi use my data to train AI models?", answer: "No. LLM calls route through the Vercel AI Gateway under a zero-data-retention agreement. Upstream model providers process requests as sub-processors under the same no-retention terms. See the Zero Data Retention section above for the full data-flow breakdown." },
