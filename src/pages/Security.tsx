@@ -193,7 +193,7 @@ export default function Security() {
 
       <h2 id="zdr">Zero Data Retention</h2>
       <p>
-        Shepi is a processing engine, not a data warehouse. Customer financial data — QuickBooks pulls, uploaded statements, GL detail — is ingested, analyzed, and returned as deliverables. We do not retain it for secondary use, do not sell it, do not share it, and do not use it to train any model. For AI-assisted analysis, prompts route through the Vercel AI Gateway to Anthropic and OpenAI under no-retention, no-training terms.
+        Customer financial data — from any accounting integration (e.g., QuickBooks), uploaded statements, GL detail — is ingested, analyzed, and returned as deliverables. We do not retain it for secondary use, do not sell it, do not share it, and do not use it to train any model. For AI-assisted analysis, prompts route through the Vercel AI Gateway to Anthropic and OpenAI under no-retention, no-training terms.
       </p>
       <BenefitGrid benefits={[
         { title: "No model training", description: "Your data is never used to train foundation models or any Shepi model." },
@@ -207,7 +207,7 @@ export default function Security() {
         rows={[
           ["Prompts and completions to Claude or OpenAI via Vercel AI Gateway", "Zero retention, zero training (upstream contractual)"],
           ["Document text extracted for AI analysis", "Processed in-request; not stored on AI sub-processor side"],
-          ["QuickBooks pulls + financial data in Postgres", "Held only for the active engagement; purged on customer request; never sent to LLMs in raw form and never used to train models"],
+          ["Accounting integration data + financial data in Postgres", "Held only for the active engagement; purged on customer request; never sent to LLMs in raw form and never used to train models"],
           ["Files at rest in Supabase Storage", "Encrypted at rest; scoped to the project; deleted with the project"],
           ["Application logs (Vercel, Supabase)", "Operational only; standard short retention; no customer financial content"],
         ]}
