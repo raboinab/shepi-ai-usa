@@ -393,7 +393,7 @@ const Index = () => {
               </div>
               <h3 className="text-xl font-semibold text-foreground mb-3">QoE Software, Not a Service</h3>
               <p className="text-muted-foreground leading-relaxed">
-                shepi produces the same structured analysis — EBITDA adjustments, working capital, proof of cash — without the traditional engagement timeline or price tag. Starting at $2,000 per deal.
+                shepi produces the same structured analysis — EBITDA adjustments, working capital, <Link to="/proof-of-cash" className="underline underline-offset-2">proof of cash</Link> — without the traditional engagement timeline or price tag. Starting at $2,000 per deal.
               </p>
             </Card>
 
