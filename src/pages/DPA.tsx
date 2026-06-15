@@ -19,10 +19,10 @@ export default function DPA() {
           agreeing to these terms (&quot;Controller&quot;) for the use of the
            Shepi platform. To request a signed copy, please email{" "}
           <a
-            href="mailto:privacy@shepi.ai"
+            href="mailto:hello@shepi.ai"
             className="text-primary hover:underline"
           >
-            privacy@shepi.ai
+            hello@shepi.ai
           </a>
           .
         </p>
@@ -236,10 +236,10 @@ export default function DPA() {
             To execute this DPA or for any questions regarding data processing,
             please contact us at{" "}
             <a
-              href="mailto:privacy@shepi.ai"
+              href="mailto:hello@shepi.ai"
               className="text-primary hover:underline"
             >
-              privacy@shepi.ai
+              hello@shepi.ai
             </a>
             .
           </p>

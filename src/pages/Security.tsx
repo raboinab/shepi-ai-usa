@@ -88,7 +88,7 @@ const faqSchema = {
       name: "Can I delete my data?",
       acceptedAnswer: {
         "@type": "Answer",
-        text: "Yes. You can delete a project and its uploaded documents from the dashboard at any time. For account-level deletion or a full data export, email security@shepi.ai and we will process the request within 30 days.",
+        text: "Yes. You can delete a project and its uploaded documents from the dashboard at any time. For account-level deletion or a full data export, email hello@shepi.ai and we will process the request within 30 days.",
       },
     },
   ],
@@ -128,7 +128,7 @@ export default function Security() {
         { title: "What we collect", description: "Account email, organization name, billing details, the financial documents you upload, and the GL/bank data fetched from your accounting integration (e.g., QuickBooks) once you connect it." },
         { title: "Where it lives", description: "Postgres on Supabase, US region. Documents in Supabase Storage, US region. No copies in third-party drives." },
         { title: "Retention defaults", description: "Project data is retained for the life of the account so you can re-open historical deals. You can delete a project and its documents from the dashboard at any time." },
-        { title: "Customer-initiated deletion", description: "Project delete is one click. For full account deletion or a data export, email security@shepi.ai — handled within 30 days." },
+        { title: "Customer-initiated deletion", description: "Project delete is one click. For full account deletion or a data export, email hello@shepi.ai — handled within 30 days." },
       ]} />
 
       <h2 id="auth">Authentication & Access</h2>
@@ -188,7 +188,7 @@ export default function Security() {
 
       <h3>Shepi's own audit status</h3>
       <p>
-        Shepi has not yet completed an independent SOC 2 or ISO 27001 audit. SOC 2 Type I is on the roadmap below. Enterprise prospects can request our current security questionnaire (CAIQ-lite format) and a summary of inherited controls under NDA — email <a href="mailto:security@shepi.ai">security@shepi.ai</a>.
+        Shepi has not yet completed an independent SOC 2 or ISO 27001 audit. SOC 2 Type I is on the roadmap below. Enterprise prospects can request our current security questionnaire (CAIQ-lite format) and a summary of inherited controls under NDA — email <a href="mailto:hello@shepi.ai">hello@shepi.ai</a>.
       </p>
 
       <h2 id="zdr">Zero Data Retention</h2>
@@ -213,7 +213,7 @@ export default function Security() {
         ]}
       />
       <p>
-        No separate ZDR contract is required — the no-retention posture flows from Shepi's architecture and Vercel AI Gateway's upstream agreement with Anthropic. See <Link to="/dpa">DPA §6 (AI Sub-processors)</Link> and the full <Link to="/subprocessors">subprocessors list</Link>. Enterprise prospects can request the current data-flow diagram under NDA — email <a href="mailto:security@shepi.ai">security@shepi.ai</a>.
+        No separate ZDR contract is required — the no-retention posture flows from Shepi's architecture and Vercel AI Gateway's upstream agreement with Anthropic. See <Link to="/dpa">DPA §6 (AI Sub-processors)</Link> and the full <Link to="/subprocessors">subprocessors list</Link>. Enterprise prospects can request the current data-flow diagram under NDA — email <a href="mailto:hello@shepi.ai">hello@shepi.ai</a>.
       </p>
 
 
@@ -242,7 +242,7 @@ export default function Security() {
 
       <h2 id="contact">Contact</h2>
       <p>
-        Security questions, DPA requests, or vendor questionnaires: <a href="mailto:security@shepi.ai">security@shepi.ai</a>. To report a vulnerability, see the <Link to="/security/responsible-disclosure">responsible disclosure policy</Link>.
+        Security questions, DPA requests, or vendor questionnaires: <a href="mailto:hello@shepi.ai">hello@shepi.ai</a>. To report a vulnerability, see the <Link to="/security/responsible-disclosure">responsible disclosure policy</Link>.
       </p>
 
       <h2 id="faq">Frequently Asked Questions</h2>
@@ -252,8 +252,8 @@ export default function Security() {
         { question: "Where is customer data stored?", answer: "Postgres database hosted by Supabase on AWS infrastructure in the United States. Uploaded documents live in Supabase Storage in the same region." },
         { question: "Does Shepi use my data to train AI models?", answer: "No. LLM calls route through the Vercel AI Gateway under a zero-data-retention agreement. Upstream model providers process requests as sub-processors under the same no-retention terms. See the Zero Data Retention section above for the full data-flow breakdown." },
         { question: "What QuickBooks permissions does Shepi request?", answer: "Read-only OAuth scopes for the accounting data needed to produce a Quality of Earnings analysis. Shepi never writes back to QuickBooks. You can disconnect at any time." },
-        { question: "Can I delete my data?", answer: "Yes. Delete a project and its uploaded documents from the dashboard at any time. For full account deletion or a data export, email security@shepi.ai — handled within 30 days." },
-        { question: "Do you sign DPAs?", answer: "Yes. Our standard DPA is summarized at /dpa. For a counter-signed copy, email security@shepi.ai." },
+        { question: "Can I delete my data?", answer: "Yes. Delete a project and its uploaded documents from the dashboard at any time. For full account deletion or a data export, email hello@shepi.ai — handled within 30 days." },
+        { question: "Do you sign DPAs?", answer: "Yes. Our standard DPA is summarized at /dpa. For a counter-signed copy, email hello@shepi.ai." },
       ]} />
 
       <h2>Related</h2>

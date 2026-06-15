@@ -10,7 +10,7 @@ shepi is an AI-assisted Quality of Earnings (QoE) analysis platform for small an
 
 - Operator: SMB EDGE
 - Contact: hello@shepi.ai
-- Security: security@shepi.ai
+- Security: hello@shepi.ai
 - Pricing: $2,000 per project, or $4,000/month for up to 3 concurrent projects
 
 ## Capabilities

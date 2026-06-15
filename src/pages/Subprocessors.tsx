@@ -110,10 +110,10 @@ export default function Subprocessors() {
       <p className="text-sm text-muted-foreground mt-4">
         If you have questions about our subprocessors, please contact us at{" "}
         <a
-          href="mailto:privacy@shepi.ai"
+          href="mailto:hello@shepi.ai"
           className="text-primary hover:underline"
         >
-          privacy@shepi.ai
+          hello@shepi.ai
         </a>
         .
       </p>
