@@ -72,15 +72,15 @@ const faqSchema = {
       name: "Does Shepi retain customer financial data?",
       acceptedAnswer: {
         "@type": "Answer",
-        text: "No, not for secondary use. Shepi is a processing engine: data from any accounting integration (e.g., QuickBooks), uploaded statements, and GL detail are ingested, analyzed, and returned as deliverables. We don't sell, share, repackage, or use customer data to train any model. Project data is held only for the active engagement and is purged on customer request.",
+        text: "No, not for secondary use. Shepi is a processing engine: data from any accounting integration, uploaded statements, and GL detail are ingested, analyzed, and returned as deliverables. We don't sell, share, repackage, or use customer data to train any model. Project data is held only for the active engagement and is purged on customer request.",
       },
     },
     {
       "@type": "Question",
-      name: "What QuickBooks permissions does Shepi request?",
+      name: "What permissions does Shepi request from my accounting integration?",
       acceptedAnswer: {
         "@type": "Answer",
-        text: "Read-only OAuth scopes for the accounting data we need to produce a Quality of Earnings analysis. Shepi never writes back to QuickBooks. You can disconnect the integration at any time from your account settings.",
+        text: "Read-only OAuth scopes for the accounting data we need to produce a Quality of Earnings analysis. Shepi never writes back to your accounting system. You can disconnect the integration at any time from your account settings.",
       },
     },
     {
@@ -99,7 +99,7 @@ export default function Security() {
     <ContentPageLayout
       title="Trust Center"
       seoTitle="Trust Center — Security & Data Handling | Shepi"
-      seoDescription="Shepi runs on SOC 2 Type II and ISO 27001 certified infrastructure (AWS, Supabase, Vercel). Zero Data Retention across AI and customer financials. Per-deal RLS, read-only accounting integration OAuth (e.g., QuickBooks)."
+      seoDescription="Shepi runs on SOC 2 Type II and ISO 27001 certified infrastructure (AWS, Supabase, Vercel). Zero Data Retention across AI and customer financials. Per-deal RLS, read-only accounting integration OAuth."
       canonical="https://shepi.ai/security"
       breadcrumbs={[{ label: "Security" }]}
       toc={toc}
@@ -108,7 +108,7 @@ export default function Security() {
       ogType="website"
     >
       <HeroCallout>
-        Built for diligence-grade data. Shepi handles seller financials, bank statements, and accounting integration data (e.g., QuickBooks) with the controls a PE associate or SBA lender expects — and this page is an honest description of what's actually in place today, not marketing puffery.
+        Built for diligence-grade data. Shepi handles seller financials, bank statements, and accounting integration data with the controls a PE associate or SBA lender expects — and this page is an honest description of what's actually in place today, not marketing puffery.
       </HeroCallout>
 
       <h2 id="at-a-glance">At a Glance</h2>
@@ -125,7 +125,7 @@ export default function Security() {
         Customer data lives in a Postgres database hosted by Supabase on AWS infrastructure in the United States. Uploaded documents (bank statements, GLs, payroll, contracts) are stored in Supabase Storage in the same region. All traffic between your browser, our edge functions, and the database is encrypted in transit with TLS 1.2 or higher; storage at rest is AES-256.
       </p>
       <BenefitGrid benefits={[
-        { title: "What we collect", description: "Account email, organization name, billing details, the financial documents you upload, and the GL/bank data fetched from your accounting integration (e.g., QuickBooks) once you connect it." },
+        { title: "What we collect", description: "Account email, organization name, billing details, the financial documents you upload, and the GL/bank data fetched from your accounting integration once you connect it." },
         { title: "Where it lives", description: "Postgres on Supabase, US region. Documents in Supabase Storage, US region. No copies in third-party drives." },
         { title: "Retention defaults", description: "Project data is retained for the life of the account so you can re-open historical deals. You can delete a project and its documents from the dashboard at any time." },
         { title: "Customer-initiated deletion", description: "Project delete is one click. For full account deletion or a data export, email hello@shepi.ai — handled within 30 days." },
@@ -193,7 +193,7 @@ export default function Security() {
 
       <h2 id="zdr">Zero Data Retention</h2>
       <p>
-        Customer financial data — from any accounting integration (e.g., QuickBooks), uploaded statements, GL detail — is ingested, analyzed, and returned as deliverables. We do not retain it for secondary use, do not sell it, do not share it, and do not use it to train any model. For AI-assisted analysis, prompts route through the Vercel AI Gateway to Anthropic under no-retention, no-training terms.
+        Customer financial data — from any accounting integration, uploaded statements, GL detail — is ingested, analyzed, and returned as deliverables. We do not retain it for secondary use, do not sell it, do not share it, and do not use it to train any model. For AI-assisted analysis, prompts route through the Vercel AI Gateway to Anthropic under no-retention, no-training terms.
       </p>
       <BenefitGrid benefits={[
         { title: "No model training", description: "Your data is never used to train foundation models or any Shepi model." },
@@ -251,7 +251,7 @@ export default function Security() {
         { question: "Do you inherit your providers' SOC 2 and ISO 27001 controls?", answer: "Yes. Inherited controls cover physical security, network and hardware controls, database hardening, backup operations, access logging, and edge delivery. Shepi is responsible for the application layer on top: RLS policies, role separation, secret management, code review, and edge function authorization." },
         { question: "Where is customer data stored?", answer: "Postgres database hosted by Supabase on AWS infrastructure in the United States. Uploaded documents live in Supabase Storage in the same region." },
         { question: "Does Shepi use my data to train AI models?", answer: "No. LLM calls route through the Vercel AI Gateway under a zero-data-retention agreement. Upstream model providers process requests as sub-processors under the same no-retention terms. See the Zero Data Retention section above for the full data-flow breakdown." },
-        { question: "What QuickBooks permissions does Shepi request?", answer: "Read-only OAuth scopes for the accounting data needed to produce a Quality of Earnings analysis. Shepi never writes back to QuickBooks. You can disconnect at any time." },
+        { question: "What permissions does Shepi request from my accounting integration?", answer: "Read-only OAuth scopes for the accounting data needed to produce a Quality of Earnings analysis. Shepi never writes back to your accounting system. You can disconnect at any time." },
         { question: "Can I delete my data?", answer: "Yes. Delete a project and its uploaded documents from the dashboard at any time. For full account deletion or a data export, email hello@shepi.ai — handled within 30 days." },
         { question: "Do you sign DPAs?", answer: "Yes. Our standard DPA is summarized at /dpa. For a counter-signed copy, email hello@shepi.ai." },
       ]} />
