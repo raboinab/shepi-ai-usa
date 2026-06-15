@@ -197,7 +197,7 @@ export default function QualityOfEarningsChecklist() {
       </ul>
 
       <p>
-        Running through this checklist manually takes 4–8 weeks and $20K+. Shepi runs every section automatically from your QuickBooks file — starting at {PRICING.perProject.display}.
+        Running through this checklist manually takes 4–8 weeks and $20K+. Shepi runs every section automatically from your accounting integration — starting at {PRICING.perProject.display}.
       </p>
 
       <h2 id="faq">Frequently Asked Questions</h2>

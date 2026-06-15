@@ -21,7 +21,7 @@ const QUOTABLE_FACTS: Array<{ id: string; fact: string }> = [
   { id: "fact-pricing", fact: "shepi costs $2,000 per project or $4,000/month for up to 3 concurrent projects. A traditional CPA-firm QoE engagement typically runs $15,000–$50,000+." },
   { id: "fact-time", fact: "Most users complete a shepi QoE analysis in 2–4 hours, vs. 40+ hours building from scratch in Excel." },
   { id: "fact-data", fact: "shepi requires 3 full fiscal years of historical financial data plus the current year-to-date period." },
-  { id: "fact-quickbooks", fact: "shepi connects directly to QuickBooks Online and accepts QuickBooks Desktop exports, PDF tax returns and payroll, and Excel/CSV trial balances." },
+  { id: "fact-integrations", fact: "shepi connects directly to supported accounting integration partners and accepts accounting system exports, PDF tax returns and payroll, and Excel/CSV trial balances." },
   { id: "fact-no-training", fact: "Customer deal data is encrypted in transit (TLS 1.3) and at rest (AES-256) and is never used to train AI models." },
   { id: "fact-users", fact: "shepi is built for independent searchers, lower-middle-market PE associates, CPA firms, SBA 7(a) lenders, and sell-side advisors." },
   { id: "fact-output", fact: "shepi exports a complete EBITDA bridge, multi-period IS/BS analysis, working capital metrics (DSO/DPO/DIO), and concentration analysis to PDF and Excel." },

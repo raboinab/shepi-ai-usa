@@ -39,7 +39,7 @@ export default function QualityOfEarningsTemplate() {
       heroAccent
     >
       <HeroCallout>
-        A complete QoE report template covering every section lenders and deal parties expect — or skip the template entirely and generate a real QoE report from your QuickBooks file in hours.
+        A complete QoE report template covering every section lenders and deal parties expect — or skip the template entirely and generate a real QoE report from your accounting integration in hours.
       </HeroCallout>
 
       <StatRow stats={[
@@ -88,7 +88,7 @@ export default function QualityOfEarningsTemplate() {
 
       <h2 id="skip-template">Or Skip the Template Entirely</h2>
       <p>
-        Excel templates are great for understanding QoE structure — but they require 40–80 hours of analyst work to fill out for a single deal. Shepi generates a complete, lender-ready QoE report from your QuickBooks file in hours, using the same standard structure the template defines.
+        Excel templates are great for understanding QoE structure — but they require 40–80 hours of analyst work to fill out for a single deal. Shepi generates a complete, lender-ready QoE report from your accounting integration in hours, using the same standard structure the template defines.
       </p>
       <p>
         Starting at <strong>{PRICING.perProject.display} per project</strong> — versus $20K+ for a CPA-led engagement using the same template structure.

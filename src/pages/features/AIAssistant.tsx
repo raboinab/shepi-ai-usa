@@ -111,7 +111,7 @@ export default function AIAssistant() {
 
       <h2>Related Resources</h2>
       <RelatedResourceCards links={[
-        { to: "/features/quickbooks-integration", label: "QuickBooks Integration" },
+        { to: "/features/quickbooks-integration", label: "Accounting Integration" },
         { to: "/guides/quality-of-earnings", label: "What Is a QoE Report?" },
         { to: "/compare/ai-qoe-vs-traditional", label: "AI QoE vs. Traditional CPA" },
         { to: "/use-cases/pe-firms", label: "QoE for PE Firms" },

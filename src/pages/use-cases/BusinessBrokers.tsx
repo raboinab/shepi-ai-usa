@@ -85,7 +85,7 @@ export default function BusinessBrokers() {
 
       <h2 id="workflow">Broker Workflow with Shepi</h2>
       <StepList steps={[
-        { title: "Seller onboarding", description: "Connect to QuickBooks or upload financial statements during the listing engagement" },
+        { title: "Seller onboarding", description: "Connect your accounting integration or upload financial statements during the listing engagement" },
         { title: "Financial screening", description: "Review the automated analysis to identify key adjustments, trends, and potential issues" },
         { title: "Seller conversation", description: "Walk through findings with the seller, gather context on unusual items, and agree on adjustments" },
         { title: "Listing preparation", description: "Incorporate adjusted earnings into pricing analysis and marketing materials" },

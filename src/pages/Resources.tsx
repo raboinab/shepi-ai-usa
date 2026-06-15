@@ -71,7 +71,7 @@ const sections = [
     title: "Features",
     description: "Deep dives into the tools and integrations that power Shepi's QoE platform.",
     links: [
-      { to: "/features/quickbooks-integration", label: "QuickBooks Integration for QoE", description: "Direct data pull, automatic account mapping, multi-period support, and secure OAuth." },
+      { to: "/features/quickbooks-integration", label: "Accounting Integration for QoE", description: "Direct data pull, automatic account mapping, multi-period support, and secure OAuth." },
       { to: "/features/ai-assistant", label: "AI-Powered QoE Analysis Assistant", description: "Red flag identification, adjustment guidance, educational support — AI assists, you decide." },
       { to: "/features/ai-due-diligence", label: "AI for Financial Due Diligence", description: "Automate EBITDA add-backs, GL anomaly detection, revenue analysis, and working capital calculations." },
       { to: "/features/qoe-software", label: "AI-Powered QoE Software", description: "End-to-end Quality of Earnings platform — from data ingestion to lender-ready reports." },

@@ -97,7 +97,7 @@ export default function QualityOfEarningsCost() {
       <h2 id="cost-factors">What Drives Quality of Earnings Cost</h2>
       <BenefitGrid benefits={[
         { title: "Deal size & complexity", description: "Larger revenue, more entities, and multi-location operations all increase analyst hours" },
-        { title: "Data quality", description: "Messy QuickBooks files, missing reconciliations, and cash-basis books drive cost up" },
+        { title: "Data quality", description: "Messy accounting data, missing reconciliations, and cash-basis books drive cost up" },
         { title: "Number of periods", description: "Most QoE engagements analyze 3 trailing years plus TTM — more periods means more work" },
         { title: "Industry complexity", description: "Construction WIP, SaaS deferred revenue, and inventory-heavy businesses require specialized work" },
         { title: "Timeline pressure", description: "Rush engagements (under 4 weeks) typically carry a 25–50% premium" },

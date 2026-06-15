@@ -69,14 +69,14 @@ export const HOMEPAGE_FAQ: FaqEntry[] = [
     category: "What shepi Is",
     question: "What exactly does shepi do?",
     answer:
-      "shepi is a QoE analysis platform built on three pillars: a structured analysis framework designed by M&A professionals, automated data processing that transforms raw financials in minutes, and AI-powered document extraction for complex forms. Connect to QuickBooks for automatic data import, or upload PDFs — our AI extracts structured data from tax returns, payroll reports, and contracts without manual data entry. The result: data room files become analysis-ready in minutes, not days.",
+      "shepi is a QoE analysis platform built on three pillars: a structured analysis framework designed by M&A professionals, automated data processing that transforms raw financials in minutes, and AI-powered document extraction for complex forms. Connect to your accounting integration for automatic data import, or upload PDFs — our AI extracts structured data from tax returns, payroll reports, and contracts without manual data entry. The result: data room files become analysis-ready in minutes, not days.",
   },
   {
     id: "what-is-2",
     category: "What shepi Is",
     question: "How is shepi different from using Excel templates?",
     answer:
-      "Excel templates give you a blank structure and hours of manual work. shepi gives you automated processing plus a guided workflow. Key differences: Connect to QuickBooks and import mapped data instantly — work that takes 8-12 hours manually. AI extracts structured data from tax returns, payroll, debt schedules, and contracts — no manual data entry. Multi-period normalization and IS/BS reconciliation happen automatically. A proven 6-phase workflow mirrors how experienced analysts work. You focus on analysis and judgment, not data wrangling.",
+      "Excel templates give you a blank structure and hours of manual work. shepi gives you automated processing plus a guided workflow. Key differences: Connect to your accounting integration and import mapped data instantly — work that takes 8-12 hours manually. AI extracts structured data from tax returns, payroll, debt schedules, and contracts — no manual data entry. Multi-period normalization and IS/BS reconciliation happen automatically. A proven 6-phase workflow mirrors how experienced analysts work. You focus on analysis and judgment, not data wrangling.",
   },
   {
     id: "what-is-3",
@@ -128,7 +128,7 @@ export const HOMEPAGE_FAQ: FaqEntry[] = [
     category: "How It Works",
     question: "What documents do I need to get started?",
     answer:
-      "<p>Once you have access to the seller's data room (typically after LOI), you'll gather documents in three tiers:</p><p><strong>Required</strong> — You need these to begin: Detailed Trial Balance (QuickBooks export or Excel), Chart of Accounts, Bank Statements (covering full review period), General Ledger.</p><p><strong>Recommended</strong> — For a professional-grade analysis: AR & AP Aging Reports, Payroll Reports/Registers, Fixed Asset / Depreciation Schedule, Tax Returns (3 years), Journal Entries, Credit Card Statements, Customer & Vendor Lists, Inventory Records, Debt Schedule, Material Contracts & Lease Agreements.</p><p><strong>Optional</strong> — For verification & reference: Income Statements, Balance Sheets, Cash Flow Statements, CIM / Offering Memo.</p><p>Start with the Required documents — you can add Recommended and Optional items as you receive them.</p>",
+      "<p>Once you have access to the seller's data room (typically after LOI), you'll gather documents in three tiers:</p><p><strong>Required</strong> — You need these to begin: Detailed Trial Balance (accounting system export or Excel), Chart of Accounts, Bank Statements (covering full review period), General Ledger.</p><p><strong>Recommended</strong> — For a professional-grade analysis: AR & AP Aging Reports, Payroll Reports/Registers, Fixed Asset / Depreciation Schedule, Tax Returns (3 years), Journal Entries, Credit Card Statements, Customer & Vendor Lists, Inventory Records, Debt Schedule, Material Contracts & Lease Agreements.</p><p><strong>Optional</strong> — For verification & reference: Income Statements, Balance Sheets, Cash Flow Statements, CIM / Offering Memo.</p><p>Start with the Required documents — you can add Recommended and Optional items as you receive them.</p>",
   },
   {
     id: "how-2",
@@ -142,14 +142,14 @@ export const HOMEPAGE_FAQ: FaqEntry[] = [
     category: "How It Works",
     question: "What file formats can I upload?",
     answer:
-      "shepi is optimized for QuickBooks — the accounting system used by 80%+ of small businesses in the US. Connect directly to QuickBooks Online for automatic data import, or upload QuickBooks Desktop exports. We also accept PDF financial statements for AI extraction (tax returns, payroll reports, contracts, debt schedules) and standard Excel/CSV files for trial balance data.",
+      "shepi is optimized for the accounting systems that power small businesses in the US. Connect directly to supported accounting integration partners for automatic data import, or upload exports from your accounting system. We also accept PDF financial statements for AI extraction (tax returns, payroll reports, contracts, debt schedules) and standard Excel/CSV files for trial balance data.",
   },
   {
     id: "how-4",
     category: "How It Works",
-    question: "Can I connect directly to QuickBooks?",
+    question: "Can I connect directly to my accounting system?",
     answer:
-      "Yes — QuickBooks is our primary integration since it powers the vast majority of small business accounting in the US. Connect your client's QuickBooks Online account, select the periods you need, and shepi imports trial balance, chart of accounts, and general ledger data automatically. No manual exports, no format issues.",
+      "Yes — direct accounting integration is our primary ingestion path. Connect your client's account through a supported accounting integration partner, select the periods you need, and shepi imports trial balance, chart of accounts, and general ledger data automatically. No manual exports, no format issues.",
   },
   {
     id: "how-5",

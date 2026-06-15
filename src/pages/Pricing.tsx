@@ -172,11 +172,11 @@ const Pricing = () => {
       questions: [
         {
           q: "What file formats can I upload?",
-          a: "Shepi accepts trial balance exports from most accounting systems (QuickBooks, Xero, Sage, NetSuite), CSV and Excel files, and PDF financial statements. We support multi-period data in single files or separate uploads. For best results, export your trial balance directly from QuickBooks or your accounting system — we'll handle the mapping automatically."
+          a: "Shepi accepts trial balance exports from most accounting systems, CSV and Excel files, and PDF financial statements. We support multi-period data in single files or separate uploads. For best results, export your trial balance directly from your accounting system — we'll handle the mapping automatically."
         },
         {
-          q: "Can I connect directly to QuickBooks?",
-          a: "Yes. Our QuickBooks integration lets you pull trial balance data directly without manual exports. Connect your client's QuickBooks account, select the periods you need, and shepi imports the data automatically. This eliminates export errors and ensures you're working with clean, current financials."
+          q: "Can I connect directly to my accounting system?",
+          a: "Yes. Our accounting integration lets you pull trial balance data directly from supported accounting integration partners without manual exports. Connect your client's account, select the periods you need, and shepi imports the data automatically. This eliminates export errors and ensures you're working with clean, current financials."
         },
         {
           q: "How quickly can I complete an analysis?",
@@ -355,7 +355,7 @@ const Pricing = () => {
                 {[
                   "Full 6-phase guided QoE workflow",
                   "AI assistant with real-time guidance",
-                  "QuickBooks direct integration",
+                  "Accounting integration partners",
                   "All standard adjustments & schedules",
                   "AI-powered adjustment verification",
                   "Advanced analytics dashboard",

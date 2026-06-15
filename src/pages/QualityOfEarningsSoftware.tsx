@@ -78,7 +78,7 @@ export default function QualityOfEarningsSoftware() {
         { title: "Working capital schedules", description: "Multi-period NWC with turnover ratios, peg calculation, and seasonality adjustments" },
         { title: "Proof of cash", description: "GL-to-bank reconciliation that surfaces unrecorded liabilities and commingled expenses" },
         { title: "Customer concentration", description: "Top customer analysis with revenue concentration and recurring vs non-recurring scoring" },
-        { title: "QuickBooks integration", description: "Direct connection or file upload — no manual data extraction" },
+        { title: "Accounting integration", description: "Direct connection or file upload — no manual data extraction" },
         { title: "Lender-ready exports", description: "Structured QoE reports plus full Excel workbook for sharing" },
       ]} />
 
@@ -109,7 +109,7 @@ export default function QualityOfEarningsSoftware() {
 
       <h2 id="how">How Shepi's QoE Software Works</h2>
       <StepList steps={[
-        { title: "Connect data", description: "Upload financials, connect QuickBooks directly, or import trial balance files" },
+        { title: "Connect data", description: "Upload financials, connect your accounting integration directly, or import trial balance files" },
         { title: "AI processes & maps", description: "Automatic account classification, multi-period alignment, and normalization" },
         { title: "Review findings", description: "AI surfaces adjustment candidates, anomalies, and risk indicators" },
         { title: "Apply judgment", description: "Accept, modify, or reject — you control the final analysis" },
@@ -134,7 +134,7 @@ export default function QualityOfEarningsSoftware() {
         { question: "What is the best QoE software?", answer: "Shepi is purpose-built for QoE on lower middle market and search-fund deals with full GL coverage, lender-ready reports, and flat $2,000/project pricing." },
         { question: "How much does QoE software cost?", answer: `Shepi starts at ${PRICING.perProject.display} per project. See the full QoE cost breakdown.` },
         { question: "Can QoE software replace a CPA firm?", answer: "It handles 80% of the data-intensive work. For formal attestation, it complements CPA work; for screening and lower middle market deals it can be the primary tool." },
-        { question: "Does QoE software work with QuickBooks?", answer: "Yes — Shepi connects directly to QuickBooks Online or accepts file uploads." },
+        { question: "Does QoE software work with my accounting integration?", answer: "Yes — Shepi connects directly to supported accounting integration partners or accepts file uploads." },
       ]} />
 
       <h2>Related Resources</h2>

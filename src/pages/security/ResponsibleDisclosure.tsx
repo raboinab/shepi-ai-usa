@@ -42,7 +42,7 @@ export default function ResponsibleDisclosure() {
 
       <h2 id="scope">Scope</h2>
       <BenefitGrid benefits={[
-        { title: "In scope", description: "shepi.ai and all subdomains, the Shepi web application, edge functions exposed under our Supabase project, and the QuickBooks integration flow." },
+        { title: "In scope", description: "shepi.ai and all subdomains, the Shepi web application, edge functions exposed under our Supabase project, and the accounting integration flow." },
         { title: "Out of scope", description: "Findings against third-party services (Supabase, Stripe, Intuit, Vercel), social engineering of Shepi staff or customers, physical attacks, denial-of-service testing, and automated scanner output without a working proof-of-concept." },
         { title: "Not a vulnerability", description: "Missing security headers without a demonstrated impact, rate-limit observations, version disclosure, missing CSP on marketing pages, and self-XSS in your own session." },
         { title: "Already known", description: "Issues already disclosed publicly or already fixed in a deployed release are out of scope for recognition." },
