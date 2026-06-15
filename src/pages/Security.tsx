@@ -64,7 +64,15 @@ const faqSchema = {
       name: "Does Shepi use my data to train AI models?",
       acceptedAnswer: {
         "@type": "Answer",
-        text: "No. LLM calls route through the Vercel AI Gateway under a zero-data-retention agreement. Upstream model providers (Anthropic, OpenAI) process requests as sub-processors under the same no-retention terms. Your data is not used to train any model.",
+        text: "No. LLM calls route through the Vercel AI Gateway under a zero-data-retention agreement. Upstream model providers (Anthropic, OpenAI) process requests as sub-processors under the same no-retention terms. Your data is not used to train any model. See the Zero Data Retention section above for the full data-flow breakdown.",
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Does Shepi retain customer financial data?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "No, not for secondary use. Shepi is a processing engine: QuickBooks pulls, uploaded statements, and GL detail are ingested, analyzed, and returned as deliverables. We don't sell, share, repackage, or use customer data to train any model. Project data is held only for the active engagement and is purged on customer request.",
       },
     },
     {
