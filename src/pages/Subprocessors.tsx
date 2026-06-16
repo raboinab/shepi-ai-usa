@@ -97,7 +97,7 @@ export default function Subprocessors() {
       </Table>
 
       <p className="text-sm text-muted-foreground mt-8">
-        <strong>Last updated:</strong> May 17, 2026
+        <strong>Last updated:</strong> June 16, 2026
       </p>
 
       <p className="text-sm text-muted-foreground mt-4">
