@@ -746,7 +746,7 @@ export function TransferReviewDialog({
 
   if (!hasV2Data && initialCases.length === 0) {
     return (
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Review Transfer Classifications</DialogTitle>
@@ -779,7 +779,7 @@ export function TransferReviewDialog({
     );
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Review Transfer Classifications</DialogTitle>
