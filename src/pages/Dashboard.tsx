@@ -237,7 +237,9 @@ const Dashboard = () => {
   };
 
   const handleProjectClick = (project: Project) => {
-    if (hasAccessToProject(project.id)) {
+    // If subscription state hasn't loaded yet, let the project page decide —
+    // it already gates render on subscriptionLoading and shows the correct paywall.
+    if (subscriptionLoading || hasAccessToProject(project.id)) {
       navigate(`/project/${project.id}`);
     } else {
       setSelectedProjectForPayment(project);
