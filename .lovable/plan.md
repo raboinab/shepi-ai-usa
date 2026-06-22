@@ -1,52 +1,51 @@
-## What's actually wrong on Catering Company Milan
+# Shepi Overwhelm Audit (read-only)
 
-Project `92b5f314…` — diagnosed from the database, not guessed:
+Goal: find the specific places in the current shepi flow where users get overwhelmed, then judge what a Claude skill would actually relieve vs. just relocate. No code changes in this pass.
 
-- TB in `wizard_data` has **103 BS accounts and 0 IS accounts** (degenerate).
-- COA has 117 accounts (synced from QB).
-- `processed_data` has a real **General Ledger** (qbtojson, 121 records) plus 2 `gl_analysis` runs.
-- `ai_edit_snapshots` shows the previous "AI balance TB" run (Jun 22 17:21) just plugged residuals to **Retained Earnings** for every 2024 month — that's the run you remember "fixing" the TB. It didn't fix anything; it hid the fact that every revenue and expense line was missing.
-- Our follow-up hardening (the `validateTbStructure` guard you approved) now correctly **refuses** to auto-balance this TB and tells you to "rebuild from the General Ledger" — but **there is no button or AI tool that actually does that rebuild**. That's the dead end you hit.
+## Scope
 
-So the answer to "I thought we gave the AI assistant powers to make changes?" is: it has reclassify / set-amount / plug / create-account tools, but it has no `rebuild_tb_from_gl` tool, and the wizard has no manual equivalent.
+Cover the full first-time user path, signup through first deliverable:
 
-## Fix path
+1. Landing / signup / onboarding
+2. Deal creation + intake (industry, worries, scope choices)
+3. Data ingestion (QuickBooks connect, file uploads, manual entry)
+4. Wizard / adjustment flow (where workbook logic forces decisions)
+5. Review + export (PDF/XLSX)
 
-Two complementary pieces, both server-side so the AI can call them.
+For each stage capture:
+- What the user has to decide
+- What they have to type or upload
+- Where the UI branches or gates them
+- Where workbook math forces a choice they may not have context for
+- Where copy assumes accounting fluency
 
-### 1. New edge function `rebuild-tb-from-gl`
+## Method
 
-Pure aggregation, no LLM. Inputs: `projectId`. Steps:
+Pure read of source + routes. No browser session, no data changes.
 
-1. Load all `general_ledger` rows from `processed_data` (canonical_transactions if richer).
-2. For each (account, period) bucket: sum signed amounts (debit +, credit −).
-3. Resolve `fsType` / category for each account by lookup against:
-   - COA (`wizard_data.chartOfAccounts.accounts`), then
-   - canonical account-type heuristics from `chartOfAccountsUtils` as fallback.
-4. Write the resulting accounts back into `wizard_data.trialBalance.accounts`, preserving any existing manual edits with a `source: 'gl_rebuild'` marker per row.
-5. Snapshot before/after into `ai_edit_snapshots` (kind `rebuild_tb_from_gl`) so the existing undo button works.
-6. Return `{ added, updated, bsCount, isCount, periodsCovered }`.
+- Walk `src/pages/*` and `src/components/wizard/*` (or equivalent) in route order
+- Read the deal intake + QBO connection components
+- Read the adjustment definitions and any "required field" gates
+- Read export builders (`buildPDFReport`, `TAB_GRID_BUILDERS`) only to confirm what the user must have completed for export to succeed
+- Cross-reference with the homepage/marketing promise so we can see the gap between what we sold and what we ask for
 
-### 2. Wire it into both surfaces the user expects
+## Deliverable
 
-- **TB section UI** — in `TrialBalanceSection.tsx`, when the structure validator flags `no_is_accounts` / `is_all_zero` (or whenever `general_ledger` exists in processed_data), show a primary action: **"Rebuild Trial Balance from General Ledger"**. Reuses the existing `AiBalancingButton` confirm/undo pattern.
-- **AI agent tool** — add `rebuild_tb_from_gl` to the `TOOLS` array in `ai-balance-tb/index.ts`. The agent calls it first when `validateTbStructure` reports degenerate, then reruns the per-period imbalance check before plugging.
+A single written findings doc (in chat, not committed) with:
 
-### 3. Make the existing guard actionable
+1. **Stage-by-stage friction list** — 3–7 concrete overwhelm points, each with file/route reference
+2. **Root-cause grouping** — which are UX (fixable in shepi), which are inherent to QoE rigor (can't remove), which are scope creep (cuttable)
+3. **Skill relevance check** — for each friction point, whether a Claude skill would (a) actually relieve it, (b) just move it, or (c) make it worse by detaching from the workbook
+4. **Recommended next move** — smallest change that removes the most friction, plus an explicit call on whether skill planning should resume
 
-Change the 400 response from `ai-balance-tb` when `status === 'degenerate'` to include `canRebuildFromGl: true` when `processed_data` has a `general_ledger` row, and surface a "Rebuild from GL" CTA in the existing error toast instead of a dead-end message.
+## Out of scope
 
-## Technical notes
+- No code edits
+- No new features designed
+- No assembler / server-side work
+- No skill scaffolding
+- No security/SEO sweeps
 
-- Sign convention stays: debit positive, credit negative; BS+IS=0 per period.
-- Period IDs come from `projects.periods` (34 periods on this project, monthly).
-- Don't touch `canonical_transactions`; just read from `processed_data` where `data_type='general_ledger'`.
-- All writes go through service-role client inside the edge function, with `has_project_access` check up front (same pattern as `ai-balance-tb`).
-- Undo: reuse `ai-revert-snapshot` — no new function needed.
+## Exit criteria
 
-## Out of scope for this change
-
-- Giving the chat panel (`AIChatPanel`) tool-calling powers. That's a separate, bigger refactor and you only asked about the GL-analysis flow.
-- Touching the GL analyzer itself.
-
-Approve and I'll build it.
+You read the findings doc and decide one of: fix friction in shepi, design the worry-driven intake, plan the assembler move, plan the skill anyway, or shelve.
