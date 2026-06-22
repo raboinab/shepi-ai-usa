@@ -133,9 +133,23 @@ export const TrialBalanceSection = ({
       const payload = await res.json();
       sonner.dismiss(loadingId);
       if (!res.ok) {
+        if (payload?.code === "TB_STRUCTURE_DEGENERATE") {
+          const reason = payload.reason as string | undefined;
+          const title =
+            reason === "imbalance_is_noise"
+              ? "Trial balance is balanced within rounding tolerance"
+              : "Can't auto-balance — structural issue with the trial balance";
+          const toastFn = reason === "imbalance_is_noise" ? sonner.info : sonner.error;
+          toastFn(title, {
+            description: payload.message || "The trial balance is not in a state the AI can safely fix.",
+            duration: 20000,
+          });
+          return;
+        }
         sonner.error("AI balance failed", { description: payload?.error || "Unknown error" });
         return;
       }
+
       if (payload.alreadyBalanced) {
         sonner.info("Already balanced", { description: payload.message });
         return;
