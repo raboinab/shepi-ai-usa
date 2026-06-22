@@ -170,9 +170,6 @@ export const TrialBalanceSection = ({
         sonner.error("AI balance failed", { description: payload?.error || "Unknown error" });
         return;
       }
-        sonner.error("AI balance failed", { description: payload?.error || "Unknown error" });
-        return;
-      }
 
       if (payload.alreadyBalanced) {
         sonner.info("Already balanced", { description: payload.message });
