@@ -479,6 +479,52 @@ export const TrialBalanceSection = ({
     }
   }, [loadFromProcessedData]);
 
+  // Rebuild from source — wipes the cached TB rows and re-parses every
+  // processed_data trial_balance record, forcing COA cross-reference so
+  // fsType / category come from the live COA (fixes the BS-only degenerate
+  // TB left behind by the earlier AI plug-to-Retained-Earnings run).
+  const handleRebuildFromSource = useCallback(async () => {
+    if (isRebuilding) return;
+    setIsRebuilding(true);
+    try {
+      const { loadTrialBalanceFromProcessedData } = await import(
+        "@/lib/loadTrialBalanceFromProcessedData"
+      );
+      const rebuilt = await loadTrialBalanceFromProcessedData(
+        projectId,
+        periods,
+        coaAccounts,
+        { forceCoaRebuild: true },
+      );
+      if (rebuilt.length === 0) {
+        toast({
+          title: "Nothing to rebuild",
+          description:
+            "No processed trial balance found in storage. Upload or sync TB data first.",
+          variant: "destructive",
+        });
+        return;
+      }
+      // Overwrite, do not merge — the whole point is to discard the bad cache.
+      updateDataRef.current({ accounts: rebuilt });
+      const bs = rebuilt.filter((a) => a.fsType === "BS").length;
+      const is = rebuilt.filter((a) => a.fsType === "IS").length;
+      toast({
+        title: "Trial Balance rebuilt from source",
+        description: `Re-parsed ${rebuilt.length} accounts (${bs} BS, ${is} IS) from processed data and re-applied COA classifications.`,
+      });
+    } catch (err) {
+      console.error("[TrialBalance] rebuild from source failed", err);
+      toast({
+        title: "Rebuild failed",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setIsRebuilding(false);
+    }
+  }, [isRebuilding, projectId, periods, coaAccounts]);
+
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
