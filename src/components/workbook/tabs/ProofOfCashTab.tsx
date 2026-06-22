@@ -431,7 +431,15 @@ export function ProofOfCashTab({ dealData, mockBankStatements, mockTransferClass
           <Button
             size="sm"
             variant="outline"
-            onClick={() => setReviewOpen(true)}
+            onClick={() => {
+              // Radix sometimes leaves body pointer-events:none after a prior
+              // dialog/select/popover close, blocking this click. Clear it
+              // defensively before opening so the dialog always shows.
+              if (typeof document !== "undefined" && document.body.style.pointerEvents === "none") {
+                document.body.style.pointerEvents = "";
+              }
+              setReviewOpen(true);
+            }}
             className="gap-1.5"
           >
             Review & Approve

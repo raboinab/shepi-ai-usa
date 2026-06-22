@@ -1,4 +1,17 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
+
+// Radix sometimes leaves <body style="pointer-events: none"> after a Dialog/
+// Select/Popover closes, which blocks all subsequent clicks until refresh.
+// Clear it defensively on dialog close and unmount.
+function clearStuckPointerEvents() {
+  if (typeof document === "undefined") return;
+  if (document.body.style.pointerEvents === "none") {
+    document.body.style.pointerEvents = "";
+  }
+  if (document.documentElement.hasAttribute("data-scroll-locked")) {
+    document.documentElement.removeAttribute("data-scroll-locked");
+  }
+}
 import {
   Dialog,
   DialogContent,
@@ -512,12 +525,35 @@ export function TransferReviewDialog({
     }
   }, [open]);
 
+  // Cleanup on unmount in case dialog tears down mid-transition
+  useEffect(() => {
+    return () => {
+      // Run after Radix's own cleanup ticks
+      setTimeout(clearStuckPointerEvents, 0);
+    };
+  }, []);
+
+  const handleOpenChange = useCallback(
+    (next: boolean) => {
+      onOpenChange(next);
+      if (!next) {
+        // Defer past Radix's own close handlers
+        requestAnimationFrame(() => {
+          clearStuckPointerEvents();
+          setTimeout(clearStuckPointerEvents, 50);
+        });
+      }
+    },
+    [onOpenChange]
+  );
+
   const addAudit = useCallback((caseId: string, action: string) => {
     setAuditLog((prev) => ({
       ...prev,
       [caseId]: [...(prev[caseId] || []), { timestamp: Date.now(), action }],
     }));
   }, []);
+
 
   // Track exceptions: txns whose category was changed inside an accepted case
   const exceptions = useMemo(() => {
@@ -710,7 +746,7 @@ export function TransferReviewDialog({
 
   if (!hasV2Data && initialCases.length === 0) {
     return (
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Review Transfer Classifications</DialogTitle>
@@ -743,7 +779,7 @@ export function TransferReviewDialog({
     );
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Review Transfer Classifications</DialogTitle>
