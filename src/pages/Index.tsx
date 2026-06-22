@@ -752,10 +752,11 @@ const Index = () => {
               </div>
               <ul className="space-y-2 mb-6 flex-1">
                 {[
-                  "You drive the workflow inside the Shepi platform",
-                  "2–4 hours of hands-on analyst time",
-                  "Same 27-tab workbook & PDF deliverables",
-                  "Best for searchers and operators with finance fluency",
+                  "Seller-prepared diligence package — no CPA review",
+                  "You drive the workflow inside the Shepi platform (2–4 hrs hands-on)",
+                  "Built for peace of mind, sharing with a buyer, or feeding a buyer's CPA",
+                  "Most lenders will not accept a self-prepared package — upgrade to DFY for that",
+                  "Same 27-tab workbook & PDF skeleton as DFY",
                 ].map((b) => (
                   <li key={b} className="flex items-start gap-2 text-sm text-foreground">
                     <CheckCircle className="w-4 h-4 text-primary mt-0.5 shrink-0" />

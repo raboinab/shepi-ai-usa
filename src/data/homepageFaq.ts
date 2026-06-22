@@ -82,7 +82,7 @@ export const HOMEPAGE_FAQ: FaqEntry[] = [
     id: "what-is-3",
     category: "What shepi Is",
     question: "What's the difference between Self-Service and Done-For-You?",
-    answer: `Self-Service (${PERPROJECT}/project): you run the analysis inside the Shepi platform — typically 2–4 hours of hands-on time. Done-For-You (${PRICING.doneForYou.display}/project, includes CPA-led review): the Shepi team produces the deliverable for you and you review the output — turnaround in days. Both produce the same 27-tab workbook and PDF report. <a href="/scope#diy-vs-dfy">See the full Scope of Work →</a>`,
+    answer: `Self-Service (${PERPROJECT}/project) is a seller-prepared diligence package — you run the analysis inside Shepi (typically 2–4 hours of hands-on time) and the output is unreviewed. It's built for peace of mind, sharing with a buyer, or handing to a buyer's CPA as clean source material. <strong>Most lenders will not accept a self-prepared package for a financing decision.</strong> Done-For-You (${PRICING.doneForYou.display}/project) adds CPA-led review of the reconciliation chain and adjustments — that's the version to use when a lender or buyer requires third-party CPA involvement. Both produce the same 27-tab workbook and PDF skeleton; the difference is whether a CPA has reviewed it. <a href="/scope#diy-vs-dfy">See the full Scope of Work →</a>`,
   },
 
   // What shepi Is NOT
@@ -91,7 +91,7 @@ export const HOMEPAGE_FAQ: FaqEntry[] = [
     category: "What shepi Is NOT",
     question: "Does shepi replace a formal Quality of Earnings report from a CPA firm?",
     answer:
-      "shepi produces comprehensive QoE analysis from the same source data a CPA firm would use — trial balances, financial statements, and supporting documents. For transactions requiring CPA attestation (lender requirements, regulatory compliance), shepi accelerates that engagement by producing CPA-ready workpapers. The difference between shepi and a CPA firm isn't the analysis methodology — it's the attestation letter and professional liability coverage.",
+      "No. Shepi is analytical software, not a CPA firm — we don't issue attestation, audit opinions, or formal CPA reports. Self-Service output is seller-prepared. Done-For-You adds CPA-led review of the adjustments and reconciliation chain (review, not attestation). For transactions that require a CPA-attested QoE, a licensed CPA firm still needs to be engaged — Shepi accelerates that engagement by producing CPA-ready workpapers.",
   },
   {
     id: "not-2",
@@ -105,7 +105,7 @@ export const HOMEPAGE_FAQ: FaqEntry[] = [
     category: "What shepi Is NOT",
     question: "Can I show shepi output directly to lenders or investors?",
     answer:
-      "Yes — shepi output is complete, professional-quality QoE analysis that exports to PDF and Excel for sharing. For investor presentations and internal decision-making, shepi delivers institutional-grade workpapers. If your lender specifically requires CPA-attested reports for financing, shepi provides the analytical foundation that accelerates that formal engagement.",
+      "It depends on which tier you bought. A Self-Service package is seller-prepared — most lenders will not rely on it for a financing decision. It's better suited for buyer/seller diligence prep or as source material for a buyer's CPA. Done-For-You adds CPA-led review of the reconciliation chain and adjustments, which a wider set of lenders and buyers will accept; some will still require a separate CPA-attested engagement on top. For investor presentations and internal decision-making, either tier works.",
   },
   {
     id: "not-4",
