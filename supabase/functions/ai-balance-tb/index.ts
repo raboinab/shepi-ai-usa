@@ -323,12 +323,27 @@ serve(async (req) => {
     // get cosmetic rounding plugs to Retained Earnings.
     const structure = validateTbStructure(accounts, periods);
     if (structure.status === "degenerate") {
+      // Probe whether a "Rebuild from source" action is meaningful: the user
+      // has a real processed trial_balance record that the wizard cache may
+      // have mis-parsed.
+      let canRebuildFromSource = false;
+      try {
+        const { count } = await admin
+          .from("processed_data")
+          .select("id", { count: "exact", head: true })
+          .eq("project_id", projectId)
+          .eq("data_type", "trial_balance");
+        canRebuildFromSource = (count ?? 0) > 0;
+      } catch (e) {
+        console.warn("[ai-balance-tb] processed_data probe failed", e);
+      }
       return new Response(JSON.stringify({
         ok: false,
         code: "TB_STRUCTURE_DEGENERATE",
         reason: structure.reason,
         diagnostics: structure.diagnostics,
         message: structure.message,
+        canRebuildFromSource,
       }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
