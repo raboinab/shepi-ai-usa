@@ -19,7 +19,7 @@ import { trackEvent } from "@/lib/analytics";
 const Pricing = () => {
   const __seoTags = useSEO({
     title: "Pricing — shepi QoE Platform",
-    description: "Flexible pricing for every deal volume. Per-project or monthly plans for independent searchers, deal teams, PE firms, and advisors.",
+    description: "Flexible pricing for every deal. Self-service per-project or CPA-reviewed Done-For-You plans for independent searchers, deal teams, PE firms, and advisors.",
     canonical: "https://shepi.ai/pricing",
     ogImage: "/og-image.png",
   });
@@ -27,9 +27,7 @@ const Pricing = () => {
   const [user, setUser] = useState<User | null>(null);
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
   const [tosModalOpen, setTosModalOpen] = useState(false);
-  const [pendingPlanType, setPendingPlanType] = useState<'monthly' | 'per_project' | 'done_for_you' | null>(null);
-  const [showMonthlyPromo, setShowMonthlyPromo] = useState(false);
-  const [monthlyPromoCode, setMonthlyPromoCode] = useState("");
+  const [pendingPlanType, setPendingPlanType] = useState<'per_project' | 'done_for_you' | null>(null);
   const [searchParams] = useSearchParams();
   const { hasActiveSubscription, checkSubscription } = useSubscription();
   const { hasAccepted, loading: tosLoading } = useTosAcceptance();
@@ -46,14 +44,11 @@ const Pricing = () => {
     });
   }, []);
 
-  const proceedToCheckout = async (planType: 'monthly' | 'per_project' | 'done_for_you') => {
+  const proceedToCheckout = async (planType: 'per_project' | 'done_for_you') => {
     setCheckoutLoading(planType);
     trackEvent("begin_checkout", { plan: planType });
     try {
       const body: Record<string, string> = { planType };
-      if (planType === 'monthly' && monthlyPromoCode.trim()) {
-        body.promoCode = monthlyPromoCode.trim();
-      }
       const { data, error } = await supabase.functions.invoke('create-checkout', {
         body
       });
@@ -76,7 +71,7 @@ const Pricing = () => {
     }
   };
 
-  const handleCheckout = (planType: 'monthly' | 'per_project' | 'done_for_you') => {
+  const handleCheckout = (planType: 'per_project' | 'done_for_you') => {
     if (!user) {
       window.location.href = '/auth?mode=signup';
       return;
@@ -204,8 +199,8 @@ const Pricing = () => {
           a: `Consider the alternatives: DIY in Excel with a junior analyst at $50-100/hour spending 40+ hours = $2,000-4,000 in labor; Outsourcing to a CPA firm for sell-side QoE runs $15,000-50,000+; With shepi, complete analysis in hours, not weeks, for ${PRICING.perProject.display}. At ${PRICING.perProject.display}, you're paying roughly $100-200/hour for the time you actually spend — but you're getting the structure, consistency, and AI assistance that would otherwise require an experienced analyst.`
         },
         {
-          q: "When should I choose per-project vs. monthly?",
-          a: `Per-project (${PRICING.perProject.display}): Best if you're analyzing 1–3 deals and want to pay only for what you use. Monthly (${PRICING.monthly.display}/month): Includes up to 3 concurrent projects. Additional projects are $1,000 each. Best for brokers, accountants, searchers, and PE teams with ongoing deal flow.`
+          q: "When should I choose Self-Service vs. Done-For-You?",
+          a: `Self-Service (${PRICING.perProject.display}): Best if you want to run the analysis yourself and pay only for what you use. Done-For-You (${PRICING.doneForYou.display}): A licensed CPA prepares and signs the QoE end-to-end — best when a lender or buyer requires third-party CPA involvement.`
         },
         {
           q: "Is there a free trial?",
@@ -338,7 +333,7 @@ const Pricing = () => {
           )}
         </div>
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8 max-w-7xl mx-auto items-stretch">
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-7xl mx-auto items-stretch">
           {/* Per Project */}
           <Card className="border border-border flex flex-col">
             <CardHeader>
@@ -465,78 +460,6 @@ const Pricing = () => {
             </CardContent>
           </Card>
 
-          {/* Monthly */}
-          <Card className="border-2 border-primary relative flex flex-col">
-            <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-              <span className="bg-primary text-primary-foreground px-3 py-1 rounded-full text-sm font-medium whitespace-nowrap">
-                Best Value
-              </span>
-            </div>
-            <CardHeader>
-              <CardTitle as="h2">Monthly</CardTitle>
-              <CardDescription>For active deal professionals</CardDescription>
-              <div className="mt-4">
-                <span className="text-4xl font-bold text-primary">{PRICING.monthly.display}</span>
-                <span className="text-muted-foreground">{PRICING.monthly.period}</span>
-              </div>
-            </CardHeader>
-            <CardContent className="flex flex-col h-full space-y-4">
-              <ul className="space-y-3">
-                {[
-                  "Everything in Per Project",
-                  "Up to 3 concurrent projects",
-                  "Priority support",
-                  "Custom report templates",
-                  "Early feature access",
-                  "Team collaboration (as released)",
-                ].map((feature) => (
-                  <li key={feature} className="flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4 text-primary flex-shrink-0" />
-                    <span className="text-sm">{feature}</span>
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-auto space-y-4">
-                {hasActiveSubscription ? (
-                  <Button className="w-full" disabled>
-                    Current Plan
-                  </Button>
-                ) : (
-                  <Button 
-                    className="w-full" 
-                    onClick={() => handleCheckout('monthly')}
-                    disabled={checkoutLoading === 'monthly'}
-                  >
-                    {checkoutLoading === 'monthly' ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Processing...
-                      </>
-                    ) : (
-                      'Subscribe Now'
-                    )}
-                  </Button>
-                )}
-                <p className="text-xs text-muted-foreground text-center">
-                  Best for brokers, accountants, searchers, and PE teams with ongoing deal flow
-                </p>
-                <p className="text-xs text-muted-foreground text-center italic">
-                  Additional deals: $1,000 per project
-                </p>
-                <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs text-foreground">
-                  <span className="font-medium">CPAs &amp; advisory firms:</span>{" "}
-                  Running 3+ client engagements in the same month? One Monthly subscription
-                  ($5,000) covers all three — vs. $6,000 buying them individually. Firm branding
-                  on PDF + XLSX deliverables is included on every tier.{" "}
-                  <Link to="/for-cpas" className="text-primary hover:underline">
-                    See how CPAs use shepi →
-                  </Link>
-                </div>
-
-              </div>
-            </CardContent>
-          </Card>
-
           {/* Firm Edition */}
           <Card className="border border-border flex flex-col">
             <CardHeader>
@@ -547,7 +470,7 @@ const Pricing = () => {
               </div>
             </CardHeader>
             <CardContent className="flex flex-col h-full space-y-4">
-              <p className="text-sm font-medium text-muted-foreground">Everything in Monthly, plus:</p>
+              <p className="text-sm font-medium text-muted-foreground">Everything in Per Project, plus:</p>
               <ul className="space-y-3">
                 {[
                   { label: "Unlimited concurrent deal analysis", desc: "Run multiple diligence projects across your team without limits." },

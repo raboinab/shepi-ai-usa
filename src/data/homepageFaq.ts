@@ -13,7 +13,7 @@
  * Accordion renderer uses dangerouslySetInnerHTML to support this; the JSON-LD
  * generator strips tags to keep Schema.org `text` plain.
  *
- * Pricing strings reference PRICING.* tokens — kept as ${PERPROJECT}/${MONTHLY}
+ * Pricing strings reference PRICING.* tokens — kept as ${PERPROJECT}
  * placeholders so the build script can substitute them at generation time.
  */
 
@@ -30,7 +30,6 @@ export interface FaqEntry {
 }
 
 const PERPROJECT = PRICING.perProject.display;
-const MONTHLY = PRICING.monthly.display;
 
 export const HOMEPAGE_FAQ: FaqEntry[] = [
   // Data & Security
@@ -186,12 +185,6 @@ export const HOMEPAGE_FAQ: FaqEntry[] = [
     category: "Pricing & Value",
     question: `Why does shepi cost ${PERPROJECT} per project?`,
     answer: `Consider the alternatives: DIY in Excel with a junior analyst at $50-100/hour spending 40+ hours = $2,000-4,000 in labor; Outsourcing to a CPA firm for sell-side QoE runs $15,000-50,000+; With shepi, complete analysis in hours, not weeks, for ${PERPROJECT}. At ${PERPROJECT}, you're paying roughly $100-200/hour for the time you actually spend — but you're getting the structure, consistency, and AI assistance that would otherwise require an experienced analyst.`,
-  },
-  {
-    id: "pricing-2",
-    category: "Pricing & Value",
-    question: "When should I choose per-project vs. monthly?",
-    answer: `Per-project (${PERPROJECT}): Best if you're analyzing 1-4 deals and want to pay only for what you use. Monthly (${MONTHLY}): Best if you're actively searching and expect 5+ deals, or if you want the flexibility to revisit analyses without worrying about project limits.`,
   },
   {
     id: "pricing-3",

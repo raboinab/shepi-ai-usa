@@ -116,7 +116,7 @@ export default function ForCpas() {
             user — no special CPA tier.
           </p>
           <ul className="text-sm text-foreground space-y-2 mb-6">
-            <li>• Per-project ($2,000) or Monthly ($5,000, 3 concurrent)</li>
+            <li>• Self-Service ($1,000) or Done-For-You ($5,000, CPA-reviewed)</li>
             <li>• Optional firm name + logo on PDF/XLSX deliverables</li>
             <li>• "Powered by shepi" footer stays on every export</li>
             <li>• Your engagement letter, your client relationship</li>
@@ -188,9 +188,9 @@ export default function ForCpas() {
       <StepList
         steps={[
           {
-            title: "Buy a project (or a monthly seat)",
+            title: "Buy a project",
             description:
-              "Same pricing as any other user. Per-project at $2,000 if you're occasional. Monthly at $5,000 for 3 concurrent if you're running multiple client engagements at once.",
+              "Same pricing as any other user. Self-Service at $1,000 if you want to run the analysis yourself, or Done-For-You at $5,000 for CPA-reviewed deliverables.",
           },
           {
             title: "Turn on firm branding (optional)",

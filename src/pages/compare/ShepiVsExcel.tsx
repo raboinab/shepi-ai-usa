@@ -128,7 +128,7 @@ export default function ShepiVsExcel() {
           ["AI assistance", "None", "Real-time guidance"],
           ["Consistency across projects", "Depends on analyst", "Built-in"],
           ["Learning curve", "High (build your own)", "Low (guided workflow)"],
-          ["Cost", "Free (+ labor)", `${PRICING.perProject.display}/project or ${PRICING.monthly.display}/month`],
+          ["Cost", "Free (+ labor)", `${PRICING.perProject.display}/project (Done-For-You ${PRICING.doneForYou.display})`],
           ["Customization", "Unlimited", "Structured framework"],
           ["Output format", "Excel file", "PDF & Excel export"],
         ]}

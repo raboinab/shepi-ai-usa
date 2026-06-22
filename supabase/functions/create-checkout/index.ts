@@ -9,10 +9,12 @@ const corsHeaders = {
 };
 
 // Mirror of src/lib/pricing.ts — keep in sync when prices change.
-// Stripe LIVE price IDs – validated 2026-03-01.
+// Stripe LIVE price IDs. perProject/doneForYou repriced 2026-06-22
+// (DIY $2,000->$1,000, DFY $4,000->$5,000). monthly/monthlyOverage retained
+// for any legacy checkout paths but are no longer offered in the UI.
 const PRICING = {
-  perProject:     { amount: 2000, stripePriceId: "price_1T5toZP5elf35CKlGuxS6JKU" },
-  doneForYou:     { amount: 4000, stripePriceId: "price_1TO31eP5elf35CKlvFWoVrUk" },
+  perProject:     { amount: 1000, stripePriceId: "price_1TlFJUP5elf35CKlW7uqJmZ0" },
+  doneForYou:     { amount: 5000, stripePriceId: "price_1TlFJUP5elf35CKloDVozalA" },
   monthly:        { amount: 5000, stripePriceId: "price_1TO33aP5elf35CKlC4eFMpm2" },
   monthlyOverage: { amount: 1000, stripePriceId: "price_1T6FKzP5elf35CKl5F1XyETh" },
 } as const;

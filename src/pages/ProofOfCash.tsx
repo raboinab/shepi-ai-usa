@@ -83,7 +83,7 @@ export default function ProofOfCash() {
     <ContentPageLayout
       title="Proof of Cash Software"
       seoTitle="Proof of Cash Software — GL-to-Bank Tie-Out Automated | Shepi"
-      seoDescription="Proof of cash software that ties GL to bank statements automatically, across 100% of transactions. Built for M&A due diligence. From $2,000 per project."
+      seoDescription="Proof of cash software that ties GL to bank statements automatically, across 100% of transactions. Built for M&A due diligence. From $1,000 per project."
       canonical="https://shepi.ai/proof-of-cash"
       breadcrumbs={[{ label: "Proof of Cash" }]}
       toc={toc}

@@ -41,15 +41,15 @@ const Index = () => {
             "@type": "Offer",
             name: "Per Project",
             priceCurrency: "USD",
-            price: "2000",
+            price: "1000",
             description: "Single project access to full QoE analysis workflow",
           },
           {
             "@type": "Offer",
-            name: "Monthly",
+            name: "Done-For-You",
             priceCurrency: "USD",
-            price: "4000",
-            description: "Monthly subscription with 3 included projects per month",
+            price: "5000",
+            description: "CPA-reviewed QoE analysis with reconciliation and adjustment review",
           },
         ],
       },
@@ -393,7 +393,7 @@ const Index = () => {
               </div>
               <h3 className="text-xl font-semibold text-foreground mb-3">QoE Software, Not a Service</h3>
               <p className="text-muted-foreground leading-relaxed">
-                shepi produces the same structured analysis — EBITDA adjustments, working capital, <Link to="/proof-of-cash" className="underline underline-offset-2">proof of cash</Link> — without the traditional engagement timeline or price tag. Starting at $2,000 per deal.
+                shepi produces the same structured analysis — EBITDA adjustments, working capital, <Link to="/proof-of-cash" className="underline underline-offset-2">proof of cash</Link> — without the traditional engagement timeline or price tag. Starting at $1,000 per deal.
               </p>
             </Card>
 
@@ -484,7 +484,7 @@ const Index = () => {
             <h3 className="text-2xl md:text-3xl font-serif font-bold text-foreground mb-3">
               Due Diligence Shouldn't Take Weeks
             </h3>
-            <p className="text-lg text-muted-foreground mb-6">$2,000 per project, results in hours.</p>
+            <p className="text-lg text-muted-foreground mb-6">$1,000 per project, results in hours.</p>
             <Button size="lg" asChild>
               <Link to="/auth">
                 Get Started <ArrowRight className="ml-2 w-4 h-4" />
@@ -1206,7 +1206,6 @@ const Index = () => {
                       <option value="">Select a plan</option>
                       <option value="Per Project">Per Project</option>
                       <option value="Done-For-You">Done-For-You</option>
-                      <option value="Monthly Subscription">Monthly Subscription</option>
                       <option value="Firm Edition">Firm Edition</option>
                       <option value="Just Exploring">Just Exploring</option>
                     </select>
