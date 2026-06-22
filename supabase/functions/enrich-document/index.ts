@@ -344,12 +344,55 @@ serve(async (req) => {
       transactionCount: parsed.transactionCount,
     });
 
+    // Fetch the project's target company so we can strip it out of the
+    // institution string if the parser concatenated it (e.g. "Business
+    // Checking - ACME LANDSCAPING CO"). Keeps per-account coverage grouping
+    // sane downstream.
+    let targetCompany: string | null = null;
+    if (doc.project_id) {
+      const { data: proj } = await supabase
+        .from('projects')
+        .select('target_company')
+        .eq('id', doc.project_id)
+        .maybeSingle();
+      targetCompany = (proj?.target_company as string | null) ?? null;
+    }
+
+    const cleanInstitution = (raw: string | null | undefined): string | null => {
+      if (!raw) return null;
+      let s = raw.replace(/\s+/g, ' ').trim();
+      if (!s) return null;
+      if (targetCompany) {
+        const co = targetCompany.replace(/\s+/g, ' ').trim().replace(/[.,]/g, '');
+        if (co) {
+          const esc = co.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          // Strip "<inst> - <company>" or trailing "<inst> <company>"
+          s = s.replace(new RegExp(`\\s*[-–—:]\\s*${esc}\\s*$`, 'i'), '').trim();
+          s = s.replace(new RegExp(`\\s+${esc}\\s*$`, 'i'), '').trim() || s;
+          // Strip leading "<company> <inst>"
+          s = s.replace(new RegExp(`^${esc}\\s*[-–—:]?\\s+`, 'i'), '').trim() || s;
+          // If after stripping the only thing left is the company itself, drop it
+          if (s.replace(/[.,]/g, '').toLowerCase() === co.toLowerCase()) return null;
+        }
+      }
+      return s || null;
+    };
+
+    const cleanAccountLabel = (raw: string | null | undefined): string | null => {
+      if (!raw) return null;
+      const s = String(raw).replace(/\s+/g, ' ').trim().toLowerCase();
+      return s || null;
+    };
+
+    const normalizedInstitution =
+      cleanInstitution(parsed.bankName) || cleanInstitution(doc.institution) || null;
+
     // Update the document
     const docUpdate: Record<string, unknown> = {
       processing_status: 'completed',
       period_start: parsed.periodStart,
       period_end: parsed.periodEnd,
-      institution: parsed.bankName || doc.institution || null,
+      institution: normalizedInstitution,
       parsed_summary: {
         transactionCount: parsed.transactionCount,
         totalDebits: parsed.totalDebits,
@@ -363,7 +406,12 @@ serve(async (req) => {
 
     // Auto-populate account_label if not set
     if (parsed.accountNumber && !doc.account_label) {
-      docUpdate.account_label = parsed.accountNumber;
+      docUpdate.account_label = cleanAccountLabel(parsed.accountNumber);
+    } else if (doc.account_label) {
+      const cleaned = cleanAccountLabel(doc.account_label);
+      if (cleaned && cleaned !== doc.account_label) {
+        docUpdate.account_label = cleaned;
+      }
     }
 
     const { error: updateDocError } = await supabase
