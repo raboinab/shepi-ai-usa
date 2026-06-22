@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -23,9 +23,6 @@ const DEFAULTS: SubscriptionData = {
 };
 
 async function fetchSubscriptionStatus(): Promise<SubscriptionData> {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) return DEFAULTS;
-
   const { data, error } = await supabase.functions.invoke('check-subscription');
   if (error) {
     console.error('[useSubscription] Error:', error);
@@ -50,15 +47,53 @@ async function fetchSubscriptionStatus(): Promise<SubscriptionData> {
 
 export function useSubscription() {
   const queryClient = useQueryClient();
+  // undefined = still resolving, true/false = known
+  const [hasSession, setHasSession] = useState<boolean | undefined>(undefined);
 
-  const { data, isLoading, error } = useQuery({
+  useEffect(() => {
+    let mounted = true;
+
+    // Initial session probe
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!mounted) return;
+      setHasSession(!!session);
+    });
+
+    // React to subsequent auth changes
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!mounted) return;
+      if (event === 'SIGNED_OUT') {
+        setHasSession(false);
+        queryClient.setQueryData(['subscription-status'], DEFAULTS);
+      } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        setHasSession(!!session);
+        queryClient.invalidateQueries({ queryKey: ['subscription-status'] });
+      } else if (event === 'INITIAL_SESSION') {
+        setHasSession(!!session);
+      }
+    });
+
+    return () => {
+      mounted = false;
+      sub.subscription.unsubscribe();
+    };
+  }, [queryClient]);
+
+  const { data, isLoading, isFetching, error } = useQuery({
     queryKey: ['subscription-status'],
     queryFn: fetchSubscriptionStatus,
-    staleTime: 30 * 1000, // Reduced from 5min to 30sec for faster updates
-    gcTime: 60 * 1000, // Garbage collect after 1min instead of default
+    enabled: hasSession === true,
+    staleTime: 30 * 1000,
+    gcTime: 60 * 1000,
   });
 
   const status = data ?? DEFAULTS;
+
+  // Stay in loading state while we don't yet know auth status, or while
+  // we know there's a session but haven't fetched results yet.
+  const loading =
+    hasSession === undefined ||
+    (hasSession === true && (isLoading || (!data && isFetching)));
 
   const checkSubscription = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['subscription-status'] });
@@ -82,11 +117,11 @@ export function useSubscription() {
 
   return useMemo(() => ({
     ...status,
-    loading: isLoading,
+    loading,
     error: error instanceof Error ? error.message : error ? String(error) : null,
     checkSubscription,
     hasAccessToProject,
     canCreateProjects,
     isAtMonthlyLimit,
-  }), [status, isLoading, error, checkSubscription, hasAccessToProject, canCreateProjects, isAtMonthlyLimit]);
+  }), [status, loading, error, checkSubscription, hasAccessToProject, canCreateProjects, isAtMonthlyLimit]);
 }
