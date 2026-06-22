@@ -115,7 +115,25 @@ export const PerAccountCoverage = ({ docs, periods, onBackfill, targetCompany }:
             >
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <p className="text-sm font-medium truncate">{g.institution}</p>
+                  {g.rawVariants.size > 1 ? (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <p className="text-sm font-medium truncate underline decoration-dotted decoration-muted-foreground/50 cursor-help">
+                          {g.institution}
+                        </p>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs">
+                        <p className="text-xs font-medium mb-1">Merged from {g.rawVariants.size} parsed variants:</p>
+                        <ul className="text-[11px] list-disc pl-4 space-y-0.5">
+                          {Array.from(g.rawVariants).map((v) => (
+                            <li key={v}>{v}</li>
+                          ))}
+                        </ul>
+                      </TooltipContent>
+                    </Tooltip>
+                  ) : (
+                    <p className="text-sm font-medium truncate">{g.institution}</p>
+                  )}
                   {g.unlabeled && (
                     <Badge variant="outline" className="text-[10px] gap-1 border-yellow-500 text-yellow-700 dark:text-yellow-400">
                       <AlertTriangle className="w-3 h-3" /> Needs label
