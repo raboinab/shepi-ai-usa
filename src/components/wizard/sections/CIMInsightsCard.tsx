@@ -69,9 +69,57 @@ interface CIMInsightsCardProps {
   isReuploading?: boolean;
 }
 
-export const CIMInsightsCard = ({ insights, className, onReupload, isReuploading }: CIMInsightsCardProps) => {
+export const CIMInsightsCard = ({ insights: rawInsights, className, onReupload, isReuploading }: CIMInsightsCardProps) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Defensive normalization: older/partial CIM extractions may be missing nested keys.
+  const insights: CIMInsights = {
+    businessOverview: {
+      description: "",
+      foundedYear: null,
+      headquarters: null,
+      employeeCount: null,
+      ...(rawInsights?.businessOverview ?? {}),
+    },
+    productsAndServices: rawInsights?.productsAndServices ?? [],
+    marketPosition: {
+      industry: "",
+      competitiveAdvantages: [],
+      marketSize: null,
+      ...(rawInsights?.marketPosition ?? {}),
+    },
+    managementTeam: rawInsights?.managementTeam ?? [],
+    customerInsights: {
+      topCustomerConcentration: null,
+      retentionRate: null,
+      geographicDistribution: null,
+      ...(rawInsights?.customerInsights ?? {}),
+    },
+    growthDrivers: rawInsights?.growthDrivers ?? [],
+    keyRisks: rawInsights?.keyRisks ?? [],
+    financialHighlights: {
+      revenueGrowth: null,
+      ebitdaMargin: null,
+      notes: [],
+      ...(rawInsights?.financialHighlights ?? {}),
+    },
+    dealContext: {
+      reasonForSale: null,
+      timeline: null,
+      sellerExpectations: null,
+      ...(rawInsights?.dealContext ?? {}),
+    },
+    rawSummary: rawInsights?.rawSummary ?? "",
+    extractedAt: rawInsights?.extractedAt ?? new Date().toISOString(),
+  };
+  // Ensure competitiveAdvantages array exists even if merged object was provided without it
+  if (!Array.isArray(insights.marketPosition.competitiveAdvantages)) {
+    insights.marketPosition.competitiveAdvantages = [];
+  }
+  if (!Array.isArray(insights.financialHighlights.notes)) {
+    insights.financialHighlights.notes = [];
+  }
 
   const handleReuploadClick = () => {
     fileInputRef.current?.click();
