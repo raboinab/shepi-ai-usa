@@ -1,77 +1,52 @@
+## What's actually wrong on Catering Company Milan
 
-# Harden `ai-balance-tb` against degenerate trial balances
+Project `92b5f314…` — diagnosed from the database, not guessed:
 
-The Milano project exposed a real failure mode: the TB had **103 BS accounts and 0 IS accounts** because it was reconstructed from a Balance Sheet alone. `BS + IS = 0` was trivially satisfied by the BS rows already netting to zero, so the agent plugged $344–$1,721/month into Retained Earnings to clean up rounding — producing a "balanced" but structurally meaningless TB.
+- TB in `wizard_data` has **103 BS accounts and 0 IS accounts** (degenerate).
+- COA has 117 accounts (synced from QB).
+- `processed_data` has a real **General Ledger** (qbtojson, 121 records) plus 2 `gl_analysis` runs.
+- `ai_edit_snapshots` shows the previous "AI balance TB" run (Jun 22 17:21) just plugged residuals to **Retained Earnings** for every 2024 month — that's the run you remember "fixing" the TB. It didn't fix anything; it hid the fact that every revenue and expense line was missing.
+- Our follow-up hardening (the `validateTbStructure` guard you approved) now correctly **refuses** to auto-balance this TB and tells you to "rebuild from the General Ledger" — but **there is no button or AI tool that actually does that rebuild**. That's the dead end you hit.
 
-The agent must refuse to plug when the inputs are structurally degenerate and surface a clear error to the user instead.
+So the answer to "I thought we gave the AI assistant powers to make changes?" is: it has reclassify / set-amount / plug / create-account tools, but it has no `rebuild_tb_from_gl` tool, and the wizard has no manual equivalent.
 
-## What we change
+## Fix path
 
-### 1. Pre-flight structural validation (server-side, before any AI call)
+Two complementary pieces, both server-side so the AI can call them.
 
-In `supabase/functions/ai-balance-tb/index.ts`, add a `validateTbStructure(accounts, periods)` check that runs after loading `wizard_data` and **before** the Anthropic call. It returns one of:
+### 1. New edge function `rebuild-tb-from-gl`
 
-- `ok` — proceed with the agent loop as today.
-- `degenerate` — return HTTP 400 with a structured error; the agent never runs.
+Pure aggregation, no LLM. Inputs: `projectId`. Steps:
 
-A TB is `degenerate` when **any** of these hold:
+1. Load all `general_ledger` rows from `processed_data` (canonical_transactions if richer).
+2. For each (account, period) bucket: sum signed amounts (debit +, credit −).
+3. Resolve `fsType` / category for each account by lookup against:
+   - COA (`wizard_data.chartOfAccounts.accounts`), then
+   - canonical account-type heuristics from `chartOfAccountsUtils` as fallback.
+4. Write the resulting accounts back into `wizard_data.trialBalance.accounts`, preserving any existing manual edits with a `source: 'gl_rebuild'` marker per row.
+5. Snapshot before/after into `ai_edit_snapshots` (kind `rebuild_tb_from_gl`) so the existing undo button works.
+6. Return `{ added, updated, bsCount, isCount, periodsCovered }`.
 
-| Rule | Threshold | Reason |
-| --- | --- | --- |
-| Zero IS accounts | `is_count === 0` | Can't reconcile a TB with no income statement (the Milano case). |
-| Zero BS accounts | `bs_count === 0` | Mirror case. |
-| IS rows exist but every IS value is 0 across all periods | `sum(abs(IS values)) === 0` | All revenue/expense rolled into RE. |
-| Total imbalance ≪ smallest revenue or expense magnitude | `max(|check|) < 0.001 * max(|IS row sums|)` AND `is_count > 0` | TB is essentially already balanced — a "fix" would just be rounding noise; surface a "no meaningful imbalance to fix" message instead. |
-| All imbalances would resolve to a single equity account with `|plug| < $100/period` | computed | Same noise case — refuse silently-cosmetic plugs. |
+### 2. Wire it into both surfaces the user expects
 
-### 2. Structured error response
+- **TB section UI** — in `TrialBalanceSection.tsx`, when the structure validator flags `no_is_accounts` / `is_all_zero` (or whenever `general_ledger` exists in processed_data), show a primary action: **"Rebuild Trial Balance from General Ledger"**. Reuses the existing `AiBalancingButton` confirm/undo pattern.
+- **AI agent tool** — add `rebuild_tb_from_gl` to the `TOOLS` array in `ai-balance-tb/index.ts`. The agent calls it first when `validateTbStructure` reports degenerate, then reruns the per-period imbalance check before plugging.
 
-When `degenerate`, return:
+### 3. Make the existing guard actionable
 
-```json
-{
-  "ok": false,
-  "code": "TB_STRUCTURE_DEGENERATE",
-  "reason": "no_is_accounts" | "no_bs_accounts" | "is_all_zero" | "imbalance_is_noise",
-  "diagnostics": {
-    "bsAccounts": 103,
-    "isAccounts": 0,
-    "maxAbsImbalance": 1721,
-    "periodsChecked": 29
-  },
-  "message": "Trial balance has 103 Balance Sheet accounts and 0 Income Statement accounts. The TB appears to have been derived from a Balance Sheet only — net income was folded into Retained Earnings instead of decomposed into revenue/expense rows. Rebuild the TB from the General Ledger before auto-balancing."
-}
-```
+Change the 400 response from `ai-balance-tb` when `status === 'degenerate'` to include `canRebuildFromGl: true` when `processed_data` has a `general_ledger` row, and surface a "Rebuild from GL" CTA in the existing error toast instead of a dead-end message.
 
-### 3. UI surfacing in `TrialBalanceSection.tsx`
+## Technical notes
 
-In `handleAiBalance`, when the response is `ok: false` with `code: "TB_STRUCTURE_DEGENERATE"`:
+- Sign convention stays: debit positive, credit negative; BS+IS=0 per period.
+- Period IDs come from `projects.periods` (34 periods on this project, monthly).
+- Don't touch `canonical_transactions`; just read from `processed_data` where `data_type='general_ledger'`.
+- All writes go through service-role client inside the edge function, with `has_project_access` check up front (same pattern as `ai-balance-tb`).
+- Undo: reuse `ai-revert-snapshot` — no new function needed.
 
-- Show a destructive `sonner.error` toast with the human `message`.
-- Render the `reason`-specific call to action inline on the out-of-balance alert (replacing the existing "Auto-balance with AI" button when applicable):
-  - `no_is_accounts` / `is_all_zero` → "Rebuild TB from General Ledger" button (opens GL re-import flow).
-  - `imbalance_is_noise` → quiet info banner: "Trial balance is balanced within rounding tolerance. No action needed."
-  - `no_bs_accounts` → "Upload Balance Sheet" link.
+## Out of scope for this change
 
-### 4. Tests
+- Giving the chat panel (`AIChatPanel`) tool-calling powers. That's a separate, bigger refactor and you only asked about the GL-analysis flow.
+- Touching the GL analyzer itself.
 
-Add `supabase/functions/ai-balance-tb/index_test.ts` covering each `degenerate` reason. Use Deno's test runner with synthetic `wizard_data` fixtures — no live Anthropic call needed (extract `validateTbStructure` as a pure function).
-
-## Why we are NOT touching the Milano project data here
-
-The user picked "harden the agent first." This plan does not undo the Milano plugs, does not rebuild Milano's TB from the GL, and does not change the snapshot/undo behavior. Once the guard ships, the user can undo the Milano AI edit via the existing snapshot and decide on the data-fix path separately.
-
-## Files touched
-
-- `supabase/functions/ai-balance-tb/index.ts` — add `validateTbStructure`, early-return on `degenerate`, extract pure helper for testing.
-- `supabase/functions/ai-balance-tb/index_test.ts` — new, structural-validation cases only.
-- `src/components/wizard/sections/TrialBalanceSection.tsx` — handle the new `TB_STRUCTURE_DEGENERATE` response in `handleAiBalance` and adjust the alert UI.
-
-No database migration. No change to `ai-revert-snapshot`. No change to the doctrine — this is purely a refusal/guardrail.
-
-## Out of scope (deliberately)
-
-- Rebuilding the Milano TB from the GL (separate decision).
-- Decomposing P&L into IS rows (separate decision).
-- The broader proactive-agent roadmap from the prior plan (separate workstream).
-
+Approve and I'll build it.
