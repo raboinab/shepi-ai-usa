@@ -539,6 +539,12 @@ export const TrialBalanceSection = ({
     }
   }, [isRebuilding, projectId, periods, coaAccounts]);
 
+  // Keep the forward ref in sync so the AI-balance toast action can fire it.
+  useEffect(() => {
+    rebuildFromSourceRef.current = () => { void handleRebuildFromSource(); };
+  }, [handleRebuildFromSource]);
+
+
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
