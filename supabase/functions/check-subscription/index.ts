@@ -1,6 +1,5 @@
-import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import Stripe from "https://esm.sh/stripe@18.5.0?target=deno";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.87.1";
+import Stripe from "npm:stripe@18.5.0";
+import { createClient } from "npm:@supabase/supabase-js@2.87.1";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -17,7 +16,7 @@ const logStep = (step: string, details?: any) => {
 const responseCache = new Map<string, { data: any; expiresAt: number }>();
 const CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
