@@ -2254,6 +2254,7 @@ export const DocumentUploadSection = ({
                   
                   {(selectedType === 'bank_statement' || selectedType === 'credit_card') && coverageConfig.type === 'monthly' ? (
                     <PerAccountCoverage
+                      targetCompany={targetCompany}
                       docs={filteredDocs.map((d) => ({
                         id: d.id,
                         institution: d.institution,
