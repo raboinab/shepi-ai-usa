@@ -9,6 +9,11 @@ import {
   calculatePeriodCoverage,
   DocumentWithPeriod,
 } from "@/lib/periodUtils";
+import {
+  bankAccountGroupKey,
+  normalizeAccountLabel,
+  normalizeInstitution,
+} from "@/lib/bankAccountNormalization";
 
 export interface AccountDoc extends DocumentWithPeriod {
   id: string;
@@ -20,6 +25,8 @@ interface PerAccountCoverageProps {
   docs: AccountDoc[];
   periods: Period[];
   onBackfill?: (docIds: string[]) => void;
+  /** Used to strip the company name out of institution strings when grouping. */
+  targetCompany?: string | null;
 }
 
 interface Group {
@@ -28,29 +35,39 @@ interface Group {
   accountLabel: string;
   docs: AccountDoc[];
   unlabeled: boolean;
+  rawVariants: Set<string>;
 }
 
-export const PerAccountCoverage = ({ docs, periods, onBackfill }: PerAccountCoverageProps) => {
+export const PerAccountCoverage = ({ docs, periods, onBackfill, targetCompany }: PerAccountCoverageProps) => {
   const groups = useMemo<Group[]>(() => {
     const map = new Map<string, Group>();
     for (const d of docs) {
-      const institution = (d.institution || "Unknown").trim();
-      const labelRaw = (d.account_label || "").trim();
-      const unlabeled = labelRaw === "";
-      const accountLabel = unlabeled ? "Unlabeled account" : labelRaw;
-      const key = `${institution.toLowerCase()}::${labelRaw.toLowerCase()}`;
+      const institution = normalizeInstitution(d.institution, targetCompany);
+      const labelNorm = normalizeAccountLabel(d.account_label);
+      const unlabeled = labelNorm === "";
+      const accountLabel = unlabeled ? "Unlabeled account" : labelNorm;
+      const key = bankAccountGroupKey(d.institution, d.account_label, targetCompany);
+      const rawVariant = `${(d.institution || "Unknown").trim()} · ${(d.account_label || "—").trim()}`;
       const g = map.get(key);
       if (g) {
         g.docs.push(d);
+        g.rawVariants.add(rawVariant);
       } else {
-        map.set(key, { key, institution, accountLabel, docs: [d], unlabeled });
+        map.set(key, {
+          key,
+          institution,
+          accountLabel,
+          docs: [d],
+          unlabeled,
+          rawVariants: new Set([rawVariant]),
+        });
       }
     }
     return Array.from(map.values()).sort((a, b) => {
       if (a.unlabeled !== b.unlabeled) return a.unlabeled ? -1 : 1;
       return `${a.institution} ${a.accountLabel}`.localeCompare(`${b.institution} ${b.accountLabel}`);
     });
-  }, [docs]);
+  }, [docs, targetCompany]);
 
   if (periods.length === 0) {
     return (
@@ -98,7 +115,25 @@ export const PerAccountCoverage = ({ docs, periods, onBackfill }: PerAccountCove
             >
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <p className="text-sm font-medium truncate">{g.institution}</p>
+                  {g.rawVariants.size > 1 ? (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <p className="text-sm font-medium truncate underline decoration-dotted decoration-muted-foreground/50 cursor-help">
+                          {g.institution}
+                        </p>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs">
+                        <p className="text-xs font-medium mb-1">Merged from {g.rawVariants.size} parsed variants:</p>
+                        <ul className="text-[11px] list-disc pl-4 space-y-0.5">
+                          {Array.from(g.rawVariants).map((v) => (
+                            <li key={v}>{v}</li>
+                          ))}
+                        </ul>
+                      </TooltipContent>
+                    </Tooltip>
+                  ) : (
+                    <p className="text-sm font-medium truncate">{g.institution}</p>
+                  )}
                   {g.unlabeled && (
                     <Badge variant="outline" className="text-[10px] gap-1 border-yellow-500 text-yellow-700 dark:text-yellow-400">
                       <AlertTriangle className="w-3 h-3" /> Needs label

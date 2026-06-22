@@ -443,6 +443,25 @@ export const DocumentUploadSection = ({
   const [cimInsights, setCimInsights] = useState<CIMInsights | null>(null);
   const [parsingCim, setParsingCim] = useState(false);
   const [taxReturnInsights, setTaxReturnInsights] = useState<TaxReturnAnalysis[]>([]);
+  const [targetCompany, setTargetCompany] = useState<string | null>(null);
+
+  // Fetch project target_company once so PerAccountCoverage can strip it from
+  // institution strings when grouping bank/credit-card statements.
+  useEffect(() => {
+    if (!projectId) return;
+    let cancelled = false;
+    supabase
+      .from("projects")
+      .select("target_company")
+      .eq("id", projectId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!cancelled) setTargetCompany((data?.target_company as string | null) ?? null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
   const [parsingTaxReturn, setParsingTaxReturn] = useState(false);
   const autoReanalyzedDocsRef = useRef<Set<string>>(new Set());
 
@@ -2235,6 +2254,7 @@ export const DocumentUploadSection = ({
                   
                   {(selectedType === 'bank_statement' || selectedType === 'credit_card') && coverageConfig.type === 'monthly' ? (
                     <PerAccountCoverage
+                      targetCompany={targetCompany}
                       docs={filteredDocs.map((d) => ({
                         id: d.id,
                         institution: d.institution,
