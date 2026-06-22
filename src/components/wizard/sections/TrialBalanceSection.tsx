@@ -85,9 +85,38 @@ export const TrialBalanceSection = ({
 
   // AI auto-balance
   const [isAiBalancing, setIsAiBalancing] = useState(false);
+  const runUndo = useCallback(async (snapshotId: string) => {
+    const undoId = sonner.loading("Reverting…");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const undoRes = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-revert-snapshot`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          body: JSON.stringify({ snapshotId }),
+        },
+      );
+      sonner.dismiss(undoId);
+      if (!undoRes.ok) {
+        const err = await undoRes.json().catch(() => ({}));
+        sonner.error("Undo failed", { description: err?.error || "Unknown error" });
+        return;
+      }
+      sonner.success("Reverted", { description: "Trial balance restored." });
+      setTimeout(() => window.location.reload(), 800);
+    } catch (e) {
+      sonner.dismiss(undoId);
+      sonner.error("Undo failed", { description: (e as Error).message });
+    }
+  }, []);
+
   const handleAiBalance = useCallback(async () => {
     setIsAiBalancing(true);
-    const t = toast.loading("AI is balancing your trial balance…");
+    const loadingId = sonner.loading("AI is balancing your trial balance…", { duration: 120000 });
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch(
@@ -102,61 +131,37 @@ export const TrialBalanceSection = ({
         },
       );
       const payload = await res.json();
-      toast.dismiss(t);
+      sonner.dismiss(loadingId);
       if (!res.ok) {
-        toast({ title: "AI balance failed", description: payload?.error || "Unknown error", variant: "destructive" });
+        sonner.error("AI balance failed", { description: payload?.error || "Unknown error" });
         return;
       }
       if (payload.alreadyBalanced) {
-        toast({ title: "Already balanced", description: payload.message });
+        sonner.info("Already balanced", { description: payload.message });
         return;
       }
       const snapshotId = payload.snapshotId as string | undefined;
       const changeCount = Array.isArray(payload.changes) ? payload.changes.length : 0;
       const balanced = payload.balanced;
-      toast({
-        title: balanced ? "Trial balance balanced" : "AI made changes, still out of balance",
-        description: `${changeCount} change${changeCount === 1 ? "" : "s"}: ${payload.message || ""}`,
-        action: snapshotId ? {
-          label: "Undo",
-          onClick: async () => {
-            const undoToast = toast.loading("Reverting…");
-            try {
-              const undoRes = await fetch(
-                `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-revert-snapshot`,
-                {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-                  },
-                  body: JSON.stringify({ snapshotId }),
-                },
-              );
-              toast.dismiss(undoToast);
-              if (!undoRes.ok) {
-                const err = await undoRes.json().catch(() => ({}));
-                toast({ title: "Undo failed", description: err?.error || "Unknown error", variant: "destructive" });
-                return;
-              }
-              toast({ title: "Reverted", description: "Trial balance restored. Refresh to see changes." });
-              window.location.reload();
-            } catch (e) {
-              toast.dismiss(undoToast);
-              toast({ title: "Undo failed", description: (e as Error).message, variant: "destructive" });
-            }
-          },
-        } : undefined,
-      });
-      // Refresh to pull updated wizard_data
-      setTimeout(() => window.location.reload(), balanced ? 1500 : 2500);
+      const title = balanced ? "Trial balance balanced" : "AI made changes (still out of balance)";
+      const description = `${changeCount} change${changeCount === 1 ? "" : "s"}: ${payload.message || ""}`;
+      const opts: Parameters<typeof sonner>[1] = {
+        description,
+        duration: 15000,
+        ...(snapshotId
+          ? { action: { label: "Undo", onClick: () => runUndo(snapshotId) } }
+          : {}),
+      };
+      if (balanced) sonner.success(title, opts); else sonner.warning(title, opts);
+      setTimeout(() => window.location.reload(), balanced ? 1800 : 3000);
     } catch (e) {
-      toast.dismiss(t);
-      toast({ title: "AI balance error", description: (e as Error).message, variant: "destructive" });
+      sonner.dismiss(loadingId);
+      sonner.error("AI balance error", { description: (e as Error).message });
     } finally {
       setIsAiBalancing(false);
     }
-  }, [projectId]);
+  }, [projectId, runUndo]);
+
 
 
   // Calculate match stats for COA cross-referencing
