@@ -237,7 +237,9 @@ const Dashboard = () => {
   };
 
   const handleProjectClick = (project: Project) => {
-    if (hasAccessToProject(project.id)) {
+    // If subscription state hasn't loaded yet, let the project page decide —
+    // it already gates render on subscriptionLoading and shows the correct paywall.
+    if (subscriptionLoading || hasAccessToProject(project.id)) {
       navigate(`/project/${project.id}`);
     } else {
       setSelectedProjectForPayment(project);
@@ -508,11 +510,13 @@ const Dashboard = () => {
               return 0;
             }).map((project) => {
               const StatusIcon = statusIcons[project.status as keyof typeof statusIcons] || Clock;
+              const accessKnown = !subscriptionLoading;
               const hasAccess = hasAccessToProject(project.id);
+              const showLocked = accessKnown && !hasAccess;
               const isShared = project.user_id !== user?.id;
               return (
                 <div key={project.id} onClick={() => handleProjectClick(project)} className="cursor-pointer">
-                  <Card className={`hover:border-primary transition-colors h-full ${!hasAccess ? 'opacity-75' : ''}`}>
+                  <Card className={`hover:border-primary transition-colors h-full ${showLocked ? 'opacity-75' : ''}`}>
                     <CardHeader>
                       <div className="flex items-start justify-between">
                         <div className="flex items-center gap-2">
@@ -524,7 +528,7 @@ const Dashboard = () => {
                           )}
                         </div>
                         <div className="flex items-center gap-2">
-                          {!hasAccess && <Lock className="w-4 h-4 text-muted-foreground" />}
+                          {showLocked && <Lock className="w-4 h-4 text-muted-foreground" />}
                           <StatusIcon className="w-5 h-5 text-muted-foreground" />
                           {!isShared && (
                             <Button
