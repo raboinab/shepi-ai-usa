@@ -7,6 +7,7 @@ import { Upload, FileUp, Database, ChevronDown, Loader2, Info, CheckCircle2, Ale
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
+import { toast as sonner } from "sonner";
 import { MultiPeriodTable } from "@/components/wizard/shared/MultiPeriodTable";
 import { TrialBalanceAccount, createEmptyAccount, transformQbTrialBalanceData, mergeAccounts, crossReferenceWithCOA } from "@/lib/trialBalanceUtils";
 import { Period } from "@/lib/periodUtils";
