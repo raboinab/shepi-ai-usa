@@ -421,8 +421,23 @@ serve(async (req) => {
       });
     }
 
+    // Structural pre-flight — refuse to plug a degenerate TB. The Milano case
+    // (BS-only TB with no IS rows) trivially satisfies BS+IS=0 and would only
+    // get cosmetic rounding plugs to Retained Earnings.
+    const structure = validateTbStructure(accounts, periods);
+    if (structure.status === "degenerate") {
+      return new Response(JSON.stringify({
+        ok: false,
+        code: "TB_STRUCTURE_DEGENERATE",
+        reason: structure.reason,
+        diagnostics: structure.diagnostics,
+        message: structure.message,
+      }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     await ensureZdrEnabled();
     const anthropic = new Anthropic({ apiKey: ANTHROPIC_KEY, baseURL: "https://ai-gateway.vercel.sh" });
+
 
     const initialBalances = balanceByPeriod(accounts, periods);
     const outOfBalance = initialBalances.filter((b) => Math.abs(b.check) > BALANCE_TOLERANCE);
