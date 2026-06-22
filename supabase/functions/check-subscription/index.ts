@@ -16,7 +16,7 @@ const logStep = (step: string, details?: any) => {
 const responseCache = new Map<string, { data: any; expiresAt: number }>();
 const CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
