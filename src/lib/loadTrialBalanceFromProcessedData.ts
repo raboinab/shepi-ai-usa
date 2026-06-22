@@ -16,7 +16,8 @@ import type { Period } from "./periodUtils";
 export async function loadTrialBalanceFromProcessedData(
   projectId: string,
   periods: Period[],
-  coaAccounts?: CoaAccount[]
+  coaAccounts?: CoaAccount[],
+  opts?: { forceCoaRebuild?: boolean }
 ): Promise<TrialBalanceAccount[]> {
   const regularPeriods = periods.filter(p => !p.isStub);
   if (regularPeriods.length === 0) return [];
@@ -58,11 +59,19 @@ export async function loadTrialBalanceFromProcessedData(
     }
   }
 
-  // Apply COA cross-referencing if not already applied
-  const allMatched = mergedAccounts.every(
-    (acc) => (acc as any)._matchedFromCOA === true
-  );
-  if (!allMatched && coaAccounts && coaAccounts.length > 0 && mergedAccounts.length > 0) {
+  // Apply COA cross-referencing. The "_matchedFromCOA already true" short
+  // circuit can be stale after a prior AI run that misclassified rows as
+  // BS-only; forceCoaRebuild strips the flag and re-applies COA fsType.
+  const shouldReapply =
+    opts?.forceCoaRebuild === true ||
+    !mergedAccounts.every((acc) => (acc as any)._matchedFromCOA === true);
+  if (shouldReapply && coaAccounts && coaAccounts.length > 0 && mergedAccounts.length > 0) {
+    if (opts?.forceCoaRebuild) {
+      mergedAccounts = mergedAccounts.map((a) => {
+        const { _matchedFromCOA: _drop, ...rest } = a as any;
+        return rest as TrialBalanceAccount;
+      });
+    }
     const { accounts: enriched } = crossReferenceWithCOA(mergedAccounts, coaAccounts);
     mergedAccounts = enriched;
   }

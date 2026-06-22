@@ -45,6 +45,8 @@ export const TrialBalanceSection = ({
   const [isUploading, setIsUploading] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [isManualLoading, setIsManualLoading] = useState(false);
+  const [isRebuilding, setIsRebuilding] = useState(false);
+  const [hasProcessedTb, setHasProcessedTb] = useState(false);
   const [processingDocIds, setProcessingDocIds] = useState<string[]>([]);
   const [showDismiss, setShowDismiss] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -70,6 +72,17 @@ export const TrialBalanceSection = ({
       .then(({ data: records }) => {
         setIsGLDerivedCOA(!!(records && records.length > 0));
       });
+
+    // Lightweight probe to know whether a "Rebuild from source" action is meaningful
+    supabase
+      .from('processed_data')
+      .select('id')
+      .eq('project_id', projectId)
+      .eq('data_type', 'trial_balance')
+      .limit(1)
+      .then(({ data: records }) => {
+        setHasProcessedTb(!!(records && records.length > 0));
+      });
   }, [projectId]);
 
   // Compute out-of-balance periods (any non-stub period whose BS+IS != 0)
@@ -85,6 +98,9 @@ export const TrialBalanceSection = ({
 
   // AI auto-balance
   const [isAiBalancing, setIsAiBalancing] = useState(false);
+  // Forward ref to handleRebuildFromSource (declared further down) so the
+  // AI-balance toast action can invoke it without a use-before-declaration.
+  const rebuildFromSourceRef = useRef<() => void>(() => {});
   const runUndo = useCallback(async (snapshotId: string) => {
     const undoId = sonner.loading("Reverting…");
     try {
@@ -143,6 +159,14 @@ export const TrialBalanceSection = ({
           toastFn(title, {
             description: payload.message || "The trial balance is not in a state the AI can safely fix.",
             duration: 20000,
+            ...(payload?.canRebuildFromSource
+              ? {
+                  action: {
+                    label: "Rebuild from source",
+                    onClick: () => { rebuildFromSourceRef.current(); },
+                  },
+                }
+              : {}),
           });
           return;
         }
@@ -174,6 +198,9 @@ export const TrialBalanceSection = ({
     } finally {
       setIsAiBalancing(false);
     }
+    // handleRebuildFromSource is intentionally read through a ref to avoid
+    // a forward-declaration cycle; the toast action invokes it lazily.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, runUndo]);
 
 
@@ -466,6 +493,58 @@ export const TrialBalanceSection = ({
     }
   }, [loadFromProcessedData]);
 
+  // Rebuild from source — wipes the cached TB rows and re-parses every
+  // processed_data trial_balance record, forcing COA cross-reference so
+  // fsType / category come from the live COA (fixes the BS-only degenerate
+  // TB left behind by the earlier AI plug-to-Retained-Earnings run).
+  const handleRebuildFromSource = useCallback(async () => {
+    if (isRebuilding) return;
+    setIsRebuilding(true);
+    try {
+      const { loadTrialBalanceFromProcessedData } = await import(
+        "@/lib/loadTrialBalanceFromProcessedData"
+      );
+      const rebuilt = await loadTrialBalanceFromProcessedData(
+        projectId,
+        periods,
+        coaAccounts,
+        { forceCoaRebuild: true },
+      );
+      if (rebuilt.length === 0) {
+        toast({
+          title: "Nothing to rebuild",
+          description:
+            "No processed trial balance found in storage. Upload or sync TB data first.",
+          variant: "destructive",
+        });
+        return;
+      }
+      // Overwrite, do not merge — the whole point is to discard the bad cache.
+      updateDataRef.current({ accounts: rebuilt });
+      const bs = rebuilt.filter((a) => a.fsType === "BS").length;
+      const is = rebuilt.filter((a) => a.fsType === "IS").length;
+      toast({
+        title: "Trial Balance rebuilt from source",
+        description: `Re-parsed ${rebuilt.length} accounts (${bs} BS, ${is} IS) from processed data and re-applied COA classifications.`,
+      });
+    } catch (err) {
+      console.error("[TrialBalance] rebuild from source failed", err);
+      toast({
+        title: "Rebuild failed",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setIsRebuilding(false);
+    }
+  }, [isRebuilding, projectId, periods, coaAccounts]);
+
+  // Keep the forward ref in sync so the AI-balance toast action can fire it.
+  useEffect(() => {
+    rebuildFromSourceRef.current = () => { void handleRebuildFromSource(); };
+  }, [handleRebuildFromSource]);
+
+
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
@@ -736,6 +815,23 @@ export const TrialBalanceSection = ({
                 <RefreshCw className="w-4 h-4" />
               )}
               Load from processed data
+            </Button>
+          )}
+          {accounts.length > 0 && hasProcessedTb && !isProcessing && !isImporting && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              onClick={handleRebuildFromSource}
+              disabled={isRebuilding}
+              title="Discard the cached TB and re-parse every processed trial balance, re-applying the Chart of Accounts classifications. Use this if the TB looks wrong (missing IS rows, mis-classified accounts, stale balances)."
+            >
+              {isRebuilding ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <RefreshCw className="w-4 h-4" />
+              )}
+              Rebuild from source
             </Button>
           )}
           <DropdownMenu>
