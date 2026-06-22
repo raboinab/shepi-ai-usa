@@ -525,12 +525,35 @@ export function TransferReviewDialog({
     }
   }, [open]);
 
+  // Cleanup on unmount in case dialog tears down mid-transition
+  useEffect(() => {
+    return () => {
+      // Run after Radix's own cleanup ticks
+      setTimeout(clearStuckPointerEvents, 0);
+    };
+  }, []);
+
+  const handleOpenChange = useCallback(
+    (next: boolean) => {
+      onOpenChange(next);
+      if (!next) {
+        // Defer past Radix's own close handlers
+        requestAnimationFrame(() => {
+          clearStuckPointerEvents();
+          setTimeout(clearStuckPointerEvents, 50);
+        });
+      }
+    },
+    [onOpenChange]
+  );
+
   const addAudit = useCallback((caseId: string, action: string) => {
     setAuditLog((prev) => ({
       ...prev,
       [caseId]: [...(prev[caseId] || []), { timestamp: Date.now(), action }],
     }));
   }, []);
+
 
   // Track exceptions: txns whose category was changed inside an accepted case
   const exceptions = useMemo(() => {
