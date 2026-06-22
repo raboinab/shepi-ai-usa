@@ -71,16 +71,92 @@ export const TrialBalanceSection = ({
       });
   }, [projectId]);
 
-  // Compute out-of-balance periods (only relevant for GL-derived COA)
+  // Compute out-of-balance periods (any non-stub period whose BS+IS != 0)
   const outOfBalancePeriods = useMemo(() => {
-    if (!isGLDerivedCOA || accounts.length === 0) return [];
+    if (accounts.length === 0) return [];
     return periods
       .filter(p => !p.isStub)
       .filter(p => {
         const check = calculateBalanceCheck(accounts, p.id);
         return Math.abs(check.checkTotal) >= 0.01;
       });
-  }, [isGLDerivedCOA, accounts, periods]);
+  }, [accounts, periods]);
+
+  // AI auto-balance
+  const [isAiBalancing, setIsAiBalancing] = useState(false);
+  const handleAiBalance = useCallback(async () => {
+    setIsAiBalancing(true);
+    const t = toast.loading("AI is balancing your trial balance…");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-balance-tb`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          body: JSON.stringify({ projectId }),
+        },
+      );
+      const payload = await res.json();
+      toast.dismiss(t);
+      if (!res.ok) {
+        toast({ title: "AI balance failed", description: payload?.error || "Unknown error", variant: "destructive" });
+        return;
+      }
+      if (payload.alreadyBalanced) {
+        toast({ title: "Already balanced", description: payload.message });
+        return;
+      }
+      const snapshotId = payload.snapshotId as string | undefined;
+      const changeCount = Array.isArray(payload.changes) ? payload.changes.length : 0;
+      const balanced = payload.balanced;
+      toast({
+        title: balanced ? "Trial balance balanced" : "AI made changes, still out of balance",
+        description: `${changeCount} change${changeCount === 1 ? "" : "s"}: ${payload.message || ""}`,
+        action: snapshotId ? {
+          label: "Undo",
+          onClick: async () => {
+            const undoToast = toast.loading("Reverting…");
+            try {
+              const undoRes = await fetch(
+                `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-revert-snapshot`,
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+                  },
+                  body: JSON.stringify({ snapshotId }),
+                },
+              );
+              toast.dismiss(undoToast);
+              if (!undoRes.ok) {
+                const err = await undoRes.json().catch(() => ({}));
+                toast({ title: "Undo failed", description: err?.error || "Unknown error", variant: "destructive" });
+                return;
+              }
+              toast({ title: "Reverted", description: "Trial balance restored. Refresh to see changes." });
+              window.location.reload();
+            } catch (e) {
+              toast.dismiss(undoToast);
+              toast({ title: "Undo failed", description: (e as Error).message, variant: "destructive" });
+            }
+          },
+        } : undefined,
+      });
+      // Refresh to pull updated wizard_data
+      setTimeout(() => window.location.reload(), balanced ? 1500 : 2500);
+    } catch (e) {
+      toast.dismiss(t);
+      toast({ title: "AI balance error", description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setIsAiBalancing(false);
+    }
+  }, [projectId]);
+
 
   // Calculate match stats for COA cross-referencing
   const matchStats = useMemo(() => {
