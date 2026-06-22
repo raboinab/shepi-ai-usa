@@ -1,30 +1,49 @@
-## Pre-deal readiness pass
+## Full system readiness sweep
 
-Quick, focused checks before the live catering deal with Neal — read-only diagnostics first, fix only if something is actually broken.
+Broader pre-deal check across the whole product surface. Read-only diagnostics first; only fix things that would visibly break the Neal call.
 
-### 1. Database sanity sweep (read-only)
-- Scan `documents` across **all recent projects** for bank/credit-card fragmentation patterns still in the wild:
-  - Multiple `institution` variants per `(project_id, account_label)`
-  - Trailing/leading whitespace in `account_label` or `institution`
-  - `institution` strings still containing the project's `target_company`
-- Check last ~10 active projects for stuck `analysis_jobs`, failed `docuclipper_jobs`, or `upload_errors` from the last 48h.
-- Confirm `check-subscription` UncaughtException in logs is benign (it ran successfully — likely a post-response microtask warning, but worth confirming it isn't blocking project creation).
+### 1. Data integrity (all tables, last 60 days)
+- **Documents:** fragmentation, NULL `category` vs populated `account_type`, orphaned rows, stuck `processing_status='processing'` older than 1 hour.
+- **processed_data / canonical_transactions:** orphaned rows (no parent document/project), suspiciously empty result sets, duplicate period rows.
+- **adjustment_proposals / flagged_transactions:** projects with proposals but no evidence rows, NULL sign/amount issues.
+- **workflows / analysis_jobs / docuclipper_jobs / reclassification_jobs:** anything stuck in `running`/`pending` >2h, recent failure clusters.
+- **company_info:** rows with NULL `user_id` (trigger should prevent, but verify).
+- **project_data_chunks:** projects with chunks whose `chunk_key` references a different project_id (the duplicate-project bug class).
 
-### 2. Upload → enrich → coverage flow (live)
-- Drive Playwright against the running preview:
-  - Create a throwaway project, upload one of the demo bank PDFs, wait for `enrich-document`, and confirm `PerAccountCoverage` renders one row per real account (no fragmentation).
-  - Verify the merged-variants tooltip shows up only when warranted.
-- Tail `enrich-document` logs during the test to confirm the new normalization branch is hit.
+### 2. Edge function health
+- Pull recent logs for the hot path: `enrich-document`, `process-document`, `complete-qb-sync`, `analyze-transactions`, `generate-report`, `check-subscription`, `cpa-notify`, `notify-admin`.
+- Flag any function with 5xx in the last 24h or repeated UncaughtException patterns.
+- Confirm all required secrets present (LOVABLE_API_KEY, OPENAI_API_KEY, LLM_EXTRACTOR, QB_*, STRIPE_*, RESEND, DOCUCLIPPER if applicable).
 
-### 3. Export path
-- Trigger the workbook XLSX export and the PDF report on a known-good project; confirm both download and open without errors. This is the deliverable Neal will see — must not break mid-call.
+### 3. Live pipeline smoke test (Playwright, headless)
+- Create throwaway project as the logged-in preview user.
+- Upload one demo bank PDF + one demo trial-balance file.
+- Wait for enrichment, confirm `PerAccountCoverage` renders cleanly and document validation completes.
+- Open the Workbook tab and confirm grid renders without console errors.
+- Trigger XLSX export and PDF report; verify download succeeds.
+- Tear down the throwaway project.
 
-### 4. Catering-specific gotchas to pre-check
-- COA / industry classification: confirm `business_profiles` industry options include food service / catering, and that the AI assistant has reasonable defaults for COGS treatment of food + labor.
-- Owner comp normalization and tip/cash-handling adjustments: confirm the adjustment proposal flow surfaces these categories (catering deals usually surface both).
+### 4. UI surface check
+- Check console + network for errors on key routes via Playwright screenshots:
+  - `/projects` (list)
+  - a real in-progress project: `/project/fa0768ca-…` wizard, workbook, insights, exports
+  - `/cpa` dashboard (DFY tier matters for Neal if it's done_for_you)
+  - `/admin` (just to confirm no regressions)
 
-### 5. Reporting back
-- Single status message: green/yellow/red per area, with any quick fixes already applied called out. No new features added during this pass — only fixes for things that would visibly break in front of Neal.
+### 5. Catering-specific pre-stage
+- Confirm the wizard flows accept "Restaurants & Food Service" and that downstream COA seeding + adjustment categories aren't industry-gated in a way that excludes food service.
+- Confirm AI assistant has the catering/restaurant guide content in `rag_chunks` (or at least food-service-relevant entries) so Neal gets useful in-call suggestions.
+
+### 6. Auth + access
+- Confirm Neal's user (if known) has a working session path; if he's a CPA, confirm `cpa_profiles` + `user_roles` are set so the project share will land.
+- If unknown, skip this and surface a checklist for you to verify in the moment.
+
+### 7. Report-back format
+- Single status table: **area → green/yellow/red → one-line evidence → fix-now? y/n.**
+- Apply only fixes that block the live call. Anything cosmetic/non-blocking goes into a "post-deal followup" list, not shipped today.
 
 ### Out of scope
-- New features, UI redesigns, schema changes, or anything not directly tied to the catering deal going smoothly today.
+- New features, refactors, schema migrations, UI redesign, performance tuning. Strictly diagnostic + critical-fix-only.
+
+### Estimated time
+~5-8 minutes of tool calls, mostly parallel SQL + log pulls + one Playwright run.
