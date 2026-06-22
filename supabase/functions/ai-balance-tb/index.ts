@@ -5,6 +5,8 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.87.1";
 import Anthropic from "npm:@anthropic-ai/sdk@0.88.0";
 import { ensureZdrEnabled } from "../_shared/zdrGuard.ts";
+import { balanceByPeriod, validateTbStructure } from "./structure.ts";
+
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -41,16 +43,9 @@ interface WizardData {
   [k: string]: unknown;
 }
 
-function balanceByPeriod(accounts: TBAccount[], periods: Period[]) {
-  return periods.map((p) => {
-    let bs = 0, is = 0;
-    for (const a of accounts) {
-      const v = a.monthlyValues?.[p.id] || 0;
-      if (a.fsType === "BS") bs += v; else is += v;
-    }
-    return { periodId: p.id, label: p.label || p.id, bs, is, check: bs + is };
-  });
-}
+// balanceByPeriod and validateTbStructure are imported from ./structure.ts
+
+
 
 function findAccount(accounts: TBAccount[], ref: string): TBAccount | undefined {
   const r = (ref || "").toString().trim().toLowerCase();
@@ -323,8 +318,23 @@ serve(async (req) => {
       });
     }
 
+    // Structural pre-flight — refuse to plug a degenerate TB. The Milano case
+    // (BS-only TB with no IS rows) trivially satisfies BS+IS=0 and would only
+    // get cosmetic rounding plugs to Retained Earnings.
+    const structure = validateTbStructure(accounts, periods);
+    if (structure.status === "degenerate") {
+      return new Response(JSON.stringify({
+        ok: false,
+        code: "TB_STRUCTURE_DEGENERATE",
+        reason: structure.reason,
+        diagnostics: structure.diagnostics,
+        message: structure.message,
+      }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     await ensureZdrEnabled();
     const anthropic = new Anthropic({ apiKey: ANTHROPIC_KEY, baseURL: "https://ai-gateway.vercel.sh" });
+
 
     const initialBalances = balanceByPeriod(accounts, periods);
     const outOfBalance = initialBalances.filter((b) => Math.abs(b.check) > BALANCE_TOLERANCE);
