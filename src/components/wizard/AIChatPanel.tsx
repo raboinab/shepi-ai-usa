@@ -45,17 +45,29 @@ const getDefaultSize = () => {
   };
 };
 
+const finiteNumber = (value: unknown): number | null => {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+};
+
 const getSavedSize = () => {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
+      const width = finiteNumber(parsed?.width);
+      const height = finiteNumber(parsed?.height);
+      if (width === null || height === null) {
+        localStorage.removeItem(STORAGE_KEY);
+        return getDefaultSize();
+      }
       return {
-        width: Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, parsed.width)),
-        height: Math.max(MIN_HEIGHT, Math.min(window.innerHeight * (MAX_HEIGHT_VH / 100), parsed.height)),
+        width: Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, width)),
+        height: Math.max(MIN_HEIGHT, Math.min(window.innerHeight * (MAX_HEIGHT_VH / 100), height)),
       };
     }
-  } catch {}
+  } catch {
+    localStorage.removeItem(STORAGE_KEY);
+  }
   return getDefaultSize();
 };
 
@@ -66,12 +78,20 @@ const getSavedPosition = () => {
     const saved = localStorage.getItem(POSITION_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
+      const right = finiteNumber(parsed?.right);
+      const bottom = finiteNumber(parsed?.bottom);
+      if (right === null || bottom === null) {
+        localStorage.removeItem(POSITION_KEY);
+        return getDefaultPosition();
+      }
       return {
-        right: Math.max(0, Math.min(window.innerWidth - 100, parsed.right)),
-        bottom: Math.max(0, Math.min(window.innerHeight - 100, parsed.bottom)),
+        right: Math.max(0, Math.min(window.innerWidth - 100, right)),
+        bottom: Math.max(0, Math.min(window.innerHeight - 100, bottom)),
       };
     }
-  } catch {}
+  } catch {
+    localStorage.removeItem(POSITION_KEY);
+  }
   return getDefaultPosition();
 };
 

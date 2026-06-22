@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { Component, type ErrorInfo, type ReactNode, useState, useEffect, useRef } from "react";
 import { useParams, useNavigate, Link, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
@@ -52,6 +52,26 @@ export interface ProjectData {
   firm_logo_path?: string | null;
   prepared_by_line?: string | null;
   professional_use_acknowledged_at?: string | null;
+}
+
+class ProjectPanelErrorBoundary extends Component<
+  { children: ReactNode },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error("Project side panel crashed:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) return null;
+    return this.props.children;
+  }
 }
 
 const Project = () => {
@@ -536,17 +556,19 @@ const Project = () => {
         )}
         
         {showChat && viewMode !== "insights" && (
-          <AIChatPanel 
-            project={project} 
-            currentPhase={project.current_phase}
-            currentSection={project.current_section}
-            pendingPrompt={pendingPrompt}
-            onPromptConsumed={() => setPendingPrompt(undefined)}
-            onClose={() => {
-              setShowChat(false);
-              sessionStorage.setItem(`chat-dismissed-${id}`, "true");
-            }} 
-          />
+          <ProjectPanelErrorBoundary>
+            <AIChatPanel 
+              project={project} 
+              currentPhase={project.current_phase}
+              currentSection={project.current_section}
+              pendingPrompt={pendingPrompt}
+              onPromptConsumed={() => setPendingPrompt(undefined)}
+              onClose={() => {
+                setShowChat(false);
+                sessionStorage.setItem(`chat-dismissed-${id}`, "true");
+              }} 
+            />
+          </ProjectPanelErrorBoundary>
         )}
       </div>
 
