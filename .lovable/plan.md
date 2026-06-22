@@ -1,32 +1,77 @@
-# Stop Dashboard from acting on subscription state before it loads
 
-## What's still broken
+# Harden `ai-balance-tb` against degenerate trial balances
 
-The `useSubscription` fix from the previous turn correctly defers the `check-subscription` call until auth is ready. But `Dashboard.tsx` still reads `hasAccessToProject(project.id)` at click time and at render time *while `subscriptionLoading` is true*. During that brief window after login, `paidProjects` is the empty default, so:
+The Milano project exposed a real failure mode: the TB had **103 BS accounts and 0 IS accounts** because it was reconstructed from a Balance Sheet alone. `BS + IS = 0` was trivially satisfied by the BS rows already netting to zero, so the agent plugged $344–$1,721/month into Retained Earnings to clean up rounding — producing a "balanced" but structurally meaningless TB.
 
-- Clicking a project tile → `hasAccessToProject` returns `false` → opens the payment dialog (or routes to the paywall) instead of opening the project. A second click works because subscription data has loaded by then.
-- The grid briefly renders every owned project tile with a lock icon and 75% opacity.
+The agent must refuse to plug when the inputs are structurally degenerate and surface a clear error to the user instead.
 
-## Fix (single file: `src/pages/Dashboard.tsx`)
+## What we change
 
-1. **`handleProjectClick` (line 239)** — treat "still loading" as "let the project page decide", not as "no access":
-   - If `subscriptionLoading` is true, navigate to `/project/${project.id}` directly. The project page already shows a spinner while loading and the correct paywall only after it has real data.
-   - Otherwise, keep the existing branch (paywall dialog when `!hasAccessToProject`).
+### 1. Pre-flight structural validation (server-side, before any AI call)
 
-2. **Project tile render (around lines 511-527)** — don't display the lock affordance until we actually know:
-   - Compute `const accessKnown = !subscriptionLoading;`
-   - Only apply `opacity-75` and render the `<Lock />` icon when `accessKnown && !hasAccess`.
-   - While loading, show the tile as a normal, clickable card.
+In `supabase/functions/ai-balance-tb/index.ts`, add a `validateTbStructure(accounts, periods)` check that runs after loading `wizard_data` and **before** the Anthropic call. It returns one of:
 
-3. No changes to `useSubscription`, `Project.tsx`, or the edge function — Project.tsx already gates its render on `subscriptionLoading` and shows the correct paywall only after data resolves.
+- `ok` — proceed with the agent loop as today.
+- `degenerate` — return HTTP 400 with a structured error; the agent never runs.
 
-## Verification
+A TB is `degenerate` when **any** of these hold:
 
-1. Sign in as `annabellewinterberry@gmail.com`, land on `/dashboard`, immediately click a paid project tile (before the subscription request would normally finish). Expect: project opens on the first click, shows the spinner briefly if needed, then loads the project. No payment dialog flash.
-2. While Dashboard is loading subscription state, project tiles should not show the lock icon or dimmed styling.
-3. Sign in as a user with no access to a project, wait for subscription to load, click the project → payment dialog still appears (existing behavior preserved).
+| Rule | Threshold | Reason |
+| --- | --- | --- |
+| Zero IS accounts | `is_count === 0` | Can't reconcile a TB with no income statement (the Milano case). |
+| Zero BS accounts | `bs_count === 0` | Mirror case. |
+| IS rows exist but every IS value is 0 across all periods | `sum(abs(IS values)) === 0` | All revenue/expense rolled into RE. |
+| Total imbalance ≪ smallest revenue or expense magnitude | `max(|check|) < 0.001 * max(|IS row sums|)` AND `is_count > 0` | TB is essentially already balanced — a "fix" would just be rounding noise; surface a "no meaningful imbalance to fix" message instead. |
+| All imbalances would resolve to a single equity account with `|plug| < $100/period` | computed | Same noise case — refuse silently-cosmetic plugs. |
 
-## Out of scope
+### 2. Structured error response
 
-- `useSubscription` hook changes (already correct after previous turn).
-- The Pricing/Account/PaymentSuccess pages — they don't gate click actions on `hasAccessToProject` mid-load.
+When `degenerate`, return:
+
+```json
+{
+  "ok": false,
+  "code": "TB_STRUCTURE_DEGENERATE",
+  "reason": "no_is_accounts" | "no_bs_accounts" | "is_all_zero" | "imbalance_is_noise",
+  "diagnostics": {
+    "bsAccounts": 103,
+    "isAccounts": 0,
+    "maxAbsImbalance": 1721,
+    "periodsChecked": 29
+  },
+  "message": "Trial balance has 103 Balance Sheet accounts and 0 Income Statement accounts. The TB appears to have been derived from a Balance Sheet only — net income was folded into Retained Earnings instead of decomposed into revenue/expense rows. Rebuild the TB from the General Ledger before auto-balancing."
+}
+```
+
+### 3. UI surfacing in `TrialBalanceSection.tsx`
+
+In `handleAiBalance`, when the response is `ok: false` with `code: "TB_STRUCTURE_DEGENERATE"`:
+
+- Show a destructive `sonner.error` toast with the human `message`.
+- Render the `reason`-specific call to action inline on the out-of-balance alert (replacing the existing "Auto-balance with AI" button when applicable):
+  - `no_is_accounts` / `is_all_zero` → "Rebuild TB from General Ledger" button (opens GL re-import flow).
+  - `imbalance_is_noise` → quiet info banner: "Trial balance is balanced within rounding tolerance. No action needed."
+  - `no_bs_accounts` → "Upload Balance Sheet" link.
+
+### 4. Tests
+
+Add `supabase/functions/ai-balance-tb/index_test.ts` covering each `degenerate` reason. Use Deno's test runner with synthetic `wizard_data` fixtures — no live Anthropic call needed (extract `validateTbStructure` as a pure function).
+
+## Why we are NOT touching the Milano project data here
+
+The user picked "harden the agent first." This plan does not undo the Milano plugs, does not rebuild Milano's TB from the GL, and does not change the snapshot/undo behavior. Once the guard ships, the user can undo the Milano AI edit via the existing snapshot and decide on the data-fix path separately.
+
+## Files touched
+
+- `supabase/functions/ai-balance-tb/index.ts` — add `validateTbStructure`, early-return on `degenerate`, extract pure helper for testing.
+- `supabase/functions/ai-balance-tb/index_test.ts` — new, structural-validation cases only.
+- `src/components/wizard/sections/TrialBalanceSection.tsx` — handle the new `TB_STRUCTURE_DEGENERATE` response in `handleAiBalance` and adjust the alert UI.
+
+No database migration. No change to `ai-revert-snapshot`. No change to the doctrine — this is purely a refusal/guardrail.
+
+## Out of scope (deliberately)
+
+- Rebuilding the Milano TB from the GL (separate decision).
+- Decomposing P&L into IS rows (separate decision).
+- The broader proactive-agent roadmap from the prior plan (separate workstream).
+
