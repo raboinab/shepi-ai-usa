@@ -5,6 +5,8 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.87.1";
 import Anthropic from "npm:@anthropic-ai/sdk@0.88.0";
 import { ensureZdrEnabled } from "../_shared/zdrGuard.ts";
+import { balanceByPeriod, validateTbStructure } from "./structure.ts";
+
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
