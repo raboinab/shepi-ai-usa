@@ -1,44 +1,31 @@
-## Bug: "Review & Approve" sometimes needs a page refresh to work
+## Fix: `check-subscription` post-response microtask warning
 
-### What's happening
+### Cause
 
-The symptom — clicking a button that does nothing until you refresh — is the well-known Radix UI bug where `<body>` is left with `pointer-events: none` after a Dialog/Select/Popover/Tooltip closes. Once that happens, every subsequent click on the page (including the "Review & Approve" button in Proof of Cash) is swallowed. A page reload clears the inline style and clicks start working again.
+The function imports Stripe via `https://esm.sh/stripe@18.5.0?target=deno`. The `?target=deno` build pulls in `deno.land/std@0.177.1/node/*` polyfills, whose `_next_tick` shim calls `Deno.core.runMicrotasks()` — an API that edge-runtime no longer supports. Stripe's HTTP client schedules a microtask after the response is sent, which fires the polyfill and produces the `UncaughtException` line in logs. The response has already been returned by then, so users see no impact — but it spams the log stream.
 
-This codepath is a perfect setup for the bug:
-
-- `ProofOfCashTab` keeps `<TransferReviewDialog>` mounted whenever the user isn't in mock mode.
-- Inside the dialog there are `Dialog`, plus nested `Select`, `Popover`, `Tooltip`, `Collapsible` (Radix primitives layered together).
-- Closing the dialog (Save, Cancel, ESC, or backdrop click) — or closing a nested `Select`/`Popover` — can leave `document.body.style.pointerEvents = "none"`.
-- Next time the user clicks "Review & Approve" in the workbook UI, nothing happens until refresh.
-
-Versions in use (`@radix-ui/react-dialog ^1.1.15`, `react-select ^2.2.6`, `react-popover ^1.1.15`) are all in the range where this regression has been reported intermittently.
+The same pattern exists for the legacy `https://esm.sh/@supabase/supabase-js@2.87.1` import, which works today but is the other place edge-runtime can drift.
 
 ### Fix
 
-Add a small, focused safety net that restores body pointer-events whenever the transfer-review dialog transitions from open → closed. This is the minimum-risk pre-call fix — no library upgrade, no broad refactor.
+In `supabase/functions/check-subscription/index.ts`, swap the brittle esm.sh imports for native `npm:` specifiers that the edge runtime resolves directly with no node polyfill shim:
 
-In `src/components/workbook/shared/TransferReviewDialog.tsx`:
+- `import Stripe from "npm:stripe@18.5.0";`
+- `import { createClient } from "npm:@supabase/supabase-js@2.87.1";`
+- Replace `serve` from `deno.land/std/http/server.ts` with the built-in `Deno.serve(...)` (also avoids dragging in std).
 
-1. Wrap the existing `onOpenChange` so that when `open` becomes `false`, we schedule a microtask (`requestAnimationFrame` / `setTimeout(0)`) that:
-   - Clears `document.body.style.pointerEvents` if it equals `"none"`.
-   - Also clears any leftover `data-scroll-locked` attribute Radix sometimes leaves on `<html>`.
-2. Add a `useEffect` cleanup on unmount with the same clear, in case the dialog unmounts mid-transition.
-
-In `src/components/workbook/tabs/ProofOfCashTab.tsx`:
-
-- Before calling `setReviewOpen(true)` from the "Review & Approve" `onClick`, defensively clear `document.body.style.pointerEvents` if it's stuck on `"none"`. This guarantees the very next click works even if the page already entered the stuck state from an earlier interaction.
+No behavior changes. Same env vars, same response shape, same caching, same logic.
 
 ### What I will NOT change
 
-- No Radix version bumps (risk before Neal's call).
-- No changes to the classification pipeline, `useTransferClassification`, or save logic.
-- No UI/visual changes.
-- No changes to mock mode or any unrelated tabs.
+- No logic, no caching, no auth, no Stripe call shape.
+- No other edge functions (we'll deal with esm.sh drift elsewhere only if it actually fires).
+- No frontend changes.
 
 ### Verification
 
-- Build passes.
-- Drive Playwright headless against the running dev server to: open the Proof of Cash tab on a real project, open the Review dialog, change a category in the nested `Select`, close the dialog via Cancel, then click "Review & Approve" again immediately. Expect the dialog to re-open without a refresh, and `document.body.style.pointerEvents` to be empty.
-- If reproducing the original failure proves flaky in CI-style headless run, manually verify via `page.evaluate` that the body style is clean after each close.
+- Deploy is automatic.
+- `curl` the function via `supabase--curl_edge_functions` as the logged-in user and confirm `{ paidProjects, projectCredits, hasActiveSubscription, activeProjectCount }` still comes back.
+- Tail `check-subscription` logs and confirm no new `UncaughtException` / `Deno.core.runMicrotasks` line appears after the call.
 
-Total change surface: ~15 lines across two files. Safe to ship before the catering deal call.
+Tiny diff, one file, pre-deal safe.
