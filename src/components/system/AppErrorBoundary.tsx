@@ -128,7 +128,7 @@ class AppErrorBoundary extends Component<Props, State> {
                 Go to Home
               </button>
             </div>
-            {import.meta.env.DEV && this.state.error && (
+            {this.state.error && (
               <div style={{ marginTop: '32px', textAlign: 'left' }}>
                 <button
                   onClick={this.handleCopyError}
@@ -151,14 +151,19 @@ class AppErrorBoundary extends Component<Props, State> {
                   borderRadius: '8px',
                   fontSize: '12px',
                   overflow: 'auto',
-                  maxHeight: '200px',
+                  maxHeight: '320px',
                 }}>
                   <pre style={{ margin: 0, color: '#ef4444', whiteSpace: 'pre-wrap' }}>
                     {this.state.error.message}
                   </pre>
                   {this.state.error.stack && (
-                    <pre style={{ margin: '8px 0 0', color: '#666', whiteSpace: 'pre-wrap', fontSize: '11px' }}>
+                    <pre style={{ margin: '8px 0 0', color: '#888', whiteSpace: 'pre-wrap', fontSize: '11px' }}>
                       {this.state.error.stack}
+                    </pre>
+                  )}
+                  {this.state.errorInfo?.componentStack && (
+                    <pre style={{ margin: '8px 0 0', color: '#666', whiteSpace: 'pre-wrap', fontSize: '11px' }}>
+                      {this.state.errorInfo.componentStack}
                     </pre>
                   )}
                 </div>
