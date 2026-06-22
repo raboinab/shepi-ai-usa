@@ -1,4 +1,17 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
+
+// Radix sometimes leaves <body style="pointer-events: none"> after a Dialog/
+// Select/Popover closes, which blocks all subsequent clicks until refresh.
+// Clear it defensively on dialog close and unmount.
+function clearStuckPointerEvents() {
+  if (typeof document === "undefined") return;
+  if (document.body.style.pointerEvents === "none") {
+    document.body.style.pointerEvents = "";
+  }
+  if (document.documentElement.hasAttribute("data-scroll-locked")) {
+    document.documentElement.removeAttribute("data-scroll-locked");
+  }
+}
 import {
   Dialog,
   DialogContent,
