@@ -815,6 +815,19 @@ export const TrialBalanceSection = ({
               </li>
               <li>Or edit the "FS" column directly in the table below</li>
             </ul>
+            <div className="pt-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={handleAiBalance}
+                disabled={isAiBalancing}
+                className="gap-2"
+              >
+                {isAiBalancing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                {isAiBalancing ? "AI balancing…" : "Auto-balance with AI"}
+              </Button>
+              <span className="ml-2 text-xs opacity-80">Reclassifies accounts, posts a plug entry if needed. One-click undo.</span>
+            </div>
           </AlertDescription>
         </Alert>
       )}
