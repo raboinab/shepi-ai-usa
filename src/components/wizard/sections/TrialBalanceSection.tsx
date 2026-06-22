@@ -72,6 +72,17 @@ export const TrialBalanceSection = ({
       .then(({ data: records }) => {
         setIsGLDerivedCOA(!!(records && records.length > 0));
       });
+
+    // Lightweight probe to know whether a "Rebuild from source" action is meaningful
+    supabase
+      .from('processed_data')
+      .select('id')
+      .eq('project_id', projectId)
+      .eq('data_type', 'trial_balance')
+      .limit(1)
+      .then(({ data: records }) => {
+        setHasProcessedTb(!!(records && records.length > 0));
+      });
   }, [projectId]);
 
   // Compute out-of-balance periods (any non-stub period whose BS+IS != 0)
