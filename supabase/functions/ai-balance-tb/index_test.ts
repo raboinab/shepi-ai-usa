@@ -1,5 +1,5 @@
 import { assertEquals } from "https://deno.land/std@0.190.0/testing/asserts.ts";
-import { validateTbStructure } from "./index.ts";
+import { validateTbStructure } from "./structure.ts";
 
 const periods = [
   { id: "2024-01", label: "Jan 2024" },
