@@ -7,6 +7,7 @@ import { Upload, FileUp, Database, ChevronDown, Loader2, Info, CheckCircle2, Ale
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
+import { toast as sonner } from "sonner";
 import { MultiPeriodTable } from "@/components/wizard/shared/MultiPeriodTable";
 import { TrialBalanceAccount, createEmptyAccount, transformQbTrialBalanceData, mergeAccounts, crossReferenceWithCOA } from "@/lib/trialBalanceUtils";
 import { Period } from "@/lib/periodUtils";
@@ -71,16 +72,97 @@ export const TrialBalanceSection = ({
       });
   }, [projectId]);
 
-  // Compute out-of-balance periods (only relevant for GL-derived COA)
+  // Compute out-of-balance periods (any non-stub period whose BS+IS != 0)
   const outOfBalancePeriods = useMemo(() => {
-    if (!isGLDerivedCOA || accounts.length === 0) return [];
+    if (accounts.length === 0) return [];
     return periods
       .filter(p => !p.isStub)
       .filter(p => {
         const check = calculateBalanceCheck(accounts, p.id);
         return Math.abs(check.checkTotal) >= 0.01;
       });
-  }, [isGLDerivedCOA, accounts, periods]);
+  }, [accounts, periods]);
+
+  // AI auto-balance
+  const [isAiBalancing, setIsAiBalancing] = useState(false);
+  const runUndo = useCallback(async (snapshotId: string) => {
+    const undoId = sonner.loading("Reverting…");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const undoRes = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-revert-snapshot`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          body: JSON.stringify({ snapshotId }),
+        },
+      );
+      sonner.dismiss(undoId);
+      if (!undoRes.ok) {
+        const err = await undoRes.json().catch(() => ({}));
+        sonner.error("Undo failed", { description: err?.error || "Unknown error" });
+        return;
+      }
+      sonner.success("Reverted", { description: "Trial balance restored." });
+      setTimeout(() => window.location.reload(), 800);
+    } catch (e) {
+      sonner.dismiss(undoId);
+      sonner.error("Undo failed", { description: (e as Error).message });
+    }
+  }, []);
+
+  const handleAiBalance = useCallback(async () => {
+    setIsAiBalancing(true);
+    const loadingId = sonner.loading("AI is balancing your trial balance…", { duration: 120000 });
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-balance-tb`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          body: JSON.stringify({ projectId }),
+        },
+      );
+      const payload = await res.json();
+      sonner.dismiss(loadingId);
+      if (!res.ok) {
+        sonner.error("AI balance failed", { description: payload?.error || "Unknown error" });
+        return;
+      }
+      if (payload.alreadyBalanced) {
+        sonner.info("Already balanced", { description: payload.message });
+        return;
+      }
+      const snapshotId = payload.snapshotId as string | undefined;
+      const changeCount = Array.isArray(payload.changes) ? payload.changes.length : 0;
+      const balanced = payload.balanced;
+      const title = balanced ? "Trial balance balanced" : "AI made changes (still out of balance)";
+      const description = `${changeCount} change${changeCount === 1 ? "" : "s"}: ${payload.message || ""}`;
+      const opts: Parameters<typeof sonner>[1] = {
+        description,
+        duration: 15000,
+        ...(snapshotId
+          ? { action: { label: "Undo", onClick: () => runUndo(snapshotId) } }
+          : {}),
+      };
+      if (balanced) sonner.success(title, opts); else sonner.warning(title, opts);
+      setTimeout(() => window.location.reload(), balanced ? 1800 : 3000);
+    } catch (e) {
+      sonner.dismiss(loadingId);
+      sonner.error("AI balance error", { description: (e as Error).message });
+    } finally {
+      setIsAiBalancing(false);
+    }
+  }, [projectId, runUndo]);
+
+
 
   // Calculate match stats for COA cross-referencing
   const matchStats = useMemo(() => {
@@ -733,6 +815,19 @@ export const TrialBalanceSection = ({
               </li>
               <li>Or edit the "FS" column directly in the table below</li>
             </ul>
+            <div className="pt-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={handleAiBalance}
+                disabled={isAiBalancing}
+                className="gap-2"
+              >
+                {isAiBalancing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                {isAiBalancing ? "AI balancing…" : "Auto-balance with AI"}
+              </Button>
+              <span className="ml-2 text-xs opacity-80">Reclassifies accounts, posts a plug entry if needed. One-click undo.</span>
+            </div>
           </AlertDescription>
         </Alert>
       )}

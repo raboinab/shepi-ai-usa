@@ -294,6 +294,50 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_edit_snapshots: {
+        Row: {
+          after_wizard_data: Json
+          before_wizard_data: Json
+          created_at: string
+          id: string
+          kind: string
+          project_id: string
+          reverted_at: string | null
+          summary: Json
+          user_id: string
+        }
+        Insert: {
+          after_wizard_data: Json
+          before_wizard_data: Json
+          created_at?: string
+          id?: string
+          kind: string
+          project_id: string
+          reverted_at?: string | null
+          summary?: Json
+          user_id: string
+        }
+        Update: {
+          after_wizard_data?: Json
+          before_wizard_data?: Json
+          created_at?: string
+          id?: string
+          kind?: string
+          project_id?: string
+          reverted_at?: string | null
+          summary?: Json
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_edit_snapshots_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       analysis_jobs: {
         Row: {
           attempt_number: number
