@@ -98,6 +98,9 @@ export const TrialBalanceSection = ({
 
   // AI auto-balance
   const [isAiBalancing, setIsAiBalancing] = useState(false);
+  // Forward ref to handleRebuildFromSource (declared further down) so the
+  // AI-balance toast action can invoke it without a use-before-declaration.
+  const rebuildFromSourceRef = useRef<() => void>(() => {});
   const runUndo = useCallback(async (snapshotId: string) => {
     const undoId = sonner.loading("Reverting…");
     try {
