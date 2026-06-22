@@ -195,7 +195,7 @@ export const TrialBalanceSection = ({
     } finally {
       setIsAiBalancing(false);
     }
-  }, [projectId, runUndo]);
+  }, [projectId, runUndo, handleRebuildFromSource]);
 
 
 
