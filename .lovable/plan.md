@@ -1,49 +1,44 @@
-## Full system readiness sweep
+## Bug: "Review & Approve" sometimes needs a page refresh to work
 
-Broader pre-deal check across the whole product surface. Read-only diagnostics first; only fix things that would visibly break the Neal call.
+### What's happening
 
-### 1. Data integrity (all tables, last 60 days)
-- **Documents:** fragmentation, NULL `category` vs populated `account_type`, orphaned rows, stuck `processing_status='processing'` older than 1 hour.
-- **processed_data / canonical_transactions:** orphaned rows (no parent document/project), suspiciously empty result sets, duplicate period rows.
-- **adjustment_proposals / flagged_transactions:** projects with proposals but no evidence rows, NULL sign/amount issues.
-- **workflows / analysis_jobs / docuclipper_jobs / reclassification_jobs:** anything stuck in `running`/`pending` >2h, recent failure clusters.
-- **company_info:** rows with NULL `user_id` (trigger should prevent, but verify).
-- **project_data_chunks:** projects with chunks whose `chunk_key` references a different project_id (the duplicate-project bug class).
+The symptom — clicking a button that does nothing until you refresh — is the well-known Radix UI bug where `<body>` is left with `pointer-events: none` after a Dialog/Select/Popover/Tooltip closes. Once that happens, every subsequent click on the page (including the "Review & Approve" button in Proof of Cash) is swallowed. A page reload clears the inline style and clicks start working again.
 
-### 2. Edge function health
-- Pull recent logs for the hot path: `enrich-document`, `process-document`, `complete-qb-sync`, `analyze-transactions`, `generate-report`, `check-subscription`, `cpa-notify`, `notify-admin`.
-- Flag any function with 5xx in the last 24h or repeated UncaughtException patterns.
-- Confirm all required secrets present (LOVABLE_API_KEY, OPENAI_API_KEY, LLM_EXTRACTOR, QB_*, STRIPE_*, RESEND, DOCUCLIPPER if applicable).
+This codepath is a perfect setup for the bug:
 
-### 3. Live pipeline smoke test (Playwright, headless)
-- Create throwaway project as the logged-in preview user.
-- Upload one demo bank PDF + one demo trial-balance file.
-- Wait for enrichment, confirm `PerAccountCoverage` renders cleanly and document validation completes.
-- Open the Workbook tab and confirm grid renders without console errors.
-- Trigger XLSX export and PDF report; verify download succeeds.
-- Tear down the throwaway project.
+- `ProofOfCashTab` keeps `<TransferReviewDialog>` mounted whenever the user isn't in mock mode.
+- Inside the dialog there are `Dialog`, plus nested `Select`, `Popover`, `Tooltip`, `Collapsible` (Radix primitives layered together).
+- Closing the dialog (Save, Cancel, ESC, or backdrop click) — or closing a nested `Select`/`Popover` — can leave `document.body.style.pointerEvents = "none"`.
+- Next time the user clicks "Review & Approve" in the workbook UI, nothing happens until refresh.
 
-### 4. UI surface check
-- Check console + network for errors on key routes via Playwright screenshots:
-  - `/projects` (list)
-  - a real in-progress project: `/project/fa0768ca-…` wizard, workbook, insights, exports
-  - `/cpa` dashboard (DFY tier matters for Neal if it's done_for_you)
-  - `/admin` (just to confirm no regressions)
+Versions in use (`@radix-ui/react-dialog ^1.1.15`, `react-select ^2.2.6`, `react-popover ^1.1.15`) are all in the range where this regression has been reported intermittently.
 
-### 5. Catering-specific pre-stage
-- Confirm the wizard flows accept "Restaurants & Food Service" and that downstream COA seeding + adjustment categories aren't industry-gated in a way that excludes food service.
-- Confirm AI assistant has the catering/restaurant guide content in `rag_chunks` (or at least food-service-relevant entries) so Neal gets useful in-call suggestions.
+### Fix
 
-### 6. Auth + access
-- Confirm Neal's user (if known) has a working session path; if he's a CPA, confirm `cpa_profiles` + `user_roles` are set so the project share will land.
-- If unknown, skip this and surface a checklist for you to verify in the moment.
+Add a small, focused safety net that restores body pointer-events whenever the transfer-review dialog transitions from open → closed. This is the minimum-risk pre-call fix — no library upgrade, no broad refactor.
 
-### 7. Report-back format
-- Single status table: **area → green/yellow/red → one-line evidence → fix-now? y/n.**
-- Apply only fixes that block the live call. Anything cosmetic/non-blocking goes into a "post-deal followup" list, not shipped today.
+In `src/components/workbook/shared/TransferReviewDialog.tsx`:
 
-### Out of scope
-- New features, refactors, schema migrations, UI redesign, performance tuning. Strictly diagnostic + critical-fix-only.
+1. Wrap the existing `onOpenChange` so that when `open` becomes `false`, we schedule a microtask (`requestAnimationFrame` / `setTimeout(0)`) that:
+   - Clears `document.body.style.pointerEvents` if it equals `"none"`.
+   - Also clears any leftover `data-scroll-locked` attribute Radix sometimes leaves on `<html>`.
+2. Add a `useEffect` cleanup on unmount with the same clear, in case the dialog unmounts mid-transition.
 
-### Estimated time
-~5-8 minutes of tool calls, mostly parallel SQL + log pulls + one Playwright run.
+In `src/components/workbook/tabs/ProofOfCashTab.tsx`:
+
+- Before calling `setReviewOpen(true)` from the "Review & Approve" `onClick`, defensively clear `document.body.style.pointerEvents` if it's stuck on `"none"`. This guarantees the very next click works even if the page already entered the stuck state from an earlier interaction.
+
+### What I will NOT change
+
+- No Radix version bumps (risk before Neal's call).
+- No changes to the classification pipeline, `useTransferClassification`, or save logic.
+- No UI/visual changes.
+- No changes to mock mode or any unrelated tabs.
+
+### Verification
+
+- Build passes.
+- Drive Playwright headless against the running dev server to: open the Proof of Cash tab on a real project, open the Review dialog, change a category in the nested `Select`, close the dialog via Cancel, then click "Review & Approve" again immediately. Expect the dialog to re-open without a refresh, and `document.body.style.pointerEvents` to be empty.
+- If reproducing the original failure proves flaky in CI-style headless run, manually verify via `page.evaluate` that the body style is clean after each close.
+
+Total change surface: ~15 lines across two files. Safe to ship before the catering deal call.
