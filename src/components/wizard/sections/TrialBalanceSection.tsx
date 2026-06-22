@@ -163,7 +163,7 @@ export const TrialBalanceSection = ({
               ? {
                   action: {
                     label: "Rebuild from source",
-                    onClick: () => { void handleRebuildFromSource(); },
+                    onClick: () => { rebuildFromSourceRef.current(); },
                   },
                 }
               : {}),
