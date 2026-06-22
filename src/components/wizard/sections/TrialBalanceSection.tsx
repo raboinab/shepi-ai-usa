@@ -195,7 +195,10 @@ export const TrialBalanceSection = ({
     } finally {
       setIsAiBalancing(false);
     }
-  }, [projectId, runUndo, handleRebuildFromSource]);
+    // handleRebuildFromSource is intentionally read through a ref to avoid
+    // a forward-declaration cycle; the toast action invokes it lazily.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, runUndo]);
 
 
 
