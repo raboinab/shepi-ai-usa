@@ -9,6 +9,11 @@ import {
   calculatePeriodCoverage,
   DocumentWithPeriod,
 } from "@/lib/periodUtils";
+import {
+  bankAccountGroupKey,
+  normalizeAccountLabel,
+  normalizeInstitution,
+} from "@/lib/bankAccountNormalization";
 
 export interface AccountDoc extends DocumentWithPeriod {
   id: string;
@@ -20,6 +25,8 @@ interface PerAccountCoverageProps {
   docs: AccountDoc[];
   periods: Period[];
   onBackfill?: (docIds: string[]) => void;
+  /** Used to strip the company name out of institution strings when grouping. */
+  targetCompany?: string | null;
 }
 
 interface Group {
@@ -28,29 +35,39 @@ interface Group {
   accountLabel: string;
   docs: AccountDoc[];
   unlabeled: boolean;
+  rawVariants: Set<string>;
 }
 
-export const PerAccountCoverage = ({ docs, periods, onBackfill }: PerAccountCoverageProps) => {
+export const PerAccountCoverage = ({ docs, periods, onBackfill, targetCompany }: PerAccountCoverageProps) => {
   const groups = useMemo<Group[]>(() => {
     const map = new Map<string, Group>();
     for (const d of docs) {
-      const institution = (d.institution || "Unknown").trim();
-      const labelRaw = (d.account_label || "").trim();
-      const unlabeled = labelRaw === "";
-      const accountLabel = unlabeled ? "Unlabeled account" : labelRaw;
-      const key = `${institution.toLowerCase()}::${labelRaw.toLowerCase()}`;
+      const institution = normalizeInstitution(d.institution, targetCompany);
+      const labelNorm = normalizeAccountLabel(d.account_label);
+      const unlabeled = labelNorm === "";
+      const accountLabel = unlabeled ? "Unlabeled account" : labelNorm;
+      const key = bankAccountGroupKey(d.institution, d.account_label, targetCompany);
+      const rawVariant = `${(d.institution || "Unknown").trim()} · ${(d.account_label || "—").trim()}`;
       const g = map.get(key);
       if (g) {
         g.docs.push(d);
+        g.rawVariants.add(rawVariant);
       } else {
-        map.set(key, { key, institution, accountLabel, docs: [d], unlabeled });
+        map.set(key, {
+          key,
+          institution,
+          accountLabel,
+          docs: [d],
+          unlabeled,
+          rawVariants: new Set([rawVariant]),
+        });
       }
     }
     return Array.from(map.values()).sort((a, b) => {
       if (a.unlabeled !== b.unlabeled) return a.unlabeled ? -1 : 1;
       return `${a.institution} ${a.accountLabel}`.localeCompare(`${b.institution} ${b.accountLabel}`);
     });
-  }, [docs]);
+  }, [docs, targetCompany]);
 
   if (periods.length === 0) {
     return (
