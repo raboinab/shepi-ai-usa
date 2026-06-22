@@ -797,6 +797,23 @@ export const TrialBalanceSection = ({
               Load from processed data
             </Button>
           )}
+          {accounts.length > 0 && hasProcessedTb && !isProcessing && !isImporting && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              onClick={handleRebuildFromSource}
+              disabled={isRebuilding}
+              title="Discard the cached TB and re-parse every processed trial balance, re-applying the Chart of Accounts classifications. Use this if the TB looks wrong (missing IS rows, mis-classified accounts, stale balances)."
+            >
+              {isRebuilding ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <RefreshCw className="w-4 h-4" />
+              )}
+              Rebuild from source
+            </Button>
+          )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="gap-2" disabled={isProcessing || isImporting}>
