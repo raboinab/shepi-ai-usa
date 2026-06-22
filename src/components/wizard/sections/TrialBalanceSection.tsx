@@ -156,9 +156,20 @@ export const TrialBalanceSection = ({
           toastFn(title, {
             description: payload.message || "The trial balance is not in a state the AI can safely fix.",
             duration: 20000,
+            ...(payload?.canRebuildFromSource
+              ? {
+                  action: {
+                    label: "Rebuild from source",
+                    onClick: () => { void handleRebuildFromSource(); },
+                  },
+                }
+              : {}),
           });
           return;
         }
+        sonner.error("AI balance failed", { description: payload?.error || "Unknown error" });
+        return;
+      }
         sonner.error("AI balance failed", { description: payload?.error || "Unknown error" });
         return;
       }
