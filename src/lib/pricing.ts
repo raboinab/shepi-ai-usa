@@ -1,13 +1,13 @@
 // Pricing configuration
-// Stripe LIVE price IDs. DIY/DFY repriced 2026-06-22 (DIY $2,000->$1,000, DFY $4,000->$5,000).
+// Stripe LIVE price IDs. DFY repriced to $5,000 and Monthly to $4,000 on 2026-06-23.
 
 export const PRICING = {
   perProject: {
-    amount: 1000,
-    display: "$1,000",
+    amount: 2000,
+    display: "$2,000",
     period: "/project",
     name: "Per Project",
-    stripePriceId: "price_1TlFJUP5elf35CKlW7uqJmZ0",
+    stripePriceId: "price_1T5toZP5elf35CKlGuxS6JKU",
   },
   doneForYou: {
     amount: 5000,
@@ -17,10 +17,20 @@ export const PRICING = {
     stripePriceId: "price_1TlFJUP5elf35CKloDVozalA",
   },
   dfyUpgradeFromPerProject: {
-    amount: 4000,
-    display: "$4,000",
+    amount: 3000,
+    display: "$3,000",
     period: "/project",
     name: "DFY Upgrade",
-    // = doneForYou.amount - perProject.amount ($5,000 - $1,000)
+    // = doneForYou.amount - perProject.amount ($5,000 - $2,000)
+  },
+  monthly: {
+    amount: 4000,
+    display: "$4,000",
+    period: "/month",
+    name: "Monthly",
+    includedProjects: 3,
+    overagePerProject: 1000,
+    overagePriceId: "price_1T6FKzP5elf35CKl5F1XyETh",
+    stripePriceId: "price_1TlcLYP5elf35CKlLqZ5NF8Y",
   },
 } as const;

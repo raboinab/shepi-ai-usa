@@ -188,7 +188,7 @@ export default function IndependentSearchers() {
         { question: "How long does QoE take for a search fund deal?", answer: "AI-assisted analysis: hours to a few days from data receipt. Traditional CPA QoE for a search-fund-sized deal: typically 4–8 weeks. Most searchers run AI-assisted analysis during the exclusivity window and engage a CPA in parallel only if the deal is moving toward close." },
         { question: "Will SBA lenders accept AI-assisted QoE?", answer: "It depends on the lender and deal size. Many SBA preferred lenders accept AI-assisted analysis when reviewed and signed by the buyer or a CPA. Larger SBA acquisitions or institutional lenders typically still require CPA-attested QoE. Always get the QoE format requirement from your lender in writing before spending money on the engagement." },
         { question: "Can I share Shepi analysis with my lender?", answer: "Yes — Shepi exports to professional-format PDF reports and Excel workbooks suitable for lender review. If your lender requires CPA-attested QoE specifically, Shepi's output accelerates that engagement and significantly reduces the CPA's time and your cost." },
-        { question: "How many deals can I analyze?", answer: "As many as you need — Shepi is priced per project, so you pay only for the deals you analyze. Active searchers screening multiple opportunities at the LOI stage simply add a project per deal." },
+        { question: "How many deals can I analyze per month?", answer: "With a monthly subscription, you can analyze unlimited deals — designed for active searchers screening multiple opportunities at the LOI stage." },
       ]} />
 
       <h2>Related Resources</h2>

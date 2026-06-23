@@ -50,6 +50,7 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [overageDialogOpen, setOverageDialogOpen] = useState(false);
   const [selectedProjectForPayment, setSelectedProjectForPayment] = useState<Project | null>(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [tosModalOpen, setTosModalOpen] = useState(false);
@@ -131,6 +132,13 @@ const Dashboard = () => {
         description: "Please enter a name for your project.",
         variant: "destructive",
       });
+      return;
+    }
+
+    // Monthly subscribers at their 3-project limit: show overage dialog
+    if (isAtMonthlyLimit()) {
+      setCreateDialogOpen(false);
+      setOverageDialogOpen(true);
       return;
     }
 
@@ -567,6 +575,52 @@ const Dashboard = () => {
         )}
       </main>
 
+      {/* Monthly Overage Dialog */}
+      <Dialog open={overageDialogOpen} onOpenChange={setOverageDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Project Limit Reached</DialogTitle>
+            <DialogDescription>
+              Your Monthly plan includes {monthlyProjectLimit} concurrent projects. You currently have {activeProjectCount} active project{activeProjectCount !== 1 ? 's' : ''}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            <Card>
+              <CardContent className="pt-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="font-semibold">Purchase Additional Slot</h4>
+                    <p className="text-sm text-muted-foreground">One-time payment for one extra project</p>
+                  </div>
+                  <span className="text-xl font-bold">${PRICING.monthly.overagePerProject.toLocaleString()}</span>
+                </div>
+              </CardContent>
+            </Card>
+            <Button
+              className="w-full"
+              disabled={checkoutLoading}
+              onClick={async () => {
+                setCheckoutLoading(true);
+                try {
+                  const { data, error } = await supabase.functions.invoke('create-checkout', {
+                    body: { planType: 'monthly_overage' }
+                  });
+                  if (error) throw error;
+                  if (data?.url) window.open(data.url, '_blank');
+                } catch (err) {
+                  toast({ title: "Error", description: err instanceof Error ? err.message : "Failed to start checkout", variant: "destructive" });
+                } finally {
+                  setCheckoutLoading(false);
+                  setOverageDialogOpen(false);
+                }
+              }}
+            >
+              {checkoutLoading ? "Redirecting..." : `Purchase Additional Slot ($${PRICING.monthly.overagePerProject.toLocaleString()})`}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Payment Dialog */}
       <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
         <DialogContent>
@@ -592,10 +646,10 @@ const Dashboard = () => {
               <CardContent className="pt-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h4 className="font-semibold">Done-For-You</h4>
-                    <p className="text-sm text-muted-foreground">CPA-reviewed QoE, end-to-end</p>
+                    <h4 className="font-semibold">Monthly Subscription</h4>
+                    <p className="text-sm text-muted-foreground">Up to 3 concurrent projects, cancel anytime</p>
                   </div>
-                  <span className="text-xl font-bold">{PRICING.doneForYou.display}</span>
+                  <span className="text-xl font-bold">{PRICING.monthly.display}/mo</span>
                 </div>
               </CardContent>
             </Card>

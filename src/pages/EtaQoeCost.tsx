@@ -63,7 +63,7 @@ export default function EtaQoeCost() {
     <ContentPageLayout
       title="ETA Quality of Earnings Cost (2026)"
       seoTitle="ETA Quality of Earnings Cost — Search Fund QoE | Shepi"
-      seoDescription="What a QoE costs for an ETA or search fund acquisition. Traditional CPA QoE runs $25K–$75K. Shepi handles the same analysis from $1,000."
+      seoDescription="What a QoE costs for an ETA or search fund acquisition. Traditional CPA QoE runs $25K–$75K. Shepi handles the same analysis from $2,000."
       canonical="https://shepi.ai/eta-qoe-cost"
       breadcrumbs={[
         { label: "Use Cases", href: "/use-cases/independent-searchers" },

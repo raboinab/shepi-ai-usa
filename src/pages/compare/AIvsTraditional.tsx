@@ -32,7 +32,7 @@ export default function AIvsTraditional() {
     <ContentPageLayout
       title="shepi DIY vs. shepi DFY vs. Traditional CPA Firm"
       seoTitle="shepi DIY vs. DFY vs. Traditional CPA Firm — Honest QoE Comparison | Shepi"
-      seoDescription="Three ways to get a Quality of Earnings analysis: shepi DIY ($1,000 software), shepi DFY ($5,000 matched-CPA-signed), or a traditional CPA firm ($20K+). Compare cost, speed, attestation, and liability."
+      seoDescription="Three ways to get a Quality of Earnings analysis: shepi DIY ($2,000 software), shepi DFY ($5,000 matched-CPA-signed), or a traditional CPA firm ($20K+). Compare cost, speed, attestation, and liability."
       canonical="https://shepi.ai/compare/ai-qoe-vs-traditional"
       breadcrumbs={[
         { label: "Resources", href: "/resources" },
@@ -58,7 +58,7 @@ export default function AIvsTraditional() {
 
       <h2 id="three-options">The Three Options</h2>
       <BenefitGrid benefits={[
-        { title: "shepi DIY — $1,000 / project", description: "Self-serve software. You upload data, the platform structures the workflow, you apply judgment and produce the workbook. 2–4 hours of your time." },
+        { title: "shepi DIY — $2,000 / project", description: "Self-serve software. You upload data, the platform structures the workflow, you apply judgment and produce the workbook. 2–4 hours of your time." },
         { title: "shepi DFY — $5,000 / project", description: "A licensed CPA from the shepi Network is matched to your deal in 1–2 business days, prepares the QoE end-to-end on our software, and signs the deliverable in their professional capacity." },
         { title: "Traditional CPA Firm — $20,000+", description: "Full engagement with an accounting firm. Includes management interviews, independent verification, firm letterhead, and firm-level E&O. 4+ weeks from kickoff." },
       ]} />
@@ -67,7 +67,7 @@ export default function AIvsTraditional() {
       <ComparisonTable
         headers={["Factor", "shepi DIY", "shepi DFY", "Traditional CPA Firm"]}
         rows={[
-          ["Cost per project", "$1,000", "$5,000", "$20,000+"],
+          ["Cost per project", "$2,000", "$5,000", "$20,000+"],
           ["Timeline", "2–4 hours of work", "48–72 hours from match", "4+ weeks"],
           ["Professional attestation", "No", "Yes (CPA-signed)", "Yes"],
           ["Liability coverage", "No", "CPA's professional standing and own E&O", "Yes (firm's E&O)"],

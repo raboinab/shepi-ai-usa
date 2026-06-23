@@ -27,7 +27,7 @@ const faqSchema = {
       name: "How much does a Quality of Earnings report cost?",
       acceptedAnswer: {
         "@type": "Answer",
-        text: "Traditional CPA-led QoE reports typically cost $20,000 to $100,000 depending on deal size, complexity, and timeline. Lower middle market deals usually fall in the $25K–$50K range. AI-powered platforms like Shepi deliver comparable analysis starting at $1,000 per project.",
+        text: "Traditional CPA-led QoE reports typically cost $20,000 to $100,000 depending on deal size, complexity, and timeline. Lower middle market deals usually fall in the $25K–$50K range. AI-powered platforms like Shepi deliver comparable analysis starting at $2,000 per project.",
       },
     },
     {
@@ -144,7 +144,7 @@ export default function QualityOfEarningsCost() {
 
       <h2 id="faq">Frequently Asked Questions</h2>
       <AccordionFAQ items={[
-        { question: "How much does a Quality of Earnings report cost?", answer: "Traditional CPA QoE costs $20K–$100K depending on deal size and complexity. AI-powered platforms like Shepi start at $1,000 per project." },
+        { question: "How much does a Quality of Earnings report cost?", answer: "Traditional CPA QoE costs $20K–$100K depending on deal size and complexity. AI-powered platforms like Shepi start at $2,000 per project." },
         { question: "Why is a QoE so expensive?", answer: "Traditional QoE is a labor model — 100–300 hours of senior analyst time at $250–$500/hour, plus partner review and brand premium." },
         { question: "Who pays for the QoE?", answer: "Buy-side: the buyer. Sell-side: the seller. Lenders may require one for acquisition financing but the deal party usually pays." },
         { question: "How long does a QoE take?", answer: "Traditional: 4–8 weeks. AI-powered: hours for first pass, days for finalized deliverables." },

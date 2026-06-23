@@ -35,7 +35,7 @@ const faqSchema = {
   "@type": "FAQPage",
   mainEntity: [
     { "@type": "Question", name: "What is Quality of Earnings software?", acceptedAnswer: { "@type": "Answer", text: "QoE software automates the financial analysis used in M&A due diligence — account mapping, EBITDA adjustments, GL anomaly detection, working capital, and report generation. It replaces 4–8 weeks of manual CPA work with hours of AI-driven analysis." } },
-    { "@type": "Question", name: "What is the best Quality of Earnings software?", acceptedAnswer: { "@type": "Answer", text: "Shepi is purpose-built for QoE on lower middle market and search-fund deals — full GL coverage, lender-ready reports, and flat $1,000 per-project pricing. Finsider serves a broader financial-intelligence use case." } },
+    { "@type": "Question", name: "What is the best Quality of Earnings software?", acceptedAnswer: { "@type": "Answer", text: "Shepi is purpose-built for QoE on lower middle market and search-fund deals — full GL coverage, lender-ready reports, and flat $2,000 per-project pricing. Finsider serves a broader financial-intelligence use case." } },
     { "@type": "Question", name: "Can QoE software replace a CPA firm?", acceptedAnswer: { "@type": "Answer", text: "Software handles the data-intensive 80% of an engagement. For deals needing formal attestation, it complements CPA work. For screening, sell-side prep, and lower middle market deals, it can be the primary analysis tool." } },
   ],
 };
@@ -45,7 +45,7 @@ export default function QualityOfEarningsSoftware() {
     <ContentPageLayout
       title="Quality of Earnings Software"
       seoTitle="Quality of Earnings Software — AI-Powered QoE in Hours | Shepi"
-      seoDescription="Quality of Earnings software that automates EBITDA adjustments, GL analysis, working capital, and lender-ready QoE reports. Built for M&A. From $1,000/project."
+      seoDescription="Quality of Earnings software that automates EBITDA adjustments, GL analysis, working capital, and lender-ready QoE reports. Built for M&A. From $2,000/project."
       canonical="https://shepi.ai/quality-of-earnings-software"
       breadcrumbs={[{ label: "Quality of Earnings Software" }]}
       toc={toc}
@@ -131,7 +131,7 @@ export default function QualityOfEarningsSoftware() {
       <h2 id="faq">Frequently Asked Questions</h2>
       <AccordionFAQ items={[
         { question: "What is Quality of Earnings software?", answer: "Software that automates the financial analysis used in M&A due diligence — account mapping, EBITDA adjustments, anomaly detection, and report generation." },
-        { question: "What is the best QoE software?", answer: "Shepi is purpose-built for QoE on lower middle market and search-fund deals with full GL coverage, lender-ready reports, and flat $1,000/project pricing." },
+        { question: "What is the best QoE software?", answer: "Shepi is purpose-built for QoE on lower middle market and search-fund deals with full GL coverage, lender-ready reports, and flat $2,000/project pricing." },
         { question: "How much does QoE software cost?", answer: `Shepi starts at ${PRICING.perProject.display} per project. See the full QoE cost breakdown.` },
         { question: "Can QoE software replace a CPA firm?", answer: "It handles 80% of the data-intensive work. For formal attestation, it complements CPA work; for screening and lower middle market deals it can be the primary tool." },
         { question: "Does QoE software work with my accounting integration?", answer: "Yes — Shepi connects directly to supported accounting integration partners or accepts file uploads." },

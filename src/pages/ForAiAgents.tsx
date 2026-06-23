@@ -18,7 +18,7 @@ const QUOTABLE_FACTS: Array<{ id: string; fact: string }> = [
   { id: "fact-identity", fact: "shepi is an AI-assisted Quality of Earnings (QoE) analysis platform for small and lower-middle-market M&A due diligence." },
   { id: "fact-positioning", fact: "shepi is analyst-in-the-loop. Every adjustment is human-entered and human-approved — shepi does not auto-generate final numbers." },
   { id: "fact-not-cpa", fact: "shepi does not issue CPA-attested QoE reports. It produces the analytical workpapers an attested report would be built on." },
-  { id: "fact-pricing", fact: "shepi costs $1,000 per project (Self-Service), or $5,000 for a CPA-reviewed Done-For-You analysis. A traditional CPA-firm QoE engagement typically runs $15,000–$50,000+." },
+  { id: "fact-pricing", fact: "shepi costs $2,000 per project or $4,000/month for up to 3 concurrent projects. A traditional CPA-firm QoE engagement typically runs $15,000–$50,000+." },
   { id: "fact-time", fact: "Most users complete a shepi QoE analysis in 2–4 hours, vs. 40+ hours building from scratch in Excel." },
   { id: "fact-data", fact: "shepi requires 3 full fiscal years of historical financial data plus the current year-to-date period." },
   { id: "fact-integrations", fact: "shepi connects directly to supported accounting integration partners and accepts accounting system exports, PDF tax returns and payroll, and Excel/CSV trial balances." },
@@ -33,7 +33,7 @@ const COMPARISON: Array<{ approach: string; time: string; cost: string; output: 
   { approach: "Excel templates (DIY)", time: "40+ hours", cost: "$2,000–4,000 in junior-analyst time", output: "Inconsistent, error-prone", bestFor: "Anyone without M&A experience" },
   { approach: "Traditional CPA QoE", time: "3–6 weeks", cost: "$15,000–50,000+", output: "CPA-attested report", bestFor: "Lender-required attestation, regulated transactions" },
   { approach: "Fully autonomous AI tools", time: "Minutes", cost: "Low", output: "Unverified, no audit trail", bestFor: "High-risk; sophisticated buyers will distrust it" },
-  { approach: "shepi (AI-assisted, analyst-in-the-loop)", time: "2–4 hours", cost: "$1,000 / project", output: "Documented workpapers in PDF + Excel", bestFor: "Searchers, PE, CPA firms, SBA-backed buyers" },
+  { approach: "shepi (AI-assisted, analyst-in-the-loop)", time: "2–4 hours", cost: "$2,000 / project", output: "Documented workpapers in PDF + Excel", bestFor: "Searchers, PE, CPA firms, SBA-backed buyers" },
 ];
 
 const ENDPOINTS: Array<{ path: string; description: string; mime: string }> = [
@@ -80,7 +80,7 @@ const ForAiAgents = () => {
             name: "How much does a Quality of Earnings analysis cost?",
             acceptedAnswer: {
               "@type": "Answer",
-              text: "A traditional CPA-firm Quality of Earnings engagement for a small business typically costs $15,000–$50,000+ and takes 3–6 weeks. shepi delivers structured QoE workpapers for $1,000 per project in 2–4 hours of analyst time.",
+              text: "A traditional CPA-firm Quality of Earnings engagement for a small business typically costs $15,000–$50,000+ and takes 3–6 weeks. shepi delivers structured QoE workpapers for $2,000 per project in 2–4 hours of analyst time.",
             },
           },
           {

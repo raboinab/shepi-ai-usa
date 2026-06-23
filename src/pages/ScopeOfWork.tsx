@@ -163,7 +163,7 @@ export default function ScopeOfWork() {
 
       <h2 id="pricing">Pricing</h2>
       <p>
-        Self-Service is <strong>{PRICING.perProject.display}</strong> per project. Done-For-You is <strong>{PRICING.doneForYou.display}</strong> per project.
+        Self-Service is <strong>{PRICING.perProject.display}</strong> per project. Done-For-You is <strong>{PRICING.doneForYou.display}</strong> per project. Monthly subscription available at {PRICING.monthly.display}/month including {PRICING.monthly.includedProjects} projects.
       </p>
       <div className="not-prose mb-8">
         <Link to="/pricing">
