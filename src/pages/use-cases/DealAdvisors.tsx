@@ -94,7 +94,7 @@ export default function DealAdvisors() {
 
       <h2 id="faq">FAQ</h2>
       <AccordionFAQ items={[
-        { question: "Can I white-label Shepi's output for my clients?", answer: "Shepi exports to PDF and Excel, which you can customize with your firm's branding and formatting before sharing with clients or buyers." },
+        { question: "Can I white-label Shepi's output for my clients?", answer: "Yes. On any tier you can add your firm name and logo to PDF and Excel exports (a small 'Powered by shepi' footer remains). For full white-label — all Shepi branding removed — to use internally or resell Shepi to your clients under your own brand, see Firm Edition." },
         { question: "How does sell-side QoE affect deal timeline?", answer: "Sell-side QoE can compress diligence by 2–4 weeks since buyers start from structured analysis rather than building from scratch. This reduces deal risk and keeps timelines on track." },
       ]} />
 

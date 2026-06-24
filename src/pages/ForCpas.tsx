@@ -86,7 +86,7 @@ export default function ForCpas() {
     <ContentPageLayout
       title="Two Ways CPAs Use Shepi."
       seoTitle="For CPAs — Use Shepi for Your Clients or Review Adjustments"
-      seoDescription="CPAs use Shepi two ways: as a tool to produce QoE work for your own clients with optional firm branding, or as a reviewer in Shepi's Done-For-You network. Pick the path that fits."
+      seoDescription="CPAs use Shepi two ways: as a tool to produce QoE work for your own clients with optional firm branding, or as a reviewer in Shepi's Done-For-You network. Firms can also fully white-label and resell Shepi under their own brand via Firm Edition. Pick the path that fits."
       canonical="https://shepi.ai/for-cpas"
       breadcrumbs={[{ label: "For CPAs" }]}
       toc={toc}
@@ -121,6 +121,11 @@ export default function ForCpas() {
             <li>• "Powered by shepi" footer stays on every export</li>
             <li>• Your engagement letter, your client relationship</li>
           </ul>
+          <p className="text-xs text-muted-foreground mb-6">
+            Want full white-label (no shepi branding at all) — or to resell shepi to your
+            clients under your own brand? That's available on{" "}
+            <Link to="/pricing" className="text-primary hover:underline">Firm Edition</Link>.
+          </p>
           <div className="flex flex-col sm:flex-row gap-3 mt-auto">
             <Link
               to="/pricing"

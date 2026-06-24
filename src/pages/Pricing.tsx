@@ -527,7 +527,8 @@ const Pricing = () => {
                   <span className="font-medium">CPAs &amp; advisory firms:</span>{" "}
                   Running 3+ client engagements in the same month? One Monthly subscription
                   ($4,000) covers all three — vs. $6,000 buying them individually. Firm branding
-                  on PDF + XLSX deliverables is included on every tier.{" "}
+                  on PDF + XLSX deliverables is included on every tier; full white-label (no
+                  shepi branding) and resale are exclusive to Firm Edition.{" "}
                   <Link to="/for-cpas" className="text-primary hover:underline">
                     See how CPAs use shepi →
                   </Link>
@@ -541,7 +542,7 @@ const Pricing = () => {
           <Card className="border border-border flex flex-col">
             <CardHeader>
               <CardTitle as="h2">Firm Edition</CardTitle>
-              <CardDescription>For advisory firms delivering QoE and deal diligence</CardDescription>
+              <CardDescription>For advisory firms delivering QoE under their own brand — internally or for resale</CardDescription>
               <div className="mt-4">
                 <span className="text-2xl font-semibold text-foreground">Custom pricing</span>
               </div>
@@ -551,7 +552,8 @@ const Pricing = () => {
               <ul className="space-y-3">
                 {[
                   { label: "Unlimited concurrent deal analysis", desc: "Run multiple diligence projects across your team without limits." },
-                  { label: "White-label QoE workbooks", desc: "Deliver Shepi outputs under your firm's brand." },
+                  { label: "Full white-label deliverables", desc: "Remove all Shepi branding, including the 'Powered by shepi' footer — exports are 100% your firm's brand." },
+                  { label: "Internal use or resale", desc: "Run shepi for your own client engagements, or resell it to your clients as your own branded product." },
                   { label: "Team seats & role-based access", desc: "Partners, managers, and analysts can collaborate across deals." },
                   { label: "Dedicated account manager", desc: "Support for onboarding your team and scaling workflows." },
                   { label: "Custom reporting templates", desc: "Align Shepi outputs with your firm's diligence format." },
