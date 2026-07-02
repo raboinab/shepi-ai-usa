@@ -98,7 +98,7 @@ const Project = () => {
   const saveGenRef = useRef(0);
   const dirtyWizardKeysRef = useRef<Set<string>>(new Set());
   const navigate = useNavigate();
-  const { hasAccessToProject, loading: subscriptionLoading } = useSubscription();
+  const { hasAccessToProject, isProjectCreditExpired, checkSubscription, loading: subscriptionLoading } = useSubscription();
 
   // Handle QuickBooks OAuth callback
   useEffect(() => {
