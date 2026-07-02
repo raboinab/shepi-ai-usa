@@ -98,7 +98,7 @@ const Project = () => {
   const saveGenRef = useRef(0);
   const dirtyWizardKeysRef = useRef<Set<string>>(new Set());
   const navigate = useNavigate();
-  const { hasAccessToProject, loading: subscriptionLoading } = useSubscription();
+  const { hasAccessToProject, isProjectCreditExpired, checkSubscription, loading: subscriptionLoading } = useSubscription();
 
   // Handle QuickBooks OAuth callback
   useEffect(() => {
@@ -118,9 +118,19 @@ const Project = () => {
       searchParams.delete("upgraded");
       setSearchParams(searchParams, { replace: true });
       fetchProject();
-      setTimeout(() => fetchProject(), 3000);
+      checkSubscription();
+      setTimeout(() => { fetchProject(); checkSubscription(); }, 3000);
     }
-  }, [searchParams, setSearchParams]);
+    if (searchParams.get("renewed") === "true") {
+      toast({ title: "Access renewed", description: "Your project is unlocked for another 90 days." });
+      searchParams.delete("renewed");
+      setSearchParams(searchParams, { replace: true });
+      fetchProject();
+      checkSubscription();
+      setTimeout(() => { fetchProject(); checkSubscription(); }, 3000);
+    }
+  }, [searchParams, setSearchParams, checkSubscription]);
+
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -350,8 +360,25 @@ const Project = () => {
   if (!project) return null;
 
   const hasAccess = hasAccessToProject(project.id);
+  const creditExpired = isProjectCreditExpired(project.id);
 
   if (!hasAccess) {
+    const handleRenew = async (planType: "per_project" | "done_for_you") => {
+      try {
+        const body: Record<string, unknown> = { planType, projectId: project.id };
+        if (planType === "per_project") body.renew = true;
+        const { data, error } = await supabase.functions.invoke("create-checkout", { body });
+        if (error || !data?.url) throw error || new Error("No checkout URL returned");
+        window.location.href = data.url as string;
+      } catch (e) {
+        toast({
+          title: "Checkout failed",
+          description: e instanceof Error ? e.message : "Please try again.",
+          variant: "destructive",
+        });
+      }
+    };
+
     return (
       <div className="min-h-screen bg-background flex flex-col">
         <header className="border-b border-border bg-card sticky top-0 z-10">
@@ -367,25 +394,53 @@ const Project = () => {
         </header>
 
         <div className="flex-1 flex items-center justify-center">
-          <div className="text-center max-w-md mx-auto px-4">
+          <div className="text-center max-w-lg mx-auto px-4">
             <Lock className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
-            <h2 className="text-2xl font-bold mb-2">Payment Required</h2>
-            <p className="text-muted-foreground mb-6">
-              You need an active subscription or to purchase access to this project to continue.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-3 justify-center">
-              <Link to="/pricing">
-                <Button>View Pricing Plans</Button>
-              </Link>
-              <Link to="/dashboard">
-                <Button variant="outline">Back to Dashboard</Button>
-              </Link>
-            </div>
+            {creditExpired ? (
+              <>
+                <h2 className="text-2xl font-bold mb-2">Project Credit Expired</h2>
+                <p className="text-muted-foreground mb-2">
+                  Your 90-day access window on <span className="font-medium text-foreground">{project.name}</span> has ended.
+                </p>
+                <p className="text-muted-foreground mb-6 text-sm">
+                  Your data is safe. Renew to unlock the project for another 90 days, or upgrade to Done-For-You for a CPA-led review.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                  <Button onClick={() => handleRenew("per_project")}>
+                    Renew for $1,000 (90 days)
+                  </Button>
+                  <Button variant="outline" onClick={() => handleRenew("done_for_you")}>
+                    Upgrade to DFY — $5,000
+                  </Button>
+                </div>
+                <div className="mt-6">
+                  <Link to="/dashboard" className="text-sm text-muted-foreground underline">
+                    Back to dashboard
+                  </Link>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 className="text-2xl font-bold mb-2">Payment Required</h2>
+                <p className="text-muted-foreground mb-6">
+                  You need an active subscription or to purchase access to this project to continue.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                  <Link to="/pricing">
+                    <Button>View Pricing Plans</Button>
+                  </Link>
+                  <Link to="/dashboard">
+                    <Button variant="outline">Back to Dashboard</Button>
+                  </Link>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
     );
   }
+
 
   return (
     <div className="min-h-screen bg-background flex flex-col">

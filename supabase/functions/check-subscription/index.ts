@@ -149,18 +149,22 @@ Deno.serve(async (req) => {
         .map(p => p.project_id);
 
       // Add credit-funded projects that haven't expired (null = non-expiring legacy)
+      const expiredCreditProjects: string[] = [];
       for (const p of (creditFundedResult.data || [])) {
         if (!p.credit_expires_at || p.credit_expires_at > now) {
           if (!paidProjects.includes(p.id)) paidProjects.push(p.id);
+        } else {
+          expiredCreditProjects.push(p.id);
         }
       }
 
-      logStep("Database project payments found", { count: paidProjects.length, projectCredits });
+      logStep("Database project payments found", { count: paidProjects.length, projectCredits, expired: expiredCreditProjects.length });
       
       const result = { 
         subscribed: false, 
         hasActiveSubscription: false,
         paidProjects,
+        expiredCreditProjects,
         projectCredits,
         sharedProjects,
         activeProjectCount: 0,
@@ -171,6 +175,7 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 200,
       });
+
     }
 
     const customerId = customers.data[0].id;
@@ -225,11 +230,15 @@ Deno.serve(async (req) => {
     }
 
     // Credit-funded projects — enforce credit_expires_at
+    const expiredCreditProjects: string[] = [];
     for (const p of (creditFundedProjects.data || [])) {
       if (!p.credit_expires_at || p.credit_expires_at > now) {
         if (!paidProjects.includes(p.id)) paidProjects.push(p.id);
+      } else {
+        expiredCreditProjects.push(p.id);
       }
     }
+
 
     // Stripe fallback for records not yet in DB (e.g. webhook delay)
     for (const payment of payments.data) {
@@ -287,11 +296,13 @@ Deno.serve(async (req) => {
       hasActiveSubscription,
       subscriptionEnd,
       paidProjects,
+      expiredCreditProjects,
       projectCredits: updatedProjectCredits,
       sharedProjects,
       activeProjectCount,
       monthlyProjectLimit: 3,
     };
+
     responseCache.set(user.id, { data: result, expiresAt: Date.now() + CACHE_TTL_MS });
     return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

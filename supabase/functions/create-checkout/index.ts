@@ -74,12 +74,13 @@ serve(async (req) => {
     }
     logStep("User authenticated", { userId: user.id, email: user.email });
 
-    const { planType, projectId, promoCode } = await req.json();
-    logStep("Request body", { planType, projectId });
+    const { planType, projectId, promoCode, renew } = await req.json();
+    logStep("Request body", { planType, projectId, renew: !!renew });
 
     if (!planType || !["monthly", "per_project", "monthly_overage", "done_for_you"].includes(planType)) {
       throw new Error("Invalid plan type. Must be 'monthly', 'per_project', 'monthly_overage', or 'done_for_you'");
     }
+
 
     // NOTE: projectId is optional for per_project — when absent, the webhook
     // grants a user_credits row so the user can create a project later.
@@ -137,6 +138,10 @@ serve(async (req) => {
       metadata.upgrade_from = upgradeFromTier!;
       metadata.credit_applied = DFY_UPGRADE_CREDIT_DOLLARS;
     }
+    if (renew && projectId && planType === "per_project") {
+      metadata.renew = "true";
+    }
+
 
     // Build line items: use price_data for upgrade delta, otherwise standard price ID
     const lineItems = isUpgrade
@@ -195,10 +200,13 @@ serve(async (req) => {
       ...(discounts ? { discounts } : {}),
       success_url: planType === "done_for_you" && projectId
         ? `${origin}/project/${projectId}?upgraded=true`
-        : `${origin}/payment-success?plan=${planType}`,
-      cancel_url: planType === "done_for_you" && projectId
+        : (renew && projectId
+            ? `${origin}/project/${projectId}?renewed=true`
+            : `${origin}/payment-success?plan=${planType}`),
+      cancel_url: (planType === "done_for_you" || renew) && projectId
         ? `${origin}/project/${projectId}`
         : `${origin}/pricing?payment=cancelled`,
+
       metadata,
     });
 
