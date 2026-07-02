@@ -753,6 +753,11 @@ const Index = () => {
             </div>
           </div>
 
+          {/* Tier visual */}
+          <div className="max-w-4xl mx-auto mb-10">
+            <TierLadder />
+          </div>
+
           {/* DIY vs DFY strip */}
           <div id="diy-vs-dfy" className="grid md:grid-cols-2 gap-6 mb-10">
             {/* Self-Service */}
