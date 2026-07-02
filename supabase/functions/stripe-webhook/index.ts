@@ -178,6 +178,7 @@ serve(async (req) => {
           const projectId = session.metadata?.project_id;
           const planType = session.metadata?.plan_type;
           const upgradeFrom = session.metadata?.upgrade_from;
+          const isRenewal = session.metadata?.renew === "true";
 
         if (projectId && planType !== "done_for_you") {
             // Per-project payment for a specific existing project
@@ -197,8 +198,29 @@ serve(async (req) => {
             if (paymentError) {
               logStep("ERROR", { message: `Failed to record project payment: ${paymentError.message}` });
             } else {
-              logStep("Project payment recorded", { userId, projectId });
+              logStep("Project payment recorded", { userId, projectId, isRenewal });
             }
+
+            // Renewal: extend the project's credit_expires_at by 90 days as well
+            // so the credit-funded gate re-opens even if the project was originally
+            // funded_by_credit. Also keep funded_by_credit=true so future renewals
+            // continue to follow the same gate.
+            if (isRenewal) {
+              const { error: renewError } = await supabaseClient
+                .from("projects")
+                .update({
+                  funded_by_credit: true,
+                  credit_expires_at: expiresAt,
+                })
+                .eq("id", projectId)
+                .eq("user_id", userId);
+              if (renewError) {
+                logStep("ERROR extending credit_expires_at on renewal", { error: renewError.message });
+              } else {
+                logStep("Project credit renewed", { projectId, expiresAt });
+              }
+            }
+
           } else if (planType === "done_for_you") {
             // Done-For-You payment
             if (upgradeFrom) {
