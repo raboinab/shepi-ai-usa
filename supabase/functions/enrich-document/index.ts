@@ -269,6 +269,19 @@ serve(async (req) => {
   }
 
   try {
+    // enrich-document is an internal function invoked by database triggers and
+    // the DocuClipper webhook. Restrict to service-role calls only — end users
+    // should never invoke it directly.
+    const authHeader = req.headers.get('authorization') || req.headers.get('Authorization') || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    if (!token || token !== serviceRoleKey) {
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const body = await req.json();
     const documentId: string | undefined = body.document_id || body.record?.id;
 
