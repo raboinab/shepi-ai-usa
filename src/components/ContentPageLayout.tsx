@@ -263,19 +263,14 @@ export function ContentPageLayout({
                 </h2>
                 <ul className="grid gap-3 sm:grid-cols-2">
                   {autoRelated.map((link) => (
-                    <li key={link.href}>
+                    <li key={link.to}>
                       <Link
-                        to={link.href}
+                        to={link.to}
                         className="group block rounded-lg border border-border p-4 hover:border-primary hover:bg-primary/5 transition-colors"
                       >
                         <p className="font-serif font-semibold text-foreground group-hover:text-primary">
-                          {link.title}
+                          {link.label}
                         </p>
-                        {link.description && (
-                          <p className="mt-1 text-sm text-muted-foreground">
-                            {link.description}
-                          </p>
-                        )}
                       </Link>
                     </li>
                   ))}
