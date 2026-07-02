@@ -14,13 +14,25 @@ interface NotifyPayload {
   page?: string;
 }
 
+function escapeHtml(s: unknown): string {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function buildEmail(payload: NotifyPayload): { subject: string; html: string } {
-  const name = payload.user_name || "Unknown";
-  const email = payload.user_email || "Unknown";
+  const nameRaw = payload.user_name || "Unknown";
+  const emailRaw = payload.user_email || "Unknown";
+  const name = escapeHtml(nameRaw);
+  const email = escapeHtml(emailRaw);
+  const page = escapeHtml(payload.page || "N/A");
 
   if (payload.event_type === "signup") {
     return {
-      subject: `New Signup: ${email} (${name})`,
+      subject: `New Signup: ${emailRaw} (${nameRaw})`.slice(0, 200),
       html: `
         <div style="font-family: sans-serif; max-width: 480px;">
           <h2 style="color: #1a1a2e;">🎉 New User Signup</h2>
@@ -33,13 +45,13 @@ function buildEmail(payload: NotifyPayload): { subject: string; html: string } {
   }
 
   return {
-    subject: `Demo Viewed: ${email} viewed ${payload.page || "unknown page"}`,
+    subject: `Demo Viewed: ${emailRaw} viewed ${payload.page || "unknown page"}`.slice(0, 200),
     html: `
       <div style="font-family: sans-serif; max-width: 480px;">
         <h2 style="color: #1a1a2e;">👀 Demo Page Viewed</h2>
         <p><strong>Email:</strong> ${email}</p>
         <p><strong>Name:</strong> ${name}</p>
-        <p><strong>Page:</strong> ${payload.page || "N/A"}</p>
+        <p><strong>Page:</strong> ${page}</p>
         <p><strong>Time:</strong> ${new Date().toISOString()}</p>
       </div>
     `,
@@ -47,7 +59,8 @@ function buildEmail(payload: NotifyPayload): { subject: string; html: string } {
 }
 
 function buildWelcomeEmail(name: string): { subject: string; html: string } {
-  const firstName = name?.split(' ')[0] || 'there';
+  const firstNameRaw = name?.split(' ')[0] || 'there';
+  const firstName = escapeHtml(firstNameRaw);
   return {
     subject: "Welcome to shepi — let's get started",
     html: `
