@@ -1,39 +1,60 @@
 ## Goal
-Ship five small SEO wins across the guide corpus.
 
-## 1. Add the three missing routes to prerender (tiny)
-Add to `PRERENDER_PATHS` in `vite.config.ts`:
-- `/guides/ai-wont-do-your-qoe`
-- `/guides/sellers-discretionary-earnings`
-- `/compare/cpa-firm-vs-shepi`
+Reduce paragraph density on Home, Resources, and Pricing by pairing prose with **custom SVG illustrated diagrams** in the existing serif/analytical brand voice. No stock photos, no product screenshots in this pass.
 
-These are already in `App.tsx` routes and `sitemap.xml`, but missing from the SSG include list, so they never get static HTML. This is the highest-leverage item.
+## Visual approach
 
-## 2. Named author + Author schema on articles (small)
-- Add a real named author to guide JSON-LD. Proposal: **"Shepi Editorial Team"** as `Person`-typed author with `url: https://shepi.ai/about` and short bio, unless you want a specific human name (see question).
-- Create `src/lib/seo/authors.ts` exporting the author object + bio string.
-- Add a small visible byline component (`GuideByline.tsx`) rendered at the top of every guide: "By {name} · Updated {dateModified}". This satisfies E-E-A-T and matches the JSON-LD.
-- Update all ~21 guides + compare pages to import and render it, and to reference the shared author object in their JSON-LD instead of the current `Organization`.
+- Custom inline **React SVG illustrations** (not raster images) using existing design tokens (`--primary`, `--secondary`, `--accent`, `--muted`). Keeps them dark/light-mode safe, sharp on retina, and zero asset weight.
+- One shared style: thin strokes, cream fills, subtle Shepi-blue accents, occasional serif labels — matches the current Lora/Inter pairing.
+- Each illustration communicates a concept (workflow, reconciliation chain, tier ladder, guide category), not decoration.
 
-## 3. Auto dateModified (small)
-Guides currently hardcode `datePublished`/`dateModified` (mostly `2026-02-21`).
-- Add a build-time constant `BUILD_DATE` injected via Vite `define` in `vite.config.ts` (ISO date from `new Date()`).
-- Guides keep their real `datePublished` but set `dateModified: BUILD_DATE`. Byline shows the same date.
-- Result: every rebuild refreshes the freshness signal automatically. No per-guide maintenance.
+## Scope
 
-## 4. Cross-link guides ↔ use-cases in body copy (small)
-Add a `RelatedReading` component that renders 3-5 contextual internal links at the end of each guide (before the CTA). Curated mapping in `src/lib/seo/relatedLinks.ts` keyed by slug — each guide gets 2 sibling guides + 1-2 relevant use-case pages, and each use-case gets 2-3 guide links. Anchor text uses target-page keywords (not "click here").
+### 1. Homepage (`src/pages/Index.tsx`)
+- **Hero:** add a right-column `WorkflowDiagram` SVG (Upload → Extract → Balance → Report), replacing the current text-only hero balance.
+- **How it works section:** convert the 3-column text block into a `ReconciliationChain` diagram (Tax Return → P&L → GL → TB) with tight captions instead of paragraphs.
+- **Tier comparison:** replace the DIY vs DFY paragraphs with a `TierLadder` illustration (two stacked cards with icon markers for what's included).
+- **Trim** existing paragraph copy by ~30% where the diagram now carries the meaning. Keep the FAQ, keep CPA-attestation disclaimers verbatim (memory constraint).
 
-## 5. Per-guide FAQ blocks in llms-full.txt (small)
-Extend `scripts/generate-llms-txt.ts` (or the existing generator) to append a `## FAQ — {guide title}` section per guide, sourced from a new `faq` export in each guide file (3-5 Q&A pairs). Same FAQ powers on-page `FAQPage` JSON-LD, so we get both AI citation surface and rich results from one source of truth.
+### 2. Resources (`src/pages/Resources.tsx`)
+- Rebuild the guides list as a **card grid with illustrated thumbnails** (per user choice).
+- 5–6 reusable category illustrations (EBITDA, Working Capital, Red Flags, AI/QoE, Comparison, Checklist) — each guide card picks one based on category tag.
+- Cards: illustration top (aspect-ratio 16:9), title, one-line description, "Read guide" affordance. No excerpt paragraphs on the index.
+- Add a lightweight **category filter row** above the grid (All / EBITDA / Diligence / AI / Comparison).
 
-For guides that don't yet have FAQ content, this ships iteratively — the generator skips guides without a `faq` export. Initial pass: add FAQs to the 6 highest-traffic guides (quality-of-earnings, ebitda-adjustments, qoe-vs-audit, due-diligence-checklist, sellers-discretionary-earnings, ebitda-bridge).
+### 3. Pricing (`src/pages/Pricing.tsx`)
+- Add a `TierLadder` illustration at the top comparing Self-Service vs Done-For-You visually (feature dots per tier).
+- Convert the "What's included" bullet lists into a **checked comparison table** with icon markers instead of long bullet paragraphs.
+- Keep DIY positioning language exactly as memory requires ("seller-prepared, no CPA review").
 
-## Technical notes
-- No new dependencies.
-- No route or URL changes.
-- All 21 guide files touched for #2 and #3; edits are mechanical (import + one JSX line + swap two schema fields). Batched via parallel edits.
-- Verify with a build; confirm the three new prerendered HTML files exist under `dist/`.
+## New shared components
 
-## Question before I build
-Do you want the author byline to be **"Shepi Editorial Team"** (safe, no personal PII), or should it name a specific person (e.g. you)? A real named human with a bio ranks stronger for YMYL topics but requires a real `/about` bio page.
+```
+src/components/illustrations/
+  WorkflowDiagram.tsx        // hero: 4-step arrow flow
+  ReconciliationChain.tsx    // tax return → P&L → GL → TB
+  TierLadder.tsx             // DIY vs DFY visual
+  GuideThumbnail.tsx         // takes category prop, renders matching SVG
+  category-svgs/             // 6 small SVG concept illustrations
+```
+
+All pure SVG, styled with Tailwind + CSS variables. No new dependencies.
+
+## Constraints honored
+
+- CPA/attestation language on Home FAQ untouched.
+- DIY = "seller-prepared, no CPA review" language preserved on Pricing.
+- No new fonts, no new color tokens — uses existing Shepi palette only.
+- No product screenshots (user chose illustrations).
+
+## Out of scope
+
+- Photography, generated raster art, animated video.
+- Copy rewriting beyond trimming redundant paragraphs where the diagram replaces them.
+- Guide detail pages (only the Resources index changes).
+- Nav/footer changes.
+
+## Verification
+
+- `bun run build` passes.
+- Playwright screenshot of `/`, `/resources`, `/pricing` at 1280px and mobile 375px — visually confirm the diagrams render, layout doesn't shift, and text is legible in both light and dark mode.
