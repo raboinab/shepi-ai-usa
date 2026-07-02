@@ -171,9 +171,21 @@ const corsHeaders = {
           JSON.stringify({ error: 'project_id is required' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
-      }
-  
-      console.log(`Analyzing transactions for project ${project_id}, type: ${analysis_type}, offset: ${offset}, limit: ${limit}`);
+       }
+
+       // Verify caller has access to this project
+       const { data: hasAccess, error: accessErr } = await supabase.rpc(
+         'has_project_access',
+         { _user_id: user.id, _project_id: project_id }
+       );
+       if (accessErr || hasAccess !== true) {
+         return new Response(
+           JSON.stringify({ error: 'Forbidden' }),
+           { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+         );
+       }
+
+       console.log(`Analyzing transactions for project ${project_id}, type: ${analysis_type}, offset: ${offset}, limit: ${limit}`);
  
       // ── Sequential per-data-type fetching (memory-efficient) ──
       // Instead of loading ALL processed_data JSONB in one query (which exceeds
