@@ -118,9 +118,19 @@ const Project = () => {
       searchParams.delete("upgraded");
       setSearchParams(searchParams, { replace: true });
       fetchProject();
-      setTimeout(() => fetchProject(), 3000);
+      checkSubscription();
+      setTimeout(() => { fetchProject(); checkSubscription(); }, 3000);
     }
-  }, [searchParams, setSearchParams]);
+    if (searchParams.get("renewed") === "true") {
+      toast({ title: "Access renewed", description: "Your project is unlocked for another 90 days." });
+      searchParams.delete("renewed");
+      setSearchParams(searchParams, { replace: true });
+      fetchProject();
+      checkSubscription();
+      setTimeout(() => { fetchProject(); checkSubscription(); }, 3000);
+    }
+  }, [searchParams, setSearchParams, checkSubscription]);
+
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
