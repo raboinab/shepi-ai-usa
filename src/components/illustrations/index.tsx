@@ -213,8 +213,8 @@ export function ReconciliationChain({ className }: SvgProps) {
  * ============================================================ */
 export function TierLadder({ className }: SvgProps) {
   const tiers = [
-    { name: "Self-Service", price: "$1,000", dots: 3, highlight: false },
-    { name: "Done-For-You", price: "$5,000+", dots: 5, highlight: true },
+    { name: "Self-Service", price: "$2,000", dots: 3, highlight: false },
+    { name: "Done-For-You", price: "$5,000", dots: 5, highlight: true },
   ];
   return (
     <svg
