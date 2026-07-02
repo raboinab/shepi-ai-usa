@@ -587,6 +587,17 @@ const Pricing = () => {
           </Card>
         </div>
 
+        {/* What you're paying for — visual */}
+        <div className="mt-24 max-w-5xl mx-auto bg-secondary/40 rounded-xl p-6 md:p-10 border border-border">
+          <div className="text-center mb-6">
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">What every plan produces</span>
+            <h2 className="text-2xl md:text-3xl font-serif font-bold text-foreground mt-2">
+              A reconciled financial package — tax return through trial balance.
+            </h2>
+          </div>
+          <ReconciliationChain />
+        </div>
+
         {/* Comprehensive FAQ */}
         <div className="mt-24 max-w-4xl mx-auto">
           <h2 className="text-3xl font-serif font-bold text-center mb-4">
