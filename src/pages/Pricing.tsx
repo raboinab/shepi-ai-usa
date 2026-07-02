@@ -15,6 +15,7 @@ import type { User } from "@supabase/supabase-js";
 import { TermsAcceptanceModal } from "@/components/TermsAcceptanceModal";
 import { useTosAcceptance } from "@/hooks/useTosAcceptance";
 import { trackEvent } from "@/lib/analytics";
+import { TierLadder, ReconciliationChain } from "@/components/illustrations";
 
 const Pricing = () => {
   const __seoTags = useSEO({
