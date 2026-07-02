@@ -18,6 +18,7 @@ import { writeFileSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HOMEPAGE_FAQ, stripHtml } from "../src/data/homepageFaq.ts";
+import { GUIDE_FAQS } from "../src/data/guideFaqs.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = resolve(__dirname, "..", "public");
@@ -172,6 +173,18 @@ ${resourceList}
 
 ${faqMd}
 
+## Per-guide FAQs
+
+The following per-guide FAQs mirror the FAQ blocks rendered on each guide page. Source of truth: src/data/guideFaqs.ts.
+
+${GUIDE_FAQS.map(
+  (block) =>
+    `### FAQ — ${block.title}\n\nSource: ${block.url}\n\n` +
+    block.faqs
+      .map((f) => `**Q: ${f.question}**\n\nA: ${f.answer}\n`)
+      .join("\n")
+).join("\n")}
+
 ## Discovery endpoints
 
 - https://shepi.ai/llms.txt
@@ -196,5 +209,5 @@ mkdirSync(PUBLIC, { recursive: true });
 writeFileSync(resolve(PUBLIC, "sitemap.xml"), buildSitemap());
 writeFileSync(resolve(PUBLIC, "llms-full.txt"), buildLlmsFull());
 console.log(
-  `[generate-discovery] wrote sitemap.xml (${ROUTES.length} URLs) and llms-full.txt (${HOMEPAGE_FAQ.length} FAQ entries)`
+  `[generate-discovery] wrote sitemap.xml (${ROUTES.length} URLs) and llms-full.txt (${HOMEPAGE_FAQ.length} homepage FAQs + ${GUIDE_FAQS.reduce((n, b) => n + b.faqs.length, 0)} per-guide FAQs)`
 );

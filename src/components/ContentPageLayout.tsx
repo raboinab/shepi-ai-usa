@@ -14,6 +14,12 @@ import {
 import { useSEO } from "@/hooks/useSEO";
 import { useBreadcrumbJsonLd } from "@/hooks/useBreadcrumbJsonLd";
 import { cn } from "@/lib/utils";
+import {
+  BUILD_DATE,
+  SHEPI_AUTHOR_BYLINE,
+  normalizeArticleJsonLd,
+} from "@/lib/seo/article";
+import { getRelatedLinks } from "@/data/relatedContent";
 
 interface TOCItem {
   id: string;
@@ -61,12 +67,17 @@ export function ContentPageLayout({
 }: ContentPageLayoutProps) {
   // Auto-generate BreadcrumbList JSON-LD from the same array used by the
   // visible breadcrumb UI. Merge with any caller-supplied jsonLd so guides
-  // can also pass Article/HowTo schema.
+  // can also pass Article/HowTo schema. Article-type schemas are normalized
+  // to include a Person author (Shepi Editorial Team) and a fresh
+  // dateModified (BUILD_DATE) so guides don't have to maintain those
+  // fields by hand.
   const breadcrumbJsonLd = useBreadcrumbJsonLd(breadcrumbs, canonical);
   const mergedJsonLd: object[] = [breadcrumbJsonLd];
   if (jsonLd) {
-    if (Array.isArray(jsonLd)) mergedJsonLd.push(...(jsonLd as object[]));
-    else mergedJsonLd.push(jsonLd);
+    const nodes = Array.isArray(jsonLd) ? jsonLd : [jsonLd];
+    for (const node of nodes) {
+      mergedJsonLd.push(normalizeArticleJsonLd(node as Record<string, unknown>));
+    }
   }
 
   const __seoTags = useSEO({
@@ -77,6 +88,17 @@ export function ContentPageLayout({
     ogType,
     jsonLd: mergedJsonLd,
   });
+
+  // Auto-render an extra "Continue reading" block from the curated
+  // cross-link map. Complements any manual "Related Resources" section a
+  // guide already renders.
+  const autoRelated = getRelatedLinks(canonical) ?? [];
+
+  // Show a visible byline whenever this page has an editorial date. This
+  // satisfies E-E-A-T for YMYL content and matches the Person author in
+  // the JSON-LD above.
+  const bylineDate = modifiedDate ?? publishedDate;
+  const isArticle = ogType === "article";
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeSection, setActiveSection] = useState("");
@@ -198,7 +220,26 @@ export function ContentPageLayout({
               {heroAccent && (
                 <div className="h-1 w-16 rounded-full bg-primary mb-4" />
               )}
-              {(publishedDate || modifiedDate) && (
+              {isArticle && (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+                  <span>
+                    By{" "}
+                    <Link
+                      to="/about"
+                      className="font-medium text-foreground hover:text-primary hover:underline"
+                    >
+                      {SHEPI_AUTHOR_BYLINE}
+                    </Link>
+                  </span>
+                  <span aria-hidden="true">·</span>
+                  <span>
+                    {modifiedDate || bylineDate
+                      ? `Updated ${modifiedDate ?? bylineDate}`
+                      : `Updated ${BUILD_DATE}`}
+                  </span>
+                </div>
+              )}
+              {!isArticle && (publishedDate || modifiedDate) && (
                 <p className="text-sm text-muted-foreground">
                   {modifiedDate ? `Updated ${modifiedDate}` : `Published ${publishedDate}`}
                 </p>
@@ -212,6 +253,30 @@ export function ContentPageLayout({
             ">
               {children}
             </div>
+            {autoRelated.length > 0 && (
+              <aside
+                aria-label="Continue reading"
+                className="mt-16 border-t border-border pt-8"
+              >
+                <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4">
+                  Continue reading
+                </h2>
+                <ul className="grid gap-3 sm:grid-cols-2">
+                  {autoRelated.map((link) => (
+                    <li key={link.to}>
+                      <Link
+                        to={link.to}
+                        className="group block rounded-lg border border-border p-4 hover:border-primary hover:bg-primary/5 transition-colors"
+                      >
+                        <p className="font-serif font-semibold text-foreground group-hover:text-primary">
+                          {link.label}
+                        </p>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </aside>
+            )}
           </article>
         </div>
       </div>
