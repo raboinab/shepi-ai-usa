@@ -93,33 +93,36 @@ export default function Resources() {
       heroAccent
     >
       <p className="text-lg mb-10">
-        Everything you need to understand Quality of Earnings analysis — from foundational guides to practical comparisons and deep dives into our platform's capabilities.
+        Everything you need to understand Quality of Earnings analysis — foundational guides, side-by-side comparisons, and platform deep dives.
       </p>
 
-      <div className="space-y-10 not-prose">
+      <div className="space-y-12 not-prose">
         {sections.map((section, sectionIdx) => (
           <div key={section.title}>
-            {sectionIdx > 0 && <Separator className="mb-10" />}
-            <div className="flex items-center gap-3 mb-5">
-              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+            {sectionIdx > 0 && <Separator className="mb-12" />}
+            <div className="flex items-start gap-3 mb-2">
+              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
                 <section.icon className="w-5 h-5 text-primary" />
               </div>
-              <div className="flex items-center gap-3">
-                <h2 className="text-xl font-serif font-bold text-foreground">{section.title}</h2>
-                <Badge variant="secondary" className="text-xs">{section.links.length} {section.links.length === 1 ? "article" : "articles"}</Badge>
+              <div className="flex-1">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <h2 className="text-xl font-serif font-bold text-foreground">{section.title}</h2>
+                  <Badge variant="secondary" className="text-xs">{section.links.length} {section.links.length === 1 ? "article" : "articles"}</Badge>
+                </div>
+                <p className="text-sm text-muted-foreground mt-1">{section.description}</p>
               </div>
             </div>
-            <p className="text-sm text-muted-foreground mb-5">{section.description}</p>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5 mt-6">
               {section.links.map((link) => (
-                <Link key={link.to} to={link.to}>
-                  <Card className="h-full hover:border-primary/40 transition-colors group cursor-pointer">
-                    <CardHeader className="pb-4">
-                      <CardTitle className="text-base font-medium group-hover:text-primary transition-colors flex items-center gap-2">
-                        {link.label}
-                        <ArrowRight className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                <Link key={link.to} to={link.to} className="group">
+                  <Card className="h-full overflow-hidden hover:border-primary/40 hover:shadow-sm transition-all cursor-pointer flex flex-col">
+                    <GuideThumbnail category={getCategoryFor(link.to)} />
+                    <CardHeader className="pb-4 flex-1">
+                      <CardTitle className="text-base font-medium group-hover:text-primary transition-colors flex items-start gap-2">
+                        <span className="flex-1">{link.label}</span>
+                        <ArrowRight className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 mt-0.5" />
                       </CardTitle>
-                      <CardDescription className="text-xs leading-relaxed mt-1.5">
+                      <CardDescription className="text-xs leading-relaxed mt-1.5 line-clamp-3">
                         {link.description}
                       </CardDescription>
                     </CardHeader>
