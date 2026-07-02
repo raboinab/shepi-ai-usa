@@ -50,6 +50,10 @@ serve(async (req) => {
 
     const { projectId, filePath, documentName, documentType } = await req.json() as ProcessRequest;
 
+    // Enforce that caller is authenticated and has access to this project.
+    const auth = await requireProjectAccess(req, projectId);
+    if (!auth.ok) return auth.response;
+
     console.log(`[PROCESS-STATEMENT] Processing document: ${documentName} for project: ${projectId}, type: ${documentType}`);
 
     // Find the document record
