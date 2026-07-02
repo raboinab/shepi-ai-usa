@@ -466,19 +466,6 @@ const Index = () => {
             </Card>
           </div>
 
-          {/* CPA FAQ */}
-          <div className="max-w-3xl mx-auto mb-16">
-            <Accordion type="single" collapsible className="w-full">
-              <AccordionItem value="cpa-faq">
-                <AccordionTrigger className="text-left text-foreground text-lg">
-                  Does this replace a CPA engagement?
-                </AccordionTrigger>
-                <AccordionContent className="text-muted-foreground leading-relaxed">
-                  For deals under $10M, many buyers don't need a formally attested QoE report — they need structured analysis they can trust. shepi produces that: EBITDA bridge, working capital, proof of cash, all from the same source data. If your lender requires CPA attestation, shepi's workpapers give your accountant a significant head start. For self-funded deals, search fund screening, and internal decision-making, shepi's output stands on its own.
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
-          </div>
 
           {/* Section CTA */}
           <div className="text-center">
