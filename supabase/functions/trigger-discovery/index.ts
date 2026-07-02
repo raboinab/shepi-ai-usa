@@ -55,6 +55,18 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
+    // Verify caller has access to this project
+    const { data: hasAccess, error: accessErr } = await serviceClient.rpc(
+      "has_project_access",
+      { _user_id: userId, _project_id: project_id }
+    );
+    if (accessErr || hasAccess !== true) {
+      return new Response(
+        JSON.stringify({ error: "Forbidden" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // Auto-expire stale jobs older than 30 minutes
     const staleThreshold = new Date(Date.now() - 30 * 60 * 1000).toISOString();
     const { data: expiredJobs } = await serviceClient
