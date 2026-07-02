@@ -73,6 +73,30 @@ serve(async (req) => {
     const docuClipperApiKey = Deno.env.get("DOCUCLIPPER_API_KEY")?.trim();
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+    // Auth: allow cron (service role or CRON_SECRET header), or authenticated
+    // user with project access (when project_id is provided).
+    const authHeader = req.headers.get('Authorization') ?? '';
+    const bearer = authHeader.replace('Bearer ', '');
+    const cronSecret = Deno.env.get('CRON_SECRET');
+    const cronHeader = req.headers.get('x-cron-secret');
+    const isCron = (cronSecret && cronHeader === cronSecret) || (bearer && bearer === supabaseServiceKey);
+    if (!isCron) {
+      if (!bearer) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      const { data: { user }, error: authErr } = await supabase.auth.getUser(bearer);
+      if (authErr || !user) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      if (!projectId) {
+        return new Response(JSON.stringify({ error: 'project_id required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      const { data: hasAccess, error: accessErr } = await supabase.rpc('has_project_access', { _user_id: user.id, _project_id: projectId });
+      if (accessErr || hasAccess !== true) {
+        return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+    }
+
     // Find stale documents
     let query = supabase
       .from('documents')
