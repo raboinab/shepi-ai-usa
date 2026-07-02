@@ -75,12 +75,19 @@ class ProjectPanelErrorBoundary extends Component<
 }
 
 const Project = () => {
-  const __seoTags = useSEO({ title: "Project — shepi", noindex: true });
+  
 
   const { id } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const [user, setUser] = useState<User | null>(null);
   const [project, setProject] = useState<ProjectData | null>(null);
+  const __seoTags = useSEO({
+    title: project?.name ? `${project.name} — Shepi` : "Project — Shepi",
+    description: project?.target_company
+      ? `QoE analysis workspace for ${project.target_company}.`
+      : "Private QoE analysis workspace.",
+    noindex: true,
+  });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showChat, setShowChat] = useState(() => {
