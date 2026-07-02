@@ -56,6 +56,7 @@ const CashProofAnalysis = lazy(() => import("./pages/guides/CashProofAnalysis"))
 const QoESoftware = lazy(() => import("./pages/features/QoESoftware"));
 const EBITDAAutomation = lazy(() => import("./pages/features/EBITDAAutomation"));
 const SellSideVsBuySideQoE = lazy(() => import("./pages/guides/SellSideVsBuySideQoE"));
+const QoEVsAudit = lazy(() => import("./pages/guides/QoEVsAudit"));
 const OwnerCompensationNormalization = lazy(() => import("./pages/guides/OwnerCompensationNormalization"));
 const PersonalExpenseDetection = lazy(() => import("./pages/guides/PersonalExpenseDetection"));
 const CustomerConcentrationRisk = lazy(() => import("./pages/guides/CustomerConcentrationRisk"));
@@ -198,6 +199,7 @@ export const routes: RouteRecord[] = [
       { path: "features/qoe-software", element: wrap(<QoESoftware />) },
       { path: "features/ebitda-automation", element: wrap(<EBITDAAutomation />) },
       { path: "guides/sell-side-vs-buy-side-qoe", element: wrap(<SellSideVsBuySideQoE />) },
+      { path: "guides/qoe-vs-audit", element: wrap(<QoEVsAudit />) },
       { path: "guides/owner-compensation-normalization", element: wrap(<OwnerCompensationNormalization />) },
       { path: "guides/personal-expense-detection", element: wrap(<PersonalExpenseDetection />) },
       { path: "guides/customer-concentration-risk", element: wrap(<CustomerConcentrationRisk />) },
@@ -288,6 +290,7 @@ export const prerenderPaths = [
   "/guides/financial-red-flags",
   "/guides/cash-proof-analysis",
   "/guides/sell-side-vs-buy-side-qoe",
+  "/guides/qoe-vs-audit",
   "/guides/owner-compensation-normalization",
   "/guides/personal-expense-detection",
   "/guides/customer-concentration-risk",
