@@ -15,7 +15,7 @@ import type { User } from "@supabase/supabase-js";
 import { TermsAcceptanceModal } from "@/components/TermsAcceptanceModal";
 import { useTosAcceptance } from "@/hooks/useTosAcceptance";
 import { trackEvent } from "@/lib/analytics";
-import { TierLadder } from "@/components/illustrations";
+
 
 const Pricing = () => {
   const __seoTags = useSEO({
@@ -337,10 +337,6 @@ const Pricing = () => {
               </Button>
             </div>
           )}
-        </div>
-        {/* Visual tier ladder */}
-        <div className="max-w-4xl mx-auto mb-14">
-          <TierLadder />
         </div>
 
 
