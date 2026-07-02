@@ -67,12 +67,17 @@ export function ContentPageLayout({
 }: ContentPageLayoutProps) {
   // Auto-generate BreadcrumbList JSON-LD from the same array used by the
   // visible breadcrumb UI. Merge with any caller-supplied jsonLd so guides
-  // can also pass Article/HowTo schema.
+  // can also pass Article/HowTo schema. Article-type schemas are normalized
+  // to include a Person author (Shepi Editorial Team) and a fresh
+  // dateModified (BUILD_DATE) so guides don't have to maintain those
+  // fields by hand.
   const breadcrumbJsonLd = useBreadcrumbJsonLd(breadcrumbs, canonical);
   const mergedJsonLd: object[] = [breadcrumbJsonLd];
   if (jsonLd) {
-    if (Array.isArray(jsonLd)) mergedJsonLd.push(...(jsonLd as object[]));
-    else mergedJsonLd.push(jsonLd);
+    const nodes = Array.isArray(jsonLd) ? jsonLd : [jsonLd];
+    for (const node of nodes) {
+      mergedJsonLd.push(normalizeArticleJsonLd(node as Record<string, unknown>));
+    }
   }
 
   const __seoTags = useSEO({
@@ -83,6 +88,17 @@ export function ContentPageLayout({
     ogType,
     jsonLd: mergedJsonLd,
   });
+
+  // Auto-render an extra "Continue reading" block from the curated
+  // cross-link map. Complements any manual "Related Resources" section a
+  // guide already renders.
+  const autoRelated = getRelatedLinks(canonical);
+
+  // Show a visible byline whenever this page has an editorial date. This
+  // satisfies E-E-A-T for YMYL content and matches the Person author in
+  // the JSON-LD above.
+  const bylineDate = modifiedDate ?? publishedDate;
+  const isArticle = ogType === "article";
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeSection, setActiveSection] = useState("");
