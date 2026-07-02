@@ -423,7 +423,7 @@ const Index = () => {
           <div className="max-w-4xl mx-auto mb-14">
             <WorkflowDiagram />
             <p className="text-center text-sm text-muted-foreground mt-4 italic">
-              Upload once. shepi handles parsing, reconciliation, and the lender-ready deliverable.
+              Upload once. shepi handles extraction, AI analysis, reconciliation, and the lender-ready deliverable.
             </p>
           </div>
 
