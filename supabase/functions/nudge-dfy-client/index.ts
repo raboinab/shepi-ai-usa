@@ -145,7 +145,7 @@ serve(async (req) => {
 
     const projectLabel = project.target_company || project.name || "your project";
     const missingList = missing.map(m => `<li>${m.label}</li>`).join("");
-    const intro = sent_by_system
+    const intro = effectiveSentBySystem
       ? `It's been a few days since your CPA reviewer was assigned to ${projectLabel}, and we're still waiting on some required documents to begin the analysis.`
       : `Your assigned CPA reviewer just sent a reminder — they need the following documents before they can begin the analysis on ${projectLabel}.`;
 
@@ -199,7 +199,7 @@ serve(async (req) => {
       claim_id: claim?.id ?? null,
       project_id,
       sent_by_user_id: senderUserId,
-      sent_by_system: !!sent_by_system,
+      sent_by_system: effectiveSentBySystem,
       missing_keys: missing.map(m => m.requirement_key),
       email_id: emailId,
       message: custom_message ?? null,
