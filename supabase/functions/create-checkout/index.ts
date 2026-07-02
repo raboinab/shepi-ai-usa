@@ -138,6 +138,10 @@ serve(async (req) => {
       metadata.upgrade_from = upgradeFromTier!;
       metadata.credit_applied = DFY_UPGRADE_CREDIT_DOLLARS;
     }
+    if (renew && projectId && planType === "per_project") {
+      metadata.renew = "true";
+    }
+
 
     // Build line items: use price_data for upgrade delta, otherwise standard price ID
     const lineItems = isUpgrade
