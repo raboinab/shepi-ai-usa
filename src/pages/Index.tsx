@@ -13,6 +13,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { useSEO } from "@/hooks/useSEO";
 import { trackEvent } from "@/lib/analytics";
 import { HOMEPAGE_FAQ, buildFaqJsonLd, groupFaqByCategory } from "@/data/homepageFaq";
+import { WorkflowDiagram, ReconciliationChain, TierLadder } from "@/components/illustrations";
 
 
 const Index = () => {
@@ -418,15 +419,25 @@ const Index = () => {
             </Card>
           </div>
 
-          <p className="text-center text-muted-foreground italic max-w-3xl mx-auto mb-16">
-            Think of it as the TurboTax of due diligence — structured, guided, and built for deals that don't need a lengthy accounting engagement.
-          </p>
+          {/* Workflow illustration replaces two paragraphs of tagline copy */}
+          <div className="max-w-4xl mx-auto mb-14">
+            <WorkflowDiagram />
+            <p className="text-center text-sm text-muted-foreground mt-4 italic">
+              Upload once. shepi handles parsing, reconciliation, and the lender-ready deliverable.
+            </p>
+          </div>
 
+          {/* Reconciliation chain — the visual proof that source docs tie */}
+          <div className="max-w-5xl mx-auto mb-16 bg-secondary/40 rounded-xl p-6 md:p-8 border border-border">
+            <div className="text-center mb-6">
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Reconciliation Chain</span>
+              <h3 className="text-xl md:text-2xl font-serif font-bold text-foreground mt-1">
+                Every number ties back to source.
+              </h3>
+            </div>
+            <ReconciliationChain />
+          </div>
 
-          {/* Competitive wedge */}
-          <p className="text-center text-lg font-medium text-foreground mb-16">
-            You control the timeline. No engagement letters, no waiting. Run your analysis today.
-          </p>
 
           {/* Built For — persona blocks */}
           <div className="text-center mb-10">
@@ -740,6 +751,11 @@ const Index = () => {
                 ))}
               </ul>
             </div>
+          </div>
+
+          {/* Tier visual */}
+          <div className="max-w-4xl mx-auto mb-10">
+            <TierLadder />
           </div>
 
           {/* DIY vs DFY strip */}
