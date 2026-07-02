@@ -230,11 +230,15 @@ Deno.serve(async (req) => {
     }
 
     // Credit-funded projects — enforce credit_expires_at
+    const expiredCreditProjects: string[] = [];
     for (const p of (creditFundedProjects.data || [])) {
       if (!p.credit_expires_at || p.credit_expires_at > now) {
         if (!paidProjects.includes(p.id)) paidProjects.push(p.id);
+      } else {
+        expiredCreditProjects.push(p.id);
       }
     }
+
 
     // Stripe fallback for records not yet in DB (e.g. webhook delay)
     for (const payment of payments.data) {
