@@ -298,6 +298,25 @@ Deno.serve(async (req: Request) => {
     const dealData = deserializeDealData(body);
     const projectId = dealData.deal?.projectId || body.projectId;
 
+    // --- Verify project access ---
+    if (projectId) {
+      const userId = (claimsData.claims as { sub?: string }).sub;
+      const svcAuthClient = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      );
+      const { data: hasAccess, error: accessErr } = await svcAuthClient.rpc(
+        'has_project_access',
+        { _user_id: userId, _project_id: projectId }
+      );
+      if (accessErr || hasAccess !== true) {
+        return new Response(
+          JSON.stringify({ error: "Forbidden" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     // --- Fetch bank data for Proof of Cash ---
     let pocBankData: ProofOfCashBankData | undefined;
     if (projectId) {

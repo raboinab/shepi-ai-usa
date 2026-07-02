@@ -20,6 +20,18 @@ const FORTY_EIGHT_HOURS_MS = 48 * 60 * 60 * 1000;
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
 
+  // Auth: only allow service-role or CRON_SECRET header (invoked by pg_cron).
+  const authHeader = req.headers.get("Authorization") ?? "";
+  const bearer = authHeader.replace("Bearer ", "");
+  const cronSecret = Deno.env.get("CRON_SECRET");
+  const cronHeader = req.headers.get("x-cron-secret");
+  const authorized = (bearer && bearer === SERVICE_KEY) || (cronSecret && cronHeader === cronSecret);
+  if (!authorized) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401, headers: { ...cors, "Content-Type": "application/json" },
+    });
+  }
+
   try {
     const cutoff = new Date(Date.now() - FORTY_EIGHT_HOURS_MS).toISOString();
 

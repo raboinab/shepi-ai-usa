@@ -669,6 +669,33 @@ serve(async (req) => {
       throw new Error("VERCEL_AI_GATEWAY_KEY is not configured");
     }
 
+    // === Auth: verify user + project access ===
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+    const SUPABASE_URL_A = Deno.env.get("SUPABASE_URL")!;
+    const SUPABASE_SERVICE_ROLE_KEY_A = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const authClient = createClient(SUPABASE_URL_A, SUPABASE_SERVICE_ROLE_KEY_A);
+    const { data: { user }, error: authErr } = await authClient.auth.getUser(authHeader.replace('Bearer ', ''));
+    if (authErr || !user) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+    if (projectInfo?.id) {
+      const { data: hasAccess, error: accessErr } = await authClient.rpc('has_project_access', {
+        _user_id: user.id, _project_id: projectInfo.id
+      });
+      if (accessErr || hasAccess !== true) {
+        return new Response(JSON.stringify({ error: 'Forbidden' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
     // === Security: Prompt injection guard ===
     const MAX_USER_MSG_LENGTH = 8000;
     const MAX_CONVERSATION_MESSAGES = 20;

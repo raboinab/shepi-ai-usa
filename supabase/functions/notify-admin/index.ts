@@ -81,6 +81,22 @@ serve(async (req) => {
   }
 
   try {
+    // Auth: require a signed-in user OR service-role
+    const authHeader = req.headers.get('Authorization') ?? '';
+    const bearer = authHeader.replace('Bearer ', '');
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    if (!bearer) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+    if (bearer !== serviceKey) {
+      const { createClient } = await import("npm:@supabase/supabase-js@2.87.1");
+      const sb = createClient(Deno.env.get("SUPABASE_URL")!, serviceKey);
+      const { data: { user }, error: authErr } = await sb.auth.getUser(bearer);
+      if (authErr || !user) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+    }
+
     const payload: NotifyPayload = await req.json();
 
     if (!payload.event_type) {

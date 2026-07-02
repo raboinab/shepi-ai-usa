@@ -119,6 +119,17 @@ serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
 
+  // Auth: require authenticated user (verify each doc's project access below)
+  const authHeader = req.headers.get('Authorization') ?? '';
+  const bearer = authHeader.replace('Bearer ', '');
+  if (!bearer) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  }
+  const { data: { user }, error: authErr } = await supabase.auth.getUser(bearer);
+  if (authErr || !user) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  }
+
   let body: { documentIds: string[] };
   try { body = await req.json(); } catch { body = { documentIds: [] }; }
   const ids = body.documentIds || [];
@@ -135,6 +146,9 @@ serve(async (req) => {
         .eq("id", docId)
         .maybeSingle();
       if (docErr || !doc) { results.push({ docId, error: docErr?.message || "not found" }); continue; }
+
+      const { data: hasAccess } = await supabase.rpc('has_project_access', { _user_id: user.id, _project_id: doc.project_id });
+      if (hasAccess !== true) { results.push({ docId, error: 'Forbidden' }); continue; }
 
       const { data: blob, error: dlErr } = await supabase.storage.from("documents").download(doc.file_path);
       if (dlErr || !blob) { results.push({ docId, error: dlErr?.message || "download failed" }); continue; }
