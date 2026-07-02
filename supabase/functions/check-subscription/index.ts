@@ -296,11 +296,13 @@ Deno.serve(async (req) => {
       hasActiveSubscription,
       subscriptionEnd,
       paidProjects,
+      expiredCreditProjects,
       projectCredits: updatedProjectCredits,
       sharedProjects,
       activeProjectCount,
       monthlyProjectLimit: 3,
     };
+
     responseCache.set(user.id, { data: result, expiresAt: Date.now() + CACHE_TTL_MS });
     return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
