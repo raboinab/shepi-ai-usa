@@ -209,5 +209,5 @@ mkdirSync(PUBLIC, { recursive: true });
 writeFileSync(resolve(PUBLIC, "sitemap.xml"), buildSitemap());
 writeFileSync(resolve(PUBLIC, "llms-full.txt"), buildLlmsFull());
 console.log(
-  `[generate-discovery] wrote sitemap.xml (${ROUTES.length} URLs) and llms-full.txt (${HOMEPAGE_FAQ.length} FAQ entries)`
+  `[generate-discovery] wrote sitemap.xml (${ROUTES.length} URLs) and llms-full.txt (${HOMEPAGE_FAQ.length} homepage FAQs + ${GUIDE_FAQS.reduce((n, b) => n + b.faqs.length, 0)} per-guide FAQs)`
 );
