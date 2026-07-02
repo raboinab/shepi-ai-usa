@@ -18,6 +18,7 @@ import { writeFileSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HOMEPAGE_FAQ, stripHtml } from "../src/data/homepageFaq.ts";
+import { GUIDE_FAQS } from "../src/data/guideFaqs.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = resolve(__dirname, "..", "public");
