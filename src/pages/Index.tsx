@@ -20,7 +20,7 @@ const Index = () => {
     title: "AI Quality of Earnings Software | QoE Analysis Platform | Shepi",
     description: "AI quality of earnings analysis for M&A due diligence. Upload financials, get EBITDA adjustments and lender-ready QoE reports in hours. Quality of earnings AI built for deal teams, PE firms, and searchers.",
     canonical: "https://shepi.ai/",
-    ogImage: "/og-image.png",
+    ogImage: "https://shepi.ai/og-image.png",
     jsonLd: [
       {
         "@context": "https://schema.org",
