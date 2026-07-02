@@ -21,7 +21,7 @@ const Pricing = () => {
     title: "Pricing — shepi QoE Platform",
     description: "Flexible pricing for every deal volume. Per-project or monthly plans for independent searchers, deal teams, PE firms, and advisors.",
     canonical: "https://shepi.ai/pricing",
-    ogImage: "/og-image.png",
+    ogImage: "https://shepi.ai/og-image.png",
   });
 
   const [user, setUser] = useState<User | null>(null);
