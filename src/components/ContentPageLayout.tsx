@@ -92,7 +92,7 @@ export function ContentPageLayout({
   // Auto-render an extra "Continue reading" block from the curated
   // cross-link map. Complements any manual "Related Resources" section a
   // guide already renders.
-  const autoRelated = getRelatedLinks(canonical);
+  const autoRelated = getRelatedLinks(canonical) ?? [];
 
   // Show a visible byline whenever this page has an editorial date. This
   // satisfies E-E-A-T for YMYL content and matches the Person author in
