@@ -34,6 +34,11 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
     const { documentIds, projectId } = await req.json() as ProcessRequest;
 
+    // Enforce that caller is authenticated and has access to this project.
+    const auth = await requireProjectAccess(req, projectId);
+    if (!auth.ok) return auth.response;
+
+
     if (!documentIds || documentIds.length === 0) {
       return new Response(
         JSON.stringify({ error: "No documents provided" }),
