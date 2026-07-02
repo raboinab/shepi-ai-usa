@@ -52,14 +52,16 @@ const TAB_TO_SECTION: Record<string, number> = {
 };
 
 const Workbook = () => {
-  const __seoTags = useSEO({ title: "Workbook — shepi", noindex: true });
-
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [dealData, setDealData] = useState<DealData | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [projectRaw, setProjectRaw] = useState<ProjectRecord | null>(null);
+  const __seoTags = useSEO({
+    title: projectRaw?.name ? `${projectRaw.name} — Workbook — Shepi` : "Workbook — Shepi",
+    noindex: true,
+  });
   const [showChat, setShowChat] = useState(true);
   const [activeTab, setActiveTab] = useState("setup");
 
