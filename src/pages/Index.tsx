@@ -13,7 +13,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { useSEO } from "@/hooks/useSEO";
 import { trackEvent } from "@/lib/analytics";
 import { HOMEPAGE_FAQ, buildFaqJsonLd, groupFaqByCategory } from "@/data/homepageFaq";
-import { WorkflowDiagram, ReconciliationChain, TierLadder } from "@/components/illustrations";
+import { WorkflowDiagram, TierLadder } from "@/components/illustrations";
 
 
 const Index = () => {
@@ -427,16 +427,6 @@ const Index = () => {
             </p>
           </div>
 
-          {/* Reconciliation chain — the visual proof that source docs tie */}
-          <div className="max-w-5xl mx-auto mb-16 bg-secondary/40 rounded-xl p-6 md:p-8 border border-border">
-            <div className="text-center mb-6">
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Reconciliation Chain</span>
-              <h3 className="text-xl md:text-2xl font-serif font-bold text-foreground mt-1">
-                Every number ties back to source.
-              </h3>
-            </div>
-            <ReconciliationChain />
-          </div>
 
 
           {/* Built For — persona blocks */}
