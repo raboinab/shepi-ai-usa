@@ -4,6 +4,7 @@ import { ContentPageLayout } from "@/components/ContentPageLayout";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { GuideThumbnail, getCategoryFor } from "@/components/illustrations";
 
 const sections = [
   {
