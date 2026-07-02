@@ -119,6 +119,17 @@ serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
 
+  // Auth: require authenticated user (verify each doc's project access below)
+  const authHeader = req.headers.get('Authorization') ?? '';
+  const bearer = authHeader.replace('Bearer ', '');
+  if (!bearer) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  }
+  const { data: { user }, error: authErr } = await supabase.auth.getUser(bearer);
+  if (authErr || !user) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  }
+
   let body: { documentIds: string[] };
   try { body = await req.json(); } catch { body = { documentIds: [] }; }
   const ids = body.documentIds || [];
