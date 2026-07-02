@@ -14,11 +14,9 @@ serve(async (req) => {
   }
 
   try {
-    // Prefer Cloudflare's built-in country header (no external API call needed)
-    const country =
-      req.headers.get("cf-ipcountry") ||
-      req.headers.get("x-country-code") ||
-      "";
+    // Only trust Cloudflare's cf-ipcountry header. Never trust a
+    // client-supplied header like x-country-code — it is trivially spoofable.
+    const country = req.headers.get("cf-ipcountry") || "";
 
     if (!country) {
       // No country header available — fail open

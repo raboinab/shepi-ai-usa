@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.87.1";
+import { requireProjectAccess } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -32,6 +33,11 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
     const { documentIds, projectId } = await req.json() as ProcessRequest;
+
+    // Enforce that caller is authenticated and has access to this project.
+    const auth = await requireProjectAccess(req, projectId);
+    if (!auth.ok) return auth.response;
+
 
     if (!documentIds || documentIds.length === 0) {
       return new Response(

@@ -158,9 +158,18 @@ serve(async (req) => {
         }]
       : [{ price: priceId, quantity: 1 }];
 
-    // Determine the origin — fallback to production URL if header is missing
-    const origin = req.headers.get("origin") || req.headers.get("referer")?.split("/").slice(0, 3).join("/") || "https://shepi.ai";
-    logStep("Origin resolved", { origin });
+    // Determine the origin — allowlist only. Never trust caller-supplied origin
+    // for success/cancel URLs, or an attacker could redirect victims to an
+    // arbitrary domain after a legitimate Stripe payment.
+    const ALLOWED_ORIGINS = new Set([
+      "https://shepi.ai",
+      "https://www.shepi.ai",
+      "http://localhost:8080",
+      "http://localhost:5173",
+    ]);
+    const rawOrigin = req.headers.get("origin") || "";
+    const origin = ALLOWED_ORIGINS.has(rawOrigin) ? rawOrigin : "https://shepi.ai";
+    logStep("Origin resolved", { rawOrigin, origin });
 
     // Server-side promo code validation for monthly plans
     let discounts: { promotion_code: string }[] | undefined;

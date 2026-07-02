@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.87.1";
 import { inferFsTypeFromName, inferCategoryFromName, mapAccountToFields, mapAccountTypeToFsType } from "../_shared/qbAccountMappings.ts";
+import { requireProjectAccess } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -505,6 +506,10 @@ serve(async (req) => {
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    // Enforce that caller is authenticated and has access to the document's project.
+    const authCheck = await requireProjectAccess(req, doc.project_id);
+    if (!authCheck.ok) return authCheck.response;
 
     const category = doc.category || doc.account_type;
     console.log(`[process-quickbooks-file] Processing: ${doc.name}, category: ${category}`);
