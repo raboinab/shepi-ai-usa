@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.87.1";
 import { inferFsTypeFromName, inferCategoryFromName, mapAccountToFields, mapAccountTypeToFsType } from "../_shared/qbAccountMappings.ts";
+import { requireProjectAccess } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
