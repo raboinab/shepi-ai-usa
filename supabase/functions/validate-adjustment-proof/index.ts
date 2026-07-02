@@ -67,6 +67,23 @@ serve(async (req) => {
       );
     }
 
+    if (!projectId) {
+      return new Response(
+        JSON.stringify({ error: "projectId is required" }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    const { data: hasAccess, error: accessErr } = await supabase.rpc(
+      'has_project_access',
+      { _user_id: userId, _project_id: projectId }
+    );
+    if (accessErr || hasAccess !== true) {
+      return new Response(
+        JSON.stringify({ error: "Forbidden" }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Fetch documents from Supabase
     console.log('Fetching documents:', documentIds);
     const { data: documents, error: docsError } = await supabase
