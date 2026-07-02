@@ -101,13 +101,18 @@ serve(async (req) => {
     if (!bearer) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
-    if (bearer !== serviceKey) {
+    let authedEmail: string | null = null;
+    let isServiceRole = false;
+    if (bearer === serviceKey) {
+      isServiceRole = true;
+    } else {
       const { createClient } = await import("npm:@supabase/supabase-js@2.87.1");
       const sb = createClient(Deno.env.get("SUPABASE_URL")!, serviceKey);
       const { data: { user }, error: authErr } = await sb.auth.getUser(bearer);
       if (authErr || !user) {
         return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
+      authedEmail = user.email ?? null;
     }
 
     const payload: NotifyPayload = await req.json();
@@ -116,6 +121,17 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({ error: "event_type required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Non-service callers may only notify about themselves. This prevents an
+    // authenticated user from triggering welcome emails or admin notifications
+    // for arbitrary email addresses.
+    if (!isServiceRole && payload.user_email &&
+        payload.user_email.toLowerCase() !== (authedEmail ?? "").toLowerCase()) {
+      return new Response(
+        JSON.stringify({ error: "Forbidden: user_email must match authenticated user" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
