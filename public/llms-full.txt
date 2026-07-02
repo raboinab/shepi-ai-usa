@@ -161,7 +161,7 @@ Consider the alternatives: DIY in Excel with a junior analyst at $50-100/hour sp
 
 ### When should I choose per-project vs. monthly?
 
-Per-project ($2,000): Best if you're analyzing 1-4 deals and want to pay only for what you use. Monthly ($4,000): Best if you're actively searching and expect 5+ deals, or if you want the flexibility to revisit analyses without worrying about project limits.
+Per-project ($2,000): Best if you're analyzing 1-4 deals and want to pay only for what you use. Monthly ($5,000): Best if you're actively searching and expect 5+ deals, or if you want the flexibility to revisit analyses without worrying about project limits.
 
 ### Is there a free trial?
 
