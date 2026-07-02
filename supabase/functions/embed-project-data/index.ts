@@ -812,6 +812,24 @@ serve(async (req) => {
       );
     }
 
+    // Auth: allow service-role (internal invokes) OR user with project access
+    const authHeader = req.headers.get('Authorization') ?? '';
+    const bearer = authHeader.replace('Bearer ', '');
+    const isServiceCaller = bearer && bearer === supabaseServiceKey;
+    if (!isServiceCaller) {
+      if (!bearer) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      const { data: { user }, error: authErr } = await supabase.auth.getUser(bearer);
+      if (authErr || !user) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      const { data: hasAccess, error: accessErr } = await supabase.rpc('has_project_access', { _user_id: user.id, _project_id: project_id });
+      if (accessErr || hasAccess !== true) {
+        return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+    }
+
     console.log(`[embed-project-data] Starting for project ${project_id}, data_types: ${data_types || "all"}, source: ${source}`);
 
     // Fetch project name
