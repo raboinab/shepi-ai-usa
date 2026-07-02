@@ -119,6 +119,10 @@ export function useSubscription() {
     return status.hasActiveSubscription && status.activeProjectCount >= status.monthlyProjectLimit && status.projectCredits <= 0;
   }, [status.hasActiveSubscription, status.activeProjectCount, status.monthlyProjectLimit, status.projectCredits]);
 
+  const isProjectCreditExpired = useCallback((projectId: string): boolean => {
+    return status.expiredCreditProjects.includes(projectId);
+  }, [status.expiredCreditProjects]);
+
   return useMemo(() => ({
     ...status,
     loading,
@@ -127,5 +131,7 @@ export function useSubscription() {
     hasAccessToProject,
     canCreateProjects,
     isAtMonthlyLimit,
-  }), [status, loading, error, checkSubscription, hasAccessToProject, canCreateProjects, isAtMonthlyLimit]);
+    isProjectCreditExpired,
+  }), [status, loading, error, checkSubscription, hasAccessToProject, canCreateProjects, isAtMonthlyLimit, isProjectCreditExpired]);
+
 }
