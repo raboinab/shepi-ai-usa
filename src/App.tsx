@@ -290,6 +290,7 @@ export const prerenderPaths = [
   "/guides/financial-red-flags",
   "/guides/cash-proof-analysis",
   "/guides/sell-side-vs-buy-side-qoe",
+  "/guides/qoe-vs-audit",
   "/guides/owner-compensation-normalization",
   "/guides/personal-expense-detection",
   "/guides/customer-concentration-risk",
