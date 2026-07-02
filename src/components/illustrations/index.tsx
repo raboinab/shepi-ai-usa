@@ -17,33 +17,34 @@ interface SvgProps {
 }
 
 /* ============================================================
- * WorkflowDiagram — Upload → Extract → Balance → Report
+ * WorkflowDiagram — Upload → Extract → AI parse → Balance → Report
  * Used on the homepage hero / how-it-works.
  * ============================================================ */
 export function WorkflowDiagram({ className }: SvgProps) {
   const steps = [
     { label: "Upload", sub: "Financials" },
-    { label: "Extract", sub: "AI parse" },
+    { label: "Extract", sub: "Structured parse" },
+    { label: "AI parse", sub: "Adjustments" },
     { label: "Balance", sub: "TB reconcile" },
     { label: "Report", sub: "Lender-ready" },
   ];
   return (
     <svg
-      viewBox="0 0 720 220"
+      viewBox="0 0 800 220"
       className={cn("w-full h-auto", className)}
       role="img"
-      aria-label="Shepi workflow: upload, extract, balance, report"
+      aria-label="Shepi workflow: upload, extract, AI parse, balance, report"
     >
       {steps.map((s, i) => {
-        const cx = 90 + i * 180;
+        const cx = 60 + i * 170;
         return (
           <g key={s.label}>
             {/* connector */}
             {i > 0 && (
               <line
-                x1={cx - 180 + 55}
+                x1={cx - 170 + 42}
                 y1={110}
-                x2={cx - 55}
+                x2={cx - 52}
                 y2={110}
                 stroke={strokeSoft}
                 strokeWidth={1.5}
@@ -62,8 +63,8 @@ export function WorkflowDiagram({ className }: SvgProps) {
               />
             )}
             {/* node */}
-            <circle cx={cx} cy={110} r={44} fill={fillCard} stroke={stroke} strokeWidth={1.5} />
-            <circle cx={cx} cy={110} r={44} fill={fillSoft} opacity={0.35} />
+            <circle cx={cx} cy={110} r={42} fill={fillCard} stroke={stroke} strokeWidth={1.5} />
+            <circle cx={cx} cy={110} r={42} fill={fillSoft} opacity={0.35} />
             {/* icon glyph per step */}
             <StepGlyph step={i} cx={cx} cy={104} />
             {/* label */}
@@ -115,7 +116,16 @@ function StepGlyph({ step, cx, cy }: { step: number; cx: number; cy: number }) {
           <line x1={cx - 7} y1={cy + 5} x2={cx + 3} y2={cy + 5} />
         </g>
       );
-    case 2: // scale/balance
+    case 2: // AI / sparkles
+      return (
+        <g {...s}>
+          <path d={`M ${cx} ${cy - 14} L ${cx + 2} ${cy - 4} L ${cx + 12} ${cy - 2} L ${cx + 2} ${cy} L ${cx} ${cy + 10} L ${cx - 2} ${cy} L ${cx - 12} ${cy - 2} L ${cx - 2} ${cy - 4} Z`} />
+          <line x1={cx - 6} y1={cy - 10} x2={cx - 6} y2={cy - 10} strokeWidth={2} />
+          <line x1={cx + 8} y1={cy - 8} x2={cx + 8} y2={cy - 8} strokeWidth={2} />
+          <line x1={cx - 10} y1={cy + 6} x2={cx - 10} y2={cy + 6} strokeWidth={2} />
+        </g>
+      );
+    case 3: // scale/balance
       return (
         <g {...s}>
           <path d={`M ${cx - 12} ${cy + 10} L ${cx + 12} ${cy + 10}`} />
@@ -125,7 +135,7 @@ function StepGlyph({ step, cx, cy }: { step: number; cx: number; cy: number }) {
           <circle cx={cx + 8} cy={cy + 1} r={4} fill={fillSoft} />
         </g>
       );
-    case 3: // doc with check
+    case 4: // doc with check
       return (
         <g {...s}>
           <path d={`M ${cx - 10} ${cy - 14} L ${cx + 6} ${cy - 14} L ${cx + 12} ${cy - 8} L ${cx + 12} ${cy + 14} L ${cx - 10} ${cy + 14} Z`} />
