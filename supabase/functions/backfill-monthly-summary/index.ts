@@ -147,6 +147,9 @@ serve(async (req) => {
         .maybeSingle();
       if (docErr || !doc) { results.push({ docId, error: docErr?.message || "not found" }); continue; }
 
+      const { data: hasAccess } = await supabase.rpc('has_project_access', { _user_id: user.id, _project_id: doc.project_id });
+      if (hasAccess !== true) { results.push({ docId, error: 'Forbidden' }); continue; }
+
       const { data: blob, error: dlErr } = await supabase.storage.from("documents").download(doc.file_path);
       if (dlErr || !blob) { results.push({ docId, error: dlErr?.message || "download failed" }); continue; }
       const buf = await blob.arrayBuffer();
