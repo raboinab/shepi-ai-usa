@@ -507,6 +507,10 @@ serve(async (req) => {
       );
     }
 
+    // Enforce that caller is authenticated and has access to the document's project.
+    const authCheck = await requireProjectAccess(req, doc.project_id);
+    if (!authCheck.ok) return authCheck.response;
+
     const category = doc.category || doc.account_type;
     console.log(`[process-quickbooks-file] Processing: ${doc.name}, category: ${category}`);
 
