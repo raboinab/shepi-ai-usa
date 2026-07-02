@@ -173,6 +173,18 @@ ${resourceList}
 
 ${faqMd}
 
+## Per-guide FAQs
+
+The following per-guide FAQs mirror the FAQ blocks rendered on each guide page. Source of truth: src/data/guideFaqs.ts.
+
+${GUIDE_FAQS.map(
+  (block) =>
+    `### FAQ — ${block.title}\n\nSource: ${block.url}\n\n` +
+    block.faqs
+      .map((f) => `**Q: ${f.question}**\n\nA: ${f.answer}\n`)
+      .join("\n")
+).join("\n")}
+
 ## Discovery endpoints
 
 - https://shepi.ai/llms.txt
