@@ -13,7 +13,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { useSEO } from "@/hooks/useSEO";
 import { trackEvent } from "@/lib/analytics";
 import { HOMEPAGE_FAQ, buildFaqJsonLd, groupFaqByCategory } from "@/data/homepageFaq";
-import { WorkflowDiagram, TierLadder } from "@/components/illustrations";
+
 
 
 
