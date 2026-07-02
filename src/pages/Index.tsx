@@ -13,7 +13,8 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { useSEO } from "@/hooks/useSEO";
 import { trackEvent } from "@/lib/analytics";
 import { HOMEPAGE_FAQ, buildFaqJsonLd, groupFaqByCategory } from "@/data/homepageFaq";
-import { WorkflowDiagram, TierLadder } from "@/components/illustrations";
+
+
 
 
 const Index = () => {
@@ -419,13 +420,6 @@ const Index = () => {
             </Card>
           </div>
 
-          {/* Workflow illustration replaces two paragraphs of tagline copy */}
-          <div className="max-w-4xl mx-auto mb-14">
-            <WorkflowDiagram />
-            <p className="text-center text-sm text-muted-foreground mt-4 italic">
-              Upload once. shepi handles extraction, AI analysis, reconciliation, and the lender-ready deliverable.
-            </p>
-          </div>
 
 
 
@@ -730,10 +724,6 @@ const Index = () => {
             </div>
           </div>
 
-          {/* Tier visual */}
-          <div className="max-w-4xl mx-auto mb-10">
-            <TierLadder />
-          </div>
 
           {/* DIY vs DFY strip */}
           <div id="diy-vs-dfy" className="grid md:grid-cols-2 gap-6 mb-10">

@@ -4,7 +4,7 @@ import { ContentPageLayout } from "@/components/ContentPageLayout";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { GuideThumbnail, getCategoryFor } from "@/components/illustrations";
+
 
 const sections = [
   {
@@ -116,7 +116,7 @@ export default function Resources() {
               {section.links.map((link) => (
                 <Link key={link.to} to={link.to} className="group">
                   <Card className="h-full overflow-hidden hover:border-primary/40 hover:shadow-sm transition-all cursor-pointer flex flex-col">
-                    <GuideThumbnail category={getCategoryFor(link.to)} />
+                    
                     <CardHeader className="pb-4 flex-1">
                       <CardTitle className="text-base font-medium group-hover:text-primary transition-colors flex items-start gap-2">
                         <span className="flex-1">{link.label}</span>
