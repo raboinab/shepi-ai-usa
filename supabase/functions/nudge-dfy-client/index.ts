@@ -28,23 +28,43 @@ serve(async (req) => {
 
     const admin = createClient(url, serviceKey);
 
-    // Identify sender (CPA) if user-triggered
+    // Auth: require either service-role (system trigger) or a valid user.
+    // Do NOT allow arbitrary callers to set sent_by_system=true; only
+    // service-role callers can bypass user identification.
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const bearer = authHeader.replace("Bearer ", "");
+    const isService = bearer && bearer === serviceKey;
+
     let senderUserId: string | null = null;
-    if (!sent_by_system) {
-      const authHeader = req.headers.get("Authorization");
-      if (authHeader) {
-        const userClient = createClient(url, anonKey, {
-          global: { headers: { Authorization: authHeader } },
+    if (!isService) {
+      if (!bearer) {
+        return new Response(JSON.stringify({ error: "Unauthenticated" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
-        const { data: { user } } = await userClient.auth.getUser();
-        senderUserId = user?.id ?? null;
-        if (!senderUserId) {
-          return new Response(JSON.stringify({ error: "Unauthenticated" }), {
-            status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
+      }
+      const { data: { user }, error: authErr } = await admin.auth.getUser(bearer);
+      senderUserId = user?.id ?? null;
+      if (authErr || !senderUserId) {
+        return new Response(JSON.stringify({ error: "Unauthenticated" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      // Verify caller is the accepted CPA on this project
+      const { data: claim } = await admin
+        .from("cpa_engagement_claims")
+        .select("id, status")
+        .eq("project_id", project_id)
+        .eq("cpa_user_id", senderUserId)
+        .eq("status", "accepted")
+        .maybeSingle();
+      if (!claim) {
+        return new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
     }
+    // Effective flag: only trust sent_by_system if service-role caller
+    const effectiveSentBySystem = isService ? !!sent_by_system : false;
 
     // Rate limit (48h)
     const cutoff = new Date(Date.now() - RATE_LIMIT_HOURS * 3600 * 1000).toISOString();
