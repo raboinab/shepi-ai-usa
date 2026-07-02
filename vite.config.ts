@@ -55,6 +55,11 @@ const PRERENDER_PATHS = [
   "/quality-of-earnings-checklist",
 ];
 
+// Freshness signal for guides: injected into every build so
+// dateModified in Article JSON-LD and the on-page byline update
+// automatically on each deploy instead of drifting to a hardcoded date.
+const BUILD_DATE = new Date().toISOString().slice(0, 10);
+
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
   server: {
@@ -62,6 +67,9 @@ export default defineConfig(({ mode }) => ({
     port: 8080,
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
+  define: {
+    __BUILD_DATE__: JSON.stringify(BUILD_DATE),
+  },
   resolve: {
     dedupe: ["react", "react-dom", "react/jsx-runtime"],
     alias: {
