@@ -14,6 +14,12 @@ import {
 import { useSEO } from "@/hooks/useSEO";
 import { useBreadcrumbJsonLd } from "@/hooks/useBreadcrumbJsonLd";
 import { cn } from "@/lib/utils";
+import {
+  BUILD_DATE,
+  SHEPI_AUTHOR_BYLINE,
+  normalizeArticleJsonLd,
+} from "@/lib/seo/article";
+import { getRelatedLinks } from "@/data/relatedContent";
 
 interface TOCItem {
   id: string;
