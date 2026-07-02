@@ -200,10 +200,13 @@ serve(async (req) => {
       ...(discounts ? { discounts } : {}),
       success_url: planType === "done_for_you" && projectId
         ? `${origin}/project/${projectId}?upgraded=true`
-        : `${origin}/payment-success?plan=${planType}`,
-      cancel_url: planType === "done_for_you" && projectId
+        : (renew && projectId
+            ? `${origin}/project/${projectId}?renewed=true`
+            : `${origin}/payment-success?plan=${planType}`),
+      cancel_url: (planType === "done_for_you" || renew) && projectId
         ? `${origin}/project/${projectId}`
         : `${origin}/pricing?payment=cancelled`,
+
       metadata,
     });
 
