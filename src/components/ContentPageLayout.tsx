@@ -220,7 +220,26 @@ export function ContentPageLayout({
               {heroAccent && (
                 <div className="h-1 w-16 rounded-full bg-primary mb-4" />
               )}
-              {(publishedDate || modifiedDate) && (
+              {isArticle && (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+                  <span>
+                    By{" "}
+                    <Link
+                      to="/about"
+                      className="font-medium text-foreground hover:text-primary hover:underline"
+                    >
+                      {SHEPI_AUTHOR_BYLINE}
+                    </Link>
+                  </span>
+                  <span aria-hidden="true">·</span>
+                  <span>
+                    {modifiedDate || bylineDate
+                      ? `Updated ${modifiedDate ?? bylineDate}`
+                      : `Updated ${BUILD_DATE}`}
+                  </span>
+                </div>
+              )}
+              {!isArticle && (publishedDate || modifiedDate) && (
                 <p className="text-sm text-muted-foreground">
                   {modifiedDate ? `Updated ${modifiedDate}` : `Published ${publishedDate}`}
                 </p>
@@ -234,6 +253,35 @@ export function ContentPageLayout({
             ">
               {children}
             </div>
+            {autoRelated.length > 0 && (
+              <aside
+                aria-label="Continue reading"
+                className="mt-16 border-t border-border pt-8"
+              >
+                <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4">
+                  Continue reading
+                </h2>
+                <ul className="grid gap-3 sm:grid-cols-2">
+                  {autoRelated.map((link) => (
+                    <li key={link.href}>
+                      <Link
+                        to={link.href}
+                        className="group block rounded-lg border border-border p-4 hover:border-primary hover:bg-primary/5 transition-colors"
+                      >
+                        <p className="font-serif font-semibold text-foreground group-hover:text-primary">
+                          {link.title}
+                        </p>
+                        {link.description && (
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            {link.description}
+                          </p>
+                        )}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </aside>
+            )}
           </article>
         </div>
       </div>
