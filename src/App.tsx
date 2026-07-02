@@ -199,6 +199,7 @@ export const routes: RouteRecord[] = [
       { path: "features/qoe-software", element: wrap(<QoESoftware />) },
       { path: "features/ebitda-automation", element: wrap(<EBITDAAutomation />) },
       { path: "guides/sell-side-vs-buy-side-qoe", element: wrap(<SellSideVsBuySideQoE />) },
+      { path: "guides/qoe-vs-audit", element: wrap(<QoEVsAudit />) },
       { path: "guides/owner-compensation-normalization", element: wrap(<OwnerCompensationNormalization />) },
       { path: "guides/personal-expense-detection", element: wrap(<PersonalExpenseDetection />) },
       { path: "guides/customer-concentration-risk", element: wrap(<CustomerConcentrationRisk />) },
