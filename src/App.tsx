@@ -56,6 +56,7 @@ const CashProofAnalysis = lazy(() => import("./pages/guides/CashProofAnalysis"))
 const QoESoftware = lazy(() => import("./pages/features/QoESoftware"));
 const EBITDAAutomation = lazy(() => import("./pages/features/EBITDAAutomation"));
 const SellSideVsBuySideQoE = lazy(() => import("./pages/guides/SellSideVsBuySideQoE"));
+const QoEVsAudit = lazy(() => import("./pages/guides/QoEVsAudit"));
 const OwnerCompensationNormalization = lazy(() => import("./pages/guides/OwnerCompensationNormalization"));
 const PersonalExpenseDetection = lazy(() => import("./pages/guides/PersonalExpenseDetection"));
 const CustomerConcentrationRisk = lazy(() => import("./pages/guides/CustomerConcentrationRisk"));
