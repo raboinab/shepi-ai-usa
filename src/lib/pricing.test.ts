@@ -33,6 +33,6 @@ describe("PRICING constants", () => {
   it("Displays match amounts", () => {
     expect(PRICING.perProject.display).toBe("$2,000");
     expect(PRICING.doneForYou.display).toBe("$5,000");
-    expect(PRICING.monthly.display).toBe("$4,000");
+    expect(PRICING.monthly.display).toBe("$5,000");
   });
 });

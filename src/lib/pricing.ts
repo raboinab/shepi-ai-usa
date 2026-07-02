@@ -1,5 +1,5 @@
 // Pricing configuration
-// Stripe LIVE price IDs. DFY repriced to $5,000 and Monthly to $4,000 on 2026-06-23.
+// Stripe LIVE price IDs. DFY $5,000; Monthly $5,000 (reverted from $4,000 on 2026-07-02).
 
 export const PRICING = {
   perProject: {
@@ -24,13 +24,13 @@ export const PRICING = {
     // = doneForYou.amount - perProject.amount ($5,000 - $2,000)
   },
   monthly: {
-    amount: 4000,
-    display: "$4,000",
+    amount: 5000,
+    display: "$5,000",
     period: "/month",
     name: "Monthly",
     includedProjects: 3,
     overagePerProject: 1000,
     overagePriceId: "price_1T6FKzP5elf35CKl5F1XyETh",
-    stripePriceId: "price_1TlcLYP5elf35CKlLqZ5NF8Y",
+    stripePriceId: "price_1TO33aP5elf35CKlC4eFMpm2",
   },
 } as const;

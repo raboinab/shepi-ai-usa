@@ -48,7 +48,7 @@ const Index = () => {
             "@type": "Offer",
             name: "Monthly",
             priceCurrency: "USD",
-            price: "4000",
+            price: "5000",
             description: "Monthly subscription with 3 included projects per month",
           },
         ],

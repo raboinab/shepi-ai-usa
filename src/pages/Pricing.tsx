@@ -526,7 +526,7 @@ const Pricing = () => {
                 <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs text-foreground">
                   <span className="font-medium">CPAs &amp; advisory firms:</span>{" "}
                   Running 3+ client engagements in the same month? One Monthly subscription
-                  ($4,000) covers all three — vs. $6,000 buying them individually. Firm branding
+                  ($5,000) covers all three — vs. $6,000 buying them individually. Firm branding
                   on PDF + XLSX deliverables is included on every tier; full white-label (no
                   shepi branding) and resale are exclusive to Firm Edition.{" "}
                   <Link to="/for-cpas" className="text-primary hover:underline">

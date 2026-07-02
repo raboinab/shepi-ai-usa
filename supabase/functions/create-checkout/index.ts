@@ -9,11 +9,11 @@ const corsHeaders = {
 };
 
 // Mirror of src/lib/pricing.ts — keep in sync when prices change.
-// Stripe LIVE price IDs. DFY repriced to $5,000 and Monthly to $4,000 on 2026-06-23.
+// Stripe LIVE price IDs. DFY $5,000; Monthly $5,000 (reverted from $4,000 on 2026-07-02).
 const PRICING = {
   perProject:     { amount: 2000, stripePriceId: "price_1T5toZP5elf35CKlGuxS6JKU" },
   doneForYou:     { amount: 5000, stripePriceId: "price_1TlFJUP5elf35CKloDVozalA" },
-  monthly:        { amount: 4000, stripePriceId: "price_1TlcLYP5elf35CKlLqZ5NF8Y" },
+  monthly:        { amount: 5000, stripePriceId: "price_1TO33aP5elf35CKlC4eFMpm2" },
   monthlyOverage: { amount: 1000, stripePriceId: "price_1T6FKzP5elf35CKl5F1XyETh" },
 } as const;
 
