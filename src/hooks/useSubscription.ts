@@ -6,6 +6,7 @@ interface SubscriptionData {
   hasActiveSubscription: boolean;
   subscriptionEnd: string | null;
   paidProjects: string[];
+  expiredCreditProjects: string[];
   sharedProjects: string[];
   projectCredits: number;
   activeProjectCount: number;
@@ -16,6 +17,7 @@ const DEFAULTS: SubscriptionData = {
   hasActiveSubscription: false,
   subscriptionEnd: null,
   paidProjects: [],
+  expiredCreditProjects: [],
   sharedProjects: [],
   projectCredits: 0,
   activeProjectCount: 0,
@@ -35,6 +37,7 @@ async function fetchSubscriptionStatus(): Promise<SubscriptionData> {
     hasActiveSubscription: data.hasActiveSubscription || false,
     subscriptionEnd: data.subscriptionEnd || null,
     paidProjects: data.paidProjects || [],
+    expiredCreditProjects: data.expiredCreditProjects || [],
     sharedProjects: data.sharedProjects || [],
     projectCredits: data.projectCredits || 0,
     activeProjectCount: data.activeProjectCount ?? 0,
@@ -44,6 +47,7 @@ async function fetchSubscriptionStatus(): Promise<SubscriptionData> {
   console.log('[useSubscription] Parsed result:', result);
   return result;
 }
+
 
 export function useSubscription() {
   const queryClient = useQueryClient();
