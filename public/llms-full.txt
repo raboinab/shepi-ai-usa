@@ -2,7 +2,7 @@
 
 > Long-form companion to llms.txt. Contains the full homepage FAQ (single source of truth — see src/data/homepageFaq.ts), the complete public content surface, and capability/limitation statements suitable for agent reasoning.
 
-Generated: 2026-05-28
+Generated: 2026-07-02
 
 ## Identity
 
@@ -10,12 +10,12 @@ shepi is an AI-assisted Quality of Earnings (QoE) analysis platform for small an
 
 - Operator: SMB EDGE
 - Contact: hello@shepi.ai
-- Security: hello@shepi.ai
+- Security: security@shepi.ai
 - Pricing: $2,000 per project, or $4,000/month for up to 3 concurrent projects
 
 ## Capabilities
 
-- **Document ingestion** — direct connection to supported accounting integration partners, accounting system exports, PDF financial statements (tax returns 1040/1120/1120S/1065, payroll, debt schedules, contracts), Excel/CSV trial balances
+- **Document ingestion** — QuickBooks Online direct connection, QuickBooks Desktop exports, PDF financial statements (tax returns 1040/1120/1120S/1065, payroll, debt schedules, contracts), Excel/CSV trial balances
 - **Normalization** — Multi-period P&L and balance sheet, IS/BS reconciliation, account mapping
 - **EBITDA bridge** — Categorized add-backs (owner compensation, personal expenses, one-time items, related party, run-rate)
 - **Working capital analysis** — DSO, DPO, DIO, normalized peg
@@ -49,7 +49,7 @@ shepi is an AI-assisted Quality of Earnings (QoE) analysis platform for small an
 - https://shepi.ai/compare/ai-qoe-vs-traditional
 - https://shepi.ai/features/qoe-software
 - https://shepi.ai/features/ebitda-automation
-- https://shepi.ai/features/accounting-integration
+- https://shepi.ai/features/quickbooks-integration
 - https://shepi.ai/features/ai-assistant
 - https://shepi.ai/features/ai-due-diligence
 - https://shepi.ai/guides/quality-of-earnings
@@ -101,11 +101,11 @@ Excel templates give you a blank structure and hours of manual work. shepi gives
 
 ### What's the difference between Self-Service and Done-For-You?
 
-Self-Service ($2,000/project): you run the analysis inside the Shepi platform — typically 2–4 hours of hands-on time. Done-For-You ($4,000/project, includes CPA-led review): the Shepi team produces the deliverable for you and you review the output — turnaround in days. Both produce the same 27-tab workbook and PDF report. See the full Scope of Work →
+Self-Service ($2,000/project) is a seller-prepared diligence package — you run the analysis inside Shepi (typically 2–4 hours of hands-on time) and the output is unreviewed. It's built for peace of mind, sharing with a buyer, or handing to a buyer's CPA as clean source material. Most lenders will not accept a self-prepared package for a financing decision. Done-For-You ($5,000/project) adds CPA-led review of the reconciliation chain and adjustments — that's the version to use when a lender or buyer requires third-party CPA involvement. Both produce the same 27-tab workbook and PDF skeleton; the difference is whether a CPA has reviewed it. See the full Scope of Work →
 
 ### Does shepi replace a formal Quality of Earnings report from a CPA firm?
 
-shepi produces comprehensive QoE analysis from the same source data a CPA firm would use — trial balances, financial statements, and supporting documents. For transactions requiring CPA attestation (lender requirements, regulatory compliance), shepi accelerates that engagement by producing CPA-ready workpapers. The difference between shepi and a CPA firm isn't the analysis methodology — it's the attestation letter and professional liability coverage.
+No. Shepi is analytical software, not a CPA firm — we don't issue attestation, audit opinions, or formal CPA reports. Self-Service output is seller-prepared. Done-For-You adds CPA-led review of the adjustments and reconciliation chain (review, not attestation). For transactions that require a CPA-attested QoE, a licensed CPA firm still needs to be engaged — Shepi accelerates that engagement by producing CPA-ready workpapers.
 
 ### Does shepi calculate final EBITDA or provide a valuation?
 
@@ -113,7 +113,7 @@ shepi helps you build an EBITDA bridge by tracking and categorizing your adjustm
 
 ### Can I show shepi output directly to lenders or investors?
 
-Yes — shepi output is complete, professional-quality QoE analysis that exports to PDF and Excel for sharing. For investor presentations and internal decision-making, shepi delivers institutional-grade workpapers. If your lender specifically requires CPA-attested reports for financing, shepi provides the analytical foundation that accelerates that formal engagement.
+It depends on which tier you bought. A Self-Service package is seller-prepared — most lenders will not rely on it for a financing decision. It's better suited for buyer/seller diligence prep or as source material for a buyer's CPA. Done-For-You adds CPA-led review of the reconciliation chain and adjustments, which a wider set of lenders and buyers will accept; some will still require a separate CPA-attested engagement on top. For investor presentations and internal decision-making, either tier works.
 
 ### Does shepi certify or guarantee the accuracy of the analysis?
 
@@ -161,7 +161,7 @@ Consider the alternatives: DIY in Excel with a junior analyst at $50-100/hour sp
 
 ### When should I choose per-project vs. monthly?
 
-Per-project ($2,000): Best if you're analyzing 1-4 deals and want to pay only for what you use. Monthly ($5,000): Best if you're actively searching and expect 5+ deals, or if you want the flexibility to revisit analyses without worrying about project limits.
+Per-project ($2,000): Best if you're analyzing 1-4 deals and want to pay only for what you use. Monthly ($4,000): Best if you're actively searching and expect 5+ deals, or if you want the flexibility to revisit analyses without worrying about project limits.
 
 ### Is there a free trial?
 
