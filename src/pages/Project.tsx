@@ -75,7 +75,7 @@ class ProjectPanelErrorBoundary extends Component<
 }
 
 const Project = () => {
-  const __seoTags = useSEO({ title: "Project — shepi", noindex: true });
+  
 
   const { id } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
