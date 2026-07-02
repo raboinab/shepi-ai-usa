@@ -49,7 +49,7 @@ export function SEO({
   description,
   canonical,
   noindex = false,
-  ogImage = "/og-image.png",
+  ogImage = "https://shepi.ai/og-image.png",
   ogType = "website",
   jsonLd,
 }: SEOProps) {
