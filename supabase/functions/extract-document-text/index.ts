@@ -48,6 +48,10 @@ serve(async (req) => {
       );
     }
 
+    // Enforce that caller is authenticated and has access to the document's project.
+    const auth = await requireProjectAccess(req, document.project_id);
+    if (!auth.ok) return auth.response;
+
     console.log(`Found document: ${document.name}, file_path: ${document.file_path}`);
 
     // Update status to processing
