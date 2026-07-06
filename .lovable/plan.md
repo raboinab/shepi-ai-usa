@@ -1,60 +1,53 @@
-## Goal
+Build a v1 MCP server for Shepi that exposes read-only, create/modify, and export operations while respecting the existing auth model and the "no CPA attestation" constraint.
 
-Reduce paragraph density on Home, Resources, and Pricing by pairing prose with **custom SVG illustrated diagrams** in the existing serif/analytical brand voice. No stock photos, no product screenshots in this pass.
+## 1. Add authentication to the MCP server
+- Add `auth: auth.oauth.issuer(...)` to `src/lib/mcp/index.ts` using `import.meta.env.VITE_SUPABASE_PROJECT_ID`.
+- This ensures tools run as the authenticated user; Supabase RLS enforces access.
+- Do not add a separate shared API key model.
 
-## Visual approach
+## 2. Tool inventory (v1)
+Read-only tools:
+- `list_projects` — list user's projects (name, status, tier, target_company, updated_at).
+- `get_project_summary` — read a single project's metadata and current phase/section.
+- `list_documents` — list documents for a project with status and category.
+- `list_adjustments` — list adjustment_proposals for a project (category, amount, status).
+- `get_adjustment_detail` — read one adjustment with rationale and evidence summary.
+- `get_quality_of_earnings_summary` — return a structured summary of adjusted EBITDA and key add-backs for a project.
 
-- Custom inline **React SVG illustrations** (not raster images) using existing design tokens (`--primary`, `--secondary`, `--accent`, `--muted`). Keeps them dark/light-mode safe, sharp on retina, and zero asset weight.
-- One shared style: thin strokes, cream fills, subtle Shepi-blue accents, occasional serif labels — matches the current Lora/Inter pairing.
-- Each illustration communicates a concept (workflow, reconciliation chain, tier ladder, guide category), not decoration.
+Create/modify tools:
+- `create_project` — create a new project with minimal required fields.
+- `create_adjustment` — insert an adjustment_proposal for a project.
+- `update_adjustment_status` — mark an adjustment as `pending`, `accepted`, or `rejected`.
 
-## Scope
+Export tools:
+- `export_pdf_report` — generate and return a signed PDF report URL for a project.
+- `export_excel_workbook` — generate and return a signed XLSX workbook URL.
 
-### 1. Homepage (`src/pages/Index.tsx`)
-- **Hero:** add a right-column `WorkflowDiagram` SVG (Upload → Extract → Balance → Report), replacing the current text-only hero balance.
-- **How it works section:** convert the 3-column text block into a `ReconciliationChain` diagram (Tax Return → P&L → GL → TB) with tight captions instead of paragraphs.
-- **Tier comparison:** replace the DIY vs DFY paragraphs with a `TierLadder` illustration (two stacked cards with icon markers for what's included).
-- **Trim** existing paragraph copy by ~30% where the diagram now carries the meaning. Keep the FAQ, keep CPA-attestation disclaimers verbatim (memory constraint).
+## 3. Implementation details
+- Store each tool in `src/lib/mcp/tools/<tool-name>.ts` as a default `defineTool` export.
+- Use `ToolContext` to get the user token and forward it to Supabase via `createClient` with `Authorization: Bearer <token>`.
+- Keep all tool handlers import-safe; read env only inside handlers.
+- Reuse existing app helpers (e.g., PDF/XLSX builders, project summary logic) by extracting small server-safe functions rather than duplicating logic.
+- Add `needsApproval` annotations to create/modify/export tools.
 
-### 2. Resources (`src/pages/Resources.tsx`)
-- Rebuild the guides list as a **card grid with illustrated thumbnails** (per user choice).
-- 5–6 reusable category illustrations (EBITDA, Working Capital, Red Flags, AI/QoE, Comparison, Checklist) — each guide card picks one based on category tag.
-- Cards: illustration top (aspect-ratio 16:9), title, one-line description, "Read guide" affordance. No excerpt paragraphs on the index.
-- Add a lightweight **category filter row** above the grid (All / EBITDA / Diligence / AI / Comparison).
+## 4. Security and compliance
+- Never return raw tokens or other users' data.
+- Validate `project_id` belongs to the calling user (via RLS and an explicit ownership check in each tool).
+- Avoid any tool that issues an audit opinion, attestation, or CPA report; keep language as "summary" / "review" / "seller-prepared package" consistent with project memory.
+- Cap result payloads to avoid token overload in the MCP client.
 
-### 3. Pricing (`src/pages/Pricing.tsx`)
-- Add a `TierLadder` illustration at the top comparing Self-Service vs Done-For-You visually (feature dots per tier).
-- Convert the "What's included" bullet lists into a **checked comparison table** with icon markers instead of long bullet paragraphs.
-- Keep DIY positioning language exactly as memory requires ("seller-prepared, no CPA review").
+## 5. Monetization positioning
+- Keep the MCP server available to paid subscribers only (DIY and DFY tiers; free users get the echo tool only or a clear upgrade message).
+- Export tools count toward existing export credits / DFY review fees already in the app.
+- Do not introduce a separate MCP billing model in v1.
 
-## New shared components
+## 6. Validation and deployment
+- After editing, run `app_mcp_server--extract_mcp_manifest` to confirm the manifest lists all 10 tools.
+- Deploy the `mcp` edge function.
+- Test the echo and `list_projects` tools against the deployed endpoint.
 
-```
-src/components/illustrations/
-  WorkflowDiagram.tsx        // hero: 4-step arrow flow
-  ReconciliationChain.tsx    // tax return → P&L → GL → TB
-  TierLadder.tsx             // DIY vs DFY visual
-  GuideThumbnail.tsx         // takes category prop, renders matching SVG
-  category-svgs/             // 6 small SVG concept illustrations
-```
-
-All pure SVG, styled with Tailwind + CSS variables. No new dependencies.
-
-## Constraints honored
-
-- CPA/attestation language on Home FAQ untouched.
-- DIY = "seller-prepared, no CPA review" language preserved on Pricing.
-- No new fonts, no new color tokens — uses existing Shepi palette only.
-- No product screenshots (user chose illustrations).
-
-## Out of scope
-
-- Photography, generated raster art, animated video.
-- Copy rewriting beyond trimming redundant paragraphs where the diagram replaces them.
-- Guide detail pages (only the Resources index changes).
-- Nav/footer changes.
-
-## Verification
-
-- `bun run build` passes.
-- Playwright screenshot of `/`, `/resources`, `/pricing` at 1280px and mobile 375px — visually confirm the diagrams render, layout doesn't shift, and text is legible in both light and dark mode.
+## 7. Files to touch
+- `src/lib/mcp/index.ts` — add auth and import all tools.
+- `src/lib/mcp/tools/*.ts` — one file per tool.
+- Possibly refactor existing summary/export helpers into server-safe shared modules.
+- No changes to the frontend, marketing copy, or payment logic.
