@@ -6,6 +6,6 @@ export default defineMcp({
   title: "shepi",
   version: "0.1.0",
   instructions:
-    "MCP server for the shepi Quality of Earnings platform. Use `echo` to verify connectivity. More tools will be added over time.",
+    "MCP server for the Shepi Intelligent Quality of Earnings Platform. Use `echo` to verify connectivity. More tools will be added over time.",
   tools: [echoTool],
 });
