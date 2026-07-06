@@ -198,39 +198,34 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Auth: validate caller has access to the project.
-    // Demo/script bypass: when skipPersist=true, no DB writes happen, so we
-    // accept any valid request (no user session required). This is used by the
-    // demo asset pipeline to generate narratives for the public sample PDF.
+    // Auth: require a valid signed-in user with access to the project on
+    // every call. The prior skipPersist bypass allowed unauthenticated AI
+    // gateway abuse and is removed. Demo narratives must be generated via a
+    // server-side script using the service-role key, not this public endpoint.
     const authHeader = req.headers.get("Authorization") || "";
     const token = authHeader.replace("Bearer ", "");
     const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
-    let userId: string | null = null;
-
-    if (body.skipPersist) {
-      // Demo mode — read-only, no persistence, no auth required.
-    } else {
-      if (!token) {
-        return new Response(JSON.stringify({ error: "Missing auth token" }), {
-          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      const { data: { user }, error: userErr } = await supabase.auth.getUser(token);
-      if (userErr || !user) {
-        return new Response(JSON.stringify({ error: "Invalid auth token" }), {
-          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      userId = user.id;
-      const { data: hasAccess, error: accessErr } = await supabase.rpc("has_project_access", {
-        _user_id: user.id, _project_id: body.projectId,
+    if (!token) {
+      return new Response(JSON.stringify({ error: "Missing auth token" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
-      if (accessErr || !hasAccess) {
-        return new Response(JSON.stringify({ error: "Forbidden" }), {
-          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
     }
+    const { data: { user }, error: userErr } = await supabase.auth.getUser(token);
+    if (userErr || !user) {
+      return new Response(JSON.stringify({ error: "Invalid auth token" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const userId: string | null = user.id;
+    const { data: hasAccess, error: accessErr } = await supabase.rpc("has_project_access", {
+      _user_id: user.id, _project_id: body.projectId,
+    });
+    if (accessErr || !hasAccess) {
+      return new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
 
     const tool = body.style === "paragraphs" ? paragraphsTool : bulletsTool;
     const styleGuide = body.style === "paragraphs"
