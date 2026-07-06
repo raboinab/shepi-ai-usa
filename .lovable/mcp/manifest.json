@@ -3,12 +3,16 @@
   "sdk_version": "0.20.0",
   "path": "/functions/v1/mcp",
   "auth": {
-    "type": "none"
+    "type": "oauth",
+    "issuer": "https://mdgmessqbfebrbvjtndz.supabase.co/auth/v1",
+    "accepted_audiences": [
+      "authenticated"
+    ]
   },
   "mcp": {
     "server": {
       "name": "shepi-mcp",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "title": "shepi"
     },
     "tools": [
@@ -33,6 +37,323 @@
           },
           "required": [
             "text"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_projects",
+        "title": "List projects",
+        "description": "List the signed-in user's Shepi projects with basic metadata.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "limit": {
+              "default": 50,
+              "description": "Maximum number of projects to return.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "get_project_summary",
+        "title": "Get project summary",
+        "description": "Read a project's metadata, current wizard phase/section, and service tier.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "description": "The project ID (UUID)."
+            }
+          },
+          "required": [
+            "project_id"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_documents",
+        "title": "List documents",
+        "description": "List documents uploaded to a project with processing status and category.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "description": "The project ID (UUID)."
+            },
+            "limit": {
+              "default": 100,
+              "description": "Maximum number of documents to return.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          "required": [
+            "project_id"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_adjustments",
+        "title": "List adjustments",
+        "description": "List adjustment proposals for a project with category, status, and total proposed amount.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "description": "The project ID (UUID)."
+            },
+            "status": {
+              "description": "Optional status filter.",
+              "type": "string",
+              "enum": [
+                "pending",
+                "accepted",
+                "accepted_with_edits",
+                "rejected",
+                "dismissed"
+              ]
+            },
+            "limit": {
+              "default": 100,
+              "description": "Maximum number of adjustments to return.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          "required": [
+            "project_id"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "get_adjustment_detail",
+        "title": "Get adjustment detail",
+        "description": "Read a single adjustment proposal with rationale, evidence, and period values.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "description": "The project ID (UUID)."
+            },
+            "adjustment_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "description": "The adjustment proposal ID (UUID)."
+            }
+          },
+          "required": [
+            "project_id",
+            "adjustment_id"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "get_quality_of_earnings_summary",
+        "title": "Get Quality of Earnings summary",
+        "description": "Compute a structured LTM QoE summary for a project: revenue, gross profit, net income, reported EBITDA, total adjustments, and adjusted EBITDA.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "description": "The project ID (UUID)."
+            }
+          },
+          "required": [
+            "project_id"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "create_project",
+        "title": "Create project",
+        "description": "Create a new Shepi project. The project is owned by the signed-in user.",
+        "annotations": {
+          "readOnlyHint": false,
+          "idempotentHint": false,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "description": "Project name."
+            },
+            "target_company": {
+              "description": "Target company name.",
+              "type": "string",
+              "maxLength": 255
+            },
+            "client_name": {
+              "description": "Client name.",
+              "type": "string",
+              "maxLength": 255
+            },
+            "industry": {
+              "description": "Industry.",
+              "type": "string",
+              "maxLength": 255
+            },
+            "transaction_type": {
+              "description": "Transaction type (e.g. buy-side, sell-side).",
+              "type": "string",
+              "maxLength": 255
+            },
+            "service_tier": {
+              "default": "diy",
+              "description": "Service tier for the project.",
+              "type": "string",
+              "enum": [
+                "diy",
+                "done_for_you"
+              ]
+            }
+          },
+          "required": [
+            "name"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "update_adjustment_status",
+        "title": "Update adjustment status",
+        "description": "Change the status of an adjustment proposal on a project (e.g. accept or reject an AI-suggested adjustment).",
+        "annotations": {
+          "readOnlyHint": false,
+          "idempotentHint": false,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "description": "The project ID (UUID)."
+            },
+            "adjustment_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "description": "The adjustment proposal ID (UUID)."
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "accepted",
+                "accepted_with_edits",
+                "rejected",
+                "dismissed"
+              ],
+              "description": "New status for the adjustment."
+            },
+            "reviewer_notes": {
+              "description": "Optional notes explaining the decision.",
+              "type": "string",
+              "maxLength": 2000
+            }
+          },
+          "required": [
+            "project_id",
+            "adjustment_id",
+            "status"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "get_export_data",
+        "title": "Get export data",
+        "description": "Return the structured workbook and QoE data for a project as JSON, suitable for AI analysis. For actual PDF/XLSX file downloads, use the in-app Export Center at the returned URL.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "description": "The project ID (UUID)."
+            }
+          },
+          "required": [
+            "project_id"
           ]
         },
         "outputSchema": null

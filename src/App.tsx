@@ -101,6 +101,7 @@ const CpaQueue = lazy(() => import("./pages/cpa/CpaQueue"));
 const CpaEngagements = lazy(() => import("./pages/cpa/CpaEngagements"));
 const CpaEngagement = lazy(() => import("./pages/cpa/CpaEngagement"));
 const CpaOnboarding = lazy(() => import("./pages/cpa/CpaOnboarding"));
+const OAuthConsent = lazy(() => import("./pages/OAuthConsent"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -152,6 +153,7 @@ export const routes: RouteRecord[] = [
       { index: true, element: <Index />, entry: "src/pages/Index.tsx" },
       { path: "auth", element: wrap(<Auth />) },
       { path: "auth/callback", element: wrap(<AuthCallback />) },
+      { path: ".lovable/oauth/consent", element: wrap(<OAuthConsent />) },
       { path: "reset-password", element: wrap(<ResetPassword />) },
       { path: "dashboard", element: wrap(<Dashboard />) },
       { path: "project/:id", element: wrap(<Project />) },

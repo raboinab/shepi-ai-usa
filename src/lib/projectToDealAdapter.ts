@@ -13,7 +13,6 @@ import type { AddbackMapping } from "./calculations";
 import { computeSign } from "./qoeAdjustmentTaxonomy";
 import type { LedgerIntent } from "./qoeAdjustmentTaxonomy";
 import type { Period } from "./periodUtils";
-import { derivePriorBalances } from "./derivePriorBalances";
 
 // ============================================
 // Main Adapter Function
@@ -183,7 +182,8 @@ export function projectToDealData(project: ProjectRecord): DealData {
 export async function loadDealDataWithPriorBalances(project: ProjectRecord): Promise<DealData> {
   const dealData = projectToDealData(project);
   const [priorBalances, payrollFallback, fixedAssetsFallback, debtFallback] = await Promise.all([
-    derivePriorBalances(project.id, dealData.trialBalance, dealData.deal.periods),
+    // Lazy import to keep the adapter import-safe in non-browser environments.
+    import("./derivePriorBalances").then(m => m.derivePriorBalances(project.id, dealData.trialBalance, dealData.deal.periods)).catch(() => ({} as Record<string, number>)),
     // Lazy import to avoid a static cycle with payrollFallback → workbook-types
     import("./payrollFallback").then(m => m.fetchLatestPayrollFallback(project.id)).catch(() => null),
     import("./fixedAssetsFallback").then(m => m.fetchLatestFixedAssetsFallback(project.id)).catch(() => []),
