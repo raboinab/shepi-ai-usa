@@ -2,7 +2,7 @@
 
 > Long-form companion to llms.txt. Contains the full homepage FAQ (single source of truth — see src/data/homepageFaq.ts), the complete public content surface, and capability/limitation statements suitable for agent reasoning.
 
-Generated: 2026-07-02
+Generated: 2026-07-06
 
 ## Identity
 
@@ -186,6 +186,119 @@ Absolutely. Firms use shepi to extend capacity without adding headcount, standar
 ### Who should NOT use shepi?
 
 shepi may not be right for you if: You need a CPA-certified QoE report (we don't provide certification); Your lender has specific QoE vendor requirements; You're looking for a valuation tool (we focus on earnings quality, not valuation); You want the AI to 'do it for you' (we assist, you decide).
+
+
+## Per-guide FAQs
+
+The following per-guide FAQs mirror the FAQ blocks rendered on each guide page. Source of truth: src/data/guideFaqs.ts.
+
+### FAQ — Quality of Earnings
+
+Source: https://shepi.ai/guides/quality-of-earnings
+
+**Q: What is a Quality of Earnings (QoE) report?**
+
+A: A QoE report is a financial due diligence analysis that normalizes a company's earnings to show what a buyer can realistically expect the business to earn post-close. It converts reported EBITDA into an adjusted, sustainable, recurring number by isolating owner add-backs, one-time items, and accounting anomalies.
+
+**Q: Who orders a QoE report?**
+
+A: Buyers order buy-side QoE reports to validate a target's earnings before closing. Sellers order sell-side QoE reports to defend asking price and pre-empt buyer adjustments. Lenders, especially SBA and acquisition lenders, often require a QoE as an underwriting condition.
+
+**Q: How long does a Quality of Earnings analysis take?**
+
+A: Traditional CPA-led QoE engagements take 3–6 weeks. AI-assisted platforms like Shepi can produce a first draft in hours once source documents are uploaded, with CPA review adding a few business days for the Done-For-You tier.
+
+**Q: Is a QoE the same as an audit?**
+
+A: No. An audit expresses an opinion on whether historical financial statements comply with GAAP. A QoE is a forward-looking valuation exercise focused on normalized, recurring EBITDA. See the QoE vs Audit guide for a full comparison.
+
+### FAQ — EBITDA Adjustments
+
+Source: https://shepi.ai/guides/ebitda-adjustments
+
+**Q: What are EBITDA adjustments?**
+
+A: EBITDA adjustments are line-item changes that convert reported EBITDA into normalized EBITDA — the earnings a buyer will inherit. Common categories include owner compensation normalization, personal expense add-backs, one-time or non-recurring items, related-party transactions, and run-rate adjustments for recent changes.
+
+**Q: Which EBITDA add-backs will a lender accept?**
+
+A: SBA and acquisition lenders typically accept documented owner compensation normalization, verifiable personal expenses run through the business, and clearly non-recurring items (litigation, one-time consulting). They push back on speculative revenue add-backs, unverified cost savings, and pro-forma synergies.
+
+**Q: How do I document an EBITDA adjustment?**
+
+A: Each adjustment should reference source documents (payroll register, bank statements, invoices) and a written rationale. Buyers and lenders want to see the general ledger detail behind every number so they can trace it back to the underlying transaction.
+
+**Q: What EBITDA adjustments do buyers reject most often?**
+
+A: Buyers reject add-backs that lack documentation, adjustments for expenses the business will still incur under new ownership (e.g. rent to a related party at below-market rates), and forward-looking cost savings that depend on the buyer's own actions.
+
+### FAQ — Quality of Earnings vs Audit
+
+Source: https://shepi.ai/guides/qoe-vs-audit
+
+**Q: Is a Quality of Earnings report an audit?**
+
+A: No. A QoE report is a financial due diligence analysis, not an audit. It does not express an opinion on whether financial statements comply with GAAP.
+
+**Q: Do I need an audit or a QoE for an M&A deal?**
+
+A: Most buyers and lenders require a QoE to underwrite the deal. Some also require audited financials, especially for larger transactions or SBA loans. The two documents answer different questions.
+
+**Q: Can audited financials replace a QoE?**
+
+A: No. Audited financials verify historical GAAP compliance; they do not normalize earnings for transaction purposes, identify owner add-backs, or set a working capital peg.
+
+**Q: Which is more expensive, a QoE or an audit?**
+
+A: Both vary by size and complexity. Traditional CPA-led QoE reports often start around $15K–$25K and can exceed $100K for complex deals. AI-assisted platforms like Shepi start at $1,000 per project. Audits range from $10K for small businesses to six figures for larger entities.
+
+### FAQ — Financial Due Diligence Checklist
+
+Source: https://shepi.ai/guides/due-diligence-checklist
+
+**Q: What documents belong in a financial due diligence request list?**
+
+A: At minimum: 3–5 years of financial statements, monthly trial balances, general ledger detail, tax returns, bank statements, payroll registers, top customer and vendor lists, aged AR and AP, debt schedules, and material contracts. Specialized deals add inventory records, backlog reports, and forecast models.
+
+**Q: How long does financial due diligence take?**
+
+A: Traditional financial due diligence runs 3–6 weeks from receipt of a complete data room. Delays are almost always caused by incomplete documents, not analyst capacity. AI-assisted platforms compress the analysis phase but still depend on complete source data.
+
+**Q: What financial due diligence red flags matter most?**
+
+A: Revenue recognized before delivery, customer concentration above 25%, working capital that doesn't reconcile to bank activity, undocumented owner add-backs, related-party transactions at non-market rates, and general ledger accounts with unusual monthly patterns.
+
+### FAQ — Seller's Discretionary Earnings (SDE)
+
+Source: https://shepi.ai/guides/sellers-discretionary-earnings
+
+**Q: What is Seller's Discretionary Earnings (SDE)?**
+
+A: SDE is a small-business earnings metric that starts with EBITDA and adds back the full compensation and benefits of a single owner-operator, plus discretionary expenses. It represents the total financial benefit available to a single owner-operator buyer.
+
+**Q: SDE vs EBITDA — which one do buyers use?**
+
+A: Businesses under roughly $1M in earnings are typically valued on SDE (main-street brokerage deals). Businesses above that threshold are usually valued on adjusted EBITDA (lower-middle-market M&A). The line is fuzzy; some deals present both.
+
+**Q: What add-backs are included in SDE but not EBITDA?**
+
+A: SDE includes the owner's full W-2 compensation, payroll taxes, health insurance, retirement contributions, and personal-use expenses on top of standard EBITDA add-backs. EBITDA normalizes owner comp to a market-rate replacement salary rather than adding it back in full.
+
+### FAQ — EBITDA Bridge
+
+Source: https://shepi.ai/guides/ebitda-bridge
+
+**Q: What is an EBITDA bridge?**
+
+A: An EBITDA bridge is a schedule that walks from reported EBITDA to adjusted (normalized) EBITDA by listing each add-back and deduction in categories: owner compensation, personal expenses, one-time items, related-party, and run-rate adjustments. It is the centerpiece of any QoE report.
+
+**Q: How is an EBITDA bridge structured?**
+
+A: Start with reported EBITDA per the financial statements. Add or subtract each adjustment in labeled categories, with a source reference for each line. End with adjusted EBITDA. A well-built bridge lets a buyer or lender trace every number back to a source document.
+
+**Q: What EBITDA bridge mistakes trip up first-time preparers?**
+
+A: Double-counting adjustments (e.g., adjusting owner comp and separately adding back the owner's bonus), including forward-looking synergies as if they were current adjustments, and failing to document the source for each add-back so a reviewer cannot verify it.
 
 
 ## Discovery endpoints

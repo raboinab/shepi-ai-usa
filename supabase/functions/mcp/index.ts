@@ -2,10 +2,26 @@
 // To take ownership, delete this banner line; the plugin then leaves the file alone.
 // supabase function: mcp
 // Bundled from src/lib/mcp/index.ts by @lovable.dev/mcp-js.
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __esm = (fn, res) => function __init() {
+  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+};
+
+// <define:import.meta.env>
+var init_define_import_meta_env = __esm({
+  "<define:import.meta.env>"() {
+  }
+});
+
+// lovable-mcp-supabase-entry.ts
+init_define_import_meta_env();
+
 // src/lib/mcp/index.ts
-import { defineMcp } from "npm:@lovable.dev/mcp-js@0.20.0";
+init_define_import_meta_env();
+import { auth, defineMcp } from "npm:@lovable.dev/mcp-js@0.20.0";
 
 // src/lib/mcp/tools/echo.ts
+init_define_import_meta_env();
 import { defineTool } from "npm:@lovable.dev/mcp-js@0.20.0";
 import { z } from "npm:zod@^4.4.3";
 var echo_default = defineTool({
@@ -17,13 +33,1566 @@ var echo_default = defineTool({
   handler: ({ text }) => ({ content: [{ type: "text", text }] })
 });
 
+// src/lib/mcp/tools/listProjects.ts
+init_define_import_meta_env();
+import { defineTool as defineTool2 } from "npm:@lovable.dev/mcp-js@0.20.0";
+import { z as z2 } from "npm:zod@^4.4.3";
+
+// src/lib/mcp/tools/supabase.ts
+init_define_import_meta_env();
+import { createClient } from "npm:@supabase/supabase-js@^2.87.1";
+function supabaseForUser(ctx) {
+  if (!ctx.isAuthenticated()) {
+    return { error: "Not authenticated", client: null };
+  }
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const supabaseKey = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY");
+  if (!supabaseUrl || !supabaseKey) {
+    return { error: "Server configuration error", client: null };
+  }
+  const client = createClient(supabaseUrl, supabaseKey, {
+    global: { headers: { Authorization: `Bearer ${ctx.getToken()}` } },
+    auth: { persistSession: false, autoRefreshToken: false }
+  });
+  return { error: null, client };
+}
+
+// src/lib/mcp/tools/listProjects.ts
+var listProjects_default = defineTool2({
+  name: "list_projects",
+  title: "List projects",
+  description: "List the signed-in user's Shepi projects with basic metadata.",
+  inputSchema: {
+    limit: z2.number().int().min(1).max(100).default(50).describe("Maximum number of projects to return.")
+  },
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  handler: async ({ limit }, ctx) => {
+    const { error, client } = supabaseForUser(ctx);
+    if (error || !client) {
+      return { content: [{ type: "text", text: error ?? "Not authenticated" }], isError: true };
+    }
+    const { data, error: dbError } = await client.from("projects").select("id, name, client_name, target_company, industry, transaction_type, status, service_tier, current_phase, current_section, created_at, updated_at").order("updated_at", { ascending: false }).limit(limit);
+    if (dbError) {
+      return { content: [{ type: "text", text: dbError.message }], isError: true };
+    }
+    return {
+      content: [{ type: "text", text: JSON.stringify(data ?? []) }],
+      structuredContent: { projects: data ?? [] }
+    };
+  }
+});
+
+// src/lib/mcp/tools/getProjectSummary.ts
+init_define_import_meta_env();
+import { defineTool as defineTool3 } from "npm:@lovable.dev/mcp-js@0.20.0";
+import { z as z3 } from "npm:zod@^4.4.3";
+var getProjectSummary_default = defineTool3({
+  name: "get_project_summary",
+  title: "Get project summary",
+  description: "Read a project's metadata, current wizard phase/section, and service tier.",
+  inputSchema: {
+    project_id: z3.string().uuid().describe("The project ID (UUID).")
+  },
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  handler: async ({ project_id }, ctx) => {
+    const { error, client } = supabaseForUser(ctx);
+    if (error || !client) {
+      return { content: [{ type: "text", text: error ?? "Not authenticated" }], isError: true };
+    }
+    const { data, error: dbError } = await client.from("projects").select("id, name, client_name, target_company, industry, transaction_type, status, service_tier, fiscal_year_end, current_phase, current_section, created_at, updated_at").eq("id", project_id).maybeSingle();
+    if (dbError) {
+      return { content: [{ type: "text", text: dbError.message }], isError: true };
+    }
+    if (!data) {
+      return { content: [{ type: "text", text: "Project not found or access denied." }], isError: true };
+    }
+    return {
+      content: [{ type: "text", text: JSON.stringify(data) }],
+      structuredContent: { project: data }
+    };
+  }
+});
+
+// src/lib/mcp/tools/listDocuments.ts
+init_define_import_meta_env();
+import { defineTool as defineTool4 } from "npm:@lovable.dev/mcp-js@0.20.0";
+import { z as z4 } from "npm:zod@^4.4.3";
+var listDocuments_default = defineTool4({
+  name: "list_documents",
+  title: "List documents",
+  description: "List documents uploaded to a project with processing status and category.",
+  inputSchema: {
+    project_id: z4.string().uuid().describe("The project ID (UUID)."),
+    limit: z4.number().int().min(1).max(200).default(100).describe("Maximum number of documents to return.")
+  },
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  handler: async ({ project_id, limit }, ctx) => {
+    const { error, client } = supabaseForUser(ctx);
+    if (error || !client) {
+      return { content: [{ type: "text", text: error ?? "Not authenticated" }], isError: true };
+    }
+    const { data, error: dbError } = await client.from("documents").select("id, name, file_type, category, processing_status, status, coverage_validated, institution, account_label, period_start, period_end, created_at").eq("project_id", project_id).order("created_at", { ascending: false }).limit(limit);
+    if (dbError) {
+      return { content: [{ type: "text", text: dbError.message }], isError: true };
+    }
+    return {
+      content: [{ type: "text", text: JSON.stringify(data ?? []) }],
+      structuredContent: { documents: data ?? [] }
+    };
+  }
+});
+
+// src/lib/mcp/tools/listAdjustments.ts
+init_define_import_meta_env();
+import { defineTool as defineTool5 } from "npm:@lovable.dev/mcp-js@0.20.0";
+import { z as z5 } from "npm:zod@^4.4.3";
+var listAdjustments_default = defineTool5({
+  name: "list_adjustments",
+  title: "List adjustments",
+  description: "List adjustment proposals for a project with category, status, and total proposed amount.",
+  inputSchema: {
+    project_id: z5.string().uuid().describe("The project ID (UUID)."),
+    status: z5.enum(["pending", "accepted", "accepted_with_edits", "rejected", "dismissed"]).optional().describe("Optional status filter."),
+    limit: z5.number().int().min(1).max(200).default(100).describe("Maximum number of adjustments to return.")
+  },
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  handler: async ({ project_id, status, limit }, ctx) => {
+    const { error, client } = supabaseForUser(ctx);
+    if (error || !client) {
+      return { content: [{ type: "text", text: error ?? "Not authenticated" }], isError: true };
+    }
+    let query = client.from("adjustment_proposals").select("id, title, description, block, adjustment_class, intent, status, proposed_amount, proposed_period_values, evidence_strength, review_priority, ai_rationale, created_at, updated_at").eq("project_id", project_id).order("created_at", { ascending: false }).limit(limit);
+    if (status) {
+      query = query.eq("status", status);
+    }
+    const { data, error: dbError } = await query;
+    if (dbError) {
+      return { content: [{ type: "text", text: dbError.message }], isError: true };
+    }
+    return {
+      content: [{ type: "text", text: JSON.stringify(data ?? []) }],
+      structuredContent: { adjustments: data ?? [] }
+    };
+  }
+});
+
+// src/lib/mcp/tools/getAdjustmentDetail.ts
+init_define_import_meta_env();
+import { defineTool as defineTool6 } from "npm:@lovable.dev/mcp-js@0.20.0";
+import { z as z6 } from "npm:zod@^4.4.3";
+var getAdjustmentDetail_default = defineTool6({
+  name: "get_adjustment_detail",
+  title: "Get adjustment detail",
+  description: "Read a single adjustment proposal with rationale, evidence, and period values.",
+  inputSchema: {
+    project_id: z6.string().uuid().describe("The project ID (UUID)."),
+    adjustment_id: z6.string().uuid().describe("The adjustment proposal ID (UUID).")
+  },
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  handler: async ({ project_id, adjustment_id }, ctx) => {
+    const { error, client } = supabaseForUser(ctx);
+    if (error || !client) {
+      return { content: [{ type: "text", text: error ?? "Not authenticated" }], isError: true };
+    }
+    const { data, error: dbError } = await client.from("adjustment_proposals").select("*").eq("id", adjustment_id).eq("project_id", project_id).maybeSingle();
+    if (dbError) {
+      return { content: [{ type: "text", text: dbError.message }], isError: true };
+    }
+    if (!data) {
+      return { content: [{ type: "text", text: "Adjustment not found or access denied." }], isError: true };
+    }
+    return {
+      content: [{ type: "text", text: JSON.stringify(data) }],
+      structuredContent: { adjustment: data }
+    };
+  }
+});
+
+// src/lib/mcp/tools/getQualityOfEarningsSummary.ts
+init_define_import_meta_env();
+import { defineTool as defineTool7 } from "npm:@lovable.dev/mcp-js@0.20.0";
+import { z as z7 } from "npm:zod@^4.4.3";
+
+// src/lib/projectToDealAdapter.ts
+init_define_import_meta_env();
+
+// src/lib/calculations.ts
+init_define_import_meta_env();
+
+// src/lib/deal-labels.ts
+init_define_import_meta_env();
+var SALES_ALIASES = /* @__PURE__ */ new Set([
+  "revenue",
+  "sales",
+  "income",
+  "service revenue",
+  "service income",
+  "product revenue",
+  "product sales",
+  "net revenue",
+  "net sales",
+  "gross revenue",
+  "total revenue",
+  "total sales"
+]);
+var COGS_ALIASES = /* @__PURE__ */ new Set([
+  "cost of goods sold",
+  "cogs",
+  "cost of sales",
+  "cos",
+  "cost of revenue",
+  "direct costs",
+  "cost of services",
+  "materials",
+  "direct labor",
+  "manufacturing costs"
+]);
+var OPEX_ALIASES = /* @__PURE__ */ new Set([
+  "operating expenses",
+  "opex",
+  "operating expense",
+  "expense",
+  "general and administrative",
+  "g&a",
+  "selling expenses",
+  "sg&a",
+  "selling, general & administrative",
+  "administrative expenses",
+  "admin expenses"
+]);
+var OTHER_EXPENSE_ALIASES = /* @__PURE__ */ new Set([
+  "other expense (income)",
+  "other income",
+  "other expense",
+  "other income/expense",
+  "non-operating income",
+  "interest income",
+  "interest expense",
+  "gain on sale",
+  "loss on sale",
+  "miscellaneous income",
+  "miscellaneous expense"
+]);
+var PAYROLL_ALIASES = /* @__PURE__ */ new Set([
+  "payroll & related",
+  "payroll",
+  "salaries",
+  "wages",
+  "payroll expenses",
+  "salaries & wages",
+  "compensation",
+  "employee benefits",
+  "payroll taxes"
+]);
+var CASH_ALIASES = /* @__PURE__ */ new Set([
+  "cash and cash equivalents",
+  "cash",
+  "bank",
+  "checking",
+  "savings",
+  "money market",
+  "petty cash",
+  "cash in bank"
+]);
+var AR_ALIASES = /* @__PURE__ */ new Set([
+  "accounts receivable",
+  "a/r",
+  "ar",
+  "trade receivables",
+  "receivables",
+  "accts receivable"
+]);
+var AP_ALIASES = /* @__PURE__ */ new Set([
+  "accounts payable",
+  "a/p",
+  "ap",
+  "trade payables",
+  "payables",
+  "accts payable",
+  "current liabilities"
+]);
+var FIXED_ASSET_ALIASES = /* @__PURE__ */ new Set([
+  "fixed assets",
+  "property plant and equipment",
+  "pp&e",
+  "ppe",
+  "property and equipment",
+  "capital assets",
+  "tangible assets",
+  "long-term assets"
+]);
+var EQUITY_ALIASES = /* @__PURE__ */ new Set([
+  "equity",
+  "stockholders equity",
+  "shareholders equity",
+  "owner's equity",
+  "retained earnings",
+  "capital stock",
+  "common stock",
+  "additional paid-in capital"
+]);
+var OCA_ALIASES = /* @__PURE__ */ new Set([
+  "other current assets",
+  "oca",
+  "prepaid expenses",
+  "inventory",
+  "other receivables",
+  "deposits"
+]);
+var OCL_ALIASES = /* @__PURE__ */ new Set([
+  "other current liabilities",
+  "ocl",
+  "accrued expenses",
+  "accrued liabilities",
+  "deferred revenue",
+  "credit cards",
+  "other payables"
+]);
+var LONG_TERM_LIABILITIES_ALIASES = /* @__PURE__ */ new Set([
+  "long term liabilities",
+  "long-term debt",
+  "notes payable",
+  "mortgages",
+  "bonds payable",
+  "term loans"
+]);
+var OTHER_ASSETS_ALIASES = /* @__PURE__ */ new Set([
+  "other assets",
+  "intangible assets",
+  "goodwill",
+  "deposits",
+  "long-term investments"
+]);
+var LABEL_GROUPS = {
+  "Revenue": SALES_ALIASES,
+  "Cost of Goods Sold": COGS_ALIASES,
+  "Operating expenses": OPEX_ALIASES,
+  "Other expense (income)": OTHER_EXPENSE_ALIASES,
+  "Payroll & Related": PAYROLL_ALIASES,
+  "Cash and cash equivalents": CASH_ALIASES,
+  "Accounts receivable": AR_ALIASES,
+  "Other current assets": OCA_ALIASES,
+  "Fixed assets": FIXED_ASSET_ALIASES,
+  "Other assets": OTHER_ASSETS_ALIASES,
+  "Current liabilities": AP_ALIASES,
+  "Other current liabilities": OCL_ALIASES,
+  "Long term liabilities": LONG_TERM_LIABILITIES_ALIASES,
+  "Equity": EQUITY_ALIASES
+};
+function resolveLabel(lineItem) {
+  const lower = (lineItem || "").toLowerCase().trim();
+  if (!lower) return lineItem;
+  for (const [canonical, aliases] of Object.entries(LABEL_GROUPS)) {
+    if (aliases.has(lower) || lower === canonical.toLowerCase()) {
+      return canonical;
+    }
+  }
+  for (const [canonical, aliases] of Object.entries(LABEL_GROUPS)) {
+    if (lower.startsWith(canonical.toLowerCase())) return canonical;
+    for (const alias of aliases) {
+      if (lower.startsWith(alias) || lower.includes(alias)) {
+        return canonical;
+      }
+    }
+  }
+  return lineItem;
+}
+function matchesCategory(lineItem, category) {
+  const aliases = LABEL_GROUPS[category];
+  if (!aliases) return false;
+  const lower = (lineItem || "").toLowerCase().trim();
+  if (aliases.has(lower) || lower === category.toLowerCase()) return true;
+  if (lower.startsWith(category.toLowerCase())) return true;
+  for (const alias of aliases) {
+    if (lower.startsWith(alias) || lower.includes(alias)) return true;
+  }
+  return false;
+}
+
+// src/lib/calculations.ts
+function buildTbIndex(entries) {
+  const index = /* @__PURE__ */ new Map();
+  for (const entry of entries) {
+    index.set(entry.accountId, entry);
+  }
+  return index;
+}
+function sumByLineItem(entries, lineItem, periodId) {
+  let total = 0;
+  for (const entry of entries) {
+    if (matchesCategory(entry.fsLineItem, lineItem) || resolveLabel(entry.fsLineItem) === lineItem) {
+      total += entry.balances[periodId] || 0;
+    }
+  }
+  return total;
+}
+function sumByFsType(entries, fsType, periodId) {
+  let total = 0;
+  for (const entry of entries) {
+    if (entry.fsType === fsType) {
+      total += entry.balances[periodId] || 0;
+    }
+  }
+  return total;
+}
+function calcRevenue(entries, periodId) {
+  return sumByLineItem(entries, "Revenue", periodId);
+}
+function calcCOGS(entries, periodId) {
+  return sumByLineItem(entries, "Cost of Goods Sold", periodId);
+}
+function calcGrossProfit(entries, periodId) {
+  return calcRevenue(entries, periodId) + calcCOGS(entries, periodId);
+}
+function calcNetIncome(entries, periodId) {
+  return sumByFsType(entries, "IS", periodId);
+}
+function calcInterestExpense(entries, periodId, addbackAccountIds) {
+  if (!addbackAccountIds || addbackAccountIds.length === 0) return 0;
+  let total = 0;
+  for (const entry of entries) {
+    if (addbackAccountIds.includes(entry.accountId)) {
+      total += entry.balances[periodId] || 0;
+    }
+  }
+  return total;
+}
+function calcDepreciationExpense(entries, periodId, addbackAccountIds) {
+  if (!addbackAccountIds || addbackAccountIds.length === 0) return 0;
+  let total = 0;
+  for (const entry of entries) {
+    if (addbackAccountIds.includes(entry.accountId)) {
+      total += entry.balances[periodId] || 0;
+    }
+  }
+  return total;
+}
+function calcIncomeTaxExpense(entries, periodId, addbackAccountIds) {
+  if (!addbackAccountIds || addbackAccountIds.length === 0) return 0;
+  let total = 0;
+  for (const entry of entries) {
+    if (addbackAccountIds.includes(entry.accountId)) {
+      total += entry.balances[periodId] || 0;
+    }
+  }
+  return total;
+}
+function calcReportedEBITDA(entries, periodId, addbacks) {
+  return calcNetIncome(entries, periodId) - calcInterestExpense(entries, periodId, addbacks?.interest) - calcDepreciationExpense(entries, periodId, addbacks?.depreciation) - calcIncomeTaxExpense(entries, periodId, addbacks?.taxes);
+}
+function calcAdjustmentTotal(adjustments, type, periodId, excludeNonQoE = true) {
+  let total = 0;
+  for (const adj of adjustments) {
+    if (excludeNonQoE && adj.effectType === "NonQoE") continue;
+    if (type === "all" || adj.type === type) {
+      total += adj.amounts[periodId] || 0;
+    }
+  }
+  return total;
+}
+function calcAdjustedEBITDA(entries, adjustments, periodId, addbacks) {
+  return calcReportedEBITDA(entries, periodId, addbacks) - calcAdjustmentTotal(adjustments, "all", periodId);
+}
+function buildAggregatePeriods(periods, fiscalYears, fiscalYearEnd) {
+  const aggs = [];
+  for (const fy of fiscalYears) {
+    aggs.push({
+      id: `agg-${fy.label}`,
+      label: fy.label,
+      shortLabel: fy.label,
+      monthPeriodIds: fy.periods.map((p) => p.id)
+    });
+  }
+  if (periods.length > 0) {
+    const latest = periods[periods.length - 1];
+    const latestDate = latest.date;
+    const ltmPeriods = periods.filter((p) => {
+      const diff = (latestDate.getFullYear() - p.date.getFullYear()) * 12 + (latestDate.getMonth() - p.date.getMonth());
+      return diff >= 0 && diff < 12;
+    });
+    if (ltmPeriods.length > 0) {
+      const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const ltmLabel = `LTM ${SHORT_MONTHS[latest.month - 1]}-${String(latest.year).slice(-2)}`;
+      aggs.push({
+        id: `agg-ltm-${latest.id}`,
+        label: ltmLabel,
+        shortLabel: ltmLabel,
+        monthPeriodIds: ltmPeriods.map((p) => p.id)
+      });
+    }
+    const fyeMonth = fiscalYearEnd;
+    let fyStartMonth = fyeMonth + 1;
+    let fyStartYear = latest.year;
+    if (fyStartMonth > 12) {
+      fyStartMonth = 1;
+    }
+    if (latest.month < fyeMonth) {
+      fyStartYear -= 1;
+    }
+    const ytdPeriods = periods.filter((p) => {
+      const pDate = p.date;
+      const fyStart = new Date(fyStartYear, fyStartMonth - 1, 1);
+      return pDate >= fyStart && pDate <= latestDate;
+    });
+    if (ytdPeriods.length > 0 && ytdPeriods.length < 12) {
+      const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const ytdLabel = `YTD ${SHORT_MONTHS[latest.month - 1]}-${String(latest.year).slice(-2)}`;
+      aggs.push({
+        id: `agg-ytd-${latest.id}`,
+        label: ytdLabel,
+        shortLabel: ytdLabel,
+        monthPeriodIds: ytdPeriods.map((p) => p.id)
+      });
+    }
+  }
+  return aggs;
+}
+function groupByFiscalYear(periods, fiscalYearEnd) {
+  if (periods.length === 0) return [];
+  const years = [];
+  let currentYear = [];
+  for (const period of periods) {
+    currentYear.push(period);
+    if (period.month === fiscalYearEnd) {
+      const shortYear = String(period.year).slice(-2);
+      years.push({
+        label: `FY ${shortYear}`,
+        periods: [...currentYear]
+      });
+      currentYear = [];
+    }
+  }
+  if (currentYear.length > 0) {
+    const lastPeriod = currentYear[currentYear.length - 1];
+    const shortYear = String(lastPeriod.year).slice(-2);
+    years.push({
+      label: `FY ${shortYear}`,
+      periods: currentYear
+    });
+  }
+  return years;
+}
+function sumReclassImpact(reclassifications, lineItem, periodId) {
+  let total = 0;
+  for (const r of reclassifications) {
+    const amt = r.amounts[periodId] ?? r.amounts["_flat"] ?? 0;
+    if (amt === 0) continue;
+    if (matchesCategory(r.toAccount, lineItem) || resolveLabel(r.toAccount) === lineItem) {
+      total += amt;
+    }
+    if (matchesCategory(r.fromAccount, lineItem) || resolveLabel(r.fromAccount) === lineItem) {
+      total -= amt;
+    }
+  }
+  return total;
+}
+
+// src/lib/qoeAdjustmentTaxonomy.ts
+init_define_import_meta_env();
+var INTENT_TO_SIGN = {
+  remove_expense: 1,
+  // Adds to EBITDA
+  remove_revenue: -1,
+  // Subtracts from EBITDA
+  add_expense: -1,
+  // Subtracts from EBITDA
+  add_revenue: 1,
+  // Adds to EBITDA
+  normalize_up_expense: -1,
+  // Expense goes up → -EBITDA
+  normalize_down_expense: 1,
+  // Expense goes down → +EBITDA
+  other: 0
+  // User specifies manually
+};
+var ADJUSTMENT_TEMPLATES = [
+  // MA - Management Adjustments
+  {
+    id: "ma-owner-comp",
+    type: "MA",
+    adjustmentClass: "normalization",
+    label: "Owner compensation normalization",
+    description: "Normalize owner/officer compensation to market rate",
+    defaultIntent: "remove_expense",
+    typicalAnchor: "payroll"
+  },
+  {
+    id: "ma-related-party-exp",
+    type: "MA",
+    adjustmentClass: "normalization",
+    label: "Related-party expense removal",
+    description: "Remove personal or non-business related-party expenses",
+    defaultIntent: "remove_expense",
+    typicalAnchor: "operating expenses"
+  },
+  {
+    id: "ma-rent-normalization",
+    type: "MA",
+    adjustmentClass: "normalization",
+    label: "Related-party rent normalization",
+    description: "Adjust related-party rent to fair market value",
+    defaultIntent: "normalize_down_expense",
+    typicalAnchor: "rent expense"
+  },
+  // DD - Due Diligence Adjustments
+  {
+    id: "dd-legal-settlement",
+    type: "DD",
+    adjustmentClass: "nonrecurring",
+    label: "One-time legal settlement",
+    description: "Remove non-recurring legal fees or settlement costs",
+    defaultIntent: "remove_expense",
+    typicalAnchor: "legal expense"
+  },
+  {
+    id: "dd-restructuring",
+    type: "DD",
+    adjustmentClass: "nonrecurring",
+    label: "Restructuring / severance",
+    description: "Remove one-time restructuring or severance costs",
+    defaultIntent: "remove_expense",
+    typicalAnchor: "operating expenses"
+  },
+  {
+    id: "dd-consulting",
+    type: "DD",
+    adjustmentClass: "nonrecurring",
+    label: "One-time consulting / due diligence",
+    description: "Remove transaction-related consulting or DD fees",
+    defaultIntent: "remove_expense",
+    typicalAnchor: "professional fees"
+  },
+  {
+    id: "dd-asset-sale",
+    type: "DD",
+    adjustmentClass: "nonrecurring",
+    label: "Asset sale gain/loss",
+    description: "Remove non-operating gain or loss from asset disposition",
+    defaultIntent: "remove_expense",
+    typicalAnchor: "other income/expense"
+  },
+  {
+    id: "dd-ppp-grant",
+    type: "DD",
+    adjustmentClass: "nonrecurring",
+    label: "PPP / grant income removal",
+    description: "Remove one-time government grants or PPP forgiveness",
+    defaultIntent: "remove_revenue",
+    typicalAnchor: "other income"
+  },
+  {
+    id: "dd-revenue-cutoff",
+    type: "DD",
+    adjustmentClass: "timing",
+    label: "Revenue cut-off adjustment",
+    description: "Shift revenue to the period earned",
+    defaultIntent: "add_revenue",
+    typicalAnchor: "sales"
+  },
+  {
+    id: "dd-returns-allowance",
+    type: "DD",
+    adjustmentClass: "timing",
+    label: "Returns / allowance true-up",
+    description: "Normalize reserves for expected returns or allowances",
+    defaultIntent: "add_expense",
+    typicalAnchor: "contra revenue"
+  },
+  {
+    id: "dd-inventory-obsolescence",
+    type: "DD",
+    adjustmentClass: "policy",
+    label: "Inventory obsolescence reserve",
+    description: "Normalize inventory reserve to appropriate level",
+    defaultIntent: "add_expense",
+    typicalAnchor: "cost of goods sold"
+  },
+  {
+    id: "dd-capitalize-expense",
+    type: "DD",
+    adjustmentClass: "policy",
+    label: "Capitalize vs expense correction",
+    description: "Correct capitalization vs expense treatment",
+    defaultIntent: "remove_expense",
+    typicalAnchor: "operating expenses / fixed assets"
+  },
+  {
+    id: "dd-accrual-timing",
+    type: "DD",
+    adjustmentClass: "timing",
+    label: "Accrual timing adjustment",
+    description: "Accrue or defer expenses to match revenue period",
+    defaultIntent: "add_expense",
+    typicalAnchor: "operating expenses"
+  },
+  {
+    id: "dd-fx-hedging",
+    type: "DD",
+    adjustmentClass: "nonrecurring",
+    label: "FX / fair value swings",
+    description: "Remove non-operating FX or mark-to-market volatility",
+    defaultIntent: "remove_expense",
+    typicalAnchor: "other expense/income"
+  },
+  // PF - Pro Forma Adjustments
+  {
+    id: "pf-synergy-savings",
+    type: "PF",
+    adjustmentClass: "proforma",
+    label: "Synergy savings",
+    description: "Recognize post-close operational synergies",
+    defaultIntent: "remove_expense",
+    typicalAnchor: "operating expenses"
+  },
+  {
+    id: "pf-cost-reduction",
+    type: "PF",
+    adjustmentClass: "proforma",
+    label: "Planned cost reduction",
+    description: "Recognize planned cost savings initiatives",
+    defaultIntent: "remove_expense",
+    typicalAnchor: "operating expenses"
+  },
+  // New detector templates
+  {
+    id: "dd-bad-debt-reserve",
+    type: "DD",
+    adjustmentClass: "policy",
+    label: "Bad debt reserve normalization",
+    description: "Normalize bad debt reserve to appropriate level",
+    defaultIntent: "add_expense",
+    typicalAnchor: "bad debt expense"
+  },
+  {
+    id: "dd-warranty-reserve",
+    type: "DD",
+    adjustmentClass: "policy",
+    label: "Warranty reserve adjustment",
+    description: "Normalize warranty reserve accrual to expected claims",
+    defaultIntent: "add_expense",
+    typicalAnchor: "warranty expense"
+  },
+  {
+    id: "dd-insurance-proceeds",
+    type: "DD",
+    adjustmentClass: "nonrecurring",
+    label: "Insurance proceeds removal",
+    description: "Remove non-recurring insurance proceeds or settlements",
+    defaultIntent: "remove_revenue",
+    typicalAnchor: "other income"
+  },
+  {
+    id: "ma-personal-auto",
+    type: "MA",
+    adjustmentClass: "normalization",
+    label: "Personal vehicle expense",
+    description: "Remove personal vehicle expenses run through the business",
+    defaultIntent: "remove_expense",
+    typicalAnchor: "vehicle expense"
+  },
+  {
+    id: "ma-family-payroll",
+    type: "MA",
+    adjustmentClass: "normalization",
+    label: "Family member payroll normalization",
+    description: "Normalize family member compensation to market rate or remove",
+    defaultIntent: "remove_expense",
+    typicalAnchor: "payroll"
+  },
+  // Buyer-side detector templates
+  {
+    id: "dd-revenue-sustainability",
+    type: "DD",
+    adjustmentClass: "timing",
+    label: "Revenue sustainability analysis",
+    description: "Analyze revenue quality, recurring vs one-time mix, and sustainability risk",
+    defaultIntent: "other",
+    typicalAnchor: "sales"
+  },
+  {
+    id: "dd-customer-concentration",
+    type: "DD",
+    adjustmentClass: "normalization",
+    label: "Customer concentration risk",
+    description: "Flag revenue concentration risk from top customers",
+    defaultIntent: "other",
+    typicalAnchor: "sales"
+  },
+  {
+    id: "dd-run-rate-expense",
+    type: "DD",
+    adjustmentClass: "normalization",
+    label: "Run-rate expense normalization",
+    description: "Normalize understated expenses to sustainable run-rate levels",
+    defaultIntent: "add_expense",
+    typicalAnchor: "operating expenses"
+  },
+  {
+    id: "dd-below-market-rent",
+    type: "DD",
+    adjustmentClass: "normalization",
+    label: "Below-market rent adjustment",
+    description: "Adjust related-party or legacy rent to fair market value",
+    defaultIntent: "normalize_up_expense",
+    typicalAnchor: "rent expense"
+  },
+  {
+    id: "dd-missing-insurance",
+    type: "DD",
+    adjustmentClass: "policy",
+    label: "Missing insurance coverage",
+    description: "Add cost for insurance coverage gaps (D&O, cyber, key-person)",
+    defaultIntent: "add_expense",
+    typicalAnchor: "insurance expense"
+  },
+  {
+    id: "dd-cogs-normalization",
+    type: "DD",
+    adjustmentClass: "policy",
+    label: "COGS normalization",
+    description: "Normalize cost of goods sold for capitalization or allocation issues",
+    defaultIntent: "normalize_up_expense",
+    typicalAnchor: "cost of goods sold"
+  }
+];
+var TEMPLATES_BY_TYPE = {
+  MA: ADJUSTMENT_TEMPLATES.filter((t) => t.type === "MA"),
+  DD: ADJUSTMENT_TEMPLATES.filter((t) => t.type === "DD"),
+  PF: ADJUSTMENT_TEMPLATES.filter((t) => t.type === "PF")
+};
+function computeSign(intent) {
+  const sign = INTENT_TO_SIGN[intent];
+  return sign === 0 ? 1 : sign;
+}
+
+// src/lib/projectToDealAdapter.ts
+function projectToDealData(project) {
+  const wd = project.wizard_data || {};
+  const periods = adaptPeriods(project.periods || []);
+  const fiscalYearEnd = parseFiscalYearEnd(project.fiscal_year_end);
+  const nonStubPeriods = periods.filter((p) => !p.isStub);
+  const fiscalYears = groupByFiscalYear(nonStubPeriods, fiscalYearEnd);
+  const aggregatePeriods = buildAggregatePeriods(periods, fiscalYears, fiscalYearEnd);
+  let priorPeriodId;
+  if (periods.length > 0) {
+    const first = periods[0];
+    const priorMonth = first.month === 1 ? 12 : first.month - 1;
+    const priorYear = first.month === 1 ? first.year - 1 : first.year;
+    priorPeriodId = `${priorYear}-${String(priorMonth).padStart(2, "0")}`;
+  }
+  const accounts = adaptAccounts(wd.chartOfAccounts);
+  const trialBalance = adaptTrialBalance(wd.trialBalance, accounts, periods.map((p) => p.id), fiscalYearEnd);
+  const EQUITY_NAME_PATTERNS = [
+    /retained\s+earnings/i,
+    /owner['']?s?\s+equity/i,
+    /members?\s+equity/i,
+    /partners?\s+equity/i,
+    /shareholders?\s+equity/i,
+    /stockholders?\s+equity/i,
+    /opening\s+balance\s+equity/i
+  ];
+  for (const entry of trialBalance) {
+    if (entry.fsLineItem === "Equity") continue;
+    const nameMatch = EQUITY_NAME_PATTERNS.some((pat) => pat.test(entry.accountName));
+    if (nameMatch) {
+      entry.fsType = "BS";
+      entry.fsLineItem = "Equity";
+    }
+  }
+  const accountMap = new Map(accounts.map((a) => [a.accountId, a]));
+  for (const entry of trialBalance) {
+    if (entry.fsLineItem === "Equity") {
+      const acct = accountMap.get(entry.accountId);
+      if (acct && acct.fsLineItem !== "Equity") {
+        acct.fsType = "BS";
+        acct.fsLineItem = "Equity";
+      }
+    }
+  }
+  const ddAdj = wd.ddAdjustments;
+  const adjustments = adaptAdjustments(ddAdj?.adjustments ?? wd.adjustments);
+  const reclassData = wd.reclassifications;
+  const reclassifications = adaptReclassifications(
+    reclassData?.reclassifications ?? wd.reclassifications,
+    trialBalance
+  );
+  const addbacks = adaptAddbacks(wd.dealSetup || wd.ebitdaAddbacks);
+  if (addbacks.interest.length === 0 && addbacks.depreciation.length === 0 && addbacks.taxes.length === 0) {
+    for (const entry of trialBalance) {
+      if (entry.fsLineItem !== "Other expense (income)") continue;
+      const nameLower = entry.accountName.toLowerCase();
+      if (nameLower.includes("interest")) {
+        addbacks.interest.push(entry.accountId);
+      } else if (nameLower.includes("depreciation") || nameLower.includes("amortization")) {
+        addbacks.depreciation.push(entry.accountId);
+      } else if (nameLower.includes("tax")) {
+        addbacks.taxes.push(entry.accountId);
+      }
+    }
+  }
+  const tbIndex = buildTbIndex(trialBalance);
+  const monthDates = buildMonthDates(periods);
+  const arAging = adaptAgingData(wd.arAging);
+  const apAging = adaptAgingData(wd.apAging);
+  const fixedAssets = adaptFixedAssets(wd.fixedAssets);
+  const topCustomers = adaptCustomers(wd.topCustomers);
+  const topVendors = adaptVendors(wd.topVendors);
+  const supplementary = adaptSupplementary(wd.supplementary);
+  const dd = wd.dueDiligence || {};
+  const wipAccountMapping = dd.wipAccountMapping || void 0;
+  const dp = wd.dealParameters || {};
+  const nwcConfig = {
+    method: dp.nwcMethod || "operating",
+    transactionInclusions: dp.transactionInclusions,
+    normalizationAdjustments: dp.normalizationAdjustments
+  };
+  return {
+    deal: {
+      projectId: project.id,
+      projectName: project.name,
+      clientName: project.client_name || "",
+      targetCompany: project.target_company || "",
+      industry: project.industry || "",
+      transactionType: project.transaction_type || "",
+      fiscalYearEnd,
+      periods,
+      fiscalYears,
+      aggregatePeriods,
+      priorPeriodId,
+      firmName: project.firm_name || void 0,
+      preparedByLine: project.prepared_by_line || void 0,
+      firmLogoUrl: project.firm_logo_path || void 0,
+      nwcConfig
+    },
+    accounts,
+    trialBalance,
+    adjustments,
+    reclassifications,
+    tbIndex,
+    monthDates,
+    arAging,
+    apAging,
+    fixedAssets,
+    topCustomers,
+    topVendors,
+    addbacks,
+    supplementary,
+    wipAccountMapping
+  };
+}
+function adaptPeriods(periods) {
+  const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return periods.map((p) => {
+    const shortLabel = p.isStub ? p.label || `Stub ${SHORT_MONTHS[p.month - 1]}-${String(p.year).slice(-2)}` : `${SHORT_MONTHS[p.month - 1]}-${String(p.year).slice(-2)}`;
+    return {
+      id: p.id,
+      label: shortLabel,
+      shortLabel,
+      year: p.year,
+      month: p.month,
+      isStub: p.isStub,
+      startDate: p.startDate,
+      endDate: p.endDate,
+      date: new Date(p.year, p.month - 1, 1)
+    };
+  });
+}
+function parseFiscalYearEnd(fye) {
+  if (!fye) return 12;
+  const month = parseInt(fye, 10);
+  return isNaN(month) ? 12 : Math.max(1, Math.min(12, month));
+}
+function buildMonthDates(periods) {
+  return periods.map((p) => p.date).sort((a, b) => a.getTime() - b.getTime());
+}
+function adaptAccounts(coa) {
+  if (!coa) return [];
+  const arr = Array.isArray(coa) ? coa : Array.isArray(coa?.accounts) ? coa.accounts : null;
+  if (!arr) return [];
+  return arr.map((acc) => ({
+    accountId: String(acc.accountNumber || acc.id || ""),
+    accountName: String(acc.accountName || acc.name || ""),
+    fsType: acc.fsType === "IS" ? "IS" : "BS",
+    fsLineItem: String(acc.category || acc.fsLineItem || ""),
+    subAccount1: String(acc.subAccount1 || acc.accountSubtype || ""),
+    subAccount2: String(acc.subAccount2 || ""),
+    subAccount3: String(acc.subAccount3 || "")
+  }));
+}
+function adaptTrialBalance(tbData, accounts, sortedPeriodIds, fiscalYearEnd) {
+  if (!tbData || typeof tbData !== "object") return [];
+  const tb = tbData;
+  const tbAccounts = tb.accounts;
+  if (!Array.isArray(tbAccounts)) return [];
+  const accountMap = new Map(accounts.map((a) => [a.accountId, a]));
+  return tbAccounts.map((acc) => {
+    const accountId = String(acc.accountNumber || acc.accountId || acc.id || "");
+    const enrichment = accountMap.get(accountId);
+    const balances = {};
+    const monthlyBalances = acc.monthlyValues || acc.monthlyBalances || acc.balances;
+    if (monthlyBalances && typeof monthlyBalances === "object") {
+      for (const [key, val] of Object.entries(monthlyBalances)) {
+        const numVal = Number(val);
+        if (!isNaN(numVal)) {
+          balances[key] = numVal;
+        }
+      }
+    }
+    const fsType = enrichment?.fsType || acc.fsType || "BS";
+    if (fsType === "IS" && sortedPeriodIds.length > 0) {
+      const orderedIds = sortedPeriodIds.filter((id) => id in balances);
+      for (let i = orderedIds.length - 1; i > 0; i--) {
+        const curMonth = parsePeriodMonth(orderedIds[i]);
+        const prevMonth = parsePeriodMonth(orderedIds[i - 1]);
+        const fyStartMonth = fiscalYearEnd % 12 + 1;
+        const curYear = parsePeriodYear(orderedIds[i]);
+        const prevYear = parsePeriodYear(orderedIds[i - 1]);
+        if (curYear !== void 0 && prevYear !== void 0 && curMonth !== void 0 && prevMonth !== void 0) {
+          const curFY = getFiscalYear(curYear, curMonth, fyStartMonth);
+          const prevFY = getFiscalYear(prevYear, prevMonth, fyStartMonth);
+          if (curFY !== prevFY) continue;
+        }
+        if (prevMonth !== void 0 && curMonth !== void 0) {
+          balances[orderedIds[i]] -= balances[orderedIds[i - 1]];
+        }
+      }
+    }
+    return {
+      accountId,
+      accountName: String(acc.accountName || acc.name || ""),
+      fsType,
+      fsLineItem: String(enrichment?.fsLineItem || acc.fsLineItem || acc.category || ""),
+      subAccount1: String(enrichment?.subAccount1 || acc.subAccount1 || ""),
+      subAccount2: String(enrichment?.subAccount2 || acc.subAccount2 || ""),
+      subAccount3: String(enrichment?.subAccount3 || acc.subAccount3 || ""),
+      balances
+    };
+  });
+}
+function parsePeriodYear(periodId) {
+  const match4 = periodId.match(/(\d{4})-\d{2}/);
+  if (match4) return parseInt(match4[1], 10);
+  const match2 = periodId.match(/[a-zA-Z]+-(\d{2})/);
+  if (match2) return 2e3 + parseInt(match2[1], 10);
+  return void 0;
+}
+function getFiscalYear(year, month, fyStartMonth) {
+  return month >= fyStartMonth ? year : year - 1;
+}
+function parsePeriodMonth(periodId) {
+  const match = periodId.match(/(\d{4})-(\d{2})/);
+  if (match) return parseInt(match[2], 10);
+  const SHORT_MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+  const lower = periodId.toLowerCase();
+  for (let i = 0; i < SHORT_MONTHS.length; i++) {
+    if (lower.startsWith(SHORT_MONTHS[i])) return i + 1;
+  }
+  return void 0;
+}
+function adaptAdjustments(adjData) {
+  if (!adjData || !Array.isArray(adjData)) return [];
+  const ACCEPTED_STATUSES = /* @__PURE__ */ new Set(["accepted", "accepted_with_edits"]);
+  const accepted = adjData.filter((adj) => {
+    const status = adj.status;
+    return !status || ACCEPTED_STATUSES.has(status);
+  });
+  return accepted.map((adj) => {
+    const amounts = {};
+    const periodAmounts = adj.periodValues || adj.periodAmounts || adj.amounts;
+    const intent = String(adj.intent || "other");
+    const sign = computeSign(intent);
+    if (periodAmounts && typeof periodAmounts === "object") {
+      for (const [key, val] of Object.entries(periodAmounts)) {
+        const numVal = Number(val);
+        if (!isNaN(numVal)) {
+          amounts[key] = numVal * sign;
+        }
+      }
+    }
+    const rawEffect = adj.effectType;
+    const effectType = rawEffect === "NonQoE" || rawEffect === "PresentationOnly" || rawEffect === "EBITDA" ? rawEffect : "EBITDA";
+    return {
+      id: String(adj.id || ""),
+      type: adj.block || adj.type || adj.adjustmentType || "DD",
+      label: String(adj.description || adj.label || adj.name || ""),
+      tbAccountNumber: String(adj.linkedAccountNumber || adj.tbAccountNumber || adj.accountNumber || ""),
+      intent: String(adj.intent || "other"),
+      notes: String(adj.evidenceNotes || adj.notes || ""),
+      amounts,
+      effectType
+    };
+  });
+}
+function adaptReclassifications(reclassData, tb = []) {
+  if (!reclassData || !Array.isArray(reclassData)) return [];
+  return reclassData.map((r) => {
+    const amounts = {};
+    const periodAmounts = r.periodAmounts || r.amounts;
+    if (periodAmounts && typeof periodAmounts === "object") {
+      for (const [key, val] of Object.entries(periodAmounts)) {
+        const numVal = Number(val);
+        if (!isNaN(numVal)) {
+          amounts[key] = numVal;
+        }
+      }
+    }
+    if (Object.keys(amounts).length === 0 && r.amount != null) {
+      const singleAmt = Number(r.amount);
+      if (!isNaN(singleAmt) && singleAmt !== 0) {
+        amounts["_flat"] = singleAmt;
+      }
+    }
+    let tbEntry;
+    if (tb.length > 0) {
+      const acctNum = String(r.accountNumber || r.fromAccountNumber || "");
+      const acctName = String(r.accountName || r.accountDescription || r.description || "");
+      const acctNameTail = acctName.toLowerCase().split(":").pop()?.trim() || "";
+      tbEntry = tb.find(
+        (e) => (
+          // 1. Exact accountId match (numeric IDs)
+          acctNum && acctNum.length > 1 && e.accountId === acctNum || // 2. accountName substring match (full or last segment of hierarchy)
+          acctName && acctName.length > 2 && e.accountName.toLowerCase().includes(acctName.toLowerCase()) || acctNameTail && acctNameTail.length > 2 && e.accountName.toLowerCase().includes(acctNameTail) || // 3. accountName startsWith acctNum (when acctNum is a text label like "Landscaping")
+          acctNum && acctNum.length > 1 && e.accountName.toLowerCase().startsWith(acctNum.toLowerCase())
+        )
+      );
+    }
+    if (amounts["_flat"] && tbEntry && Object.keys(tbEntry.balances).length > 0) {
+      const flatAmt = amounts["_flat"];
+      delete amounts["_flat"];
+      const absBalances = {};
+      let totalAbs = 0;
+      for (const [periodId, balance] of Object.entries(tbEntry.balances)) {
+        const abs = Math.abs(balance);
+        absBalances[periodId] = abs;
+        totalAbs += abs;
+      }
+      if (totalAbs > 0) {
+        for (const [periodId, abs] of Object.entries(absBalances)) {
+          amounts[periodId] = flatAmt * (abs / totalAbs);
+        }
+      } else {
+        const count = Object.keys(tbEntry.balances).length;
+        for (const periodId of Object.keys(tbEntry.balances)) {
+          amounts[periodId] = flatAmt / count;
+        }
+      }
+    }
+    let fromAccount = String(r.fromFsLineItem || r.fromAccountNumber || r.fromAccount || "");
+    if (fromAccount.toLowerCase().includes("unclassified") && tbEntry?.fsLineItem) {
+      fromAccount = tbEntry.fsLineItem;
+    }
+    return {
+      id: String(r.id || ""),
+      label: String(r.description || r.label || ""),
+      fromAccount,
+      toAccount: String(r.toFsLineItem || r.toAccountNumber || r.toAccount || ""),
+      amounts
+    };
+  });
+}
+function adaptAddbacks(setupData) {
+  const empty = { interest: [], depreciation: [], taxes: [] };
+  if (!setupData || typeof setupData !== "object") return empty;
+  const setup = setupData;
+  const toArray = (val) => {
+    if (Array.isArray(val)) return val.map(String);
+    return [];
+  };
+  return {
+    interest: toArray(setup.interestAccounts || setup.interest),
+    depreciation: toArray(setup.depreciationAccounts || setup.depreciation),
+    taxes: toArray(setup.taxAccounts || setup.taxes)
+  };
+}
+function adaptAgingData(data) {
+  if (!data || typeof data !== "object") return {};
+  const result = {};
+  const obj = data;
+  if (Array.isArray(obj.periodData)) {
+    for (const period of obj.periodData) {
+      const periodId = String(period.periodId || "");
+      const entries = period.entries;
+      if (!periodId || !Array.isArray(entries)) continue;
+      result[periodId] = mapAgingEntries(entries);
+    }
+    return result;
+  }
+  for (const [periodId, entries] of Object.entries(obj)) {
+    if (!Array.isArray(entries)) continue;
+    result[periodId] = mapAgingEntries(entries);
+  }
+  return result;
+}
+function mapAgingEntries(entries) {
+  return entries.map((e) => ({
+    name: String(e.name || e.customer || e.vendor || ""),
+    current: Number(e.current || 0),
+    days1to30: Number(e.days1to30 || e["1-30"] || 0),
+    days31to60: Number(e.days31to60 || e["31-60"] || 0),
+    days61to90: Number(e.days61to90 || e["61-90"] || 0),
+    days90plus: Number(e.days90plus || e["90+"] || 0),
+    total: Number(e.total || 0)
+  }));
+}
+function adaptFixedAssets(data) {
+  if (!data) return [];
+  const arr = Array.isArray(data) ? data : Array.isArray(data.assets) ? data.assets : null;
+  if (!arr) return [];
+  return arr.map((fa) => ({
+    category: String(fa.category || ""),
+    description: String(fa.description || fa.name || ""),
+    acquisitionDate: String(fa.acquisitionDate || fa.dateAcquired || ""),
+    cost: Number(fa.cost || fa.originalCost || 0),
+    accumulatedDepreciation: Number(fa.accumulatedDepreciation || fa.accumDepr || 0),
+    netBookValue: Number(fa.netBookValue || fa.nbv || 0)
+  }));
+}
+function adaptCustomers(data) {
+  if (!data || typeof data !== "object") return {};
+  const obj = data;
+  if (Array.isArray(obj.customers)) {
+    const result2 = {};
+    for (const c of obj.customers) {
+      const name = String(c.name || "");
+      const yearlyRevenue = c.yearlyRevenue;
+      if (yearlyRevenue && typeof yearlyRevenue === "object") {
+        for (const [year, val] of Object.entries(yearlyRevenue)) {
+          const key = `annual-${year}`;
+          if (!result2[key]) result2[key] = [];
+          result2[key].push({ name, revenue: Number(val || 0), percentage: 0 });
+        }
+      }
+    }
+    return result2;
+  }
+  const result = {};
+  for (const [periodId, entries] of Object.entries(obj)) {
+    if (!Array.isArray(entries)) continue;
+    result[periodId] = entries.map((e) => ({
+      name: String(e.name || e.customer || ""),
+      revenue: Number(e.revenue || e.amount || 0),
+      percentage: Number(e.percentage || e.pct || 0)
+    }));
+  }
+  return result;
+}
+function adaptVendors(data) {
+  if (!data || typeof data !== "object") return {};
+  const obj = data;
+  if (Array.isArray(obj.vendors)) {
+    const result2 = {};
+    for (const v of obj.vendors) {
+      const name = String(v.name || "");
+      const yearlySpend = v.yearlySpend || v.yearlyRevenue;
+      if (yearlySpend && typeof yearlySpend === "object") {
+        for (const [year, val] of Object.entries(yearlySpend)) {
+          const key = `annual-${year}`;
+          if (!result2[key]) result2[key] = [];
+          result2[key].push({ name, spend: Number(val || 0), percentage: 0 });
+        }
+      }
+    }
+    return result2;
+  }
+  const result = {};
+  for (const [periodId, entries] of Object.entries(obj)) {
+    if (!Array.isArray(entries)) continue;
+    result[periodId] = entries.map((e) => ({
+      name: String(e.name || e.vendor || ""),
+      spend: Number(e.spend || e.amount || 0),
+      percentage: Number(e.percentage || e.pct || 0)
+    }));
+  }
+  return result;
+}
+function adaptSupplementary(data) {
+  if (!data || typeof data !== "object") return void 0;
+  const obj = data;
+  const debtRaw = obj.debtSchedule;
+  const leaseRaw = obj.leaseObligations;
+  const debtItems = [];
+  const rawDebtArr = Array.isArray(debtRaw?.items) ? debtRaw.items : Array.isArray(debtRaw) ? debtRaw : [];
+  for (const d of rawDebtArr) {
+    debtItems.push({
+      lender: String(d.lender || ""),
+      balance: Number(d.balance || d.currentBalance || 0),
+      interestRate: Number(d.interestRate || 0),
+      maturityDate: String(d.maturityDate || ""),
+      type: d.type ? String(d.type) : void 0
+    });
+  }
+  const leaseItems = [];
+  const rawLeaseArr = Array.isArray(leaseRaw?.items) ? leaseRaw.items : Array.isArray(leaseRaw) ? leaseRaw : [];
+  for (const l of rawLeaseArr) {
+    leaseItems.push({
+      description: String(l.description || ""),
+      leaseType: String(l.leaseType || l.type || "Operating"),
+      annualPayment: Number(l.annualPayment || 0),
+      remainingTerm: l.remainingTerm !== void 0 ? Number(l.remainingTerm) : void 0,
+      expirationDate: l.expirationDate ? String(l.expirationDate) : void 0
+    });
+  }
+  if (debtItems.length === 0 && leaseItems.length === 0) return void 0;
+  return { debtSchedule: debtItems, leaseObligations: leaseItems };
+}
+
+// src/lib/qoeMetrics.ts
+init_define_import_meta_env();
+var EMPTY = {
+  revenue: 0,
+  grossProfit: 0,
+  netIncome: 0,
+  reportedEBITDA: 0,
+  totalAdjustments: 0,
+  adjustedEBITDA: 0,
+  adjustmentCount: 0,
+  ltmPeriodIds: []
+};
+function computeQoEMetrics(dealData) {
+  if (!dealData) return EMPTY;
+  const tb = dealData.trialBalance;
+  const adj = dealData.adjustments;
+  const ab = dealData.addbacks;
+  const rc = dealData.reclassifications ?? [];
+  const activePeriods = dealData.deal.periods.filter((p) => !p.isStub);
+  if (activePeriods.length === 0 || tb.length === 0) return EMPTY;
+  const ltmPids = activePeriods.slice(-12).map((p) => p.id);
+  let revenue = -ltmPids.reduce((s, p) => s + calcRevenue(tb, p), 0);
+  let grossProfit = -ltmPids.reduce((s, p) => s + calcGrossProfit(tb, p), 0);
+  let netIncome = -ltmPids.reduce((s, p) => s + calcNetIncome(tb, p), 0);
+  let reportedEBITDA = -ltmPids.reduce((s, p) => s + calcReportedEBITDA(tb, p, ab), 0);
+  let adjustedEBITDA = -ltmPids.reduce((s, p) => s + calcAdjustedEBITDA(tb, adj, p, ab), 0);
+  if (rc.length > 0) {
+    for (const pid of ltmPids) {
+      const revReclass = sumReclassImpact(rc, "Revenue", pid);
+      const cogsReclass = sumReclassImpact(rc, "Cost of Goods Sold", pid);
+      const opexReclass = sumReclassImpact(rc, "Operating expenses", pid);
+      const payrollReclass = sumReclassImpact(rc, "Payroll & Related", pid);
+      const otherReclass = sumReclassImpact(rc, "Other expense (income)", pid);
+      revenue += -revReclass;
+      grossProfit += -(revReclass + cogsReclass);
+      const totalISReclass = revReclass + cogsReclass + opexReclass + payrollReclass + otherReclass;
+      netIncome += -totalISReclass;
+      const ebitdaReclass = revReclass + cogsReclass + opexReclass + payrollReclass;
+      reportedEBITDA += -ebitdaReclass;
+      adjustedEBITDA += -ebitdaReclass;
+    }
+  }
+  const totalAdjustments = adjustedEBITDA - reportedEBITDA;
+  const adjEntries = Array.isArray(adj) ? adj : Object.values(adj);
+  let adjustmentCount = adjEntries.filter((a) => {
+    if (!a) return false;
+    const entry = a;
+    const pv = entry.periodValues || entry.proposed_period_values || entry.amounts || {};
+    const total = Object.values(pv).reduce((s, v) => s + (typeof v === "number" ? v : 0), 0);
+    return total !== 0;
+  }).length;
+  if (adjustmentCount === 0 && totalAdjustments !== 0) adjustmentCount = -1;
+  return { revenue, grossProfit, netIncome, reportedEBITDA, totalAdjustments, adjustedEBITDA, adjustmentCount, ltmPeriodIds: ltmPids };
+}
+
+// src/lib/mcp/tools/getQualityOfEarningsSummary.ts
+var getQualityOfEarningsSummary_default = defineTool7({
+  name: "get_quality_of_earnings_summary",
+  title: "Get Quality of Earnings summary",
+  description: "Compute a structured LTM QoE summary for a project: revenue, gross profit, net income, reported EBITDA, total adjustments, and adjusted EBITDA.",
+  inputSchema: {
+    project_id: z7.string().uuid().describe("The project ID (UUID).")
+  },
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  handler: async ({ project_id }, ctx) => {
+    const { error, client } = supabaseForUser(ctx);
+    if (error || !client) {
+      return { content: [{ type: "text", text: error ?? "Not authenticated" }], isError: true };
+    }
+    const { data, error: dbError } = await client.from("projects").select("id, name, client_name, target_company, industry, transaction_type, fiscal_year_end, periods, wizard_data").eq("id", project_id).maybeSingle();
+    if (dbError) {
+      return { content: [{ type: "text", text: dbError.message }], isError: true };
+    }
+    if (!data) {
+      return { content: [{ type: "text", text: "Project not found or access denied." }], isError: true };
+    }
+    try {
+      const dealData = projectToDealData(data);
+      const metrics = computeQoEMetrics(dealData);
+      const summary = {
+        project_id: data.id,
+        project_name: data.name,
+        target_company: data.target_company,
+        ...metrics,
+        currency: "USD",
+        scope: "LTM (last 12 non-stub periods)"
+      };
+      return {
+        content: [{ type: "text", text: JSON.stringify(summary) }],
+        structuredContent: { summary }
+      };
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return { content: [{ type: "text", text: `Failed to compute QoE summary: ${message}` }], isError: true };
+    }
+  }
+});
+
+// src/lib/mcp/tools/createProject.ts
+init_define_import_meta_env();
+import { defineTool as defineTool8 } from "npm:@lovable.dev/mcp-js@0.20.0";
+import { z as z8 } from "npm:zod@^4.4.3";
+var createProject_default = defineTool8({
+  name: "create_project",
+  title: "Create project",
+  description: "Create a new Shepi project. The project is owned by the signed-in user.",
+  inputSchema: {
+    name: z8.string().trim().min(1).max(255).describe("Project name."),
+    target_company: z8.string().trim().max(255).optional().describe("Target company name."),
+    client_name: z8.string().trim().max(255).optional().describe("Client name."),
+    industry: z8.string().trim().max(255).optional().describe("Industry."),
+    transaction_type: z8.string().trim().max(255).optional().describe("Transaction type (e.g. buy-side, sell-side)."),
+    service_tier: z8.enum(["diy", "done_for_you"]).default("diy").describe("Service tier for the project.")
+  },
+  annotations: { readOnlyHint: false, idempotentHint: false, openWorldHint: false },
+  handler: async ({ name, target_company, client_name, industry, transaction_type, service_tier }, ctx) => {
+    const { error, client } = supabaseForUser(ctx);
+    if (error || !client) {
+      return { content: [{ type: "text", text: error ?? "Not authenticated" }], isError: true };
+    }
+    const userId = ctx.getUserId();
+    if (!userId) {
+      return { content: [{ type: "text", text: "User ID not available." }], isError: true };
+    }
+    const { data, error: dbError } = await client.from("projects").insert({
+      user_id: userId,
+      name,
+      target_company: target_company ?? null,
+      client_name: client_name ?? null,
+      industry: industry ?? null,
+      transaction_type: transaction_type ?? null,
+      service_tier: service_tier ?? "diy",
+      status: "draft",
+      current_phase: 1,
+      current_section: 1,
+      revision: 0
+    }).select("id, name, target_company, client_name, industry, transaction_type, service_tier, status, created_at").single();
+    if (dbError) {
+      return { content: [{ type: "text", text: dbError.message }], isError: true };
+    }
+    return {
+      content: [{ type: "text", text: JSON.stringify(data) }],
+      structuredContent: { project: data }
+    };
+  }
+});
+
+// src/lib/mcp/tools/updateAdjustmentStatus.ts
+init_define_import_meta_env();
+import { defineTool as defineTool9 } from "npm:@lovable.dev/mcp-js@0.20.0";
+import { z as z9 } from "npm:zod@^4.4.3";
+var VALID_STATUSES = ["pending", "accepted", "accepted_with_edits", "rejected", "dismissed"];
+var updateAdjustmentStatus_default = defineTool9({
+  name: "update_adjustment_status",
+  title: "Update adjustment status",
+  description: "Change the status of an adjustment proposal on a project (e.g. accept or reject an AI-suggested adjustment).",
+  inputSchema: {
+    project_id: z9.string().uuid().describe("The project ID (UUID)."),
+    adjustment_id: z9.string().uuid().describe("The adjustment proposal ID (UUID)."),
+    status: z9.enum(VALID_STATUSES).describe("New status for the adjustment."),
+    reviewer_notes: z9.string().max(2e3).optional().describe("Optional notes explaining the decision.")
+  },
+  annotations: { readOnlyHint: false, idempotentHint: false, openWorldHint: false },
+  handler: async ({ project_id, adjustment_id, status, reviewer_notes }, ctx) => {
+    const { error, client } = supabaseForUser(ctx);
+    if (error || !client) {
+      return { content: [{ type: "text", text: error ?? "Not authenticated" }], isError: true };
+    }
+    const update = { status };
+    if (reviewer_notes !== void 0) {
+      update.reviewer_notes = reviewer_notes;
+      update.reviewed_at = (/* @__PURE__ */ new Date()).toISOString();
+    }
+    const { data, error: dbError } = await client.from("adjustment_proposals").update(update).eq("id", adjustment_id).eq("project_id", project_id).select("id, title, status, reviewer_notes, reviewed_at, updated_at").single();
+    if (dbError) {
+      return { content: [{ type: "text", text: dbError.message }], isError: true };
+    }
+    return {
+      content: [{ type: "text", text: JSON.stringify(data) }],
+      structuredContent: { adjustment: data }
+    };
+  }
+});
+
+// src/lib/mcp/tools/getExportData.ts
+init_define_import_meta_env();
+import { defineTool as defineTool10 } from "npm:@lovable.dev/mcp-js@0.20.0";
+import { z as z10 } from "npm:zod@^4.4.3";
+var getExportData_default = defineTool10({
+  name: "get_export_data",
+  title: "Get export data",
+  description: "Return the structured workbook and QoE data for a project as JSON, suitable for AI analysis. For actual PDF/XLSX file downloads, use the in-app Export Center at the returned URL.",
+  inputSchema: {
+    project_id: z10.string().uuid().describe("The project ID (UUID).")
+  },
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  handler: async ({ project_id }, ctx) => {
+    const { error, client } = supabaseForUser(ctx);
+    if (error || !client) {
+      return { content: [{ type: "text", text: error ?? "Not authenticated" }], isError: true };
+    }
+    const { data, error: dbError } = await client.from("projects").select("id, name, client_name, target_company, industry, transaction_type, fiscal_year_end, periods, wizard_data, service_tier, revision").eq("id", project_id).maybeSingle();
+    if (dbError) {
+      return { content: [{ type: "text", text: dbError.message }], isError: true };
+    }
+    if (!data) {
+      return { content: [{ type: "text", text: "Project not found or access denied." }], isError: true };
+    }
+    try {
+      const dealData = projectToDealData(data);
+      const metrics = computeQoEMetrics(dealData);
+      const result = {
+        project_id: data.id,
+        project_name: data.name,
+        target_company: data.target_company,
+        service_tier: data.service_tier,
+        qoe_metrics: metrics,
+        export_url: `https://shepi.ai/project/${project_id}/workbook`,
+        // Wizard data is the source of truth for the project. It is returned so the
+        // connected AI can analyze the deal setup, trial balance, adjustments, and
+        // supplementary schedules without requiring a full workbook rebuild.
+        wizard_data: data.wizard_data
+      };
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }],
+        structuredContent: { exportData: result }
+      };
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return { content: [{ type: "text", text: `Failed to build export data: ${message}` }], isError: true };
+    }
+  }
+});
+
 // src/lib/mcp/index.ts
+var projectRef = "mdgmessqbfebrbvjtndz";
 var mcp_default = defineMcp({
   name: "shepi-mcp",
   title: "shepi",
-  version: "0.1.0",
-  instructions: "MCP server for the Shepi Intelligent Quality of Earnings Platform. Use `echo` to verify connectivity. More tools will be added over time.",
-  tools: [echo_default]
+  version: "0.2.0",
+  instructions: "MCP server for the Shepi Intelligent Quality of Earnings Platform. Tools let a connected AI assistant read projects, documents, adjustments, and QoE summaries; create projects; update adjustment statuses; and retrieve structured export data. All data access is scoped to the authenticated Shepi user.",
+  auth: auth.oauth.issuer({
+    issuer: `https://${projectRef}.supabase.co/auth/v1`,
+    acceptedAudiences: "authenticated"
+  }),
+  tools: [
+    echo_default,
+    listProjects_default,
+    getProjectSummary_default,
+    listDocuments_default,
+    listAdjustments_default,
+    getAdjustmentDetail_default,
+    getQualityOfEarningsSummary_default,
+    createProject_default,
+    updateAdjustmentStatus_default,
+    getExportData_default
+  ]
 });
 
 // lovable-mcp-supabase-entry.ts
