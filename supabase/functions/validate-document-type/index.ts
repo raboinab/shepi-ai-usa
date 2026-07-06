@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import * as XLSX from "npm:xlsx@0.18.5";
 
 import { aiFetch, ensureZdrEnabled } from "../_shared/zdrGuard.ts";
+import { requireUser } from "../_shared/auth.ts";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-api-key, x-service-name, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
@@ -254,6 +255,9 @@ serve(async (req) => {
   }
 
   try {
+    const auth = await requireUser(req);
+    if (!auth.ok) return auth.response;
+
     const { fileBase64, selectedType, fileName } = (await req.json()) as ValidationRequest;
 
     if (!fileBase64 || !selectedType || !fileName) {
@@ -262,6 +266,7 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
+
 
     const apiKey = Deno.env.get("VERCEL_AI_GATEWAY_KEY");
     const ext = getExt(fileName);
