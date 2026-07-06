@@ -35,7 +35,7 @@ export default function QoEVsAudit() {
     <ContentPageLayout
       title="Quality of Earnings vs. Financial Audit: What's the Difference?"
       seoTitle="Quality of Earnings vs Audit — Key Differences | Shepi"
-      seoDescription="Quality of Earnings vs audit: learn how a QoE analysis differs from a financial audit. QoE is prospective and valuation-focused; audits are historical and compliance-focused."
+      seoDescription="Quality of Earnings vs audit: QoE is prospective and valuation-focused, while audits are historical and compliance-focused. Learn the key differences."
       canonical="https://shepi.ai/guides/qoe-vs-audit"
       breadcrumbs={[
         { label: "Resources", href: "/resources" },
