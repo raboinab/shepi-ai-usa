@@ -67,7 +67,7 @@ export default defineConfig(({ mode }) => ({
     host: "::",
     port: 8080,
   },
-  plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
+  plugins: [react(), mode === "development" && componentTagger(), mcpPlugin()].filter(Boolean),
   define: {
     __BUILD_DATE__: JSON.stringify(BUILD_DATE),
   },
