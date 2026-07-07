@@ -71,16 +71,20 @@
     <meta property="og:image:alt" content="AI Quality of Earnings Software | QoE Analysis Platform | Shepi" />
 
     <!--
-      Per-page SEO (title, description, canonical, OG, Twitter, robots)
-      is injected by useSEO() in src/hooks/useSEO.tsx on every route.
-      It uses React 19's native document metadata so tags are present in the
-      prerendered HTML for every route. We deliberately do NOT set a static
-      <title> or <meta name="description"> here, because vite-react-ssg
-      writes index.html's <head> verbatim before injecting the per-route
-      app HTML, and any static <title> would duplicate (and on some crawlers
-      override) the per-page <title> emitted by useSEO. Robots stays here as
-      a safe site-wide default.
+      Site-wide DEFAULT title and description below. Per-page SEO is
+      injected by useSEO() in src/hooks/useSEO.tsx on every route and
+      overrides these defaults at runtime and in prerendered per-route
+      HTML. Do NOT remove the static <title>/<meta description>: the
+      Lovable publish flow reads them when saving website info, and
+      publishing fails ("Website info could not be saved") without them.
     -->
+    <title>Shepi — AI Quality of Earnings Software for SMB M&amp;A</title>
+    <meta name="description" content="AI-assisted Quality of Earnings analysis for SMB M&A due diligence. Built for independent searchers, lower-middle-market PE, CPA firms, and SBA lenders." />
+    <meta property="og:title" content="Shepi — AI Quality of Earnings Software for SMB M&amp;A" />
+    <meta property="og:description" content="AI-assisted Quality of Earnings analysis for SMB M&A due diligence. Built for independent searchers, lower-middle-market PE, CPA firms, and SBA lenders." />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Shepi — AI Quality of Earnings Software for SMB M&amp;A" />
+    <meta name="twitter:description" content="AI-assisted Quality of Earnings analysis for SMB M&A due diligence. Built for independent searchers, lower-middle-market PE, CPA firms, and SBA lenders." />
     <meta name="robots" content="index, follow" />
     <meta name="googlebot" content="index, follow, max-video-preview:-1, max-image-preview:large, max-snippet:-1" />
 
