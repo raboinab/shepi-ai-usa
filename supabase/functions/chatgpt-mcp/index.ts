@@ -57,6 +57,11 @@ function mcpUnauthorizedResponse(): Response {
   });
 }
 
+function getAuthContext(extra?: { authInfo?: { token?: string; extra?: Record<string, unknown> } }): AuthedContext | undefined {
+  const extraCtx = extra?.authInfo?.extra?.ctx as AuthedContext | undefined;
+  return extraCtx;
+}
+
 async function verifyAuth(req: Request): Promise<AuthResult> {
   const auth = req.headers.get("Authorization") ?? "";
   if (!auth.startsWith("Bearer ")) {
