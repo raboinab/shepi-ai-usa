@@ -445,13 +445,15 @@ Deno.serve(async (req: Request) => {
     sessionIdGenerator: undefined,
   });
 
-  // Attach auth info to the transport context so tool handlers can access it.
-  (transport as any).authInfo = auth.ctx;
-
   try {
     await server.connect(transport);
     const response = await transport.handleRequest(working, {
-      authInfo: { userId: auth.ctx.userId, email: auth.ctx.email },
+      authInfo: {
+        token: auth.ctx.token,
+        clientId: auth.ctx.clientId ?? "unknown",
+        scopes: [],
+        extra: { ctx: auth.ctx },
+      },
     });
     // Merge CORS headers.
     const headers = new Headers(response.headers);
