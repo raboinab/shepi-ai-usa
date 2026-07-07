@@ -369,6 +369,85 @@ function createServer(): McpServer {
     },
   );
 
+  registerAppTool(
+    server,
+    "list_documents",
+    {
+      title: "List documents",
+      description: "List documents uploaded to a project with processing status and category.",
+      inputSchema: z.object({
+        project_id: z.string().uuid().describe("The project ID (UUID)."),
+        limit: z.number().int().min(1).max(200).default(100).describe("Maximum number of documents to return."),
+      }),
+    },
+    async ({ project_id, limit }: { project_id: string; limit: number }, extra: { authInfo?: { token?: string; extra?: { ctx: AuthedContext } } }) => {
+      const ctx = getAuthContext(extra);
+      if (!ctx) return { content: [{ type: "text" as const, text: "Not authenticated" }], isError: true };
+      const { data, error } = await supabaseForUser(ctx)
+        .from("documents")
+        .select("id, name, file_type, category, processing_status, status, coverage_validated, institution, account_label, period_start, period_end, created_at")
+        .eq("project_id", project_id)
+        .order("created_at", { ascending: false })
+        .limit(limit);
+      if (error) {
+        return { content: [{ type: "text" as const, text: error.message }], isError: true };
+      }
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(data ?? []) }],
+        structuredContent: { documents: data ?? [] },
+      };
+    },
+  );
+
+  registerAppTool(
+    server,
+    "get_export_data",
+    {
+      title: "Get export data",
+      description: "Return the structured workbook and QoE data for a project as JSON, suitable for AI analysis. For actual PDF/XLSX file downloads, use the in-app Export Center at the returned URL.",
+      inputSchema: z.object({
+        project_id: z.string().uuid().describe("The project ID (UUID)."),
+      }),
+      _meta: { ui: { resourceUri: projectSummaryResourceUri } },
+    },
+    async ({ project_id }: { project_id: string }, extra: { authInfo?: { token?: string; extra?: { ctx: AuthedContext } } }) => {
+      const ctx = getAuthContext(extra);
+      if (!ctx) return { content: [{ type: "text" as const, text: "Not authenticated" }], isError: true };
+      const { data, error } = await supabaseForUser(ctx)
+        .from("projects")
+        .select("id, name, client_name, target_company, industry, transaction_type, fiscal_year_end, periods, wizard_data, service_tier, revision")
+        .eq("id", project_id)
+        .maybeSingle();
+      if (error) {
+        return { content: [{ type: "text" as const, text: error.message }], isError: true };
+      }
+      if (!data) {
+        return { content: [{ type: "text" as const, text: "Project not found or access denied." }], isError: true };
+      }
+      try {
+        const dealData = projectToDealData(data as any);
+        const metrics = computeQoEMetrics(dealData);
+        const result = {
+          project_id: data.id,
+          project_name: data.name,
+          target_company: data.target_company,
+          service_tier: (data as any).service_tier,
+          qoe_metrics: metrics,
+          export_url: `https://shepi.ai/project/${project_id}/workbook`,
+          wizard_data: (data as any).wizard_data,
+        };
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(result) }],
+          structuredContent: { exportData: result },
+        };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        return { content: [{ type: "text" as const, text: `Failed to build export data: ${message}` }], isError: true };
+      }
+    },
+  );
+
+
   registerAppResource(
     server,
     projectSummaryResourceUri,
