@@ -27,12 +27,33 @@
     "llms_full_txt": "https://shepi.ai/llms-full.txt",
     "openapi": "https://shepi.ai/openapi.json",
     "mcp": "https://shepi.ai/mcp.json",
+    "mcp_server_chatgpt": "https://mdgmessqbfebrbvjtndz.supabase.co/functions/v1/chatgpt-mcp",
+    "mcp_server_general": "https://mdgmessqbfebrbvjtndz.supabase.co/functions/v1/mcp",
+    "connect_landing": "https://shepi.ai/connect",
     "ai_plugin": "https://shepi.ai/.well-known/ai-plugin.json",
     "sitemap": "https://shepi.ai/sitemap.xml",
     "robots": "https://shepi.ai/robots.txt",
     "security": "https://shepi.ai/.well-known/security.txt",
     "for_agents_landing": "https://shepi.ai/for-ai-agents"
   },
+  "mcp_servers": [
+    {
+      "name": "shepi-chatgpt",
+      "url": "https://mdgmessqbfebrbvjtndz.supabase.co/functions/v1/chatgpt-mcp",
+      "transport": "streamable-http",
+      "auth": "oauth2-pkce-dcr",
+      "widgets": true,
+      "clients": ["ChatGPT"]
+    },
+    {
+      "name": "shepi-mcp",
+      "url": "https://mdgmessqbfebrbvjtndz.supabase.co/functions/v1/mcp",
+      "transport": "streamable-http",
+      "auth": "oauth2-pkce-dcr",
+      "widgets": false,
+      "clients": ["Claude", "generic"]
+    }
+  ],
   "auth": { "type": "none" },
   "disallowed_actions": [
     "modify financial data",

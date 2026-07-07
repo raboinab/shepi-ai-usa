@@ -43,7 +43,10 @@ shepi is **analyst-in-the-loop**, not push-button QoE. It ingests financials (ge
 - [/.well-known/ai-plugin.json](https://shepi.ai/.well-known/ai-plugin.json) — ChatGPT plugin manifest
 - [/.well-known/security.txt](https://shepi.ai/.well-known/security.txt) — security contact (RFC 9116)
 - [openapi.json](https://shepi.ai/openapi.json) — OpenAPI 3.1 spec for the public content surface
-- [mcp.json](https://shepi.ai/mcp.json) — MCP server descriptor (static content surface)
+- [mcp.json](https://shepi.ai/mcp.json) — MCP server descriptor listing both live endpoints and tools
+- [ChatGPT MCP endpoint](https://mdgmessqbfebrbvjtndz.supabase.co/functions/v1/chatgpt-mcp) — OAuth 2.1, interactive widgets, for ChatGPT Apps
+- [Claude / general MCP endpoint](https://mdgmessqbfebrbvjtndz.supabase.co/functions/v1/mcp) — OAuth 2.1, for Claude and other MCP clients
+- [/connect](https://shepi.ai/connect) — end-user setup guide for adding shepi to ChatGPT or Claude
 - [sitemap.xml](https://shepi.ai/sitemap.xml) — full URL index
 - [robots.txt](https://shepi.ai/robots.txt) — crawler policy (explicitly allows GPTBot, ClaudeBot, PerplexityBot, Google-Extended)
 

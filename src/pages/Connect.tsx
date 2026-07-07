@@ -117,6 +117,16 @@ export default function Connect() {
                   {copiedChatgpt ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                   {copiedChatgpt ? "Copied" : "Copy"}
                 </Button>
+                <Button asChild variant="outline" className="shrink-0 gap-2">
+                  <a
+                    href="https://chatgpt.com/#settings/Connectors/Advanced"
+                    target="_blank"
+                    rel="noopener"
+                    aria-label="Add shepi to ChatGPT"
+                  >
+                    Add to ChatGPT <ExternalLink className="w-4 h-4" />
+                  </a>
+                </Button>
               </div>
             </div>
 
@@ -133,11 +143,21 @@ export default function Connect() {
                   {copiedGeneral ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                   {copiedGeneral ? "Copied" : "Copy"}
                 </Button>
+                <Button asChild variant="outline" className="shrink-0 gap-2">
+                  <a
+                    href="https://claude.ai/customize/connectors?modal=add-custom-connector"
+                    target="_blank"
+                    rel="noopener"
+                    aria-label="Add shepi to Claude"
+                  >
+                    Add to Claude <ExternalLink className="w-4 h-4" />
+                  </a>
+                </Button>
               </div>
             </div>
 
             <p className="text-sm text-muted-foreground mt-4">
-              Both connections are user-authenticated. The assistant can only access the shepi data you authorize during OAuth.
+              Both connections are user-authenticated via OAuth 2.1 with dynamic client registration. The assistant can only access the shepi data you authorize during sign-in — RLS enforces per-user isolation.
             </p>
           </div>
         </section>
