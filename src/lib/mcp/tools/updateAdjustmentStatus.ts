@@ -14,7 +14,8 @@ export default defineTool({
     status: z.enum(VALID_STATUSES).describe("New status for the adjustment."),
     reviewer_notes: z.string().max(2000).optional().describe("Optional notes explaining the decision."),
   },
-  annotations: { readOnlyHint: false, idempotentHint: false, openWorldHint: false },
+  // Updates a status within a private, per-user system; reversible → destructiveHint: false.
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   handler: async ({ project_id, adjustment_id, status, reviewer_notes }, ctx) => {
     const { error, client } = supabaseForUser(ctx);
     if (error || !client) {

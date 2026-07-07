@@ -115,6 +115,7 @@ function createServer(): McpServer {
     "echo",
     {
       title: "Echo",
+      annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
       description: "Echo the input text back to the caller. Useful for verifying MCP connectivity to the shepi app.",
       inputSchema: z.object({
         text: z.string().min(1).describe("Text to echo back."),
@@ -130,6 +131,7 @@ function createServer(): McpServer {
     "list_projects",
     {
       title: "List projects",
+      annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
       description: "List the signed-in user's Shepi projects with basic metadata.",
       inputSchema: z.object({
         limit: z.number().int().min(1).max(100).default(50).describe("Maximum number of projects to return."),
@@ -159,6 +161,7 @@ function createServer(): McpServer {
     "get_project_summary",
     {
       title: "Get project summary",
+      annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
       description: "Read a project's metadata, current wizard phase/section, and service tier.",
       inputSchema: z.object({
         project_id: z.string().uuid().describe("The project ID (UUID)."),
@@ -191,6 +194,7 @@ function createServer(): McpServer {
     "get_quality_of_earnings_summary",
     {
       title: "Get Quality of Earnings summary",
+      annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
       description: "Compute a structured LTM QoE summary for a project: revenue, gross profit, net income, reported EBITDA, total adjustments, and adjusted EBITDA.",
       inputSchema: z.object({
         project_id: z.string().uuid().describe("The project ID (UUID)."),
@@ -238,6 +242,7 @@ function createServer(): McpServer {
     "create_project",
     {
       title: "Create project",
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
       description: "Create a new Shepi project. The project is owned by the signed-in user.",
       inputSchema: z.object({
         name: z.string().trim().min(1).max(255).describe("Project name."),
@@ -293,6 +298,7 @@ function createServer(): McpServer {
     "list_adjustments",
     {
       title: "List adjustments",
+      annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
       description: "List adjustment proposals for a project with category, status, and total proposed amount.",
       inputSchema: z.object({
         project_id: z.string().uuid().describe("The project ID (UUID)."),
@@ -328,6 +334,7 @@ function createServer(): McpServer {
     "update_adjustment_status",
     {
       title: "Update adjustment status",
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
       description: "Change the status of an adjustment proposal on a project (e.g. accept or reject an AI-suggested adjustment).",
       inputSchema: z.object({
         project_id: z.string().uuid().describe("The project ID (UUID)."),
@@ -374,6 +381,7 @@ function createServer(): McpServer {
     "list_documents",
     {
       title: "List documents",
+      annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
       description: "List documents uploaded to a project with processing status and category.",
       inputSchema: z.object({
         project_id: z.string().uuid().describe("The project ID (UUID)."),
@@ -404,6 +412,7 @@ function createServer(): McpServer {
     "get_export_data",
     {
       title: "Get export data",
+      annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
       description: "Return the structured workbook and QoE data for a project as JSON, suitable for AI analysis. For actual PDF/XLSX file downloads, use the in-app Export Center at the returned URL.",
       inputSchema: z.object({
         project_id: z.string().uuid().describe("The project ID (UUID)."),

@@ -4,6 +4,7 @@
   "displayName": "shepi",
   "description": "AI-assisted Quality of Earnings analysis for M&A due diligence. Connect ChatGPT or Claude to your shepi projects to list deals, review adjustments, and generate QoE summaries.",
   "version": "2026.07.07",
+  "logo_url": "https://shepi.ai/apple-touch-icon.png",
   "homepage": "https://shepi.ai/",
   "documentation": "https://shepi.ai/connect",
   "contact": "hello@shepi.ai",

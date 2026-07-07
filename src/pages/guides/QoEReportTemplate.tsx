@@ -31,6 +31,25 @@ const jsonLd = {
   mainEntityOfPage: "https://shepi.ai/guides/qoe-report-template",
 };
 
+// HowTo schema — primarily for answer-engine parsing (ChatGPT/Perplexity/Claude);
+// note Google deprecated HowTo rich results in 2023, so no Google rich snippet.
+const howToJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  name: "How to structure a Quality of Earnings report",
+  description: "The sections and schedules that make up a complete QoE report, from executive summary through management adjustments.",
+  step: [
+    { "@type": "HowToStep", name: "Executive Summary", text: "Headline findings, adjusted EBITDA, key risks, and deal considerations." },
+    { "@type": "HowToStep", name: "EBITDA Adjustment Schedule", text: "Bridge from reported to adjusted EBITDA with categorized adjustments." },
+    { "@type": "HowToStep", name: "Revenue Analysis", text: "Revenue quality, concentration, recurring vs non-recurring, and trends." },
+    { "@type": "HowToStep", name: "Expense Analysis", text: "COGS, operating expenses, owner compensation, and SG&A trends." },
+    { "@type": "HowToStep", name: "Working Capital Schedule", text: "Normalized net working capital, peg calculation, and component analysis." },
+    { "@type": "HowToStep", name: "Proof of Cash", text: "GL-to-bank reconciliation validating completeness of recorded transactions." },
+    { "@type": "HowToStep", name: "Balance Sheet Review", text: "Asset quality, unrecorded liabilities, and debt-like items." },
+    { "@type": "HowToStep", name: "Management Adjustments", text: "Seller-proposed adjustments with validation and supporting documentation." },
+  ],
+};
+
 export default function QoEReportTemplate() {
   return (
     <ContentPageLayout
@@ -43,7 +62,7 @@ export default function QoEReportTemplate() {
         { label: "QoE Report Template" },
       ]}
       toc={toc}
-      jsonLd={jsonLd}
+      jsonLd={[jsonLd, howToJsonLd]}
       publishedDate="February 2026"
       heroAccent
     >

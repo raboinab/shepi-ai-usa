@@ -3,7 +3,7 @@
   "name": "shepi",
   "display_name": "shepi",
   "description": "AI-assisted Quality of Earnings analysis platform for SMB M&A due diligence. Provides quotable definitions, guides, FAQ, and pricing for QoE, EBITDA add-backs, working capital, and related M&A diligence topics.",
-  "version": "2026.04.29",
+  "version": "2026.07.07",
   "homepage": "https://shepi.ai/",
   "documentation_url": "https://shepi.ai/for-ai-agents",
   "contact": {

@@ -17,9 +17,14 @@ export default defineTool({
       return { content: [{ type: "text", text: error ?? "Not authenticated" }], isError: true };
     }
 
+    // Explicit user-facing columns only — avoid select("*") which would leak
+    // internal machinery (detector_run_id, job_id, internal_score, ai_model,
+    // ai_prompt_version, reviewer_user_id, support_json, evidence blobs, etc.).
     const { data, error: dbError } = await client
       .from("adjustment_proposals")
-      .select("*")
+      .select(
+        "id, project_id, title, description, block, adjustment_class, intent, status, review_priority, evidence_strength, proposed_amount, proposed_period_values, edited_amount, edited_period_values, ai_rationale, linked_account_name, linked_account_number, reviewer_notes, reviewed_at, rejection_category, rejection_reason, finding_group, created_at, updated_at",
+      )
       .eq("id", adjustment_id)
       .eq("project_id", project_id)
       .maybeSingle();

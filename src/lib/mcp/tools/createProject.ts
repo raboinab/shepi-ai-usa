@@ -14,7 +14,8 @@ export default defineTool({
     transaction_type: z.string().trim().max(255).optional().describe("Transaction type (e.g. buy-side, sell-side)."),
     service_tier: z.enum(["diy", "done_for_you"]).default("diy").describe("Service tier for the project."),
   },
-  annotations: { readOnlyHint: false, idempotentHint: false, openWorldHint: false },
+  // Writes to a private, per-user system; reversible (project can be deleted) → destructiveHint: false.
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   handler: async ({ name, target_company, client_name, industry, transaction_type, service_tier }, ctx) => {
     const { error, client } = supabaseForUser(ctx);
     if (error || !client) {

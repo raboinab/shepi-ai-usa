@@ -16,6 +16,22 @@ import { TermsAcceptanceModal } from "@/components/TermsAcceptanceModal";
 import { useTosAcceptance } from "@/hooks/useTosAcceptance";
 import { trackEvent } from "@/lib/analytics";
 
+// SoftwareApplication schema so answer engines cite shepi as a *tool* with pricing,
+// not just an article. Offers mirror src/lib/pricing.ts (single source of truth).
+const pricingJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "shepi — Quality of Earnings Platform",
+  applicationCategory: "BusinessApplication",
+  operatingSystem: "Web",
+  url: "https://shepi.ai/pricing",
+  description: "AI-assisted Quality of Earnings analysis for M&A due diligence. Per-project, monthly, and CPA-reviewed Done-For-You plans.",
+  offers: [
+    { "@type": "Offer", name: PRICING.perProject.name, priceCurrency: "USD", price: String(PRICING.perProject.amount), description: "Single-project self-service QoE analysis." },
+    { "@type": "Offer", name: PRICING.doneForYou.name, priceCurrency: "USD", price: String(PRICING.doneForYou.amount), description: "CPA-reviewed QoE, prepared end to end." },
+    { "@type": "Offer", name: PRICING.monthly.name, priceCurrency: "USD", price: String(PRICING.monthly.amount), description: `Subscription with ${PRICING.monthly.includedProjects} included projects per month.` },
+  ],
+};
 
 const Pricing = () => {
   const __seoTags = useSEO({
@@ -23,6 +39,7 @@ const Pricing = () => {
     description: "Flexible pricing for every deal volume. Per-project or monthly plans for independent searchers, deal teams, PE firms, and advisors.",
     canonical: "https://shepi.ai/pricing",
     ogImage: "https://shepi.ai/og-image.png",
+    jsonLd: pricingJsonLd,
   });
 
   const [user, setUser] = useState<User | null>(null);

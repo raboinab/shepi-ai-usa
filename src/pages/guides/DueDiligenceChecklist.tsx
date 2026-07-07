@@ -31,6 +31,22 @@ const jsonLd = {
   mainEntityOfPage: "https://shepi.ai/guides/due-diligence-checklist",
 };
 
+// HowTo schema — primarily for answer-engine parsing (ChatGPT/Perplexity/Claude);
+// note Google deprecated HowTo rich results in 2023, so no Google rich snippet.
+const howToJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  name: "How to run financial due diligence on an M&A target",
+  description: "A phased timeline for financial due diligence, from the document request through final report and closing adjustments.",
+  step: [
+    { "@type": "HowToStep", name: "Week 1 — Document request", text: "Submit the document request list and begin data collection from the seller." },
+    { "@type": "HowToStep", name: "Week 2–3 — Initial review", text: "Initial data review, account mapping, and preliminary analysis." },
+    { "@type": "HowToStep", name: "Week 3–4 — Detailed analysis", text: "Detailed analysis, management Q&A, and follow-up document requests." },
+    { "@type": "HowToStep", name: "Week 4–6 — Draft findings", text: "Draft findings, adjustment quantification, and working capital analysis." },
+    { "@type": "HowToStep", name: "Week 6–8 — Final report", text: "Final report, negotiation support, and closing adjustments." },
+  ],
+};
+
 export default function DueDiligenceChecklist() {
   return (
     <ContentPageLayout
@@ -43,7 +59,7 @@ export default function DueDiligenceChecklist() {
         { label: "Due Diligence Checklist" },
       ]}
       toc={toc}
-      jsonLd={jsonLd}
+      jsonLd={[jsonLd, howToJsonLd]}
       publishedDate="February 2026"
       modifiedDate="February 2026"
       heroAccent
