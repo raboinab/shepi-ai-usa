@@ -33,6 +33,8 @@ export interface Adjustment {
   intent: string;
   notes: string;
   amounts: Record<string, number>;
+  /** Effect type — "NonQoE" items are excluded from Adjusted EBITDA */
+  effectType?: "EBITDA" | "NonQoE" | "PresentationOnly";
 }
 
 export interface Reclassification {
