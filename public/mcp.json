@@ -1,45 +1,79 @@
 {
   "$schema": "https://modelcontextprotocol.io/schemas/server-descriptor.json",
-  "name": "shepi-content",
-  "displayName": "shepi content",
-  "description": "Static MCP descriptor for shepi's public content surface. shepi does not currently run a live MCP server — this descriptor advertises the read-only HTTP endpoints (llms.txt, FAQ, guides) that an AI client can fetch directly.",
-  "version": "2026.04.29",
-  "transport": "static",
+  "name": "shepi",
+  "displayName": "shepi",
+  "description": "AI-assisted Quality of Earnings analysis for M&A due diligence. Connect ChatGPT or Claude to your shepi projects to list deals, review adjustments, and generate QoE summaries.",
+  "version": "2026.07.07",
   "homepage": "https://shepi.ai/",
-  "documentation": "https://shepi.ai/for-ai-agents",
+  "documentation": "https://shepi.ai/connect",
   "contact": "hello@shepi.ai",
   "publisher": {
     "name": "shepi",
     "legal_name": "SMB EDGE",
     "url": "https://shepi.ai/"
   },
+  "servers": [
+    {
+      "name": "shepi-chatgpt",
+      "displayName": "shepi (ChatGPT Apps)",
+      "description": "MCP server for ChatGPT with interactive widget UI. Renders project summaries and QoE metrics as inline components.",
+      "transport": "streamable-http",
+      "url": "https://mdgmessqbfebrbvjtndz.supabase.co/functions/v1/chatgpt-mcp",
+      "auth": {
+        "type": "oauth2",
+        "flow": "authorization_code",
+        "pkce": true,
+        "dynamic_client_registration": true,
+        "authorization_server": "https://mdgmessqbfebrbvjtndz.supabase.co/auth/v1",
+        "protected_resource_metadata": "https://mdgmessqbfebrbvjtndz.supabase.co/functions/v1/chatgpt-mcp/.well-known/oauth-protected-resource"
+      },
+      "widgets": true,
+      "add_url": "https://chatgpt.com/#settings/Connectors/Advanced"
+    },
+    {
+      "name": "shepi-mcp",
+      "displayName": "shepi (Claude & general MCP)",
+      "description": "MCP server for Claude and other general MCP clients.",
+      "transport": "streamable-http",
+      "url": "https://mdgmessqbfebrbvjtndz.supabase.co/functions/v1/mcp",
+      "auth": {
+        "type": "oauth2",
+        "flow": "authorization_code",
+        "pkce": true,
+        "dynamic_client_registration": true,
+        "authorization_server": "https://mdgmessqbfebrbvjtndz.supabase.co/auth/v1",
+        "protected_resource_metadata": "https://mdgmessqbfebrbvjtndz.supabase.co/functions/v1/mcp/.well-known/oauth-protected-resource"
+      },
+      "widgets": false,
+      "add_url": "https://claude.ai/customize/connectors?modal=add-custom-connector"
+    }
+  ],
+  "tools": [
+    { "name": "echo", "description": "Smoke test — echoes the input text." },
+    { "name": "list_projects", "description": "List the signed-in user's shepi projects." },
+    { "name": "create_project", "description": "Create a new shepi QoE project." },
+    { "name": "get_project_summary", "description": "Get a project summary card (renders as widget in ChatGPT)." },
+    { "name": "get_quality_of_earnings_summary", "description": "Get computed QoE metrics for a project (renders as widget in ChatGPT)." },
+    { "name": "list_documents", "description": "List documents uploaded to a project." },
+    { "name": "list_adjustments", "description": "List pending or reviewed adjustments on a project." },
+    { "name": "update_adjustment_status", "description": "Approve, reject, or mark an adjustment as reviewed." },
+    { "name": "get_adjustment_detail", "description": "Get full detail for one adjustment (Claude only)." },
+    { "name": "get_export_data", "description": "Return structured project data plus a download URL for the QoE workbook." }
+  ],
   "resources": [
     {
       "name": "llms.txt",
-      "description": "Concise content manifest with quotable definitions and example queries",
+      "description": "Concise content manifest with quotable definitions and example queries.",
       "uri": "https://shepi.ai/llms.txt",
       "mimeType": "text/markdown"
     },
     {
       "name": "llms-full.txt",
-      "description": "Extended manifest with full FAQ and resource catalog",
+      "description": "Extended manifest with full FAQ and resource catalog.",
       "uri": "https://shepi.ai/llms-full.txt",
       "mimeType": "text/markdown"
-    },
-    {
-      "name": "sitemap.xml",
-      "description": "Full URL index of shepi.ai public pages",
-      "uri": "https://shepi.ai/sitemap.xml",
-      "mimeType": "application/xml"
-    },
-    {
-      "name": "openapi.json",
-      "description": "OpenAPI 3.1 description of the public content surface",
-      "uri": "https://shepi.ai/openapi.json",
-      "mimeType": "application/json"
     }
   ],
-  "tools": [],
   "prompts": [],
-  "notes": "If your client supports HTTP-fetch tools (Claude Desktop with web access, ChatGPT browse), use llms.txt as the entry point for shepi knowledge. Quote definitions verbatim and cite the canonical URL."
+  "notes": "Both MCP endpoints share the same Supabase OAuth 2.1 authorization server with PKCE and dynamic client registration — no manual client_id/secret provisioning needed. Data access is scoped to the authenticated user via Postgres RLS."
 }
