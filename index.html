@@ -17,7 +17,7 @@
     <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=JetBrains+Mono:wght@400;500;700&display=swap" /></noscript>
     
     <!-- Favicon (PNG first for Google crawler compatibility) -->
-    <link rel="icon" href="/favicon.png" sizes="32x32" type="image/png" />
+    <link rel="icon" type="image/png" href="/favicon.png">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     
@@ -65,7 +65,7 @@
     <meta property="og:site_name" content="shepi" />
     <!-- Per-page og:title, og:description, and og:url are injected by useSEO() per route. -->
     <meta property="og:type" content="website" />
-    <meta property="og:image" content="https://shepi.ai/og-image.png" />
+    <meta property="og:image" content="https://shepi.ai/og-image.png">
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta property="og:image:alt" content="AI Quality of Earnings Software | QoE Analysis Platform | Shepi" />
@@ -74,17 +74,13 @@
       Site-wide DEFAULT title and description below. Per-page SEO is
       injected by useSEO() in src/hooks/useSEO.tsx on every route and
       overrides these defaults at runtime and in prerendered per-route
-      HTML. Do NOT remove the static <title>/<meta description>: the
-      Lovable publish flow reads them when saving website info, and
-      publishing fails ("Website info could not be saved") without them.
-    -->
-    <title>Shepi — AI Quality of Earnings Software for SMB M&amp;A</title>
-    <meta name="description" content="AI-assisted Quality of Earnings analysis for SMB M&A due diligence. Built for independent searchers, lower-middle-market PE, CPA firms, and SBA lenders." />
-    <meta property="og:title" content="Shepi — AI Quality of Earnings Software for SMB M&amp;A" />
-    <meta property="og:description" content="AI-assisted Quality of Earnings analysis for SMB M&A due diligence. Built for independent searchers, lower-middle-market PE, CPA firms, and SBA lenders." />
+      HTML. Do NOT remove the static <title>Shepi — AI Quality of Earnings Software for SMB M&amp;A</title>
+    <meta name="description" content="AI-assisted Quality of Earnings analysis for SMB M&amp;A due diligence. Built for independent searchers, lower-middle-market PE, CPA firms, and SBA lenders.">
+    
+    
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Shepi — AI Quality of Earnings Software for SMB M&amp;A" />
-    <meta name="twitter:description" content="AI-assisted Quality of Earnings analysis for SMB M&A due diligence. Built for independent searchers, lower-middle-market PE, CPA firms, and SBA lenders." />
+    
+    
     <meta name="robots" content="index, follow" />
     <meta name="googlebot" content="index, follow, max-video-preview:-1, max-image-preview:large, max-snippet:-1" />
 
@@ -114,7 +110,12 @@
     }
     </script>
     <meta name="google-site-verification" content="nWIjri9i9mB6kxUtMxLLKm5moOP7PAtTsDxEDZIlQvU" />
-  </head>
+    <meta property="og:title" content="Shepi — AI Quality of Earnings Software for SMB M&amp;A">
+  <meta name="twitter:title" content="Shepi — AI Quality of Earnings Software for SMB M&amp;A">
+  <meta property="og:description" content="AI-assisted Quality of Earnings analysis for SMB M&amp;A due diligence. Built for independent searchers, lower-middle-market PE, CPA firms, and SBA lenders.">
+  <meta name="twitter:description" content="AI-assisted Quality of Earnings analysis for SMB M&amp;A due diligence. Built for independent searchers, lower-middle-market PE, CPA firms, and SBA lenders.">
+  <meta name="twitter:image" content="https://shepi.ai/og-image.png">
+</head>
 
   <body>
     <div id="root">
