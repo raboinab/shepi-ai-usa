@@ -20,6 +20,8 @@
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
     "@lovable.dev/mcp-js": "^0.20.0",
+    "@modelcontextprotocol/ext-apps": "^1.7.4",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@playwright/test": "^1.57.0",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
@@ -77,6 +79,7 @@
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^1.1.2",
+    "vite-plugin-singlefile": "^2.3.3",
     "vite-react-ssg": "^0.9.1-beta.1",
     "xlsx": "^0.18.5",
     "zod": "^4.4.3"
