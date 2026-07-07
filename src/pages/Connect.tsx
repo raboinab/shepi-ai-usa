@@ -14,25 +14,27 @@ import { useToast } from "@/hooks/use-toast";
  */
 
 const CHATGPT_STEPS = [
-  "Open https://chatgpt.com/#settings/Connectors/Advanced and enable Developer mode (heed the risk notice shown there).",
-  "In the chat composer’s “+” menu, turn on Developer mode.",
-  "Click “Add sources”, then “Connect more”.",
-  "Name the connector “shepi” and paste the MCP URL above.",
-  "Ask ChatGPT to use shepi — for example, “List my shepi projects” or “Summarize the QoE for project X.”",
+  "Open ChatGPT → Settings → Apps & Connectors → Advanced settings and enable Developer mode.",
+  "Go to Settings → Connectors → Create.",
+  "Name the connector \"shepi\" and paste the ChatGPT MCP URL below.",
+  "Approve the OAuth request when ChatGPT prompts you — this signs you in with your Shepi account.",
+  "Start a chat, click + → More → shepi, then ask ChatGPT to \"list my shepi projects\" or \"summarize the QoE for project X.\" Interactive widgets render inline.",
 ];
 
 const CLAUDE_STEPS = [
   "Open https://claude.ai/customize/connectors?modal=add-custom-connector.",
-  "Name the connector “shepi” and paste the MCP URL above.",
-  "Enable the connector from the chat composer, then ask Claude to use shepi — for example, “What adjustments are pending on my project?”",
+  "Name the connector \"shepi\" and paste the general MCP URL below.",
+  "Enable the connector from the chat composer, then ask Claude to use shepi — for example, \"What adjustments are pending on my project?\"",
 ];
 
 export default function Connect() {
   const { toast } = useToast();
-  const [copied, setCopied] = useState(false);
+  const [copiedChatgpt, setCopiedChatgpt] = useState(false);
+  const [copiedGeneral, setCopiedGeneral] = useState(false);
 
   const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-  const mcpUrl = `https://${projectId}.supabase.co/functions/v1/mcp`;
+  const chatgptUrl = `https://${projectId}.supabase.co/functions/v1/chatgpt-mcp`;
+  const generalUrl = `https://${projectId}.supabase.co/functions/v1/mcp`;
 
   const __seoTags = useSEO({
     title: "Connect an AI assistant to shepi",
@@ -42,12 +44,12 @@ export default function Connect() {
     ogImage: "https://shepi.ai/og-image.png",
   });
 
-  async function copyUrl() {
+  async function copyUrl(url: string, setter: (v: boolean) => void) {
     try {
-      await navigator.clipboard.writeText(mcpUrl);
-      setCopied(true);
+      await navigator.clipboard.writeText(url);
+      setter(true);
       toast({ title: "Copied", description: "MCP server URL copied to clipboard." });
-      setTimeout(() => setCopied(false), 2000);
+      setTimeout(() => setter(false), 2000);
     } catch {
       toast({ title: "Copy failed", description: "Please copy the URL manually.", variant: "destructive" });
     }
@@ -91,33 +93,55 @@ export default function Connect() {
           </div>
         </section>
 
-        {/* Server URL */}
+        {/* Server URLs */}
         <section className="py-16 px-6 bg-background" aria-labelledby="server-url-heading">
           <div className="max-w-3xl mx-auto">
             <h2 id="server-url-heading" className="text-2xl md:text-3xl font-serif font-bold text-foreground mb-6 flex items-center gap-3">
               <Plug className="w-6 h-6 text-primary" aria-hidden="true" />
-              MCP server URL
+              MCP server URLs
             </h2>
-            <p className="text-muted-foreground mb-4">
-              Copy this URL and paste it into ChatGPT or Claude as a custom connector. The assistant will discover the available tools automatically.
+            <p className="text-muted-foreground mb-6">
+              Use the ChatGPT URL for ChatGPT Apps (interactive widgets). Use the general URL for Claude and other MCP clients.
             </p>
-            <div className="flex flex-col sm:flex-row gap-3">
-              <Input
-                readOnly
-                value={mcpUrl}
-                aria-label="shepi MCP server URL"
-                className="font-mono text-sm bg-card border-border"
-              />
-              <Button onClick={copyUrl} className="shrink-0 gap-2" aria-label="Copy MCP URL">
-                {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                {copied ? "Copied" : "Copy URL"}
-              </Button>
+
+            <div className="mb-6">
+              <div className="text-sm font-semibold text-foreground mb-2">ChatGPT (interactive widgets)</div>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Input
+                  readOnly
+                  value={chatgptUrl}
+                  aria-label="shepi ChatGPT MCP URL"
+                  className="font-mono text-sm bg-card border-border"
+                />
+                <Button onClick={() => copyUrl(chatgptUrl, setCopiedChatgpt)} className="shrink-0 gap-2" aria-label="Copy ChatGPT MCP URL">
+                  {copiedChatgpt ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  {copiedChatgpt ? "Copied" : "Copy"}
+                </Button>
+              </div>
             </div>
-            <p className="text-sm text-muted-foreground mt-3">
-              This connection is user-authenticated. The assistant can only access the shepi data you authorize during the OAuth approval step.
+
+            <div>
+              <div className="text-sm font-semibold text-foreground mb-2">Claude / general MCP</div>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Input
+                  readOnly
+                  value={generalUrl}
+                  aria-label="shepi general MCP URL"
+                  className="font-mono text-sm bg-card border-border"
+                />
+                <Button onClick={() => copyUrl(generalUrl, setCopiedGeneral)} className="shrink-0 gap-2" aria-label="Copy general MCP URL">
+                  {copiedGeneral ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  {copiedGeneral ? "Copied" : "Copy"}
+                </Button>
+              </div>
+            </div>
+
+            <p className="text-sm text-muted-foreground mt-4">
+              Both connections are user-authenticated. The assistant can only access the shepi data you authorize during OAuth.
             </p>
           </div>
         </section>
+
 
         {/* ChatGPT */}
         <section className="py-16 px-6 bg-secondary" aria-labelledby="chatgpt-heading">
