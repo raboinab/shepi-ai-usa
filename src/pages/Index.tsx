@@ -1289,6 +1289,7 @@ const Index = () => {
                 <li><a href="#our-story" className="text-secondary/70 hover:text-secondary text-sm">About</a></li>
                 <li><a href="#contact" className="text-secondary/70 hover:text-secondary text-sm">Contact</a></li>
                 <li><Link to="/for-cpas" className="text-secondary/70 hover:text-secondary text-sm">For CPAs</Link></li>
+                <li><Link to="/connect" className="text-secondary/70 hover:text-secondary text-sm">Connect AI assistant</Link></li>
               </ul>
             </div>
             <div>

@@ -74,6 +74,7 @@ const ProofOfCash = lazy(() => import("./pages/ProofOfCash"));
 const ScopeOfWork = lazy(() => import("./pages/ScopeOfWork"));
 const ForAiAgents = lazy(() => import("./pages/ForAiAgents"));
 const EtaQoeCost = lazy(() => import("./pages/EtaQoeCost"));
+const Connect = lazy(() => import("./pages/Connect"));
 const SbaLoanQoe = lazy(() => import("./pages/SbaLoanQoe"));
 const CpaFirmVsShepi = lazy(() => import("./pages/compare/CpaFirmVsShepi"));
 const Accuracy = lazy(() => import("./pages/Accuracy"));
@@ -220,6 +221,7 @@ export const routes: RouteRecord[] = [
       { path: "proof-of-cash", element: wrap(<ProofOfCash />) },
       { path: "scope", element: wrap(<ScopeOfWork />) },
       { path: "for-ai-agents", element: wrap(<ForAiAgents />) },
+      { path: "connect", element: wrap(<Connect />) },
       { path: "eta-qoe-cost", element: wrap(<EtaQoeCost />) },
       { path: "sba-loan-qoe", element: wrap(<SbaLoanQoe />) },
       { path: "compare/cpa-firm-vs-shepi", element: wrap(<CpaFirmVsShepi />) },
@@ -327,4 +329,5 @@ export const prerenderPaths = [
   "/accuracy",
   "/security",
   "/security/responsible-disclosure",
+  "/connect",
 ];
