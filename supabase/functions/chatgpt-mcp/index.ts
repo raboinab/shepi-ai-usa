@@ -58,7 +58,7 @@ function mcpUnauthorizedResponse(): Response {
 }
 
 function getAuthContext(extra?: { authInfo?: { token?: string; extra?: Record<string, unknown> } }): AuthedContext | undefined {
-  const extraCtx = extra?.authInfo?.extra?.ctx as AuthedContext | undefined;
+  const extraCtx = getAuthContext(extra)?.extra?.ctx as AuthedContext | undefined;
   return extraCtx;
 }
 
@@ -135,8 +135,8 @@ function createServer(): McpServer {
       }),
       _meta: { ui: { resourceUri: projectSummaryResourceUri } },
     },
-    async ({ limit }: { limit: number }, extra: { authInfo?: AuthedContext }) => {
-      const ctx = extra?.authInfo;
+    async ({ limit }: { limit: number }, extra: { authInfo?: { token?: string; extra?: { ctx: AuthedContext } } }) => {
+      const ctx = getAuthContext(extra);
       if (!ctx) return { content: [{ type: "text" as const, text: "Not authenticated" }], isError: true };
       const { data, error } = await supabaseForUser(ctx)
         .from("projects")
@@ -164,8 +164,8 @@ function createServer(): McpServer {
       }),
       _meta: { ui: { resourceUri: projectSummaryResourceUri } },
     },
-    async ({ project_id }: { project_id: string }, extra: { authInfo?: AuthedContext }) => {
-      const ctx = extra?.authInfo;
+    async ({ project_id }: { project_id: string }, extra: { authInfo?: { token?: string; extra?: { ctx: AuthedContext } } }) => {
+      const ctx = getAuthContext(extra);
       if (!ctx) return { content: [{ type: "text" as const, text: "Not authenticated" }], isError: true };
       const { data, error } = await supabaseForUser(ctx)
         .from("projects")
@@ -196,8 +196,8 @@ function createServer(): McpServer {
       }),
       _meta: { ui: { resourceUri: projectSummaryResourceUri } },
     },
-    async ({ project_id }: { project_id: string }, extra: { authInfo?: AuthedContext }) => {
-      const ctx = extra?.authInfo;
+    async ({ project_id }: { project_id: string }, extra: { authInfo?: { token?: string; extra?: { ctx: AuthedContext } } }) => {
+      const ctx = getAuthContext(extra);
       if (!ctx) return { content: [{ type: "text" as const, text: "Not authenticated" }], isError: true };
       const { data, error } = await supabaseForUser(ctx)
         .from("projects")
@@ -256,9 +256,9 @@ function createServer(): McpServer {
         transaction_type?: string;
         service_tier: "diy" | "done_for_you";
       },
-      extra: { authInfo?: AuthedContext },
+      extra: { authInfo?: { token?: string; extra?: { ctx: AuthedContext } } },
     ) => {
-      const ctx = extra?.authInfo;
+      const ctx = getAuthContext(extra);
       if (!ctx) return { content: [{ type: "text" as const, text: "Not authenticated" }], isError: true };
       const { data, error } = await supabaseForUser(ctx)
         .from("projects")
@@ -299,8 +299,8 @@ function createServer(): McpServer {
         limit: z.number().int().min(1).max(200).default(100).describe("Maximum number of adjustments to return."),
       }),
     },
-    async ({ project_id, status, limit }: { project_id: string; status?: string; limit: number }, extra: { authInfo?: AuthedContext }) => {
-      const ctx = extra?.authInfo;
+    async ({ project_id, status, limit }: { project_id: string; status?: string; limit: number }, extra: { authInfo?: { token?: string; extra?: { ctx: AuthedContext } } }) => {
+      const ctx = getAuthContext(extra);
       if (!ctx) return { content: [{ type: "text" as const, text: "Not authenticated" }], isError: true };
       let q = supabaseForUser(ctx)
         .from("adjustment_proposals")
@@ -342,9 +342,9 @@ function createServer(): McpServer {
         status: string;
         reviewer_notes?: string;
       },
-      extra: { authInfo?: AuthedContext },
+      extra: { authInfo?: { token?: string; extra?: { ctx: AuthedContext } } },
     ) => {
-      const ctx = extra?.authInfo;
+      const ctx = getAuthContext(extra);
       if (!ctx) return { content: [{ type: "text" as const, text: "Not authenticated" }], isError: true };
       const update: Record<string, unknown> = { status };
       if (reviewer_notes !== undefined) {
