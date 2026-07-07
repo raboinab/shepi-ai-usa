@@ -405,9 +405,12 @@ Deno.serve(async (req: Request) => {
   }
 
   const url = new URL(req.url);
+  // Supabase edge functions receive the full path including /chatgpt-mcp prefix.
+  // Strip it so we can route consistently.
+  const path = url.pathname.replace(/^\/chatgpt-mcp/, "") || "/";
 
   // OAuth protected-resource metadata is public.
-  if (url.pathname === "/.well-known/oauth-protected-resource" && req.method === "GET") {
+  if (path === "/.well-known/oauth-protected-resource" && req.method === "GET") {
     return jsonResponse(200, {
       resource: `https://${PROJECT_REF}.supabase.co/functions/v1/chatgpt-mcp`,
       authorization_servers: [OAUTH_ISSUER],
@@ -417,12 +420,12 @@ Deno.serve(async (req: Request) => {
   }
 
   // Health check.
-  if (url.pathname === "/health" && req.method === "GET") {
+  if (path === "/health" && req.method === "GET") {
     return jsonResponse(200, { ok: true });
   }
 
   // MCP protocol is at the function root.
-  if (url.pathname !== "/") {
+  if (path !== "/") {
     return jsonResponse(404, { error: "Not found" });
   }
 
