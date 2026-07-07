@@ -21,7 +21,7 @@ const OUTPUT_FILE = resolve(ROOT, "supabase/functions/chatgpt-mcp/widgets/projec
 console.log("Building ChatGPT widget bundle...");
 execSync("npx vite build --config vite.config.chatgpt-widgets.ts", { cwd: ROOT, stdio: "inherit" });
 
-const htmlPath = resolve(DIST_DIR, "project-summary.html");
+const htmlPath = resolve(DIST_DIR, "src/chatgpt-widgets/project-summary.html");
 const html = readFileSync(htmlPath, "utf-8");
 
 // Escape backticks and ${} in the HTML so it is safe inside a template literal.
