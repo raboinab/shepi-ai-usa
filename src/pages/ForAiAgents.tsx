@@ -261,23 +261,14 @@ console.log(agent.capabilities);`}
             <article>
               <h3 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
                 <FileJson className="w-5 h-5 text-primary" aria-hidden="true" />
-                MCP client config (Claude Desktop, Cursor)
+                Live MCP server (ChatGPT, Claude)
               </h3>
               <p className="text-muted-foreground mb-3">
-                shepi does not run a live MCP server today. Point an HTTP-fetch-capable
-                MCP client at the resources advertised in
-                <code className="mx-1 px-2 py-0.5 rounded bg-muted text-foreground text-sm">/mcp.json</code>:
+                shepi now runs a live, authenticated MCP server. Connect ChatGPT or Claude and let them read your projects, adjustments, and QoE summaries with your approval.
               </p>
-              <pre className="bg-card border border-border rounded-lg p-4 overflow-x-auto text-sm font-mono text-foreground">
-{`{
-  "mcpServers": {
-    "shepi-content": {
-      "transport": "fetch",
-      "resources": "https://shepi.ai/mcp.json"
-    }
-  }
-}`}
-              </pre>
+              <Link to="/connect" className="text-primary hover:underline inline-flex items-center gap-2">
+                Connection instructions <ArrowRight className="w-4 h-4" />
+              </Link>
             </article>
           </div>
         </section>
