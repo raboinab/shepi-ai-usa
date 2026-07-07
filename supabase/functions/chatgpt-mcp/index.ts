@@ -18,6 +18,7 @@ import { z } from "npm:zod@^4.4.3";
 import { projectToDealData } from "../_shared/qoe/projectToDealAdapter.ts";
 import { computeQoEMetrics } from "../_shared/qoe/qoeMetrics.ts";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
+import { PROJECT_SUMMARY_HTML } from "./widgets/projectSummaryHtml.ts";
 
 // ── Environment ──
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -25,7 +26,7 @@ const SUPABASE_PUBLISHABLE_KEY = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Den
 const PROJECT_REF = SUPABASE_URL ? new URL(SUPABASE_URL).hostname.split(".")[0] : "project-ref-unset";
 const OAUTH_ISSUER = `https://${PROJECT_REF}.supabase.co/auth/v1`;
 
-const WIDGET_HTML = "__WIDGET_HTML_PLACEHOLDER__";
+const WIDGET_HTML = PROJECT_SUMMARY_HTML;
 
 // ── Types ──
 interface AuthedContext {
