@@ -6,7 +6,8 @@
  * and can call back into the server for actions like refreshing metrics.
  */
 import { useApp } from "@modelcontextprotocol/ext-apps/react";
-import type { CallToolResult, McpUiHostContext } from "@modelcontextprotocol/ext-apps";
+import type { McpUiHostContext } from "@modelcontextprotocol/ext-apps";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";
