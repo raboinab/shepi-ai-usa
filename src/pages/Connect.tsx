@@ -14,25 +14,27 @@ import { useToast } from "@/hooks/use-toast";
  */
 
 const CHATGPT_STEPS = [
-  "Open https://chatgpt.com/#settings/Connectors/Advanced and enable Developer mode (heed the risk notice shown there).",
-  "In the chat composer’s “+” menu, turn on Developer mode.",
-  "Click “Add sources”, then “Connect more”.",
-  "Name the connector “shepi” and paste the MCP URL above.",
-  "Ask ChatGPT to use shepi — for example, “List my shepi projects” or “Summarize the QoE for project X.”",
+  "Open ChatGPT → Settings → Apps & Connectors → Advanced settings and enable Developer mode.",
+  "Go to Settings → Connectors → Create.",
+  "Name the connector \"shepi\" and paste the ChatGPT MCP URL below.",
+  "Approve the OAuth request when ChatGPT prompts you — this signs you in with your Shepi account.",
+  "Start a chat, click + → More → shepi, then ask ChatGPT to \"list my shepi projects\" or \"summarize the QoE for project X.\" Interactive widgets render inline.",
 ];
 
 const CLAUDE_STEPS = [
   "Open https://claude.ai/customize/connectors?modal=add-custom-connector.",
-  "Name the connector “shepi” and paste the MCP URL above.",
-  "Enable the connector from the chat composer, then ask Claude to use shepi — for example, “What adjustments are pending on my project?”",
+  "Name the connector \"shepi\" and paste the general MCP URL below.",
+  "Enable the connector from the chat composer, then ask Claude to use shepi — for example, \"What adjustments are pending on my project?\"",
 ];
 
 export default function Connect() {
   const { toast } = useToast();
-  const [copied, setCopied] = useState(false);
+  const [copiedChatgpt, setCopiedChatgpt] = useState(false);
+  const [copiedGeneral, setCopiedGeneral] = useState(false);
 
   const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-  const mcpUrl = `https://${projectId}.supabase.co/functions/v1/mcp`;
+  const chatgptUrl = `https://${projectId}.supabase.co/functions/v1/chatgpt-mcp`;
+  const generalUrl = `https://${projectId}.supabase.co/functions/v1/mcp`;
 
   const __seoTags = useSEO({
     title: "Connect an AI assistant to shepi",
@@ -42,12 +44,12 @@ export default function Connect() {
     ogImage: "https://shepi.ai/og-image.png",
   });
 
-  async function copyUrl() {
+  async function copyUrl(url: string, setter: (v: boolean) => void) {
     try {
-      await navigator.clipboard.writeText(mcpUrl);
-      setCopied(true);
+      await navigator.clipboard.writeText(url);
+      setter(true);
       toast({ title: "Copied", description: "MCP server URL copied to clipboard." });
-      setTimeout(() => setCopied(false), 2000);
+      setTimeout(() => setter(false), 2000);
     } catch {
       toast({ title: "Copy failed", description: "Please copy the URL manually.", variant: "destructive" });
     }
