@@ -118,7 +118,7 @@ const ForAiAgents = () => {
             <Link to="/" className="text-muted-foreground hover:text-foreground">Home</Link>
             <Link to="/resources" className="text-muted-foreground hover:text-foreground">Resources</Link>
             <Link to="/pricing" className="text-muted-foreground hover:text-foreground">Pricing</Link>
-            <Link to="/for-ai-agents" className="text-foreground font-medium">For AI agents</Link>
+            <Link to="/connect" className="text-primary font-medium">Connect</Link>
           </div>
           <div className="flex items-center gap-3">
             <Link to="/auth?mode=signup">
