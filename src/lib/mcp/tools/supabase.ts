@@ -32,3 +32,38 @@ export function supabaseForUser(ctx: ToolContext) {
 }
 
 export type SupabaseForUserResult = ReturnType<typeof supabaseForUser>;
+
+/**
+ * Invoke another edge function as the authenticated MCP user, forwarding their
+ * JWT so the target function's own getUser()/requireProjectAccess() checks pass.
+ */
+export async function invokeEdgeFunction(
+  ctx: ToolContext,
+  name: string,
+  body: unknown,
+): Promise<{ ok: boolean; status: number; data: unknown }> {
+  if (!ctx.isAuthenticated()) {
+    return { ok: false, status: 401, data: { error: "Not authenticated" } };
+  }
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const supabaseKey = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY");
+  if (!supabaseUrl || !supabaseKey) {
+    return { ok: false, status: 500, data: { error: "Server configuration error" } };
+  }
+  const resp = await fetch(`${supabaseUrl}/functions/v1/${name}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${ctx.getToken()}`,
+      apikey: supabaseKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body ?? {}),
+  });
+  let data: unknown = null;
+  try {
+    data = await resp.json();
+  } catch {
+    // non-JSON response
+  }
+  return { ok: resp.ok, status: resp.status, data };
+}

@@ -3,7 +3,7 @@
   "name": "shepi",
   "displayName": "shepi",
   "description": "AI-assisted Quality of Earnings analysis for M&A due diligence. Connect ChatGPT or Claude to your shepi projects to list deals, review adjustments, and generate QoE summaries.",
-  "version": "2026.07.07",
+  "version": "2026.07.08",
   "logo_url": "https://shepi.ai/apple-touch-icon.png",
   "homepage": "https://shepi.ai/",
   "documentation": "https://shepi.ai/connect",
@@ -59,7 +59,10 @@
     { "name": "list_adjustments", "description": "List pending or reviewed adjustments on a project." },
     { "name": "update_adjustment_status", "description": "Approve, reject, or mark an adjustment as reviewed." },
     { "name": "get_adjustment_detail", "description": "Get full detail for one adjustment (Claude only)." },
-    { "name": "get_export_data", "description": "Return structured project data plus a download URL for the QoE workbook." }
+    { "name": "get_export_data", "description": "Return structured project data plus a download URL for the QoE workbook." },
+    { "name": "run_discovery", "description": "Start AI adjustment discovery for a project (async; poll get_discovery_status)." },
+    { "name": "get_discovery_status", "description": "Check discovery job status and how many adjustments have been found." },
+    { "name": "validate_financial_statement", "description": "Validate an uploaded financial statement against the project's trial balance." }
   ],
   "resources": [
     {

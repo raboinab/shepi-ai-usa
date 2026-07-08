@@ -9,6 +9,9 @@ import getQualityOfEarningsSummaryTool from "./tools/getQualityOfEarningsSummary
 import createProjectTool from "./tools/createProject";
 import updateAdjustmentStatusTool from "./tools/updateAdjustmentStatus";
 import getExportDataTool from "./tools/getExportData";
+import runDiscoveryTool from "./tools/runDiscovery";
+import getDiscoveryStatusTool from "./tools/getDiscoveryStatus";
+import validateFinancialStatementTool from "./tools/validateFinancialStatement";
 
 // The OAuth issuer must be the direct Supabase host (never the .lovable.cloud
 // proxy). Build it from the project ref, which survives publish unchanged.
@@ -35,5 +38,8 @@ export default defineMcp({
     createProjectTool,
     updateAdjustmentStatusTool,
     getExportDataTool,
+    runDiscoveryTool,
+    getDiscoveryStatusTool,
+    validateFinancialStatementTool,
   ],
 });

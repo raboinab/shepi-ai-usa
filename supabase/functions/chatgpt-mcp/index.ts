@@ -59,8 +59,8 @@ function mcpUnauthorizedResponse(): Response {
 }
 
 function getAuthContext(extra?: { authInfo?: { token?: string; extra?: Record<string, unknown> } }): AuthedContext | undefined {
-  const extraCtx = getAuthContext(extra)?.extra?.ctx as AuthedContext | undefined;
-  return extraCtx;
+  // ctx is attached to the transport at authInfo.extra.ctx (see Deno.serve handler).
+  return extra?.authInfo?.extra?.ctx as AuthedContext | undefined;
 }
 
 async function verifyAuth(req: Request): Promise<AuthResult> {
@@ -98,6 +98,31 @@ function supabaseForUser(ctx: AuthedContext) {
     global: { headers: { Authorization: `Bearer ${ctx.token}` } },
     auth: { persistSession: false, autoRefreshToken: false },
   });
+}
+
+// Invoke another edge function as the signed-in user (forwards their JWT so the
+// target function's own getUser()/requireProjectAccess() checks pass under RLS).
+async function invokeEdgeFunction(
+  ctx: AuthedContext,
+  name: string,
+  body: unknown,
+): Promise<{ ok: boolean; status: number; data: unknown }> {
+  const resp = await fetch(`${SUPABASE_URL}/functions/v1/${name}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${ctx.token}`,
+      apikey: SUPABASE_PUBLISHABLE_KEY ?? "",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body ?? {}),
+  });
+  let data: unknown = null;
+  try {
+    data = await resp.json();
+  } catch {
+    // non-JSON response
+  }
+  return { ok: resp.ok, status: resp.status, data };
 }
 
 // ── MCP Server factory ──
@@ -453,6 +478,121 @@ function createServer(): McpServer {
         const message = e instanceof Error ? e.message : String(e);
         return { content: [{ type: "text" as const, text: `Failed to build export data: ${message}` }], isError: true };
       }
+    },
+  );
+
+  registerAppTool(
+    server,
+    "run_discovery",
+    {
+      title: "Run adjustment discovery",
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+      description: "Start Shepi's AI adjustment-discovery analysis for a project. Runs asynchronously — returns a job id immediately. Poll get_discovery_status until status is 'completed', then use list_adjustments to read the proposals.",
+      inputSchema: z.object({
+        project_id: z.string().uuid().describe("The project ID (UUID)."),
+      }),
+    },
+    async ({ project_id }: { project_id: string }, extra: { authInfo?: { token?: string; extra?: { ctx: AuthedContext } } }) => {
+      const ctx = getAuthContext(extra);
+      if (!ctx) return { content: [{ type: "text" as const, text: "Not authenticated" }], isError: true };
+      const { ok, status, data } = await invokeEdgeFunction(ctx, "trigger-discovery", { project_id });
+      if (!ok) {
+        const msg = (data as { error?: string })?.error ?? `HTTP ${status}`;
+        return { content: [{ type: "text" as const, text: `Failed to start discovery: ${msg}` }], isError: true };
+      }
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(data) }],
+        structuredContent: { discovery: data },
+      };
+    },
+  );
+
+  registerAppTool(
+    server,
+    "get_discovery_status",
+    {
+      title: "Get discovery status",
+      annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+      description: "Check the status of adjustment discovery for a project (queued / running / completed / failed) and how many adjustment proposals exist so far. Use to poll after run_discovery.",
+      inputSchema: z.object({
+        project_id: z.string().uuid().describe("The project ID (UUID)."),
+      }),
+    },
+    async ({ project_id }: { project_id: string }, extra: { authInfo?: { token?: string; extra?: { ctx: AuthedContext } } }) => {
+      const ctx = getAuthContext(extra);
+      if (!ctx) return { content: [{ type: "text" as const, text: "Not authenticated" }], isError: true };
+      const db = supabaseForUser(ctx);
+      const { data: job, error: jobErr } = await db
+        .from("analysis_jobs")
+        .select("id, status, progress_percent, error_message, requested_at, completed_at")
+        .eq("project_id", project_id)
+        .order("requested_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (jobErr) {
+        return { content: [{ type: "text" as const, text: jobErr.message }], isError: true };
+      }
+      const { count } = await db
+        .from("adjustment_proposals")
+        .select("id", { count: "exact", head: true })
+        .eq("project_id", project_id);
+      const result = {
+        project_id,
+        status: job?.status ?? "no_job",
+        progress_percent: job?.progress_percent ?? null,
+        error_message: job?.error_message ?? null,
+        adjustments_found: count ?? 0,
+        job_id: job?.id ?? null,
+      };
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(result) }],
+        structuredContent: { status: result },
+      };
+    },
+  );
+
+  registerAppTool(
+    server,
+    "validate_financial_statement",
+    {
+      title: "Validate financial statement",
+      annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+      description: "Validate an already-uploaded balance sheet, income statement, or cash flow document against the project's trial balance — returns line-item totals and variances. The document must already exist in the project (upload happens in the Shepi app).",
+      inputSchema: z.object({
+        project_id: z.string().uuid().describe("The project ID (UUID)."),
+        document_id: z.string().uuid().describe("The uploaded document ID (UUID) to validate."),
+      }),
+    },
+    async ({ project_id, document_id }: { project_id: string; document_id: string }, extra: { authInfo?: { token?: string; extra?: { ctx: AuthedContext } } }) => {
+      const ctx = getAuthContext(extra);
+      if (!ctx) return { content: [{ type: "text" as const, text: "Not authenticated" }], isError: true };
+      const { data: doc, error: docErr } = await supabaseForUser(ctx)
+        .from("documents")
+        .select("id, account_type, period_start, period_end, name")
+        .eq("id", document_id)
+        .eq("project_id", project_id)
+        .maybeSingle();
+      if (docErr) {
+        return { content: [{ type: "text" as const, text: docErr.message }], isError: true };
+      }
+      if (!doc) {
+        return { content: [{ type: "text" as const, text: "Document not found or access denied." }], isError: true };
+      }
+      const { ok, status, data } = await invokeEdgeFunction(ctx, "validate-financial-statement", {
+        projectId: project_id,
+        documentId: document_id,
+        documentType: (doc as { account_type?: string }).account_type,
+        periodStart: (doc as { period_start?: string }).period_start ?? null,
+        periodEnd: (doc as { period_end?: string }).period_end ?? null,
+      });
+      if (!ok) {
+        const msg = (data as { error?: string })?.error ?? `HTTP ${status}`;
+        return { content: [{ type: "text" as const, text: `Validation failed: ${msg}` }], isError: true };
+      }
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(data) }],
+        structuredContent: { validation: data },
+      };
     },
   );
 
