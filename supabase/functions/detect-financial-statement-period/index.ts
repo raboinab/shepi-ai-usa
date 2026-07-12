@@ -167,22 +167,25 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
   }
 }
 
-function extractXlsxText(bytes: Uint8Array): string {
+function extractXlsxText(bytes: Uint8Array): { text: string; header: string } {
   try {
     const wb = XLSX.read(bytes, { type: "array" });
     const chunks: string[] = [];
+    const headerChunks: string[] = [];
     // Scan every sheet — comparative periods often live across sheets or in the header of each.
     for (const name of wb.SheetNames) {
       const sheet = wb.Sheets[name];
       if (!sheet) continue;
       const rows = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, blankrows: false });
       chunks.push(`# ${name}`);
-      chunks.push(rows.slice(0, 40).map((r) => (Array.isArray(r) ? r.join(" ") : "")).join("\n"));
+      chunks.push(rows.slice(0, 60).map((r) => (Array.isArray(r) ? r.join(" ") : "")).join("\n"));
+      // Header region — first 15 rows only, used for BS bare-date detection.
+      headerChunks.push(rows.slice(0, 15).map((r) => (Array.isArray(r) ? r.join(" ") : "")).join("\n"));
     }
-    return chunks.join("\n");
+    return { text: chunks.join("\n"), header: headerChunks.join("\n") };
   } catch (e) {
     console.warn("XLSX text extract failed:", e);
-    return "";
+    return { text: "", header: "" };
   }
 }
 
