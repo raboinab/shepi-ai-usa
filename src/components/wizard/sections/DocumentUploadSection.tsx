@@ -2882,6 +2882,71 @@ export const DocumentUploadSection = ({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <AlertDialog
+        open={!!manualDatesDoc}
+        onOpenChange={(open) => { if (!open && !savingManualDates) setManualDatesDoc(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Set statement dates</AlertDialogTitle>
+            <AlertDialogDescription>
+              Enter the period this statement covers for <strong>{manualDatesDoc?.name}</strong>.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="grid grid-cols-2 gap-3 py-2">
+            <div>
+              <Label htmlFor="manual-start" className="text-xs">Start date</Label>
+              <Input
+                id="manual-start"
+                type="date"
+                value={manualStart}
+                onChange={(e) => setManualStart(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label htmlFor="manual-end" className="text-xs">End date</Label>
+              <Input
+                id="manual-end"
+                type="date"
+                value={manualEnd}
+                onChange={(e) => setManualEnd(e.target.value)}
+              />
+            </div>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={savingManualDates}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={savingManualDates || !manualStart || !manualEnd || !manualDatesDoc}
+              onClick={async (e) => {
+                e.preventDefault();
+                if (!manualDatesDoc) return;
+                if (manualEnd < manualStart) {
+                  toast.error("End date must be on or after start date");
+                  return;
+                }
+                setSavingManualDates(true);
+                try {
+                  const { error } = await supabase
+                    .from("documents")
+                    .update({ period_start: manualStart, period_end: manualEnd })
+                    .eq("id", manualDatesDoc.id);
+                  if (error) throw error;
+                  toast.success("Statement dates saved");
+                  setManualDatesDoc(null);
+                  fetchDocuments();
+                } catch (err: any) {
+                  toast.error("Failed to save dates: " + (err?.message || "Unknown error"));
+                } finally {
+                  setSavingManualDates(false);
+                }
+              }}
+            >
+              {savingManualDates ? "Saving…" : "Save dates"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AccountLabelBackfillDialog
         open={!!backfillDocs}
         onOpenChange={(open) => { if (!open) setBackfillDocs(null); }}
