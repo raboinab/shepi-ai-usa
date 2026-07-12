@@ -312,10 +312,10 @@ const DOCUMENT_COVERAGE_CONFIG: Record<string, DocumentCoverageConfig> = {
   credit_card: { type: 'monthly', label: 'Monthly Coverage', description: 'Credit card statements for each month' },
   
   // Monthly/Quarterly (financials)
-  trial_balance: { type: 'monthly', label: 'Period Coverage', description: 'Trial balance for each reporting period' },
-  balance_sheet: { type: 'monthly', label: 'Period Coverage', description: 'Balance sheet snapshot for each reporting period (month-end)' },
-  income_statement: { type: 'monthly', label: 'Period Coverage', description: 'P&L for each reporting period' },
-  cash_flow: { type: 'monthly', label: 'Period Coverage', description: 'Cash flow for each reporting period' },
+  trial_balance: { type: 'monthly', label: 'Statement Dates', description: 'Trial balance files with dates detected from the upload' },
+  balance_sheet: { type: 'monthly', label: 'Statement Dates', description: 'Balance sheet snapshots with dates detected from the upload' },
+  income_statement: { type: 'monthly', label: 'Statement Dates', description: 'P&L files with dates detected from the upload' },
+  cash_flow: { type: 'monthly', label: 'Statement Dates', description: 'Cash flow files with dates detected from the upload' },
   
   // Full-period documents (one export covering entire range)
   general_ledger: { type: 'full-period', label: 'Full Period', description: 'One export covering the entire analysis period' },
