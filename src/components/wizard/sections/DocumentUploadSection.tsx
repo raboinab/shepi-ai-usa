@@ -2749,6 +2749,18 @@ export const DocumentUploadSection = ({
                                   )}
                                   Detect
                                 </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 text-[10px]"
+                                  onClick={() => {
+                                    setManualDatesDoc({ id: doc.id, name: doc.name });
+                                    setManualStart(doc.period_start || "");
+                                    setManualEnd(doc.period_end || "");
+                                  }}
+                                >
+                                  Set dates
+                                </Button>
                               </div>
                             ) : "-"}
                           </TableCell>
