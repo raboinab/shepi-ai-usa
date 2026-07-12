@@ -325,18 +325,25 @@ serve(async (req) => {
 
     const ext = (doc.file_type || doc.name?.split(".").pop() || "").toLowerCase();
     let text = "";
+    let headerText = "";
     if (ext === "pdf") {
       text = await extractPdfText(bytes);
+      // For PDFs, the "header" is roughly the first 2000 chars.
+      headerText = text.slice(0, 2000);
     } else if (ext === "xlsx" || ext === "xls" || ext === "csv") {
-      text = extractXlsxText(bytes);
+      const extracted = extractXlsxText(bytes);
+      text = extracted.text;
+      headerText = extracted.header;
     } else {
       text = new TextDecoder().decode(bytes.slice(0, 8000));
+      headerText = text.slice(0, 2000);
     }
 
     // Prefer file name hint as extra signal
     const combined = `${doc.name}\n${text}`.slice(0, 8000);
+    const headerCombined = `${doc.name}\n${headerText}`;
 
-    let detection = detectByRegex(combined);
+    let detection = detectByRegex(combined, doc.account_type, headerCombined);
     let usedLlm = false;
     if (detection.confidence < 0.7) {
       const llm = await detectByLLM(text.slice(0, 4000), doc.account_type || "financial statement", doc.name);
