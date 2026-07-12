@@ -1654,9 +1654,10 @@ export const DocumentUploadSection = ({
       
       fetchDocuments();
 
-      // Auto-detect reporting period for BS / P&L / Cash Flow uploads when the user
-      // didn't set one manually. Runs fire-and-forget in parallel per file.
-      if (isFsPeriodType(docType) && !selectedFsPeriod && successful.length > 0) {
+      // Auto-detect reporting period for BS / P&L / Cash Flow uploads.
+      // Runs fire-and-forget in parallel per file. If detection fails the user
+      // can still set the period from the documents table below.
+      if (isFsPeriodType(docType) && successful.length > 0) {
         const fsDocIds = successful.map(r => r.docId).filter(Boolean) as string[];
         if (fsDocIds.length > 0) {
           Promise.all(fsDocIds.map(id =>
@@ -1671,13 +1672,11 @@ export const DocumentUploadSection = ({
             if (applied > 0) {
               toast.success(`Detected reporting period for ${applied} file(s)`);
               fetchDocuments();
-            } else if (results.length > 0) {
-              toast.info("Couldn't auto-detect the period — set it manually below.");
-              fetchDocuments();
             }
           });
         }
       }
+
 
       // Auto-trigger financial statement validation for verification doc types
       if (isVerifiableType(docType) && files.length === 1 && successful.length === 1) {
