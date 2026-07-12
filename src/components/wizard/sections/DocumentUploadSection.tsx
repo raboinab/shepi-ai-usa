@@ -2465,53 +2465,10 @@ export const DocumentUploadSection = ({
                   </div>
                 )}
 
-                {/* Reporting Period - for Balance Sheet / P&L / Cash Flow */}
-                {isFsPeriodType(type.value) && (
-                  <div className="space-y-2">
-                    <Label>Reporting Period <span className="text-muted-foreground text-xs font-normal">(optional)</span></Label>
-                    <div className="flex gap-2">
-                      <Select
-                        value={selectedFsPeriod?.month?.toString() || ""}
-                        onValueChange={(v) =>
-                          setSelectedFsPeriod((prev) => ({
-                            year: prev?.year ?? (availableTaxYears[0] || new Date().getFullYear()),
-                            month: parseInt(v),
-                          }))
-                        }
-                      >
-                        <SelectTrigger className="w-32">
-                          <SelectValue placeholder="Month" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {MONTH_OPTIONS.map((m) => (
-                            <SelectItem key={m.value} value={m.value.toString()}>{m.label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Select
-                        value={selectedFsPeriod?.year?.toString() || ""}
-                        onValueChange={(v) =>
-                          setSelectedFsPeriod((prev) => ({
-                            year: parseInt(v),
-                            month: prev?.month ?? new Date().getMonth() + 1,
-                          }))
-                        }
-                      >
-                        <SelectTrigger className="w-32">
-                          <SelectValue placeholder="Year" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {availableTaxYears.map((y) => (
-                            <SelectItem key={y} value={y.toString()}>{y}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Leave blank — we'll detect the period from the file. Multi-month files (annual P&amp;L, comparative statements) are also fine. Set it manually only if you already know it.
-                    </p>
-                  </div>
-                )}
+                {/* Reporting period is auto-detected from the file after upload for
+                    Balance Sheet / Income Statement / Cash Flow. If detection fails,
+                    the user can set it from the documents table below. */}
+
 
                 {type.value === "supporting_documents" && (
                   <>
