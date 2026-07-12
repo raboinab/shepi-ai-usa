@@ -488,10 +488,20 @@ function processRows(
       const accountType = row.accountType || '';
       const accountSubtype = row.accountSubtype || row.subAccountType || '';
       
+      const inferredFsType = inferFsType({
+        fsType: row.fsType,
+        accountType,
+        classification: (row as any).classification,
+        accountSubtype,
+        accountName: row.accountName,
+        accountNumber: row.accountNumber,
+        fullyQualifiedName: row.fullyQualifiedName,
+      });
       account = {
         id: crypto.randomUUID(),
-        // Use backend-provided fsType, simple fallback to BS (not derived)
-        fsType: row.fsType || 'BS',
+        // Backend-provided fsType wins; otherwise infer from name/number/type
+        // hints instead of blanket-defaulting to BS (which broke P&L validation).
+        fsType: inferredFsType || 'IS',
         accountNumber: row.accountNumber || '',
         accountName: row.accountName || '',
         accountType: accountType,
@@ -504,6 +514,7 @@ function processRows(
         // Preserve match flag if present
         ...(row._matchedFromCOA !== undefined && { _matchedFromCOA: row._matchedFromCOA }),
       } as TrialBalanceAccount;
+
       accountMap.set(accountKey, account);
     }
 
