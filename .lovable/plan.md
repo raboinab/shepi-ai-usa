@@ -1,72 +1,68 @@
-# Vampire Freaks project — current state
 
-Checked James's project (`621a6c9f`) in the DB. Two separate problems:
+## Root cause (confirmed in DB, not speculation)
 
-## Problem 1 — Balance Sheet period is wrong
+James's project has 183 TB accounts in `wizard_data.trialBalance.accounts`. Every single one is tagged `fsType: "BS"` with an empty `accountType` — including obvious income rows like `4000 RETAIL:z_Shopify Sales`, `4000 RETAIL:Amazon Sales`, `4000 RETAIL:PayPal Sales`.
 
-| Doc | Detected period |
-|---|---|
-| P&L (`VampireFreaks_Profit and Loss (4).xlsx`) | ✅ 2023-01-01 → 2026-05-31 |
-| Balance Sheet (`VampireFreaks_Balance Sheet.xlsx`) | ❌ 2026-05-01 → 2026-05-31 only |
+That's why the P&L validation card shows:
+- **Trial Balance accounts (0)** in the diagnostic — the panel filters to `fsType === 'IS'`, and there are zero.
+- **Total Revenue / COGS / Gross Profit derived from TB = 0** — same reason.
+- **"20 uploaded line items not found in your Trial Balance"** — the missing-account matcher also filters to `fsType === 'IS'`.
+- **0% match, $47M "unmatched"** — TB side of every comparison is zero.
 
-The P&L now spans correctly after the last fix. The BS still collapses to a single month because comparative Balance Sheets from QuickBooks typically show column headers like `May 31, 2026 | May 31, 2025 | May 31, 2024` — only the **first** column is prefixed with "As of". The `as of` regex therefore matches once, and the widest-span logic returns only that one month.
+The upstream cause is in `src/lib/chartOfAccountsUtils.ts` line 185:
 
-## Problem 2 — Project is stuck at Phase 2 / Section 1
+```ts
+fsType: acc.fsType || 'BS',
+```
 
-Even with documents dated, nothing downstream has happened:
+When the CoA is uploaded as a plain CSV (VampireFreaks.csv here), `acc.fsType` is undefined for every row, so everything defaults to `BS`. `crossReferenceWithCOA` then propagates that wrong `fsType` to the TB, and downstream everything treats the whole company as a balance sheet with no income statement.
 
-- `canonical_transactions`: **0**
-- `analysis_jobs`: **0**
-- `adjustment_proposals`: **0**
-- `findings`: **0**
-- `docuclipper_jobs`: 25 completed (credit-card statements were parsed fine)
+There is already an `inferFsTypeFromName` helper used by the QB ingestion path in `supabase/functions/process-quickbooks-file/index.ts` — the CSV path just isn't using it.
 
-Project status: `in-progress`, `current_phase: 2`, `current_section: 1`, `service_tier: diy`. Credit card transactions extracted by DocuClipper never made it into `canonical_transactions`, and no analysis job was ever created. This is not a period-detection problem — it's an orchestration problem. Either:
+## Fix
 
-- (a) the wizard is gating on a user click (e.g., "Start analysis") that James hasn't pressed, or
-- (b) code that normalizes `processed_data → canonical_transactions` is missing/broken for this project.
+### 1. Stop defaulting fsType to BS blindly (`src/lib/chartOfAccountsUtils.ts`)
 
-I need to read the Phase 2 section components before I know which.
+Replace the `acc.fsType || 'BS'` default (in both the `hasPreprocessedData` fallback branch and the plain branch, ~lines 170 and 185) with an inference step:
 
----
+- If `acc.fsType` is set, use it.
+- Else infer from `accountSubtype` / `classification` when QB-style hints are present (`Income`, `Revenue`, `Expense`, `CostOfGoodsSold`, `OtherIncome`, `OtherExpense` → `IS`; `Bank`, `AccountsReceivable`, `Asset`, `Liability`, `Equity`, `CreditCard`, etc. → `BS`).
+- Else infer from account name/number using the same rules as `inferFsTypeFromName` (numeric prefix 4xxx/5xxx/6xxx/7xxx/8xxx → `IS`; 1xxx/2xxx/3xxx → `BS`; name regexes for sales/revenue/income/cogs/expense → `IS`).
+- Only fall back to `BS` when nothing matches (and log so we can spot it).
 
-# Plan
+Set `category` at the same time when inference is confident (e.g. sales → `revenue`, cogs → `cogs`, etc.), matching the buckets `validate-financial-statement` uses.
 
-### 1. Improve BS multi-period detection (edge function)
+### 2. Reuse existing logic — don't duplicate
 
-In `supabase/functions/detect-financial-statement-period/index.ts`:
+Extract `inferFsTypeFromName` / `inferCategoryFromName` out of `supabase/functions/process-quickbooks-file/index.ts` (or copy the rules into a shared module under `src/lib/`) so both the edge function and the client-side CoA transform use one implementation. This avoids the two paths drifting again.
 
-- Add a new regex pass for **bare header dates** like `May 31, 2026` / `May 31 2025` / `12/31/2024`, not just "As of" prefixed dates.
-- Only apply this pass when `account_type = 'balance_sheet'` (avoid false positives on P&L transaction dates).
-- Restrict to dates found in the **first ~15 rows** of any sheet (header region) so we don't pick up transactional dates.
-- Collect all matches, return earliest start-of-month → latest end-of-month.
-- Increase XLSX row scan from 40 → 60 rows per sheet to capture wider comparative tables.
-- Tighten the LLM prompt to explicitly note "comparative BS often only says 'As of' once; treat every date column header as an 'as of' date."
+### 3. Backfill James's project (one-off)
 
-### 2. Backfill James's Balance Sheet immediately
+After the fix ships, his stored `wizard_data` is still wrong. Two options — pick one:
 
-After deploy, re-run the detector on document `e8a24dbf-0e46-47af-a2cb-59618a80ebe4` so BS spans the same window as P&L (assumed 2023-01-01 → 2026-05-31 pending detection result).
+- **A. Data fix via `supabase--insert`:** Update `projects.wizard_data` for `621a6c9f-1c25-40fa-92fa-6762ae3fe72b`: clear `chartOfAccounts.accounts` and `trialBalance.accounts` so the wizard's next load re-derives them from `processed_data` using the new inference. This is the least risky option.
+- **B. Reset via existing RPC:** Call `reset_project_data(...)` — but that also wipes documents/GL/bank data, so this is too aggressive. Do not use.
 
-### 3. Diagnose the "no analysis" gap
-
-Read the Phase 2 wizard components to find:
-- Where `canonical_transactions` is populated from `processed_data` (probably a normalizer edge function or client-side transform).
-- Whether it needs a manual "Continue" or "Start analysis" click, and whether the UI is showing that button.
-- Whether there's a validation blocker (e.g., "BS period doesn't cover all periods").
-
-Then either:
-- Fix the orchestration/normalizer bug, or
-- Surface a clear next-step button in the UI (if the flow is just waiting on a click), or
-- Manually kick off the missing job for James so his project unsticks.
+Go with option A.
 
 ### 4. Verify
 
-- Re-query DB: BS should have full span; `canonical_transactions` should have rows for all 25 CC statements.
-- Take a Playwright screenshot of James's project page as admin to confirm the wizard advances.
+After the code change + backfill:
 
----
+1. Reopen `/project/621a6c9f-1c25-40fa-92fa-6762ae3fe72b`, go to Trial Balance section, let it reload. Confirm the TB now shows sales/COGS accounts flagged as `IS`.
+2. Re-run the P&L validation card. Expect: Total Revenue ~$28.2M on both sides, COGS ~$13.6M on both sides, non-zero match %, and the "20 items not found" list shrinks dramatically.
+3. Balance Sheet validation should still work (assets/liabilities/equity accounts are still correctly inferred as `BS`).
 
-## What I won't touch
+## Explicitly out of scope
 
-- The "Detect" / "Set dates" buttons and manual-fallback dialog already added — those stay as escape hatches.
-- Any other project or the period-detection heuristics for non-balance-sheet docs.
+- Not touching the validation card UI — the "0 matches / 3 significant / $47M unmatched" display is correct given the bad input; fix the input.
+- Not changing the TB→P&L derivation math in `validate-financial-statement/index.ts`.
+- Not touching Balance Sheet detection or period logic.
+- Not adding any "no TB uploaded" fallback flow — you confirmed the TB IS uploaded.
+
+## Files touched
+
+- `src/lib/chartOfAccountsUtils.ts` — fix the default fsType/category inference.
+- New `src/lib/inferFsType.ts` (or similar) — shared inference rules.
+- `supabase/functions/process-quickbooks-file/index.ts` — import from the shared module instead of local helpers (behavior unchanged).
+- Data fix migration/insert for project `621a6c9f-1c25-40fa-92fa-6762ae3fe72b` `wizard_data`.
