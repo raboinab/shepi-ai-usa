@@ -2467,7 +2467,7 @@ export const DocumentUploadSection = ({
                 {/* Reporting Period - for Balance Sheet / P&L / Cash Flow */}
                 {isFsPeriodType(type.value) && (
                   <div className="space-y-2">
-                    <Label>Reporting Period <span className="text-destructive">*</span></Label>
+                    <Label>Reporting Period <span className="text-muted-foreground text-xs font-normal">(optional)</span></Label>
                     <div className="flex gap-2">
                       <Select
                         value={selectedFsPeriod?.month?.toString() || ""}
