@@ -178,12 +178,24 @@ export function transformCoaData(data: any): CoaAccount[] {
       };
     }
 
+    const inferred = inferFsType({
+      fsType: acc.fsType,
+      accountType: acc.AccountType || acc.accountType || acc.type,
+      classification,
+      accountSubtype,
+      accountName: displayName,
+      accountNumber,
+      fullyQualifiedName,
+    });
+    const fsType: "BS" | "IS" = inferred || 'IS';
+    const category = acc.category || inferCategory(displayName, fsType);
+
     return {
       id: index + 1,
       accountNumber,
       accountName: displayName,
-      fsType: acc.fsType || 'BS',
-      category: acc.category || '',
+      fsType,
+      category,
       accountSubtype,
       classification,
       accountId,
@@ -191,6 +203,7 @@ export function transformCoaData(data: any): CoaAccount[] {
       parentRef,
       originalName: displayName,
     };
+
   });
 
   // Auto-assign account numbers to accounts missing them, but mark them as
