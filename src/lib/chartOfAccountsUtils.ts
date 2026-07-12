@@ -1,4 +1,7 @@
+import { inferFsType, inferCategory } from './inferFsType';
+
 export interface CoaAccount {
+
   id: number;
   accountNumber: string;
   accountName: string;
