@@ -1,4 +1,6 @@
 import { Period } from "./periodUtils";
+import { inferFsType } from "./inferFsType";
+
 
 export type FSType = 'BS' | 'IS';
 export type AccountCategory = 
