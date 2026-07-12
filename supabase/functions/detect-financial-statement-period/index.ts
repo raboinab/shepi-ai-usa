@@ -184,15 +184,16 @@ Return ONLY a JSON object with fields:
 - "reason": short string explaining what you found
 
 Rules:
-- Balance Sheet "As of DATE" → period_start = start of that month, period_end = that DATE.
-- Income Statement / Cash Flow "For the Year Ended DATE" → period_start = one year earlier + 1 day, period_end = that DATE.
-- "For the N Months Ended DATE" → period_start = start of the (m - N + 1) month.
-- If comparative columns show multiple years, use the LATEST reporting period.
-- If you cannot find a period, return nulls with confidence 0.
+- Return the FULL span the file covers: period_start = the EARLIEST date/column shown, period_end = the LATEST date/column shown.
+- Balance Sheet with multiple "As of" columns → period_start = start-of-month of the earliest column, period_end = the latest "As of" date.
+- Income Statement / Cash Flow spanning multiple months or years → period_start = start of the earliest period, period_end = end of the latest period.
+- File names or headers like "01/2023 - 05/2026" or "Jan 2023 to May 2026" mean period_start = 2023-01-01 and period_end = 2026-05-31.
+- Do NOT collapse a multi-period file down to a single month.
+- If you cannot find any period, return nulls with confidence 0.
 
 Text to analyze (truncated):
 """
-${sampleText.slice(0, 4000)}
+${sampleText.slice(0, 8000)}
 """`;
 
   try {
