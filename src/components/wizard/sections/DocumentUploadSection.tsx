@@ -471,7 +471,6 @@ export const DocumentUploadSection = ({
   const [isValidating, setIsValidating] = useState(false);
   const [validationDialogOpen, setValidationDialogOpen] = useState(false);
   const [selectedTaxYear, setSelectedTaxYear] = useState<number | null>(null);
-  const [selectedFsPeriod, setSelectedFsPeriod] = useState<{ year: number; month: number } | null>(null);
   const [detectingPeriodDocIds, setDetectingPeriodDocIds] = useState<Set<string>>(new Set());
   const [fsBackfillDoc, setFsBackfillDoc] = useState<Document | null>(null);
   const [fsBackfillPeriod, setFsBackfillPeriod] = useState<{ year: number; month: number } | null>(null);
@@ -1132,11 +1131,8 @@ export const DocumentUploadSection = ({
           if (docType === "tax_return" && selectedTaxYear) {
             periodStart = `${selectedTaxYear}-01-01`;
             periodEnd = `${selectedTaxYear}-12-31`;
-          } else if (isFsPeriodType(docType) && selectedFsPeriod) {
-            const ep = computeMonthEndpoints(selectedFsPeriod.year, selectedFsPeriod.month);
-            periodStart = ep.periodStart;
-            periodEnd = ep.periodEnd;
           }
+
 
           // Create document record
           const { data: insertedDoc, error: insertError } = await supabase
@@ -1649,7 +1645,7 @@ export const DocumentUploadSection = ({
       setAccountLabel("");
       setDocDescription("");
       setSelectedTaxYear(null);
-      setSelectedFsPeriod(null);
+      
       
       // Reset file input
       const fileInput = document.getElementById("file-upload") as HTMLInputElement;
@@ -1657,9 +1653,10 @@ export const DocumentUploadSection = ({
       
       fetchDocuments();
 
-      // Auto-detect reporting period for BS / P&L / Cash Flow uploads when the user
-      // didn't set one manually. Runs fire-and-forget in parallel per file.
-      if (isFsPeriodType(docType) && !selectedFsPeriod && successful.length > 0) {
+      // Auto-detect reporting period for BS / P&L / Cash Flow uploads.
+      // Runs fire-and-forget in parallel per file. If detection fails the user
+      // can still set the period from the documents table below.
+      if (isFsPeriodType(docType) && successful.length > 0) {
         const fsDocIds = successful.map(r => r.docId).filter(Boolean) as string[];
         if (fsDocIds.length > 0) {
           Promise.all(fsDocIds.map(id =>
@@ -1674,13 +1671,11 @@ export const DocumentUploadSection = ({
             if (applied > 0) {
               toast.success(`Detected reporting period for ${applied} file(s)`);
               fetchDocuments();
-            } else if (results.length > 0) {
-              toast.info("Couldn't auto-detect the period — set it manually below.");
-              fetchDocuments();
             }
           });
         }
       }
+
 
       // Auto-trigger financial statement validation for verification doc types
       if (isVerifiableType(docType) && files.length === 1 && successful.length === 1) {
@@ -2465,53 +2460,10 @@ export const DocumentUploadSection = ({
                   </div>
                 )}
 
-                {/* Reporting Period - for Balance Sheet / P&L / Cash Flow */}
-                {isFsPeriodType(type.value) && (
-                  <div className="space-y-2">
-                    <Label>Reporting Period <span className="text-muted-foreground text-xs font-normal">(optional)</span></Label>
-                    <div className="flex gap-2">
-                      <Select
-                        value={selectedFsPeriod?.month?.toString() || ""}
-                        onValueChange={(v) =>
-                          setSelectedFsPeriod((prev) => ({
-                            year: prev?.year ?? (availableTaxYears[0] || new Date().getFullYear()),
-                            month: parseInt(v),
-                          }))
-                        }
-                      >
-                        <SelectTrigger className="w-32">
-                          <SelectValue placeholder="Month" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {MONTH_OPTIONS.map((m) => (
-                            <SelectItem key={m.value} value={m.value.toString()}>{m.label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Select
-                        value={selectedFsPeriod?.year?.toString() || ""}
-                        onValueChange={(v) =>
-                          setSelectedFsPeriod((prev) => ({
-                            year: parseInt(v),
-                            month: prev?.month ?? new Date().getMonth() + 1,
-                          }))
-                        }
-                      >
-                        <SelectTrigger className="w-32">
-                          <SelectValue placeholder="Year" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {availableTaxYears.map((y) => (
-                            <SelectItem key={y} value={y.toString()}>{y}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Leave blank — we'll detect the period from the file. Multi-month files (annual P&amp;L, comparative statements) are also fine. Set it manually only if you already know it.
-                    </p>
-                  </div>
-                )}
+                {/* Reporting period is auto-detected from the file after upload for
+                    Balance Sheet / Income Statement / Cash Flow. If detection fails,
+                    the user can set it from the documents table below. */}
+
 
                 {type.value === "supporting_documents" && (
                   <>

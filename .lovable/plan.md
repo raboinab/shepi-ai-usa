@@ -1,52 +1,30 @@
-## Goal
+## What's changing and why
 
-Stop forcing users to pick a Month + Year every time they upload a Balance Sheet, P&L, or Cash Flow. Auto-detect the reporting period from the file itself. Anything we can't confidently detect drops into a "Needs period" tray they can clear in one click — same pattern as the existing bank-statement label backfill.
+The upload form for Balance Sheet, Income Statement, and Cash Flow currently shows a Month + Year picker labeled "Reporting Period". It was added so we could show a coverage timeline before the file was parsed. It's confusing — every other document category (bank statement, credit card, tax return, payroll, GL, journals, AR/AP, vendor/customer summary, debt/fixed asset schedules) already uploads without asking the user to label a period, and the auto-detect edge function we added last turn (`detect-financial-statement-period`) now fills `period_start` / `period_end` from the file itself.
 
-## Behavior
+For the sandbox project `fa0768ca-…`, every document was uploaded through the paths that don't ask for a period — that's why you didn't hit this UI before. The FS-period picker only appears when `account_type` is `balance_sheet`, `income_statement`, or `cash_flow`.
 
-**Upload flow (BS / P&L / Cash Flow)**
-- Reporting Period dropdown becomes optional. Help text: *"We'll detect the period from the file. Set it manually only if you already know it."*
-- User can upload multiple files at once without labeling.
-- After upload, a period-detection job runs per file in the background.
-- Detected periods populate `documents.period_start` / `period_end` and the coverage timeline updates automatically.
-- If detection returns a range spanning multiple months (e.g., annual P&L, comparative statements), we store the full range on that one document row — no row-splitting.
+## Scope
 
-**Backfill tray**
-- New "Needs reporting period" card appears at the top of the Documents section whenever any BS/IS/CF doc has `period_start IS NULL` after detection ran.
-- Each row: filename, doc type, `[Detect again]` and `[Set manually]` buttons.
-- Manual button reuses the existing `fsBackfillDoc` dialog.
+**Remove from the upload form** (`src/components/wizard/sections/DocumentUploadSection.tsx`):
+- The "Reporting Period (optional)" Month + Year selector block that renders when `isFsPeriodType(type.value)` is true (~lines 2468-2510).
+- The `selectedFsPeriod` state and its use in the upload payload (~lines 1135-1140, 474).
+- The post-upload "no period selected" toast/prompt (~line 1662).
 
-## Technical Details
+**Keep** (so downstream analytics still get dates):
+- `detect-financial-statement-period` auto-detect fires on every BS/IS/CF upload.
+- The "Detect" button on the documents table for any row that ended up with no period.
+- The "Set manually" backfill dialog as an escape hatch when auto-detect fails.
+- `period_start` / `period_end` columns on `documents` (many downstream functions still read them: `embed-project-data`, `validate-financial-statement`, `processed-data-*`, `insights-chat`, `mcp`, coverage timeline, POC bank data, etc.).
 
-**New edge function: `detect-financial-statement-period`**
-- Input: `{ documentId }`. Auth via user JWT.
-- Downloads the file from `documents` storage bucket.
-- Extracts text from page 1 (PDF: `unpdf`; XLSX: parse first sheet header rows).
-- Regex pass for common patterns:
-  - `For the (Year|Period|Month) Ended? <date>`
-  - `As of <date>`
-  - `<Month> <YYYY>` / `<MM>/<DD>/<YYYY>`
-  - Comparative year columns (`2022  2023  2024`)
-- If regex confidence low, fall back to Lovable AI (`google/gemini-2.5-flash`) with a strict JSON schema: `{ period_start, period_end, confidence }`.
-- Writes `period_start` / `period_end` back to the `documents` row. Returns detection result to caller.
-- Confidence threshold: only auto-apply if `confidence >= 0.7`; otherwise leave NULL so the tray shows it.
+**No backend changes.** No migrations. No edge function edits.
 
-**`DocumentUploadSection.tsx`**
-- Remove the `<span className="text-destructive">*</span>` from Reporting Period label; loosen the upload-button gate so FS types don't require `selectedFsPeriod`.
-- After each successful FS upload where the user didn't set a period, fire-and-forget invoke of `detect-financial-statement-period`.
-- Refresh `documents` list on detection completion.
-- New `NeedsPeriodBackfill` sub-component (top of the section) that lists FS docs with `period_start IS NULL` and wires to the existing manual dialog + a "Detect again" action.
-- Update help copy on the period dropdown to mark it optional.
+## Result
 
-**No schema changes.** `documents.period_start` / `period_end` already exist and are already nullable.
+- Uploading a Balance Sheet / Income Statement / Cash Flow works exactly like uploading a bank statement: pick the file, pick the category, upload. Done.
+- Auto-detect runs in the background and fills the period.
+- If auto-detect can't find the period, the row shows Detect + Set manually buttons in the documents table — same UX as today, just no upfront gate.
 
-## Files touched
+## Note on "when this was introduced"
 
-- `supabase/functions/detect-financial-statement-period/index.ts` (new)
-- `src/components/wizard/sections/DocumentUploadSection.tsx` (upload gate, help copy, new backfill tray section, detection invocation)
-
-## Out of scope
-
-- Bank statement / credit card period detection (already handled by DocuClipper).
-- Splitting a multi-period file into multiple document rows.
-- Retroactive detection for existing uploaded FS docs — the "Detect again" button in the tray covers this on demand.
+I don't have git blame in this session, but the manual FS-period selector predates the auto-detect edge function we added last turn. Auto-detect made it redundant; this change finishes that migration.
