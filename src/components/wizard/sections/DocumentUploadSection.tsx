@@ -2507,7 +2507,7 @@ export const DocumentUploadSection = ({
                       </Select>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Select the month this {type.value === 'balance_sheet' ? 'Balance Sheet snapshot' : type.value === 'income_statement' ? 'P&L' : 'Cash Flow'} covers. Upload one file per month.
+                      Leave blank — we'll detect the period from the file. Multi-month files (annual P&amp;L, comparative statements) are also fine. Set it manually only if you already know it.
                     </p>
                   </div>
                 )}
