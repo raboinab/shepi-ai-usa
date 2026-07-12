@@ -32,94 +32,102 @@ interface Detection {
   reason: string;
 }
 
-/** Regex-based detection over the first page/sheet text. */
+/** Collect ALL period matches in the text and return the widest span. */
 function detectByRegex(text: string): Detection {
   const t = text.replace(/\s+/g, " ").trim();
   if (!t) return { period_start: null, period_end: null, confidence: 0, reason: "empty text" };
 
-  // 1. "For the Year Ended December 31, 2024" or "Year Ended Dec 31, 2024"
-  const yrEnd = t.match(/(?:for the )?year(?:s)? ended\s+([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})/i);
-  if (yrEnd) {
-    const m = MONTHS[yrEnd[1].toLowerCase()];
-    const d = parseInt(yrEnd[2], 10);
-    const y = parseInt(yrEnd[3], 10);
-    if (m) {
-      const end = iso(y, m, d);
-      const startY = m === 12 && d >= 28 ? y : y - 1;
-      const startM = m === 12 && d >= 28 ? 1 : m + 1 > 12 ? 1 : m;
-      // Standard fiscal year = 12 months back
-      const start = startOfMonth(y, 1) === iso(y, 1, 1) && m === 12
-        ? iso(y, 1, 1)
-        : (() => {
-            const dt = new Date(Date.UTC(y, m - 1, d));
-            dt.setUTCFullYear(dt.getUTCFullYear() - 1);
-            dt.setUTCDate(dt.getUTCDate() + 1);
-            return iso(dt.getUTCFullYear(), dt.getUTCMonth() + 1, dt.getUTCDate());
-          })();
-      return { period_start: start, period_end: end, confidence: 0.95, reason: "year ended <date>" };
-    }
+  const starts: string[] = [];
+  const ends: string[] = [];
+  const reasons: string[] = [];
+
+  const pushRange = (s: string | null, e: string | null, why: string) => {
+    if (s) starts.push(s);
+    if (e) ends.push(e);
+    if (s || e) reasons.push(why);
+  };
+
+  // 1. "For the Year Ended <Month> <DD>, <YYYY>" — all matches
+  for (const m of t.matchAll(/(?:for the )?year(?:s)? ended\s+([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})/gi)) {
+    const mo = MONTHS[m[1].toLowerCase()]; const d = parseInt(m[2], 10); const y = parseInt(m[3], 10);
+    if (!mo) continue;
+    const end = iso(y, mo, d);
+    const dt = new Date(Date.UTC(y, mo - 1, d));
+    dt.setUTCFullYear(dt.getUTCFullYear() - 1);
+    dt.setUTCDate(dt.getUTCDate() + 1);
+    pushRange(iso(dt.getUTCFullYear(), dt.getUTCMonth() + 1, dt.getUTCDate()), end, "year ended");
   }
 
-  // 2. "For the Month Ended <Month> <DD>, <YYYY>"
-  const moEnd = t.match(/month(?:s)? ended\s+([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})/i);
-  if (moEnd) {
-    const m = MONTHS[moEnd[1].toLowerCase()];
-    const y = parseInt(moEnd[3], 10);
-    if (m) {
-      return { period_start: startOfMonth(y, m), period_end: endOfMonth(y, m), confidence: 0.95, reason: "month ended <date>" };
-    }
+  // 2. "For the Month Ended ..." — all
+  for (const m of t.matchAll(/month(?:s)? ended\s+([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})/gi)) {
+    const mo = MONTHS[m[1].toLowerCase()]; const y = parseInt(m[3], 10);
+    if (!mo) continue;
+    pushRange(startOfMonth(y, mo), endOfMonth(y, mo), "month ended");
   }
 
-  // 3. "For the <N> Months Ended <Month> <DD>, <YYYY>"
-  const nMoEnd = t.match(/(\d{1,2})\s+months? ended\s+([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})/i);
-  if (nMoEnd) {
-    const n = parseInt(nMoEnd[1], 10);
-    const m = MONTHS[nMoEnd[2].toLowerCase()];
-    const y = parseInt(nMoEnd[4], 10);
-    if (m && n >= 1 && n <= 24) {
-      const end = endOfMonth(y, m);
-      // Start = m - n + 1 months
-      let sm = m - n + 1;
-      let sy = y;
-      while (sm <= 0) { sm += 12; sy -= 1; }
-      return { period_start: startOfMonth(sy, sm), period_end: end, confidence: 0.9, reason: `${n} months ended` };
-    }
+  // 3. "For the N Months Ended ..." — all
+  for (const m of t.matchAll(/(\d{1,2})\s+months? ended\s+([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})/gi)) {
+    const n = parseInt(m[1], 10); const mo = MONTHS[m[2].toLowerCase()]; const y = parseInt(m[4], 10);
+    if (!mo || n < 1 || n > 24) continue;
+    let sm = mo - n + 1; let sy = y;
+    while (sm <= 0) { sm += 12; sy -= 1; }
+    pushRange(startOfMonth(sy, sm), endOfMonth(y, mo), `${n} months ended`);
   }
 
-  // 4. "As of <Month> <DD>, <YYYY>" (Balance Sheet snapshot)
-  const asOf = t.match(/as of\s+([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})/i);
-  if (asOf) {
-    const m = MONTHS[asOf[1].toLowerCase()];
-    const y = parseInt(asOf[3], 10);
-    if (m) {
-      // Snapshot: use that month as the reporting period
-      return { period_start: startOfMonth(y, m), period_end: endOfMonth(y, m), confidence: 0.85, reason: "as of <date>" };
-    }
+  // 4. "As of <Month> <DD>, <YYYY>" — all (comparative BS columns)
+  for (const m of t.matchAll(/as of\s+([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})/gi)) {
+    const mo = MONTHS[m[1].toLowerCase()]; const y = parseInt(m[3], 10);
+    if (!mo) continue;
+    pushRange(startOfMonth(y, mo), endOfMonth(y, mo), "as of");
   }
 
-  // 5. "<Month> <YYYY> - <Month> <YYYY>" or "<Month> <YYYY> to <Month> <YYYY>"
-  const range = t.match(/([A-Za-z]{3,9})\.?\s+(\d{4})\s*(?:-|–|—|to|through|thru)\s*([A-Za-z]{3,9})\.?\s+(\d{4})/i);
-  if (range) {
-    const m1 = MONTHS[range[1].toLowerCase()];
-    const y1 = parseInt(range[2], 10);
-    const m2 = MONTHS[range[3].toLowerCase()];
-    const y2 = parseInt(range[4], 10);
-    if (m1 && m2) {
-      return { period_start: startOfMonth(y1, m1), period_end: endOfMonth(y2, m2), confidence: 0.9, reason: "month range" };
-    }
+  // 5. "<Month> <YYYY> - <Month> <YYYY>" — all
+  for (const m of t.matchAll(/([A-Za-z]{3,9})\.?\s+(\d{4})\s*(?:-|–|—|to|through|thru)\s*([A-Za-z]{3,9})\.?\s+(\d{4})/gi)) {
+    const m1 = MONTHS[m[1].toLowerCase()]; const y1 = parseInt(m[2], 10);
+    const m2 = MONTHS[m[3].toLowerCase()]; const y2 = parseInt(m[4], 10);
+    if (!m1 || !m2) continue;
+    pushRange(startOfMonth(y1, m1), endOfMonth(y2, m2), "month range");
   }
 
-  // 6. "<Month> <YYYY>" alone (single month)
-  const singleMo = t.match(/\b([A-Za-z]{3,9})\.?\s+(\d{4})\b/);
-  if (singleMo) {
-    const m = MONTHS[singleMo[1].toLowerCase()];
-    const y = parseInt(singleMo[2], 10);
-    if (m) {
-      return { period_start: startOfMonth(y, m), period_end: endOfMonth(y, m), confidence: 0.6, reason: "single month/year" };
-    }
+  // 6. Numeric date ranges "01/2023 - 05/2026" or "1/2023-5/2026"
+  for (const m of t.matchAll(/\b(\d{1,2})[\/\-](\d{4})\s*(?:-|–|—|to|through|thru)\s*(\d{1,2})[\/\-](\d{4})\b/g)) {
+    const m1 = parseInt(m[1], 10); const y1 = parseInt(m[2], 10);
+    const m2 = parseInt(m[3], 10); const y2 = parseInt(m[4], 10);
+    if (m1 < 1 || m1 > 12 || m2 < 1 || m2 > 12) continue;
+    pushRange(startOfMonth(y1, m1), endOfMonth(y2, m2), "numeric range");
   }
 
-  // 7. Bare year "For 2024" / "FY 2024" / "Fiscal Year 2024"
+  if (starts.length || ends.length) {
+    const start = starts.length ? starts.slice().sort()[0] : null;
+    const end = ends.length ? ends.slice().sort().slice(-1)[0] : null;
+    const uniqReasons = Array.from(new Set(reasons)).join(", ");
+    const spanCount = Math.max(starts.length, ends.length);
+    return {
+      period_start: start,
+      period_end: end,
+      confidence: spanCount > 1 ? 0.95 : 0.9,
+      reason: `${uniqReasons} (${spanCount} match${spanCount === 1 ? "" : "es"})`,
+    };
+  }
+
+  // 7. Single "<Month> <YYYY>" occurrences — take earliest & latest
+  const singleMatches: Array<{ y: number; m: number }> = [];
+  for (const m of t.matchAll(/\b([A-Za-z]{3,9})\.?\s+(\d{4})\b/g)) {
+    const mo = MONTHS[m[1].toLowerCase()]; const y = parseInt(m[2], 10);
+    if (mo && y >= 1990 && y <= 2100) singleMatches.push({ y, m: mo });
+  }
+  if (singleMatches.length) {
+    singleMatches.sort((a, b) => a.y - b.y || a.m - b.m);
+    const first = singleMatches[0]; const last = singleMatches[singleMatches.length - 1];
+    return {
+      period_start: startOfMonth(first.y, first.m),
+      period_end: endOfMonth(last.y, last.m),
+      confidence: singleMatches.length > 1 ? 0.75 : 0.6,
+      reason: `single months (${singleMatches.length})`,
+    };
+  }
+
+  // 8. Fiscal year
   const fy = t.match(/(?:fy|fiscal year|for the year|for)\s*(\d{4})/i);
   if (fy) {
     const y = parseInt(fy[1], 10);
@@ -128,6 +136,7 @@ function detectByRegex(text: string): Detection {
 
   return { period_start: null, period_end: null, confidence: 0, reason: "no pattern matched" };
 }
+
 
 async function extractPdfText(bytes: Uint8Array): Promise<string> {
   try {
@@ -143,12 +152,16 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
 function extractXlsxText(bytes: Uint8Array): string {
   try {
     const wb = XLSX.read(bytes, { type: "array" });
-    const first = wb.SheetNames[0];
-    if (!first) return "";
-    const sheet = wb.Sheets[first];
-    const rows = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, blankrows: false });
-    // Take top 20 rows — headers usually live there
-    return rows.slice(0, 20).map((r) => (Array.isArray(r) ? r.join(" ") : "")).join("\n");
+    const chunks: string[] = [];
+    // Scan every sheet — comparative periods often live across sheets or in the header of each.
+    for (const name of wb.SheetNames) {
+      const sheet = wb.Sheets[name];
+      if (!sheet) continue;
+      const rows = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, blankrows: false });
+      chunks.push(`# ${name}`);
+      chunks.push(rows.slice(0, 40).map((r) => (Array.isArray(r) ? r.join(" ") : "")).join("\n"));
+    }
+    return chunks.join("\n");
   } catch (e) {
     console.warn("XLSX text extract failed:", e);
     return "";
@@ -171,15 +184,16 @@ Return ONLY a JSON object with fields:
 - "reason": short string explaining what you found
 
 Rules:
-- Balance Sheet "As of DATE" → period_start = start of that month, period_end = that DATE.
-- Income Statement / Cash Flow "For the Year Ended DATE" → period_start = one year earlier + 1 day, period_end = that DATE.
-- "For the N Months Ended DATE" → period_start = start of the (m - N + 1) month.
-- If comparative columns show multiple years, use the LATEST reporting period.
-- If you cannot find a period, return nulls with confidence 0.
+- Return the FULL span the file covers: period_start = the EARLIEST date/column shown, period_end = the LATEST date/column shown.
+- Balance Sheet with multiple "As of" columns → period_start = start-of-month of the earliest column, period_end = the latest "As of" date.
+- Income Statement / Cash Flow spanning multiple months or years → period_start = start of the earliest period, period_end = end of the latest period.
+- File names or headers like "01/2023 - 05/2026" or "Jan 2023 to May 2026" mean period_start = 2023-01-01 and period_end = 2026-05-31.
+- Do NOT collapse a multi-period file down to a single month.
+- If you cannot find any period, return nulls with confidence 0.
 
 Text to analyze (truncated):
 """
-${sampleText.slice(0, 4000)}
+${sampleText.slice(0, 8000)}
 """`;
 
   try {
