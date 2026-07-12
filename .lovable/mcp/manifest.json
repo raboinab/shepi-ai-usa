@@ -233,6 +233,7 @@
         "description": "Create a new Shepi project. The project is owned by the signed-in user.",
         "annotations": {
           "readOnlyHint": false,
+          "destructiveHint": false,
           "idempotentHint": false,
           "openWorldHint": false
         },
@@ -288,6 +289,7 @@
         "description": "Change the status of an adjustment proposal on a project (e.g. accept or reject an AI-suggested adjustment).",
         "annotations": {
           "readOnlyHint": false,
+          "destructiveHint": false,
           "idempotentHint": false,
           "openWorldHint": false
         },
@@ -354,6 +356,92 @@
           },
           "required": [
             "project_id"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "run_discovery",
+        "title": "Run adjustment discovery",
+        "description": "Start Shepi's AI adjustment-discovery analysis for a project. Runs asynchronously — returns a job id immediately. Poll get_discovery_status until status is 'completed', then use list_adjustments to read the proposals.",
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": false,
+          "idempotentHint": false,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "description": "The project ID (UUID)."
+            }
+          },
+          "required": [
+            "project_id"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "get_discovery_status",
+        "title": "Get discovery status",
+        "description": "Check the status of adjustment discovery for a project (queued / running / completed / failed) and how many adjustment proposals exist so far. Use to poll after run_discovery.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "description": "The project ID (UUID)."
+            }
+          },
+          "required": [
+            "project_id"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "validate_financial_statement",
+        "title": "Validate financial statement",
+        "description": "Validate an already-uploaded balance sheet, income statement, or cash flow document against the project's trial balance — returns line-item totals and variances. The document must already exist in the project (upload happens in the Shepi app).",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "description": "The project ID (UUID)."
+            },
+            "document_id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "description": "The uploaded document ID (UUID) to validate."
+            }
+          },
+          "required": [
+            "project_id",
+            "document_id"
           ]
         },
         "outputSchema": null
