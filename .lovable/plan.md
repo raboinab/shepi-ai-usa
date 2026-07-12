@@ -1,30 +1,40 @@
-## What's changing and why
+## What's wrong with James Walbridge's project
 
-The upload form for Balance Sheet, Income Statement, and Cash Flow currently shows a Month + Year picker labeled "Reporting Period". It was added so we could show a coverage timeline before the file was parsed. It's confusing — every other document category (bank statement, credit card, tax return, payroll, GL, journals, AR/AP, vendor/customer summary, debt/fixed asset schedules) already uploads without asking the user to label a period, and the auto-detect edge function we added last turn (`detect-financial-statement-period`) now fills `period_start` / `period_end` from the file itself.
+**Project:** "Vampire Freaks" (`621a6c9f-1c25-40fa-92fa-6762ae3fe72b`), owner `walbridge.james@gmail.com`, status `in-progress`, stuck at phase 2 / section 1.
 
-For the sandbox project `fa0768ca-…`, every document was uploaded through the paths that don't ask for a period — that's why you didn't hit this UI before. The FS-period picker only appears when `account_type` is `balance_sheet`, `income_statement`, or `cash_flow`.
+**What I found in the database**
 
-## Scope
+- 24 credit card PDFs uploaded — all have `period_start` / `period_end` populated correctly.
+- 2 financial statements uploaded today at 19:31–19:32 UTC:
+  - `VampireFreaks_Balance Sheet.xlsx`
+  - `VampireFreaks_Profit and Loss (4).xlsx`
+  - Both have **NULL** `period_start` and `period_end`.
+- No rows in `workflows`, `analysis_jobs`, or `adjustment_proposals` for this project.
+- No entries in `upload_errors` for this project.
+- The `detect-financial-statement-period` edge function is deployed (returns 401 to unauthenticated curl) but its logs and `function_edge_logs` have **zero invocations ever** — not just for this project.
 
-**Remove from the upload form** (`src/components/wizard/sections/DocumentUploadSection.tsx`):
-- The "Reporting Period (optional)" Month + Year selector block that renders when `isFsPeriodType(type.value)` is true (~lines 2468-2510).
-- The `selectedFsPeriod` state and its use in the upload payload (~lines 1135-1140, 474).
-- The post-upload "no period selected" toast/prompt (~line 1662).
+**Diagnosis**
 
-**Keep** (so downstream analytics still get dates):
-- `detect-financial-statement-period` auto-detect fires on every BS/IS/CF upload.
-- The "Detect" button on the documents table for any row that ended up with no period.
-- The "Set manually" backfill dialog as an escape hatch when auto-detect fails.
-- `period_start` / `period_end` columns on `documents` (many downstream functions still read them: `embed-project-data`, `validate-financial-statement`, `processed-data-*`, `insights-chat`, `mcp`, coverage timeline, POC bank data, etc.).
+When we removed the manual reporting-period picker, we replaced it with a fire-and-forget call to `detect-financial-statement-period` in `DocumentUploadSection.tsx` (line 1638–1656). That call is never actually reaching the edge function — nothing in the platform logs shows a single request. Because the caller wraps it in `.catch(err => { console.warn; return null })` and the toast only fires when `applied > 0`, the user sees no error and no dates get written. Downstream analysis then can't run because BS/P&L have no period, which is why the project is stalled.
 
-**No backend changes.** No migrations. No edge function edits.
+The credit-card path works because it goes through `create-processing-tasks` → DocuClipper, which stamps its own dates.
 
-## Result
+## Plan to fix
 
-- Uploading a Balance Sheet / Income Statement / Cash Flow works exactly like uploading a bank statement: pick the file, pick the category, upload. Done.
-- Auto-detect runs in the background and fills the period.
-- If auto-detect can't find the period, the row shows Detect + Set manually buttons in the documents table — same UX as today, just no upfront gate.
+1. **Repair the pipeline** in `src/components/wizard/sections/DocumentUploadSection.tsx`:
+   - Await the detection calls (still in parallel via `Promise.all`) instead of fire-and-forget, so failures surface.
+   - Log every attempt/failure via `logUploadError` so we get visibility in `upload_errors`.
+   - Show a toast when detection fails, not just when it succeeds, so users can fall back to a manual date entry.
+   - Return a structured result and confirm at least one attempt hits the edge (verify by tailing edge-function logs after a test upload).
 
-## Note on "when this was introduced"
+2. **Add a lightweight manual fallback** on each FS document row: a small "Set statement dates" link that opens a start/end date picker and writes `period_start` / `period_end` directly. This is the escape hatch for cases where OCR/regex can't detect dates from the file.
 
-I don't have git blame in this session, but the manual FS-period selector predates the auto-detect edge function we added last turn. Auto-detect made it redundant; this change finishes that migration.
+3. **Backfill Walbridge's two files now**: invoke `detect-financial-statement-period` server-side for `d6272337…` (P&L) and `e8a24dbf…` (Balance Sheet). If detection returns nothing, set the dates from the credit-card coverage window (Jan 2025 – Jun 2026 based on the statements uploaded) after confirming the period with him.
+
+4. **Verify**: reload the project, confirm both FS docs show period dates, then confirm the wizard advances past phase 2 section 1 and analysis becomes runnable.
+
+## Technical notes
+
+- The invoke bug is almost certainly that the fire-and-forget promise is being dropped when the component re-renders after `fetchDocuments()` on line 1634 runs — React unmount can abort the underlying fetch in some browsers. Awaiting or moving the call to a small `useEffect` keyed on newly-uploaded doc ids would also fix it; awaiting is the smaller change.
+- Do not re-introduce the month/year picker from before — the fallback link should be opt-in only, per the standing "no manual reporting period" preference.
+- No schema or RLS changes needed. No new edge function needed.
