@@ -1634,24 +1634,44 @@ export const DocumentUploadSection = ({
       fetchDocuments();
 
       // Auto-detect statement dates for BS / P&L / Cash Flow uploads.
-      // Runs fire-and-forget in parallel per file; users do not need to label files.
+      // Awaited so failures surface in upload_errors and the user sees a toast
+      // instead of silently ending up with docs that have no period_start/end.
       if (isFsPeriodType(docType) && successful.length > 0) {
         const fsDocIds = successful.map(r => r.docId).filter(Boolean) as string[];
         if (fsDocIds.length > 0) {
-          Promise.all(fsDocIds.map(id =>
-            supabase.functions.invoke('detect-financial-statement-period', {
-              body: { documentId: id },
-            }).catch(err => {
-              console.warn('Period detection failed:', err);
-              return null;
-            })
-          )).then(results => {
-            const applied = results.filter(r => (r as any)?.data?.applied).length;
-            if (applied > 0) {
-              toast.success(`Detected statement dates for ${applied} file(s)`);
-              fetchDocuments();
+          const detectionResults = await Promise.all(fsDocIds.map(async (id) => {
+            try {
+              const { data, error } = await supabase.functions.invoke(
+                'detect-financial-statement-period',
+                { body: { documentId: id } },
+              );
+              if (error) throw error;
+              return { id, applied: !!(data as any)?.applied, data, error: null as unknown };
+            } catch (err) {
+              await logUploadError({
+                context: "document_upload_section",
+                stage: "detect_financial_statement_period",
+                error: err,
+                projectId,
+                userId: user.id,
+                extra: { documentId: id, docType },
+              });
+              return { id, applied: false, data: null, error: err };
             }
-          });
+          }));
+          const applied = detectionResults.filter(r => r.applied).length;
+          const failed = detectionResults.filter(r => r.error).length;
+          const undetected = detectionResults.length - applied - failed;
+          if (applied > 0) {
+            toast.success(`Detected statement dates for ${applied} file(s)`);
+          }
+          if (undetected > 0) {
+            toast.info(`Couldn't auto-detect dates for ${undetected} file(s). Use "Set dates" on the row.`);
+          }
+          if (failed > 0) {
+            toast.error(`Date detection failed for ${failed} file(s). Use "Set dates" on the row.`);
+          }
+          fetchDocuments();
         }
       }
 
