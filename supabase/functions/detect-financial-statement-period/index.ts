@@ -33,7 +33,7 @@ interface Detection {
 }
 
 /** Collect ALL period matches in the text and return the widest span. */
-function detectByRegex(text: string): Detection {
+function detectByRegex(text: string, accountType?: string, headerText?: string): Detection {
   const t = text.replace(/\s+/g, " ").trim();
   if (!t) return { period_start: null, period_end: null, confidence: 0, reason: "empty text" };
 
@@ -95,6 +95,24 @@ function detectByRegex(text: string): Detection {
     const m2 = parseInt(m[3], 10); const y2 = parseInt(m[4], 10);
     if (m1 < 1 || m1 > 12 || m2 < 1 || m2 > 12) continue;
     pushRange(startOfMonth(y1, m1), endOfMonth(y2, m2), "numeric range");
+  }
+
+  // 6b. Balance Sheet: scan HEADER region for bare column-header dates like
+  // "May 31, 2026", "May 31 2025", "12/31/2024". Comparative BS often only
+  // prefixes the FIRST column with "As of", so subsequent columns are missed
+  // by the "as of" regex above.
+  if (accountType === "balance_sheet" && headerText) {
+    const h = headerText.replace(/\s+/g, " ");
+    for (const m of h.matchAll(/\b([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})\b/g)) {
+      const mo = MONTHS[m[1].toLowerCase()]; const y = parseInt(m[3], 10);
+      if (!mo || y < 1990 || y > 2100) continue;
+      pushRange(startOfMonth(y, mo), endOfMonth(y, mo), "bs header date");
+    }
+    for (const m of h.matchAll(/\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\b/g)) {
+      const mo = parseInt(m[1], 10); const y = parseInt(m[3], 10);
+      if (mo < 1 || mo > 12 || y < 1990 || y > 2100) continue;
+      pushRange(startOfMonth(y, mo), endOfMonth(y, mo), "bs header numeric date");
+    }
   }
 
   if (starts.length || ends.length) {
