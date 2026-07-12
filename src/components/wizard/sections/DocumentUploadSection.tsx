@@ -2606,7 +2606,7 @@ export const DocumentUploadSection = ({
 
                 <Button
                   onClick={handleUpload}
-                  disabled={uploading || isValidating || !selectedFiles || (type.value === "cim" && parsingCim) || (type.value === "tax_return" && !selectedTaxYear) || (isFsPeriodType(type.value) && !selectedFsPeriod) || (type.value === "trial_balance" && !coaReadiness.ready)}
+                  disabled={uploading || isValidating || !selectedFiles || (type.value === "cim" && parsingCim) || (type.value === "tax_return" && !selectedTaxYear) || (type.value === "trial_balance" && !coaReadiness.ready)}
                   className="w-full"
                 >
                   {isValidating ? (
