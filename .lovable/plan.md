@@ -1,40 +1,72 @@
-## What's wrong with James Walbridge's project
+# Vampire Freaks project — current state
 
-**Project:** "Vampire Freaks" (`621a6c9f-1c25-40fa-92fa-6762ae3fe72b`), owner `walbridge.james@gmail.com`, status `in-progress`, stuck at phase 2 / section 1.
+Checked James's project (`621a6c9f`) in the DB. Two separate problems:
 
-**What I found in the database**
+## Problem 1 — Balance Sheet period is wrong
 
-- 24 credit card PDFs uploaded — all have `period_start` / `period_end` populated correctly.
-- 2 financial statements uploaded today at 19:31–19:32 UTC:
-  - `VampireFreaks_Balance Sheet.xlsx`
-  - `VampireFreaks_Profit and Loss (4).xlsx`
-  - Both have **NULL** `period_start` and `period_end`.
-- No rows in `workflows`, `analysis_jobs`, or `adjustment_proposals` for this project.
-- No entries in `upload_errors` for this project.
-- The `detect-financial-statement-period` edge function is deployed (returns 401 to unauthenticated curl) but its logs and `function_edge_logs` have **zero invocations ever** — not just for this project.
+| Doc | Detected period |
+|---|---|
+| P&L (`VampireFreaks_Profit and Loss (4).xlsx`) | ✅ 2023-01-01 → 2026-05-31 |
+| Balance Sheet (`VampireFreaks_Balance Sheet.xlsx`) | ❌ 2026-05-01 → 2026-05-31 only |
 
-**Diagnosis**
+The P&L now spans correctly after the last fix. The BS still collapses to a single month because comparative Balance Sheets from QuickBooks typically show column headers like `May 31, 2026 | May 31, 2025 | May 31, 2024` — only the **first** column is prefixed with "As of". The `as of` regex therefore matches once, and the widest-span logic returns only that one month.
 
-When we removed the manual reporting-period picker, we replaced it with a fire-and-forget call to `detect-financial-statement-period` in `DocumentUploadSection.tsx` (line 1638–1656). That call is never actually reaching the edge function — nothing in the platform logs shows a single request. Because the caller wraps it in `.catch(err => { console.warn; return null })` and the toast only fires when `applied > 0`, the user sees no error and no dates get written. Downstream analysis then can't run because BS/P&L have no period, which is why the project is stalled.
+## Problem 2 — Project is stuck at Phase 2 / Section 1
 
-The credit-card path works because it goes through `create-processing-tasks` → DocuClipper, which stamps its own dates.
+Even with documents dated, nothing downstream has happened:
 
-## Plan to fix
+- `canonical_transactions`: **0**
+- `analysis_jobs`: **0**
+- `adjustment_proposals`: **0**
+- `findings`: **0**
+- `docuclipper_jobs`: 25 completed (credit-card statements were parsed fine)
 
-1. **Repair the pipeline** in `src/components/wizard/sections/DocumentUploadSection.tsx`:
-   - Await the detection calls (still in parallel via `Promise.all`) instead of fire-and-forget, so failures surface.
-   - Log every attempt/failure via `logUploadError` so we get visibility in `upload_errors`.
-   - Show a toast when detection fails, not just when it succeeds, so users can fall back to a manual date entry.
-   - Return a structured result and confirm at least one attempt hits the edge (verify by tailing edge-function logs after a test upload).
+Project status: `in-progress`, `current_phase: 2`, `current_section: 1`, `service_tier: diy`. Credit card transactions extracted by DocuClipper never made it into `canonical_transactions`, and no analysis job was ever created. This is not a period-detection problem — it's an orchestration problem. Either:
 
-2. **Add a lightweight manual fallback** on each FS document row: a small "Set statement dates" link that opens a start/end date picker and writes `period_start` / `period_end` directly. This is the escape hatch for cases where OCR/regex can't detect dates from the file.
+- (a) the wizard is gating on a user click (e.g., "Start analysis") that James hasn't pressed, or
+- (b) code that normalizes `processed_data → canonical_transactions` is missing/broken for this project.
 
-3. **Backfill Walbridge's two files now**: invoke `detect-financial-statement-period` server-side for `d6272337…` (P&L) and `e8a24dbf…` (Balance Sheet). If detection returns nothing, set the dates from the credit-card coverage window (Jan 2025 – Jun 2026 based on the statements uploaded) after confirming the period with him.
+I need to read the Phase 2 section components before I know which.
 
-4. **Verify**: reload the project, confirm both FS docs show period dates, then confirm the wizard advances past phase 2 section 1 and analysis becomes runnable.
+---
 
-## Technical notes
+# Plan
 
-- The invoke bug is almost certainly that the fire-and-forget promise is being dropped when the component re-renders after `fetchDocuments()` on line 1634 runs — React unmount can abort the underlying fetch in some browsers. Awaiting or moving the call to a small `useEffect` keyed on newly-uploaded doc ids would also fix it; awaiting is the smaller change.
-- Do not re-introduce the month/year picker from before — the fallback link should be opt-in only, per the standing "no manual reporting period" preference.
-- No schema or RLS changes needed. No new edge function needed.
+### 1. Improve BS multi-period detection (edge function)
+
+In `supabase/functions/detect-financial-statement-period/index.ts`:
+
+- Add a new regex pass for **bare header dates** like `May 31, 2026` / `May 31 2025` / `12/31/2024`, not just "As of" prefixed dates.
+- Only apply this pass when `account_type = 'balance_sheet'` (avoid false positives on P&L transaction dates).
+- Restrict to dates found in the **first ~15 rows** of any sheet (header region) so we don't pick up transactional dates.
+- Collect all matches, return earliest start-of-month → latest end-of-month.
+- Increase XLSX row scan from 40 → 60 rows per sheet to capture wider comparative tables.
+- Tighten the LLM prompt to explicitly note "comparative BS often only says 'As of' once; treat every date column header as an 'as of' date."
+
+### 2. Backfill James's Balance Sheet immediately
+
+After deploy, re-run the detector on document `e8a24dbf-0e46-47af-a2cb-59618a80ebe4` so BS spans the same window as P&L (assumed 2023-01-01 → 2026-05-31 pending detection result).
+
+### 3. Diagnose the "no analysis" gap
+
+Read the Phase 2 wizard components to find:
+- Where `canonical_transactions` is populated from `processed_data` (probably a normalizer edge function or client-side transform).
+- Whether it needs a manual "Continue" or "Start analysis" click, and whether the UI is showing that button.
+- Whether there's a validation blocker (e.g., "BS period doesn't cover all periods").
+
+Then either:
+- Fix the orchestration/normalizer bug, or
+- Surface a clear next-step button in the UI (if the flow is just waiting on a click), or
+- Manually kick off the missing job for James so his project unsticks.
+
+### 4. Verify
+
+- Re-query DB: BS should have full span; `canonical_transactions` should have rows for all 25 CC statements.
+- Take a Playwright screenshot of James's project page as admin to confirm the wizard advances.
+
+---
+
+## What I won't touch
+
+- The "Detect" / "Set dates" buttons and manual-fallback dialog already added — those stay as escape hatches.
+- Any other project or the period-detection heuristics for non-balance-sheet docs.

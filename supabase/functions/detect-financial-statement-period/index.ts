@@ -33,7 +33,7 @@ interface Detection {
 }
 
 /** Collect ALL period matches in the text and return the widest span. */
-function detectByRegex(text: string): Detection {
+function detectByRegex(text: string, accountType?: string, headerText?: string): Detection {
   const t = text.replace(/\s+/g, " ").trim();
   if (!t) return { period_start: null, period_end: null, confidence: 0, reason: "empty text" };
 
@@ -97,6 +97,24 @@ function detectByRegex(text: string): Detection {
     pushRange(startOfMonth(y1, m1), endOfMonth(y2, m2), "numeric range");
   }
 
+  // 6b. Balance Sheet: scan HEADER region for bare column-header dates like
+  // "May 31, 2026", "May 31 2025", "12/31/2024". Comparative BS often only
+  // prefixes the FIRST column with "As of", so subsequent columns are missed
+  // by the "as of" regex above.
+  if (accountType === "balance_sheet" && headerText) {
+    const h = headerText.replace(/\s+/g, " ");
+    for (const m of h.matchAll(/\b([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})\b/g)) {
+      const mo = MONTHS[m[1].toLowerCase()]; const y = parseInt(m[3], 10);
+      if (!mo || y < 1990 || y > 2100) continue;
+      pushRange(startOfMonth(y, mo), endOfMonth(y, mo), "bs header date");
+    }
+    for (const m of h.matchAll(/\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\b/g)) {
+      const mo = parseInt(m[1], 10); const y = parseInt(m[3], 10);
+      if (mo < 1 || mo > 12 || y < 1990 || y > 2100) continue;
+      pushRange(startOfMonth(y, mo), endOfMonth(y, mo), "bs header numeric date");
+    }
+  }
+
   if (starts.length || ends.length) {
     const start = starts.length ? starts.slice().sort()[0] : null;
     const end = ends.length ? ends.slice().sort().slice(-1)[0] : null;
@@ -149,22 +167,25 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
   }
 }
 
-function extractXlsxText(bytes: Uint8Array): string {
+function extractXlsxText(bytes: Uint8Array): { text: string; header: string } {
   try {
     const wb = XLSX.read(bytes, { type: "array" });
     const chunks: string[] = [];
+    const headerChunks: string[] = [];
     // Scan every sheet — comparative periods often live across sheets or in the header of each.
     for (const name of wb.SheetNames) {
       const sheet = wb.Sheets[name];
       if (!sheet) continue;
       const rows = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, blankrows: false });
       chunks.push(`# ${name}`);
-      chunks.push(rows.slice(0, 40).map((r) => (Array.isArray(r) ? r.join(" ") : "")).join("\n"));
+      chunks.push(rows.slice(0, 60).map((r) => (Array.isArray(r) ? r.join(" ") : "")).join("\n"));
+      // Header region — first 15 rows only, used for BS bare-date detection.
+      headerChunks.push(rows.slice(0, 15).map((r) => (Array.isArray(r) ? r.join(" ") : "")).join("\n"));
     }
-    return chunks.join("\n");
+    return { text: chunks.join("\n"), header: headerChunks.join("\n") };
   } catch (e) {
     console.warn("XLSX text extract failed:", e);
-    return "";
+    return { text: "", header: "" };
   }
 }
 
@@ -185,7 +206,7 @@ Return ONLY a JSON object with fields:
 
 Rules:
 - Return the FULL span the file covers: period_start = the EARLIEST date/column shown, period_end = the LATEST date/column shown.
-- Balance Sheet with multiple "As of" columns → period_start = start-of-month of the earliest column, period_end = the latest "As of" date.
+- Balance Sheet: COMPARATIVE BS often only prints "As of" once (above the first column). EVERY date in the header row is an "As of" date. Treat each such date as a period column and span from the earliest to the latest.
 - Income Statement / Cash Flow spanning multiple months or years → period_start = start of the earliest period, period_end = end of the latest period.
 - File names or headers like "01/2023 - 05/2026" or "Jan 2023 to May 2026" mean period_start = 2023-01-01 and period_end = 2026-05-31.
 - Do NOT collapse a multi-period file down to a single month.
@@ -304,18 +325,25 @@ serve(async (req) => {
 
     const ext = (doc.file_type || doc.name?.split(".").pop() || "").toLowerCase();
     let text = "";
+    let headerText = "";
     if (ext === "pdf") {
       text = await extractPdfText(bytes);
+      // For PDFs, the "header" is roughly the first 2000 chars.
+      headerText = text.slice(0, 2000);
     } else if (ext === "xlsx" || ext === "xls" || ext === "csv") {
-      text = extractXlsxText(bytes);
+      const extracted = extractXlsxText(bytes);
+      text = extracted.text;
+      headerText = extracted.header;
     } else {
       text = new TextDecoder().decode(bytes.slice(0, 8000));
+      headerText = text.slice(0, 2000);
     }
 
     // Prefer file name hint as extra signal
     const combined = `${doc.name}\n${text}`.slice(0, 8000);
+    const headerCombined = `${doc.name}\n${headerText}`;
 
-    let detection = detectByRegex(combined);
+    let detection = detectByRegex(combined, doc.account_type, headerCombined);
     let usedLlm = false;
     if (detection.confidence < 0.7) {
       const llm = await detectByLLM(text.slice(0, 4000), doc.account_type || "financial statement", doc.name);
