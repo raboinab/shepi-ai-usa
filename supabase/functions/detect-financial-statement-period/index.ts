@@ -206,7 +206,7 @@ Return ONLY a JSON object with fields:
 
 Rules:
 - Return the FULL span the file covers: period_start = the EARLIEST date/column shown, period_end = the LATEST date/column shown.
-- Balance Sheet with multiple "As of" columns → period_start = start-of-month of the earliest column, period_end = the latest "As of" date.
+- Balance Sheet: COMPARATIVE BS often only prints "As of" once (above the first column). EVERY date in the header row is an "As of" date. Treat each such date as a period column and span from the earliest to the latest.
 - Income Statement / Cash Flow spanning multiple months or years → period_start = start of the earliest period, period_end = end of the latest period.
 - File names or headers like "01/2023 - 05/2026" or "Jan 2023 to May 2026" mean period_start = 2023-01-01 and period_end = 2026-05-31.
 - Do NOT collapse a multi-period file down to a single month.
