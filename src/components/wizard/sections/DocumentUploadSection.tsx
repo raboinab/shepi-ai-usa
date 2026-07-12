@@ -455,6 +455,10 @@ export const DocumentUploadSection = ({
   const [validationDialogOpen, setValidationDialogOpen] = useState(false);
   const [selectedTaxYear, setSelectedTaxYear] = useState<number | null>(null);
   const [detectingPeriodDocIds, setDetectingPeriodDocIds] = useState<Set<string>>(new Set());
+  const [manualDatesDoc, setManualDatesDoc] = useState<{ id: string; name: string } | null>(null);
+  const [manualStart, setManualStart] = useState<string>("");
+  const [manualEnd, setManualEnd] = useState<string>("");
+  const [savingManualDates, setSavingManualDates] = useState(false);
   const [pendingValidation, setPendingValidation] = useState<{
     file: File;
     result: ValidationResult;
