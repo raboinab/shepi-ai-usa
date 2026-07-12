@@ -288,27 +288,10 @@ const DOC_TYPE_GROUPS = [
   { label: "Supporting", items: SUPPORTING_TYPES },
 ];
 
-// Financial-statement doc types that require a reporting period at upload time
+// Financial-statement doc types whose statement dates can be detected after upload
 const FS_PERIOD_TYPES = ['balance_sheet', 'income_statement', 'cash_flow'] as const;
 const isFsPeriodType = (t: string | null | undefined) =>
   !!t && (FS_PERIOD_TYPES as readonly string[]).includes(t);
-
-const MONTH_OPTIONS = [
-  { value: 1, label: 'Jan' }, { value: 2, label: 'Feb' }, { value: 3, label: 'Mar' },
-  { value: 4, label: 'Apr' }, { value: 5, label: 'May' }, { value: 6, label: 'Jun' },
-  { value: 7, label: 'Jul' }, { value: 8, label: 'Aug' }, { value: 9, label: 'Sep' },
-  { value: 10, label: 'Oct' }, { value: 11, label: 'Nov' }, { value: 12, label: 'Dec' },
-];
-
-// Returns ISO yyyy-mm-dd for first and last day of a given (year, month 1-12)
-const computeMonthEndpoints = (year: number, month: number) => {
-  const mm = String(month).padStart(2, '0');
-  const lastDay = new Date(year, month, 0).getDate();
-  return {
-    periodStart: `${year}-${mm}-01`,
-    periodEnd: `${year}-${mm}-${String(lastDay).padStart(2, '0')}`,
-  };
-};
 
 
 // Coverage configuration by document type
@@ -329,10 +312,10 @@ const DOCUMENT_COVERAGE_CONFIG: Record<string, DocumentCoverageConfig> = {
   credit_card: { type: 'monthly', label: 'Monthly Coverage', description: 'Credit card statements for each month' },
   
   // Monthly/Quarterly (financials)
-  trial_balance: { type: 'monthly', label: 'Period Coverage', description: 'Trial balance for each reporting period' },
-  balance_sheet: { type: 'monthly', label: 'Period Coverage', description: 'Balance sheet snapshot for each reporting period (month-end)' },
-  income_statement: { type: 'monthly', label: 'Period Coverage', description: 'P&L for each reporting period' },
-  cash_flow: { type: 'monthly', label: 'Period Coverage', description: 'Cash flow for each reporting period' },
+  trial_balance: { type: 'monthly', label: 'Statement Dates', description: 'Trial balance files with dates detected from the upload' },
+  balance_sheet: { type: 'monthly', label: 'Statement Dates', description: 'Balance sheet snapshots with dates detected from the upload' },
+  income_statement: { type: 'monthly', label: 'Statement Dates', description: 'P&L files with dates detected from the upload' },
+  cash_flow: { type: 'monthly', label: 'Statement Dates', description: 'Cash flow files with dates detected from the upload' },
   
   // Full-period documents (one export covering entire range)
   general_ledger: { type: 'full-period', label: 'Full Period', description: 'One export covering the entire analysis period' },
@@ -472,9 +455,6 @@ export const DocumentUploadSection = ({
   const [validationDialogOpen, setValidationDialogOpen] = useState(false);
   const [selectedTaxYear, setSelectedTaxYear] = useState<number | null>(null);
   const [detectingPeriodDocIds, setDetectingPeriodDocIds] = useState<Set<string>>(new Set());
-  const [fsBackfillDoc, setFsBackfillDoc] = useState<Document | null>(null);
-  const [fsBackfillPeriod, setFsBackfillPeriod] = useState<{ year: number; month: number } | null>(null);
-  const [savingFsBackfill, setSavingFsBackfill] = useState(false);
   const [pendingValidation, setPendingValidation] = useState<{
     file: File;
     result: ValidationResult;
@@ -1653,9 +1633,8 @@ export const DocumentUploadSection = ({
       
       fetchDocuments();
 
-      // Auto-detect reporting period for BS / P&L / Cash Flow uploads.
-      // Runs fire-and-forget in parallel per file. If detection fails the user
-      // can still set the period from the documents table below.
+      // Auto-detect statement dates for BS / P&L / Cash Flow uploads.
+      // Runs fire-and-forget in parallel per file; users do not need to label files.
       if (isFsPeriodType(docType) && successful.length > 0) {
         const fsDocIds = successful.map(r => r.docId).filter(Boolean) as string[];
         if (fsDocIds.length > 0) {
@@ -1669,7 +1648,7 @@ export const DocumentUploadSection = ({
           )).then(results => {
             const applied = results.filter(r => (r as any)?.data?.applied).length;
             if (applied > 0) {
-              toast.success(`Detected reporting period for ${applied} file(s)`);
+              toast.success(`Detected statement dates for ${applied} file(s)`);
               fetchDocuments();
             }
           });
@@ -2460,9 +2439,7 @@ export const DocumentUploadSection = ({
                   </div>
                 )}
 
-                {/* Reporting period is auto-detected from the file after upload for
-                    Balance Sheet / Income Statement / Cash Flow. If detection fails,
-                    the user can set it from the documents table below. */}
+                {/* Statement dates are auto-detected from Balance Sheet / Income Statement / Cash Flow files after upload. */}
 
 
                 {type.value === "supporting_documents" && (
@@ -2703,23 +2680,7 @@ export const DocumentUploadSection = ({
                           )}
                           <TableCell>
                             {doc.period_start && doc.period_end ? (
-                              <span className="inline-flex items-center gap-1">
-                                {`${formatDate(doc.period_start)} - ${formatDate(doc.period_end)}`}
-                                {isFsPeriodType(doc.account_type) && (
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-5 w-5"
-                                    onClick={() => {
-                                      const d = parseLocalDate(doc.period_start!);
-                                      setFsBackfillDoc(doc);
-                                      setFsBackfillPeriod({ year: d.getFullYear(), month: d.getMonth() + 1 });
-                                    }}
-                                  >
-                                    <Pencil className="h-3 w-3" />
-                                  </Button>
-                                )}
-                              </span>
+                              <span>{`${formatDate(doc.period_start)} - ${formatDate(doc.period_end)}`}</span>
                             ) : isFsPeriodType(doc.account_type) ? (
                               <div className="flex items-center gap-1">
                                 <Button
@@ -2743,7 +2704,7 @@ export const DocumentUploadSection = ({
                                         toast.success("Period detected");
                                         fetchDocuments();
                                       } else {
-                                        toast.info("Couldn't detect the period — set it manually.");
+                                      toast.info("Couldn't detect dates from the file.");
                                       }
                                     } catch (err) {
                                       console.warn('Detect period failed:', err);
@@ -2763,20 +2724,6 @@ export const DocumentUploadSection = ({
                                     <Sparkles className="h-3 w-3" />
                                   )}
                                   Detect
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-6 text-[10px] gap-1 border-yellow-500 text-yellow-700 dark:text-yellow-400"
-                                  onClick={() => {
-                                    setFsBackfillDoc(doc);
-                                    setFsBackfillPeriod({
-                                      year: availableTaxYears[0] || new Date().getFullYear(),
-                                      month: new Date().getMonth() + 1,
-                                    });
-                                  }}
-                                >
-                                  <AlertCircle className="h-3 w-3" /> Set manually
                                 </Button>
                               </div>
                             ) : "-"}
@@ -2905,66 +2852,6 @@ export const DocumentUploadSection = ({
         docs={backfillDocs ?? []}
         onSaved={() => { setBackfillDocs(null); fetchDocuments(); }}
       />
-
-      <AlertDialog open={!!fsBackfillDoc} onOpenChange={(open) => { if (!open) { setFsBackfillDoc(null); setFsBackfillPeriod(null); } }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Set reporting period</AlertDialogTitle>
-            <AlertDialogDescription>
-              Pick the month this {fsBackfillDoc?.account_type === 'balance_sheet' ? 'Balance Sheet' : fsBackfillDoc?.account_type === 'income_statement' ? 'Income Statement' : 'Cash Flow'} covers. The coverage timeline will update immediately.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="flex gap-2 py-2">
-            <Select
-              value={fsBackfillPeriod?.month?.toString() || ""}
-              onValueChange={(v) => setFsBackfillPeriod((p) => ({ year: p?.year ?? (availableTaxYears[0] || new Date().getFullYear()), month: parseInt(v) }))}
-            >
-              <SelectTrigger className="w-32"><SelectValue placeholder="Month" /></SelectTrigger>
-              <SelectContent>
-                {MONTH_OPTIONS.map((m) => (<SelectItem key={m.value} value={m.value.toString()}>{m.label}</SelectItem>))}
-              </SelectContent>
-            </Select>
-            <Select
-              value={fsBackfillPeriod?.year?.toString() || ""}
-              onValueChange={(v) => setFsBackfillPeriod((p) => ({ year: parseInt(v), month: p?.month ?? new Date().getMonth() + 1 }))}
-            >
-              <SelectTrigger className="w-32"><SelectValue placeholder="Year" /></SelectTrigger>
-              <SelectContent>
-                {availableTaxYears.map((y) => (<SelectItem key={y} value={y.toString()}>{y}</SelectItem>))}
-              </SelectContent>
-            </Select>
-          </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={savingFsBackfill}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={!fsBackfillPeriod || !fsBackfillDoc || savingFsBackfill}
-              onClick={async (e) => {
-                e.preventDefault();
-                if (!fsBackfillPeriod || !fsBackfillDoc) return;
-                setSavingFsBackfill(true);
-                try {
-                  const ep = computeMonthEndpoints(fsBackfillPeriod.year, fsBackfillPeriod.month);
-                  const { error } = await supabase
-                    .from('documents')
-                    .update({ period_start: ep.periodStart, period_end: ep.periodEnd })
-                    .eq('id', fsBackfillDoc.id);
-                  if (error) throw error;
-                  toast.success("Reporting period saved");
-                  setFsBackfillDoc(null);
-                  setFsBackfillPeriod(null);
-                  fetchDocuments();
-                } catch (err: any) {
-                  toast.error(`Failed to save: ${err?.message || 'unknown error'}`);
-                } finally {
-                  setSavingFsBackfill(false);
-                }
-              }}
-            >
-              {savingFsBackfill ? 'Saving…' : 'Save'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
     </div>
 
