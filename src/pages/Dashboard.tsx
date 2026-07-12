@@ -90,6 +90,18 @@ const Dashboard = () => {
   const fetchProjects = async (currentUser?: any) => {
     setLoading(true);
     try {
+      const currentUserId = currentUser?.id ?? user?.id;
+
+      // Check admin role — admins see every project the DB returns.
+      let isAdmin = false;
+      if (currentUserId) {
+        const { data: adminData } = await supabase.rpc("has_role", {
+          _user_id: currentUserId,
+          _role: "admin",
+        });
+        isAdmin = !!adminData;
+      }
+
       // Parallelize: fetch projects + shares at the same time
       const [projectsRes, sharesRes] = await Promise.all([
         supabase
@@ -108,12 +120,13 @@ const Dashboard = () => {
           variant: "destructive",
         });
       } else {
-        const currentUserId = currentUser?.id ?? user?.id;
         const sharedIds = new Set((sharesRes.data || []).map((s: any) => s.project_id));
-        const myProjects = (projectsRes.data || []).filter(
-          (p) => p.user_id === currentUserId || sharedIds.has(p.id)
-        );
-        setProjects(myProjects);
+        const visible = isAdmin
+          ? (projectsRes.data || [])
+          : (projectsRes.data || []).filter(
+              (p) => p.user_id === currentUserId || sharedIds.has(p.id)
+            );
+        setProjects(visible);
       }
     } catch (err) {
       toast({
@@ -124,6 +137,7 @@ const Dashboard = () => {
     }
     setLoading(false);
   };
+
 
   const handleCreateProject = async () => {
     if (!newProject.name.trim()) {
