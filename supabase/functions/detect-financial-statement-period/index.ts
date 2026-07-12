@@ -152,12 +152,16 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
 function extractXlsxText(bytes: Uint8Array): string {
   try {
     const wb = XLSX.read(bytes, { type: "array" });
-    const first = wb.SheetNames[0];
-    if (!first) return "";
-    const sheet = wb.Sheets[first];
-    const rows = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, blankrows: false });
-    // Take top 20 rows — headers usually live there
-    return rows.slice(0, 20).map((r) => (Array.isArray(r) ? r.join(" ") : "")).join("\n");
+    const chunks: string[] = [];
+    // Scan every sheet — comparative periods often live across sheets or in the header of each.
+    for (const name of wb.SheetNames) {
+      const sheet = wb.Sheets[name];
+      if (!sheet) continue;
+      const rows = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, blankrows: false });
+      chunks.push(`# ${name}`);
+      chunks.push(rows.slice(0, 40).map((r) => (Array.isArray(r) ? r.join(" ") : "")).join("\n"));
+    }
+    return chunks.join("\n");
   } catch (e) {
     console.warn("XLSX text extract failed:", e);
     return "";
