@@ -288,27 +288,10 @@ const DOC_TYPE_GROUPS = [
   { label: "Supporting", items: SUPPORTING_TYPES },
 ];
 
-// Financial-statement doc types that require a reporting period at upload time
+// Financial-statement doc types whose statement dates can be detected after upload
 const FS_PERIOD_TYPES = ['balance_sheet', 'income_statement', 'cash_flow'] as const;
 const isFsPeriodType = (t: string | null | undefined) =>
   !!t && (FS_PERIOD_TYPES as readonly string[]).includes(t);
-
-const MONTH_OPTIONS = [
-  { value: 1, label: 'Jan' }, { value: 2, label: 'Feb' }, { value: 3, label: 'Mar' },
-  { value: 4, label: 'Apr' }, { value: 5, label: 'May' }, { value: 6, label: 'Jun' },
-  { value: 7, label: 'Jul' }, { value: 8, label: 'Aug' }, { value: 9, label: 'Sep' },
-  { value: 10, label: 'Oct' }, { value: 11, label: 'Nov' }, { value: 12, label: 'Dec' },
-];
-
-// Returns ISO yyyy-mm-dd for first and last day of a given (year, month 1-12)
-const computeMonthEndpoints = (year: number, month: number) => {
-  const mm = String(month).padStart(2, '0');
-  const lastDay = new Date(year, month, 0).getDate();
-  return {
-    periodStart: `${year}-${mm}-01`,
-    periodEnd: `${year}-${mm}-${String(lastDay).padStart(2, '0')}`,
-  };
-};
 
 
 // Coverage configuration by document type
@@ -472,9 +455,6 @@ export const DocumentUploadSection = ({
   const [validationDialogOpen, setValidationDialogOpen] = useState(false);
   const [selectedTaxYear, setSelectedTaxYear] = useState<number | null>(null);
   const [detectingPeriodDocIds, setDetectingPeriodDocIds] = useState<Set<string>>(new Set());
-  const [fsBackfillDoc, setFsBackfillDoc] = useState<Document | null>(null);
-  const [fsBackfillPeriod, setFsBackfillPeriod] = useState<{ year: number; month: number } | null>(null);
-  const [savingFsBackfill, setSavingFsBackfill] = useState(false);
   const [pendingValidation, setPendingValidation] = useState<{
     file: File;
     result: ValidationResult;
@@ -1653,9 +1633,8 @@ export const DocumentUploadSection = ({
       
       fetchDocuments();
 
-      // Auto-detect reporting period for BS / P&L / Cash Flow uploads.
-      // Runs fire-and-forget in parallel per file. If detection fails the user
-      // can still set the period from the documents table below.
+      // Auto-detect statement dates for BS / P&L / Cash Flow uploads.
+      // Runs fire-and-forget in parallel per file; users do not need to label files.
       if (isFsPeriodType(docType) && successful.length > 0) {
         const fsDocIds = successful.map(r => r.docId).filter(Boolean) as string[];
         if (fsDocIds.length > 0) {
@@ -1669,7 +1648,7 @@ export const DocumentUploadSection = ({
           )).then(results => {
             const applied = results.filter(r => (r as any)?.data?.applied).length;
             if (applied > 0) {
-              toast.success(`Detected reporting period for ${applied} file(s)`);
+              toast.success(`Detected statement dates for ${applied} file(s)`);
               fetchDocuments();
             }
           });
@@ -2460,9 +2439,7 @@ export const DocumentUploadSection = ({
                   </div>
                 )}
 
-                {/* Reporting period is auto-detected from the file after upload for
-                    Balance Sheet / Income Statement / Cash Flow. If detection fails,
-                    the user can set it from the documents table below. */}
+                {/* Statement dates are auto-detected from Balance Sheet / Income Statement / Cash Flow files after upload. */}
 
 
                 {type.value === "supporting_documents" && (
@@ -2703,23 +2680,7 @@ export const DocumentUploadSection = ({
                           )}
                           <TableCell>
                             {doc.period_start && doc.period_end ? (
-                              <span className="inline-flex items-center gap-1">
-                                {`${formatDate(doc.period_start)} - ${formatDate(doc.period_end)}`}
-                                {isFsPeriodType(doc.account_type) && (
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-5 w-5"
-                                    onClick={() => {
-                                      const d = parseLocalDate(doc.period_start!);
-                                      setFsBackfillDoc(doc);
-                                      setFsBackfillPeriod({ year: d.getFullYear(), month: d.getMonth() + 1 });
-                                    }}
-                                  >
-                                    <Pencil className="h-3 w-3" />
-                                  </Button>
-                                )}
-                              </span>
+                              <span>{`${formatDate(doc.period_start)} - ${formatDate(doc.period_end)}`}</span>
                             ) : isFsPeriodType(doc.account_type) ? (
                               <div className="flex items-center gap-1">
                                 <Button
@@ -2743,7 +2704,7 @@ export const DocumentUploadSection = ({
                                         toast.success("Period detected");
                                         fetchDocuments();
                                       } else {
-                                        toast.info("Couldn't detect the period — set it manually.");
+                                      toast.info("Couldn't detect dates from the file.");
                                       }
                                     } catch (err) {
                                       console.warn('Detect period failed:', err);
@@ -2763,20 +2724,6 @@ export const DocumentUploadSection = ({
                                     <Sparkles className="h-3 w-3" />
                                   )}
                                   Detect
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-6 text-[10px] gap-1 border-yellow-500 text-yellow-700 dark:text-yellow-400"
-                                  onClick={() => {
-                                    setFsBackfillDoc(doc);
-                                    setFsBackfillPeriod({
-                                      year: availableTaxYears[0] || new Date().getFullYear(),
-                                      month: new Date().getMonth() + 1,
-                                    });
-                                  }}
-                                >
-                                  <AlertCircle className="h-3 w-3" /> Set manually
                                 </Button>
                               </div>
                             ) : "-"}
