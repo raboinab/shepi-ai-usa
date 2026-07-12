@@ -1656,6 +1656,31 @@ export const DocumentUploadSection = ({
       
       fetchDocuments();
 
+      // Auto-detect reporting period for BS / P&L / Cash Flow uploads when the user
+      // didn't set one manually. Runs fire-and-forget in parallel per file.
+      if (isFsPeriodType(docType) && !selectedFsPeriod && successful.length > 0) {
+        const fsDocIds = successful.map(r => r.docId).filter(Boolean) as string[];
+        if (fsDocIds.length > 0) {
+          Promise.all(fsDocIds.map(id =>
+            supabase.functions.invoke('detect-financial-statement-period', {
+              body: { documentId: id },
+            }).catch(err => {
+              console.warn('Period detection failed:', err);
+              return null;
+            })
+          )).then(results => {
+            const applied = results.filter(r => (r as any)?.data?.applied).length;
+            if (applied > 0) {
+              toast.success(`Detected reporting period for ${applied} file(s)`);
+              fetchDocuments();
+            } else if (results.length > 0) {
+              toast.info("Couldn't auto-detect the period — set it manually below.");
+              fetchDocuments();
+            }
+          });
+        }
+      }
+
       // Auto-trigger financial statement validation for verification doc types
       if (isVerifiableType(docType) && files.length === 1 && successful.length === 1) {
         const { data: latestDoc } = await supabase
