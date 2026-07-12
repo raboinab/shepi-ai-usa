@@ -2768,20 +2768,64 @@ export const DocumentUploadSection = ({
                                 )}
                               </span>
                             ) : isFsPeriodType(doc.account_type) ? (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-6 text-[10px] gap-1 border-yellow-500 text-yellow-700 dark:text-yellow-400"
-                                onClick={() => {
-                                  setFsBackfillDoc(doc);
-                                  setFsBackfillPeriod({
-                                    year: availableTaxYears[0] || new Date().getFullYear(),
-                                    month: new Date().getMonth() + 1,
-                                  });
-                                }}
-                              >
-                                <AlertCircle className="h-3 w-3" /> Set period
-                              </Button>
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-6 text-[10px] gap-1"
+                                  disabled={detectingPeriodDocIds.has(doc.id)}
+                                  onClick={async () => {
+                                    setDetectingPeriodDocIds(prev => {
+                                      const next = new Set(prev);
+                                      next.add(doc.id);
+                                      return next;
+                                    });
+                                    try {
+                                      const { data, error } = await supabase.functions.invoke(
+                                        'detect-financial-statement-period',
+                                        { body: { documentId: doc.id } }
+                                      );
+                                      if (error) throw error;
+                                      if ((data as any)?.applied) {
+                                        toast.success("Period detected");
+                                        fetchDocuments();
+                                      } else {
+                                        toast.info("Couldn't detect the period — set it manually.");
+                                      }
+                                    } catch (err) {
+                                      console.warn('Detect period failed:', err);
+                                      toast.error("Detection failed");
+                                    } finally {
+                                      setDetectingPeriodDocIds(prev => {
+                                        const next = new Set(prev);
+                                        next.delete(doc.id);
+                                        return next;
+                                      });
+                                    }
+                                  }}
+                                >
+                                  {detectingPeriodDocIds.has(doc.id) ? (
+                                    <Spinner className="h-3 w-3" />
+                                  ) : (
+                                    <Sparkles className="h-3 w-3" />
+                                  )}
+                                  Detect
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-6 text-[10px] gap-1 border-yellow-500 text-yellow-700 dark:text-yellow-400"
+                                  onClick={() => {
+                                    setFsBackfillDoc(doc);
+                                    setFsBackfillPeriod({
+                                      year: availableTaxYears[0] || new Date().getFullYear(),
+                                      month: new Date().getMonth() + 1,
+                                    });
+                                  }}
+                                >
+                                  <AlertCircle className="h-3 w-3" /> Set manually
+                                </Button>
+                              </div>
                             ) : "-"}
                           </TableCell>
                           <TableCell>{getStatusBadge(doc.processing_status)}</TableCell>
