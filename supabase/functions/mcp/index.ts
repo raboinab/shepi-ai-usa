@@ -56,6 +56,31 @@ function supabaseForUser(ctx) {
   });
   return { error: null, client };
 }
+async function invokeEdgeFunction(ctx, name, body) {
+  if (!ctx.isAuthenticated()) {
+    return { ok: false, status: 401, data: { error: "Not authenticated" } };
+  }
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const supabaseKey = Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY");
+  if (!supabaseUrl || !supabaseKey) {
+    return { ok: false, status: 500, data: { error: "Server configuration error" } };
+  }
+  const resp = await fetch(`${supabaseUrl}/functions/v1/${name}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${ctx.getToken()}`,
+      apikey: supabaseKey,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body ?? {})
+  });
+  let data = null;
+  try {
+    data = await resp.json();
+  } catch {
+  }
+  return { ok: resp.ok, status: resp.status, data };
+}
 
 // src/lib/mcp/tools/listProjects.ts
 var listProjects_default = defineTool2({
@@ -194,7 +219,9 @@ var getAdjustmentDetail_default = defineTool6({
     if (error || !client) {
       return { content: [{ type: "text", text: error ?? "Not authenticated" }], isError: true };
     }
-    const { data, error: dbError } = await client.from("adjustment_proposals").select("*").eq("id", adjustment_id).eq("project_id", project_id).maybeSingle();
+    const { data, error: dbError } = await client.from("adjustment_proposals").select(
+      "id, project_id, title, description, block, adjustment_class, intent, status, review_priority, evidence_strength, proposed_amount, proposed_period_values, edited_amount, edited_period_values, ai_rationale, linked_account_name, linked_account_number, reviewer_notes, reviewed_at, rejection_category, rejection_reason, finding_group, created_at, updated_at"
+    ).eq("id", adjustment_id).eq("project_id", project_id).maybeSingle();
     if (dbError) {
       return { content: [{ type: "text", text: dbError.message }], isError: true };
     }
@@ -1450,7 +1477,8 @@ var createProject_default = defineTool8({
     transaction_type: z8.string().trim().max(255).optional().describe("Transaction type (e.g. buy-side, sell-side)."),
     service_tier: z8.enum(["diy", "done_for_you"]).default("diy").describe("Service tier for the project.")
   },
-  annotations: { readOnlyHint: false, idempotentHint: false, openWorldHint: false },
+  // Writes to a private, per-user system; reversible (project can be deleted) → destructiveHint: false.
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   handler: async ({ name, target_company, client_name, industry, transaction_type, service_tier }, ctx) => {
     const { error, client } = supabaseForUser(ctx);
     if (error || !client) {
@@ -1498,7 +1526,8 @@ var updateAdjustmentStatus_default = defineTool9({
     status: z9.enum(VALID_STATUSES).describe("New status for the adjustment."),
     reviewer_notes: z9.string().max(2e3).optional().describe("Optional notes explaining the decision.")
   },
-  annotations: { readOnlyHint: false, idempotentHint: false, openWorldHint: false },
+  // Updates a status within a private, per-user system; reversible → destructiveHint: false.
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   handler: async ({ project_id, adjustment_id, status, reviewer_notes }, ctx) => {
     const { error, client } = supabaseForUser(ctx);
     if (error || !client) {
@@ -1570,6 +1599,111 @@ var getExportData_default = defineTool10({
   }
 });
 
+// src/lib/mcp/tools/runDiscovery.ts
+init_define_import_meta_env();
+import { defineTool as defineTool11 } from "npm:@lovable.dev/mcp-js@0.20.0";
+import { z as z11 } from "npm:zod@^4.4.3";
+var runDiscovery_default = defineTool11({
+  name: "run_discovery",
+  title: "Run adjustment discovery",
+  description: "Start Shepi's AI adjustment-discovery analysis for a project. Runs asynchronously \u2014 returns a job id immediately. Poll get_discovery_status until status is 'completed', then use list_adjustments to read the proposals.",
+  inputSchema: {
+    project_id: z11.string().uuid().describe("The project ID (UUID).")
+  },
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  handler: async ({ project_id }, ctx) => {
+    const { ok, status, data } = await invokeEdgeFunction(ctx, "trigger-discovery", { project_id });
+    if (!ok) {
+      const msg = data?.error ?? `HTTP ${status}`;
+      return { content: [{ type: "text", text: `Failed to start discovery: ${msg}` }], isError: true };
+    }
+    return {
+      content: [{ type: "text", text: JSON.stringify(data) }],
+      structuredContent: { discovery: data }
+    };
+  }
+});
+
+// src/lib/mcp/tools/getDiscoveryStatus.ts
+init_define_import_meta_env();
+import { defineTool as defineTool12 } from "npm:@lovable.dev/mcp-js@0.20.0";
+import { z as z12 } from "npm:zod@^4.4.3";
+var getDiscoveryStatus_default = defineTool12({
+  name: "get_discovery_status",
+  title: "Get discovery status",
+  description: "Check the status of adjustment discovery for a project (queued / running / completed / failed) and how many adjustment proposals exist so far. Use to poll after run_discovery.",
+  inputSchema: {
+    project_id: z12.string().uuid().describe("The project ID (UUID).")
+  },
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  handler: async ({ project_id }, ctx) => {
+    const { error, client } = supabaseForUser(ctx);
+    if (error || !client) {
+      return { content: [{ type: "text", text: error ?? "Not authenticated" }], isError: true };
+    }
+    const { data: job, error: jobErr } = await client.from("analysis_jobs").select("id, status, progress_percent, error_message, requested_at, completed_at").eq("project_id", project_id).order("requested_at", { ascending: false }).limit(1).maybeSingle();
+    if (jobErr) {
+      return { content: [{ type: "text", text: jobErr.message }], isError: true };
+    }
+    const { count } = await client.from("adjustment_proposals").select("id", { count: "exact", head: true }).eq("project_id", project_id);
+    const result = {
+      project_id,
+      status: job?.status ?? "no_job",
+      progress_percent: job?.progress_percent ?? null,
+      error_message: job?.error_message ?? null,
+      adjustments_found: count ?? 0,
+      job_id: job?.id ?? null
+    };
+    return {
+      content: [{ type: "text", text: JSON.stringify(result) }],
+      structuredContent: { status: result }
+    };
+  }
+});
+
+// src/lib/mcp/tools/validateFinancialStatement.ts
+init_define_import_meta_env();
+import { defineTool as defineTool13 } from "npm:@lovable.dev/mcp-js@0.20.0";
+import { z as z13 } from "npm:zod@^4.4.3";
+var validateFinancialStatement_default = defineTool13({
+  name: "validate_financial_statement",
+  title: "Validate financial statement",
+  description: "Validate an already-uploaded balance sheet, income statement, or cash flow document against the project's trial balance \u2014 returns line-item totals and variances. The document must already exist in the project (upload happens in the Shepi app).",
+  inputSchema: {
+    project_id: z13.string().uuid().describe("The project ID (UUID)."),
+    document_id: z13.string().uuid().describe("The uploaded document ID (UUID) to validate.")
+  },
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  handler: async ({ project_id, document_id }, ctx) => {
+    const { error, client } = supabaseForUser(ctx);
+    if (error || !client) {
+      return { content: [{ type: "text", text: error ?? "Not authenticated" }], isError: true };
+    }
+    const { data: doc, error: docErr } = await client.from("documents").select("id, account_type, period_start, period_end, name").eq("id", document_id).eq("project_id", project_id).maybeSingle();
+    if (docErr) {
+      return { content: [{ type: "text", text: docErr.message }], isError: true };
+    }
+    if (!doc) {
+      return { content: [{ type: "text", text: "Document not found or access denied." }], isError: true };
+    }
+    const { ok, status, data } = await invokeEdgeFunction(ctx, "validate-financial-statement", {
+      projectId: project_id,
+      documentId: document_id,
+      documentType: doc.account_type,
+      periodStart: doc.period_start ?? null,
+      periodEnd: doc.period_end ?? null
+    });
+    if (!ok) {
+      const msg = data?.error ?? `HTTP ${status}`;
+      return { content: [{ type: "text", text: `Validation failed: ${msg}` }], isError: true };
+    }
+    return {
+      content: [{ type: "text", text: JSON.stringify(data) }],
+      structuredContent: { validation: data }
+    };
+  }
+});
+
 // src/lib/mcp/index.ts
 var projectRef = "mdgmessqbfebrbvjtndz";
 var mcp_default = defineMcp({
@@ -1591,7 +1725,10 @@ var mcp_default = defineMcp({
     getQualityOfEarningsSummary_default,
     createProject_default,
     updateAdjustmentStatus_default,
-    getExportData_default
+    getExportData_default,
+    runDiscovery_default,
+    getDiscoveryStatus_default,
+    validateFinancialStatement_default
   ]
 });
 
