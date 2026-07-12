@@ -472,6 +472,7 @@ export const DocumentUploadSection = ({
   const [validationDialogOpen, setValidationDialogOpen] = useState(false);
   const [selectedTaxYear, setSelectedTaxYear] = useState<number | null>(null);
   const [selectedFsPeriod, setSelectedFsPeriod] = useState<{ year: number; month: number } | null>(null);
+  const [detectingPeriodDocIds, setDetectingPeriodDocIds] = useState<Set<string>>(new Set());
   const [fsBackfillDoc, setFsBackfillDoc] = useState<Document | null>(null);
   const [fsBackfillPeriod, setFsBackfillPeriod] = useState<{ year: number; month: number } | null>(null);
   const [savingFsBackfill, setSavingFsBackfill] = useState(false);
@@ -1656,6 +1657,31 @@ export const DocumentUploadSection = ({
       
       fetchDocuments();
 
+      // Auto-detect reporting period for BS / P&L / Cash Flow uploads when the user
+      // didn't set one manually. Runs fire-and-forget in parallel per file.
+      if (isFsPeriodType(docType) && !selectedFsPeriod && successful.length > 0) {
+        const fsDocIds = successful.map(r => r.docId).filter(Boolean) as string[];
+        if (fsDocIds.length > 0) {
+          Promise.all(fsDocIds.map(id =>
+            supabase.functions.invoke('detect-financial-statement-period', {
+              body: { documentId: id },
+            }).catch(err => {
+              console.warn('Period detection failed:', err);
+              return null;
+            })
+          )).then(results => {
+            const applied = results.filter(r => (r as any)?.data?.applied).length;
+            if (applied > 0) {
+              toast.success(`Detected reporting period for ${applied} file(s)`);
+              fetchDocuments();
+            } else if (results.length > 0) {
+              toast.info("Couldn't auto-detect the period — set it manually below.");
+              fetchDocuments();
+            }
+          });
+        }
+      }
+
       // Auto-trigger financial statement validation for verification doc types
       if (isVerifiableType(docType) && files.length === 1 && successful.length === 1) {
         const { data: latestDoc } = await supabase
@@ -2442,7 +2468,7 @@ export const DocumentUploadSection = ({
                 {/* Reporting Period - for Balance Sheet / P&L / Cash Flow */}
                 {isFsPeriodType(type.value) && (
                   <div className="space-y-2">
-                    <Label>Reporting Period <span className="text-destructive">*</span></Label>
+                    <Label>Reporting Period <span className="text-muted-foreground text-xs font-normal">(optional)</span></Label>
                     <div className="flex gap-2">
                       <Select
                         value={selectedFsPeriod?.month?.toString() || ""}
@@ -2482,7 +2508,7 @@ export const DocumentUploadSection = ({
                       </Select>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Select the month this {type.value === 'balance_sheet' ? 'Balance Sheet snapshot' : type.value === 'income_statement' ? 'P&L' : 'Cash Flow'} covers. Upload one file per month.
+                      Leave blank — we'll detect the period from the file. Multi-month files (annual P&amp;L, comparative statements) are also fine. Set it manually only if you already know it.
                     </p>
                   </div>
                 )}
@@ -2581,7 +2607,7 @@ export const DocumentUploadSection = ({
 
                 <Button
                   onClick={handleUpload}
-                  disabled={uploading || isValidating || !selectedFiles || (type.value === "cim" && parsingCim) || (type.value === "tax_return" && !selectedTaxYear) || (isFsPeriodType(type.value) && !selectedFsPeriod) || (type.value === "trial_balance" && !coaReadiness.ready)}
+                  disabled={uploading || isValidating || !selectedFiles || (type.value === "cim" && parsingCim) || (type.value === "tax_return" && !selectedTaxYear) || (type.value === "trial_balance" && !coaReadiness.ready)}
                   className="w-full"
                 >
                   {isValidating ? (
@@ -2743,20 +2769,64 @@ export const DocumentUploadSection = ({
                                 )}
                               </span>
                             ) : isFsPeriodType(doc.account_type) ? (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-6 text-[10px] gap-1 border-yellow-500 text-yellow-700 dark:text-yellow-400"
-                                onClick={() => {
-                                  setFsBackfillDoc(doc);
-                                  setFsBackfillPeriod({
-                                    year: availableTaxYears[0] || new Date().getFullYear(),
-                                    month: new Date().getMonth() + 1,
-                                  });
-                                }}
-                              >
-                                <AlertCircle className="h-3 w-3" /> Set period
-                              </Button>
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-6 text-[10px] gap-1"
+                                  disabled={detectingPeriodDocIds.has(doc.id)}
+                                  onClick={async () => {
+                                    setDetectingPeriodDocIds(prev => {
+                                      const next = new Set(prev);
+                                      next.add(doc.id);
+                                      return next;
+                                    });
+                                    try {
+                                      const { data, error } = await supabase.functions.invoke(
+                                        'detect-financial-statement-period',
+                                        { body: { documentId: doc.id } }
+                                      );
+                                      if (error) throw error;
+                                      if ((data as any)?.applied) {
+                                        toast.success("Period detected");
+                                        fetchDocuments();
+                                      } else {
+                                        toast.info("Couldn't detect the period — set it manually.");
+                                      }
+                                    } catch (err) {
+                                      console.warn('Detect period failed:', err);
+                                      toast.error("Detection failed");
+                                    } finally {
+                                      setDetectingPeriodDocIds(prev => {
+                                        const next = new Set(prev);
+                                        next.delete(doc.id);
+                                        return next;
+                                      });
+                                    }
+                                  }}
+                                >
+                                  {detectingPeriodDocIds.has(doc.id) ? (
+                                    <Spinner className="h-3 w-3" />
+                                  ) : (
+                                    <Sparkles className="h-3 w-3" />
+                                  )}
+                                  Detect
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-6 text-[10px] gap-1 border-yellow-500 text-yellow-700 dark:text-yellow-400"
+                                  onClick={() => {
+                                    setFsBackfillDoc(doc);
+                                    setFsBackfillPeriod({
+                                      year: availableTaxYears[0] || new Date().getFullYear(),
+                                      month: new Date().getMonth() + 1,
+                                    });
+                                  }}
+                                >
+                                  <AlertCircle className="h-3 w-3" /> Set manually
+                                </Button>
+                              </div>
                             ) : "-"}
                           </TableCell>
                           <TableCell>{getStatusBadge(doc.processing_status)}</TableCell>

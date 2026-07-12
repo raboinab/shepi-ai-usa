@@ -1,60 +1,52 @@
+## Goal
 
-# Publish Shepi MCP for Public Use
+Stop forcing users to pick a Month + Year every time they upload a Balance Sheet, P&L, or Cash Flow. Auto-detect the reporting period from the file itself. Anything we can't confidently detect drops into a "Needs period" tray they can clear in one click — same pattern as the existing bank-statement label backfill.
 
-Both MCP endpoints are already live and world-reachable on Supabase:
+## Behavior
 
-- ChatGPT: `https://mdgmessqbfebrbvjtndz.supabase.co/functions/v1/chatgpt-mcp`
-- Claude:  `https://mdgmessqbfebrbvjtndz.supabase.co/functions/v1/mcp`
+**Upload flow (BS / P&L / Cash Flow)**
+- Reporting Period dropdown becomes optional. Help text: *"We'll detect the period from the file. Set it manually only if you already know it."*
+- User can upload multiple files at once without labeling.
+- After upload, a period-detection job runs per file in the background.
+- Detected periods populate `documents.period_start` / `period_end` and the coverage timeline updates automatically.
+- If detection returns a range spanning multiple months (e.g., annual P&L, comparative statements), we store the full range on that one document row — no row-splitting.
 
-Anyone with a Shepi account can already add them today via ChatGPT/Claude "Add custom connector". Access to *data* is per-user via Supabase OAuth (RLS-scoped) — that stays. "Publish for public" therefore means: make the connectors **discoverable and one-click connectable** from the marketing site and AI-agent directories, not "make data public".
+**Backfill tray**
+- New "Needs reporting period" card appears at the top of the Documents section whenever any BS/IS/CF doc has `period_start IS NULL` after detection ran.
+- Each row: filename, doc type, `[Detect again]` and `[Set manually]` buttons.
+- Manual button reuses the existing `fsBackfillDoc` dialog.
 
-## What this plan does
+## Technical Details
 
-1. **Surface the URLs prominently on shepi.ai** so end users can find and copy them.
-2. **Publish machine-readable discovery files** so AI agents and connector catalogs can auto-detect Shepi as an MCP provider.
-3. **Verify OAuth is production-ready** (allow-list, consent copy).
-4. **Ship the current build** so all of the above is live at shepi.ai.
+**New edge function: `detect-financial-statement-period`**
+- Input: `{ documentId }`. Auth via user JWT.
+- Downloads the file from `documents` storage bucket.
+- Extracts text from page 1 (PDF: `unpdf`; XLSX: parse first sheet header rows).
+- Regex pass for common patterns:
+  - `For the (Year|Period|Month) Ended? <date>`
+  - `As of <date>`
+  - `<Month> <YYYY>` / `<MM>/<DD>/<YYYY>`
+  - Comparative year columns (`2022  2023  2024`)
+- If regex confidence low, fall back to Lovable AI (`google/gemini-2.5-flash`) with a strict JSON schema: `{ period_start, period_end, confidence }`.
+- Writes `period_start` / `period_end` back to the `documents` row. Returns detection result to caller.
+- Confidence threshold: only auto-apply if `confidence >= 0.7`; otherwise leave NULL so the tray shows it.
 
-## Steps
+**`DocumentUploadSection.tsx`**
+- Remove the `<span className="text-destructive">*</span>` from Reporting Period label; loosen the upload-button gate so FS types don't require `selectedFsPeriod`.
+- After each successful FS upload where the user didn't set a period, fire-and-forget invoke of `detect-financial-statement-period`.
+- Refresh `documents` list on detection completion.
+- New `NeedsPeriodBackfill` sub-component (top of the section) that lists FS docs with `period_start IS NULL` and wires to the existing manual dialog + a "Detect again" action.
+- Update help copy on the period dropdown to mark it optional.
 
-### 1. Marketing surface
+**No schema changes.** `documents.period_start` / `period_end` already exist and are already nullable.
 
-- `src/pages/Connect.tsx` — already shows both URLs; add "Add to ChatGPT" and "Add to Claude" one-click deep links (`https://chat.openai.com/connectors/new?url=...`, `https://claude.ai/connectors/new?url=...`) beside each Copy button.
-- `src/pages/ForAiAgents.tsx` — add a "Connect via MCP" section that lists both URLs, the 10 exported tools, and links to `docs/mcp-connector-verification.md`.
-- Add a `/mcp` route (or anchor on `/connect`) with SEO metadata: title "Connect Shepi to ChatGPT & Claude", description explaining MCP.
-- Add the two URLs to `public/sitemap.xml` (as page URLs) and mention them in `public/llms.txt`.
+## Files touched
 
-### 2. Discovery / well-known files
-
-- `public/mcp.json` — extend to advertise both endpoints, tool names, and OAuth issuer.
-- `public/.well-known/ai-plugin.json` — add `mcp` block pointing at the two endpoints.
-- `public/.well-known/agent.json` — same.
-- `public/openapi.json` — add short note referencing MCP endpoints.
-- Keep the `.well-known/oauth-protected-resource` documents served by the edge functions untouched (they are already correct).
-
-### 3. OAuth production readiness
-
-- Confirm the Supabase Auth redirect allow-list includes `https://shepi.ai/.lovable/oauth/consent` and `https://www.shepi.ai/.lovable/oauth/consent` — required so ChatGPT/Claude's authorize round-trip returns cleanly. (No code change if already present; flag to user if not.)
-- Confirm `OAuthConsent.tsx` copy reads well for third-party clients ("Connect ChatGPT to your Shepi account"). Tighten wording if needed.
-- No change to token scopes or RLS — public discoverability does not change data isolation.
-
-### 4. Verification
-
-- Re-run the smoke tests in `docs/mcp-connector-verification.md` §5 against production URLs.
-- Add one deep-link test: opening the "Add to ChatGPT" button from `/connect` while signed out sends the user through sign-in → consent → connected without landing on `/`.
-
-### 5. Publish
-
-- Call `preview_ui--publish` to push the marketing/discovery changes to `https://shepi.ai`.
-- Edge functions (`mcp`, `chatgpt-mcp`) are already deployed and require no republish.
-
-## Technical details
-
-- Both edge functions are `verify_jwt = false` in `supabase/config.toml` (mcp-js and the MCP SDK handle bearer verification themselves).
-- OAuth authorization server: `https://mdgmessqbfebrbvjtndz.supabase.co/auth/v1` with DCR + PKCE enabled — ChatGPT/Claude self-register, no per-client secrets to distribute.
-- No secrets, DB migrations, or new environment variables are needed.
+- `supabase/functions/detect-financial-statement-period/index.ts` (new)
+- `src/components/wizard/sections/DocumentUploadSection.tsx` (upload gate, help copy, new backfill tray section, detection invocation)
 
 ## Out of scope
 
-- Making project *data* public (would break RLS and privacy — do not do).
-- Submitting to third-party MCP registries (OpenAI/Anthropic connector catalogs) — requires their approval flows; can be a follow-up once §1–§5 are live.
+- Bank statement / credit card period detection (already handled by DocuClipper).
+- Splitting a multi-period file into multiple document rows.
+- Retroactive detection for existing uploaded FS docs — the "Detect again" button in the tray covers this on demand.
