@@ -455,6 +455,10 @@ export const DocumentUploadSection = ({
   const [validationDialogOpen, setValidationDialogOpen] = useState(false);
   const [selectedTaxYear, setSelectedTaxYear] = useState<number | null>(null);
   const [detectingPeriodDocIds, setDetectingPeriodDocIds] = useState<Set<string>>(new Set());
+  const [manualDatesDoc, setManualDatesDoc] = useState<{ id: string; name: string } | null>(null);
+  const [manualStart, setManualStart] = useState<string>("");
+  const [manualEnd, setManualEnd] = useState<string>("");
+  const [savingManualDates, setSavingManualDates] = useState(false);
   const [pendingValidation, setPendingValidation] = useState<{
     file: File;
     result: ValidationResult;
@@ -1634,24 +1638,44 @@ export const DocumentUploadSection = ({
       fetchDocuments();
 
       // Auto-detect statement dates for BS / P&L / Cash Flow uploads.
-      // Runs fire-and-forget in parallel per file; users do not need to label files.
+      // Awaited so failures surface in upload_errors and the user sees a toast
+      // instead of silently ending up with docs that have no period_start/end.
       if (isFsPeriodType(docType) && successful.length > 0) {
         const fsDocIds = successful.map(r => r.docId).filter(Boolean) as string[];
         if (fsDocIds.length > 0) {
-          Promise.all(fsDocIds.map(id =>
-            supabase.functions.invoke('detect-financial-statement-period', {
-              body: { documentId: id },
-            }).catch(err => {
-              console.warn('Period detection failed:', err);
-              return null;
-            })
-          )).then(results => {
-            const applied = results.filter(r => (r as any)?.data?.applied).length;
-            if (applied > 0) {
-              toast.success(`Detected statement dates for ${applied} file(s)`);
-              fetchDocuments();
+          const detectionResults = await Promise.all(fsDocIds.map(async (id) => {
+            try {
+              const { data, error } = await supabase.functions.invoke(
+                'detect-financial-statement-period',
+                { body: { documentId: id } },
+              );
+              if (error) throw error;
+              return { id, applied: !!(data as any)?.applied, data, error: null as unknown };
+            } catch (err) {
+              await logUploadError({
+                context: "document_upload_section",
+                stage: "detect_financial_statement_period",
+                error: err,
+                projectId,
+                userId: user.id,
+                extra: { documentId: id, docType },
+              });
+              return { id, applied: false, data: null, error: err };
             }
-          });
+          }));
+          const applied = detectionResults.filter(r => r.applied).length;
+          const failed = detectionResults.filter(r => r.error).length;
+          const undetected = detectionResults.length - applied - failed;
+          if (applied > 0) {
+            toast.success(`Detected statement dates for ${applied} file(s)`);
+          }
+          if (undetected > 0) {
+            toast.info(`Couldn't auto-detect dates for ${undetected} file(s). Use "Set dates" on the row.`);
+          }
+          if (failed > 0) {
+            toast.error(`Date detection failed for ${failed} file(s). Use "Set dates" on the row.`);
+          }
+          fetchDocuments();
         }
       }
 
@@ -2725,6 +2749,18 @@ export const DocumentUploadSection = ({
                                   )}
                                   Detect
                                 </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 text-[10px]"
+                                  onClick={() => {
+                                    setManualDatesDoc({ id: doc.id, name: doc.name });
+                                    setManualStart(doc.period_start || "");
+                                    setManualEnd(doc.period_end || "");
+                                  }}
+                                >
+                                  Set dates
+                                </Button>
                               </div>
                             ) : "-"}
                           </TableCell>
@@ -2842,6 +2878,71 @@ export const DocumentUploadSection = ({
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {isDeleting ? "Deleting…" : "Delete & reset"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!manualDatesDoc}
+        onOpenChange={(open) => { if (!open && !savingManualDates) setManualDatesDoc(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Set statement dates</AlertDialogTitle>
+            <AlertDialogDescription>
+              Enter the period this statement covers for <strong>{manualDatesDoc?.name}</strong>.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="grid grid-cols-2 gap-3 py-2">
+            <div>
+              <Label htmlFor="manual-start" className="text-xs">Start date</Label>
+              <Input
+                id="manual-start"
+                type="date"
+                value={manualStart}
+                onChange={(e) => setManualStart(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label htmlFor="manual-end" className="text-xs">End date</Label>
+              <Input
+                id="manual-end"
+                type="date"
+                value={manualEnd}
+                onChange={(e) => setManualEnd(e.target.value)}
+              />
+            </div>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={savingManualDates}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={savingManualDates || !manualStart || !manualEnd || !manualDatesDoc}
+              onClick={async (e) => {
+                e.preventDefault();
+                if (!manualDatesDoc) return;
+                if (manualEnd < manualStart) {
+                  toast.error("End date must be on or after start date");
+                  return;
+                }
+                setSavingManualDates(true);
+                try {
+                  const { error } = await supabase
+                    .from("documents")
+                    .update({ period_start: manualStart, period_end: manualEnd })
+                    .eq("id", manualDatesDoc.id);
+                  if (error) throw error;
+                  toast.success("Statement dates saved");
+                  setManualDatesDoc(null);
+                  fetchDocuments();
+                } catch (err: any) {
+                  toast.error("Failed to save dates: " + (err?.message || "Unknown error"));
+                } finally {
+                  setSavingManualDates(false);
+                }
+              }}
+            >
+              {savingManualDates ? "Saving…" : "Save dates"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
