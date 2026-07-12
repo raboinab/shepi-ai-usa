@@ -1132,11 +1132,8 @@ export const DocumentUploadSection = ({
           if (docType === "tax_return" && selectedTaxYear) {
             periodStart = `${selectedTaxYear}-01-01`;
             periodEnd = `${selectedTaxYear}-12-31`;
-          } else if (isFsPeriodType(docType) && selectedFsPeriod) {
-            const ep = computeMonthEndpoints(selectedFsPeriod.year, selectedFsPeriod.month);
-            periodStart = ep.periodStart;
-            periodEnd = ep.periodEnd;
           }
+
 
           // Create document record
           const { data: insertedDoc, error: insertError } = await supabase
