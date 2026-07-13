@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Period } from "@/lib/periodUtils";
 import { ReportDashboardHeader } from "../shared/ReportDashboardHeader";
+import { RerunFinancialStatementButton } from "../shared/RerunFinancialStatementButton";
 import type { DealData } from "@/lib/workbook-types";
 import { getReportDashboard } from "@/lib/reportDashboardMetrics";
 import { WorkbookTabView } from "@/components/workbook/WorkbookTabView";
@@ -11,9 +12,10 @@ interface IncomeStatementSectionProps {
   periods?: Period[];
   fiscalYearEnd?: number;
   dealData?: DealData | null;
+  projectId?: string;
 }
 
-export const IncomeStatementSection = ({ periods = [], dealData }: IncomeStatementSectionProps) => {
+export const IncomeStatementSection = ({ periods = [], dealData, projectId }: IncomeStatementSectionProps) => {
   const regularPeriods = periods.filter(p => !p.isStub);
   const hasPeriods = regularPeriods.length > 0;
 
