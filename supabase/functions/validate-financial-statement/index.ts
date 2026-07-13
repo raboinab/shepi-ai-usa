@@ -311,7 +311,8 @@ function deriveTotalsFromTrialBalance(
     if (!referenceEndKey) {
       for (const a of accounts) {
         const k = getLatestPeriodKey(a.monthlyValues);
-        if (k && (!referenceEndKey || k > referenceEndKey)) referenceEndKey = k;
+        const nk = k ? normalizePeriodKey(k) : null;
+        if (nk && (!referenceEndKey || nk > referenceEndKey)) referenceEndKey = nk;
       }
     }
     if (referenceEndKey) {
