@@ -279,11 +279,18 @@ export const TrialBalanceSection = ({
       }
     }
 
-    // Apply COA cross-referencing ONLY if not already applied at sync time
-    const allMatched = mergedAccounts.every(acc => (acc as any)._matchedFromCOA === true);
-    if (!allMatched && coaAccounts && coaAccounts.length > 0 && mergedAccounts.length > 0) {
+    // Always re-apply COA cross-referencing when COA is present. Prior versions
+    // short-circuited on `_matchedFromCOA === true`, but that flag persists in
+    // the cached row shape and prevented pickup of matcher improvements (leading
+    // digit extraction, FQN map, etc.). Re-running is cheap.
+    if (coaAccounts && coaAccounts.length > 0 && mergedAccounts.length > 0) {
       console.log('[TrialBalance] loadFromProcessedData: applying COA cross-reference');
-      const { accounts: enriched } = crossReferenceWithCOA(mergedAccounts, coaAccounts);
+      const stripped = mergedAccounts.map((a) => {
+        const { _matchedFromCOA: _drop, ...rest } = a as any;
+        return rest as TrialBalanceAccount;
+      });
+      const { accounts: enriched, matchStats } = crossReferenceWithCOA(stripped, coaAccounts);
+      console.log('[TrialBalance] COA match stats:', matchStats);
       mergedAccounts = enriched;
     }
 
