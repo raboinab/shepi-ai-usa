@@ -1,44 +1,45 @@
-## Why P&L shows 0% match
+## What's happening
 
-Every TB account in the diagnostic is bucket = **expense** — including obvious BS rows like `1025 Fidelity Business Account`, `2025 Amazon Chase CC`, `3070 Member Draw`. That's why Revenue, COGS, and Gross Profit are all $0 on the TB side.
+The wizard's TB cache (`wizard_data.trialBalance.accounts`) is empty, so the client re-loads the TB from `processed_data` on every render and runs its own `crossReferenceWithCOA` (client, in `src/lib/trialBalanceUtils.ts`). For this project that client-side match returns ~0 hits, so the TB shows as "unmapped" even though the server-side `rebuild-project-tb` I fixed last round matched 152/183.
 
-Root cause chain (verified against `wizard_data.trialBalance.accounts` and `processed_data.chart_of_accounts`):
+Why the client match fails on VampireFreaks:
 
-1. **TB rows store the account number inside `accountName`** — the parser emits `accountName = "1025 Fidelity Business Account"` with `accountNumber = ""` and `accountType = ""`. `inferFsType` only checks the `accountNumber` column for the digit-prefix rule, misses, then falls through to `'IS'`.
-2. **`classifyISAccount` in `validate-financial-statement` defaults to `'expense'`** whenever `accountType` is empty and no keyword match is found. Every mis-classified BS row (and every revenue/COGS row whose accountType is blank) piles into `totalExpenses` → $58M, and revenue/COGS/gross profit stay at $0.
-3. **CoA cross-reference silently no-ops.** `wizard_data.chartOfAccounts.accounts` is empty for this project — the CoA lives only in `processed_data` in raw qbToJson shape (`name`, `fullyQualifiedName`, `acctNum`, `classification`, `fsType`). `rebuild-project-tb` only reads the wizard cache and, even if it read the raw CoA, its cross-reference expects the client shape (`accountName`, `accountNumber`, `accountId`) so no match would occur.
+1. **TB rows carry the account number inside the name, not in `accountNumber`.** `parseColDataRow` reads `colData[0].value` (`"1005 Cash"`, `"1015 Wells Fargo Business Checking - 7179"`) and hard-codes `accountNumber: ''`. So `coaByNumber.get(tb.accountNumber)` is never even attempted.
+2. **`qbAccountId` on the TB side is not the QB entity Id.** `colData[0].id` in the qbToJson TB output is a row-sequence (`3`, `4`, `5`), but the CoA's `accountId` is the QB entity Id (`200`, `205`, …). They live in different namespaces, so `coaByQbId` never matches.
+3. **Name match fails** because TB names still contain the leading digits (`"1005 Cash"` ≠ CoA `"Cash"` / `"Suspense"`), and the "Parent:Child" fallback doesn't strip the number prefix either.
 
-The Balance Sheet ($0 differences) works only because its accounts happened to hit name-keyword hints ("Fidelity", "Amazon Chase" don't, but the BS validation path is less sensitive when CoA is absent). The P&L, which relies on precise bucketing, breaks completely.
+Net result: `matched = 0`, `unmatched = 183`, everything falls to the heuristic bucketing and shows as "no COA mapping." This is the client-side twin of the bug I already fixed in the edge function last round — same root cause (`accountName = "{acctNum} {name}"`, `accountNumber = ""`), just in a second code path.
 
 ## Fix
 
-Three coordinated changes so the pipeline recovers even when TB `accountNumber`/`accountType` are blank and the CoA hasn't been normalized into the wizard cache.
+All changes in `src/lib/trialBalanceUtils.ts` — no schema, no edge function, no data migration.
 
-### 1. `inferFsType` — extract leading digits from the name
-`src/lib/inferFsType.ts` and the ported copy in `supabase/functions/rebuild-project-tb/index.ts`.
+### 1. Extract the leading account number during TB parse
+In `parseColDataRow`, after reading `colData[0].value`:
+- Use `extractLeadingAccountNumber` (already exported from `src/lib/inferFsType.ts`) to pull a 4–5 digit prefix off the name.
+- Populate `accountNumber` with that prefix when the QB feed doesn't supply one.
+- Strip the number from `accountName` for display (`"1005 Cash"` → `"Cash"`), preserve the raw string on a new `rawAccountName` field so we don't lose it for debugging.
+- Drop the misleading `qbAccountId` when `colData[0].id` is a bare row-sequence (`< 4` chars and numeric) — the CoA's `accountId` is a different Id space, and keeping it prevents the digit-prefix path from ever being tried.
 
-If `accountNumber` is empty, look for a leading 4-5 digit prefix in `fullyQualifiedName` first, then `accountName`, and apply the existing 1xxx-3xxx → BS, 4xxx-9xxx → IS rule. This fixes fsType for every account in this project (all names start with the number).
+### 2. Broaden `crossReferenceWithCOA` matching
+Same file, same function. Once step 1 populates `accountNumber`, `coaByNumber.get(tb.accountNumber)` already matches for the common case. Add these additional matchers, in order, before falling back to unmatched:
+- If TB has a `"Parent:Child"` name and neither leaf matched, try matching the parent name against the CoA `fullyQualifiedName` map.
+- Build a `coaByFqn` map keyed on `fullyQualifiedName.toLowerCase()` and try it after `coaByNumber` — some CoA rows share numbers but have unique FQNs.
+- Last-resort: pull leading digits off the TB name via `extractLeadingAccountNumber` and hit `coaByNumber` again, in case step 1 didn't fire (e.g. legacy cached rows).
 
-### 2. Validator — bucket by leading digits + name fallback
-`supabase/functions/validate-financial-statement/index.ts`.
+### 3. Force a client-side re-match after the change
+`loadTrialBalanceFromProcessedData` already accepts `forceCoaRebuild`. Call sites that read the TB for this project won't automatically re-run because rows have `_matchedFromCOA` cached as `false`. Set the default to `forceCoaRebuild: true` at the two call sites for one release (`src/components/wizard/sections/TrialBalanceSection.tsx` and `src/pages/Workbook.tsx`) so the enrichment recomputes with the new matcher; revert the default once we've verified the wizard cache is populating correctly.
 
-- `classifyISAccount`: when `accountType` is empty, use leading digits: `4xxx` → `revenue`, `5xxx` → `cogs`, `6xxx-9xxx` → `expense`. After that, name fallback: `sales|revenue|income` → `revenue`; `cost of goods|cogs` → `cogs`. Only after these fallbacks fail should we hit the `'expense'` default.
-- `classifyBSAccount`: mirror the fallback — `1xxx` → `asset`, `2xxx` → `liability`, `3xxx` → `equity` when `accountType` is empty and no name hit.
+### 4. Verify on VampireFreaks
+Open `/project/621a6c9f-1c25-40fa-92fa-6762ae3fe72b` → Trial Balance. Expected after fix: ~150+ of 183 accounts show a green "COA matched" state, revenue/COGS/expense buckets populate, and re-running the P&L validation shows non-zero Revenue/COGS/Gross Profit on the TB side. Remaining unmatched should be genuine orphans (deleted accounts, journal-only entries) — I'll list them so you can decide whether to fold them back into the CoA.
 
-This restores non-zero Revenue / COGS / Gross Profit on the TB side even when the CoA never gets cross-referenced.
+### Out of scope
+- Deeper fix in the `qbtojson` TB parser (it should emit `accountNumber` and `accountName` split) — that's the upstream culprit but affects every ingest and needs its own PR.
+- Backfilling `wizard_data.trialBalance.accounts` for existing projects. The client falls back to `processed_data` correctly; a wizard-cache warm can come after we're confident in the new matcher.
 
-### 3. `rebuild-project-tb` — read raw CoA and match its native shape
-`supabase/functions/rebuild-project-tb/index.ts`.
+## Technical detail
 
-- If `wizard_data.chartOfAccounts.accounts` is empty, load the latest `processed_data` row with `data_type = 'chart_of_accounts'` and use its `data` array.
-- In `crossReferenceCOA`, accept either shape: read the number from `accountNumber` **or** `acctNum`, the name from `accountName` **or** `name`, the QB id from `accountId` **or** `id`, and fall back to `fullyQualifiedName` for name matches. Match TB accounts whose `accountName` starts with `"{acctNum} "` or ends with the CoA `fullyQualifiedName`.
-- When a match hits, copy `fsType`, `classification` → `accountType` bucket, and the real `accountNumber` back onto the TB account so downstream code (validator, workbook, adapter) sees a properly enriched row.
-
-### 4. Rerun and verify
-
-After deploy, invoke `rebuild-project-tb` for `621a6c9f-1c25-40fa-92fa-6762ae3fe72b`, then re-run the P&L validation. Expected: Revenue ≈ $28.3M on the TB side, COGS ≈ $13.6M, Gross Profit ≈ $14.6M, and the diagnostic bucket column should show a mix of `revenue`/`cogs`/`expense` instead of all `expense`. BS-typed accounts (`1xxx`/`2xxx`/`3xxx`) should no longer appear in the P&L breakdown at all.
-
-## Out of scope / follow-ups
-
-- The client-side `crossReferenceWithCOA` in `src/lib/trialBalanceUtils.ts` has the same "expects client shape" assumption. Not blocking this bug (wizard CoA cache is empty), but worth normalizing next pass so both sides agree on the CoA shape.
-- The `qbtojson` TB parser that emits `accountName = "{acctNum} {name}"` with an empty `accountNumber` is the true upstream culprit; leaving that as a separate PR because it affects ingestion of every QB TB, not just this project.
+- Files touched: `src/lib/trialBalanceUtils.ts` (parse + match), `src/components/wizard/sections/TrialBalanceSection.tsx` and `src/pages/Workbook.tsx` (pass `forceCoaRebuild: true`).
+- No new dependencies, no DB migration, no edge-function redeploy.
+- `extractLeadingAccountNumber` already exists in `src/lib/inferFsType.ts` and handles both `"1005 Cash"` and `"1005-Cash"` / `"1005:Cash"` shapes.
+- The CoA for this project (`processed_data` id `ffcce17e-…`) has `accountNumber` populated as strings (`"1000"`, `"1025"`, …), so string equality against the extracted prefix will match without normalization.
