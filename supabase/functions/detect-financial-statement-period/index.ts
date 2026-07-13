@@ -189,20 +189,42 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
   }
 }
 
+function formatCell(v: unknown): string {
+  if (v === null || v === undefined || v === "") return "";
+  if (v instanceof Date) {
+    if (isNaN(v.getTime())) return "";
+    const y = v.getUTCFullYear();
+    const m = String(v.getUTCMonth() + 1).padStart(2, "0");
+    const d = String(v.getUTCDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  return String(v);
+}
+
 function extractXlsxText(bytes: Uint8Array): { text: string; header: string } {
   try {
-    const wb = XLSX.read(bytes, { type: "array" });
+    // cellDates: true → Date cells come through as JS Date objects instead of
+    // raw Excel serial numbers, which we then format as ISO YYYY-MM-DD.
+    const wb = XLSX.read(bytes, { type: "array", cellDates: true });
     const chunks: string[] = [];
     const headerChunks: string[] = [];
-    // Scan every sheet — comparative periods often live across sheets or in the header of each.
     for (const name of wb.SheetNames) {
       const sheet = wb.Sheets[name];
       if (!sheet) continue;
-      const rows = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, blankrows: false });
+      const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+        header: 1, blankrows: false, raw: true,
+      });
       chunks.push(`# ${name}`);
-      chunks.push(rows.slice(0, 60).map((r) => (Array.isArray(r) ? r.join(" ") : "")).join("\n"));
-      // Header region — first 15 rows only, used for BS bare-date detection.
-      headerChunks.push(rows.slice(0, 15).map((r) => (Array.isArray(r) ? r.join(" ") : "")).join("\n"));
+      chunks.push(
+        rows.slice(0, 60)
+          .map((r) => (Array.isArray(r) ? r.map(formatCell).join(" ") : ""))
+          .join("\n"),
+      );
+      headerChunks.push(
+        rows.slice(0, 15)
+          .map((r) => (Array.isArray(r) ? r.map(formatCell).join(" ") : ""))
+          .join("\n"),
+      );
     }
     return { text: chunks.join("\n"), header: headerChunks.join("\n") };
   } catch (e) {
