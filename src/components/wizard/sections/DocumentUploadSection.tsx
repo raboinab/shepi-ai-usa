@@ -2182,24 +2182,77 @@ export const DocumentUploadSection = ({
             )}
 
             {/* CIM Insights Card - only show on CIM tab */}
-            {type.value === "cim" && (cimInsights || parsingCim) && (
-              parsingCim ? (
-                <Card>
-                  <CardContent className="py-8">
-                    <div className="flex flex-col items-center gap-3">
-                      <Sparkles className="w-8 h-8 text-primary animate-pulse" />
-                      <p className="text-sm text-muted-foreground">Extracting business insights from CIM...</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              ) : cimInsights ? (
-                <CIMInsightsCard 
-                  insights={cimInsights} 
-                  onReupload={handleCimReupload}
-                  isReuploading={parsingCim}
-                />
-              ) : null
-            )}
+            {type.value === "cim" && (() => {
+              const existingCimDoc = documents.find(doc => doc.account_type === "cim");
+              if (parsingCim) {
+                return (
+                  <Card>
+                    <CardContent className="py-8">
+                      <div className="flex flex-col items-center gap-3">
+                        <Sparkles className="w-8 h-8 text-primary animate-pulse" />
+                        <p className="text-sm text-muted-foreground">Extracting business insights from CIM...</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              }
+              if (cimInsights) {
+                return (
+                  <CIMInsightsCard
+                    insights={cimInsights}
+                    onReupload={handleCimReupload}
+                    isReuploading={parsingCim}
+                  />
+                );
+              }
+              if (existingCimDoc) {
+                return (
+                  <Card>
+                    <CardContent className="py-6">
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <p className="text-sm font-medium">CIM uploaded but no analysis found</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {existingCimDoc.name} — the initial parse didn't complete. Re-run it to extract business insights.
+                          </p>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={parsingCim}
+                          onClick={async () => {
+                            setParsingCim(true);
+                            localStorage.setItem(`cim-parsing-${projectId}`, "true");
+                            try {
+                              const { data, error } = await supabase.functions.invoke('parse-cim', {
+                                body: { documentId: existingCimDoc.id, projectId },
+                              });
+                              if (error) throw error;
+                              if (data?.insights) {
+                                setCimInsights(data.insights);
+                                toast.success("CIM insights ready!");
+                              } else {
+                                toast.info("Parse started — insights will appear shortly.");
+                              }
+                            } catch (err: any) {
+                              console.error("CIM re-parse failed", err);
+                              toast.error(`CIM parse failed: ${err.message || 'unknown error'}`);
+                            } finally {
+                              localStorage.removeItem(`cim-parsing-${projectId}`);
+                              setParsingCim(false);
+                            }
+                          }}
+                        >
+                          <Sparkles className="w-4 h-4 mr-2" />
+                          Re-run CIM analysis
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              }
+              return null;
+            })()}
 
             {/* Tax Return Insights Card - only show on tax_return tab */}
             {type.value === "tax_return" && (taxReturnInsights.length > 0 || parsingTaxReturn) && (
