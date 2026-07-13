@@ -1,5 +1,5 @@
 import { Period } from "./periodUtils";
-import { inferFsType } from "./inferFsType";
+import { inferFsType, extractLeadingAccountNumber } from "./inferFsType";
 
 
 export type FSType = 'BS' | 'IS';
@@ -352,25 +352,40 @@ interface QbTrialBalanceResponse {
 function parseColDataRow(rawRow: QbRawRow): QbTrialBalanceRow | null {
   const colData = rawRow.colData;
   if (!colData || colData.length < 3) return null;
-  
-  const accountName = colData[0]?.value || '';
-  const qbAccountId = colData[0]?.id ? String(colData[0].id) : ''; // QB internal Id - primary discriminator
+
+  const rawName = colData[0]?.value || '';
+  const rawId = colData[0]?.id ? String(colData[0].id) : '';
   const debitStr = colData[1]?.value || '0';
   const creditStr = colData[2]?.value || '0';
-  
+
   // Skip empty rows or header rows
-  if (!accountName || accountName === 'Account' || accountName === 'Total') return null;
-  
+  if (!rawName || rawName === 'Account' || rawName === 'Total') return null;
+
+  // Many QB TB exports collapse "acctNum name" into colData[0].value
+  // (e.g. "1005 Cash", "4000 RETAIL:z_Shopify Sales"). Split them apart so
+  // downstream COA matching by accountNumber and clean leaf-name lookups work.
+  const leadingNum = extractLeadingAccountNumber(rawName);
+  const accountNumber = leadingNum || '';
+  const accountName = leadingNum
+    ? rawName.replace(/^\d{4,5}\s*[-:]?\s*/, '').trim() || rawName
+    : rawName;
+
+  // colData[0].id in the qbToJson TB feed is a row-sequence (3, 4, 5...),
+  // NOT the QB entity Id used in the CoA (200, 205, ...). Treating it as
+  // qbAccountId poisons the CoA match, so only keep it when it looks like a
+  // real QB entity Id (>= 4 digits, matching QB's numbering).
+  const qbAccountId = rawId && /^\d{4,}$/.test(rawId) ? rawId : '';
+
   const debit = parseFloat(debitStr.replace(/[^0-9.-]/g, '')) || 0;
   const credit = parseFloat(creditStr.replace(/[^0-9.-]/g, '')) || 0;
-  
+
   return {
-    accountNumber: '',          // Real COA number gets populated during crossReferenceWithCOA
-    accountName: accountName,
-    qbAccountId: qbAccountId,
-    debit: debit,
-    credit: credit,
-    balance: debit - credit
+    accountNumber,
+    accountName,
+    qbAccountId,
+    debit,
+    credit,
+    balance: debit - credit,
   };
 }
 
