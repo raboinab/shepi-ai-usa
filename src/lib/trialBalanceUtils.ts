@@ -670,14 +670,17 @@ export function crossReferenceWithCOA(
   // number → leaf name (with ambiguity handling).
   const coaByQbId = new Map<string, CoaAccount>();
   const coaByNumber = new Map<string, CoaAccount>();
+  const coaByFqn = new Map<string, CoaAccount>();
   const coaByName = new Map<string, CoaAccount>();         // unique leaf names only
   const coaByNameAll = new Map<string, CoaAccount[]>();    // includes ambiguous leaves
 
   coaAccounts.forEach(coa => {
     if (coa.accountId) coaByQbId.set(String(coa.accountId), coa);
     if (coa.accountNumber && !coa._autoNumbered) {
-      coaByNumber.set(coa.accountNumber, coa);
+      coaByNumber.set(String(coa.accountNumber), coa);
     }
+    const fqn = (coa as any).fullyQualifiedName as string | undefined;
+    if (fqn) coaByFqn.set(fqn.toLowerCase(), coa);
     if (coa.accountName) {
       const key = coa.accountName.toLowerCase();
       const list = coaByNameAll.get(key) || [];
@@ -694,16 +697,19 @@ export function crossReferenceWithCOA(
   let unmatched = 0;
   
   const enrichedAccounts = tbAccounts.map(tb => {
-    // 1. QB account Id (unique discriminator from raw QB feed)
-    // 2. Real COA account number (only if non-synthesized)
-    // 3. Exact leaf name (only if unambiguous)
-    // 4. Parent/child name fallbacks for "Parent:Child" leaves
+    // Last-resort: extract leading digits off the TB name in case the parser
+    // didn't populate accountNumber (legacy cached rows from before the fix).
+    const nameDigits = extractLeadingAccountNumber(tb.accountName || '');
+    const fqnLower = (tb.fullyQualifiedName || '').toLowerCase();
+
     const coaMatch =
       (tb.qbAccountId && coaByQbId.get(tb.qbAccountId)) ||
-      (tb.accountNumber && coaByNumber.get(tb.accountNumber)) ||
+      (tb.accountNumber && coaByNumber.get(String(tb.accountNumber))) ||
+      (fqnLower && coaByFqn.get(fqnLower)) ||
       (tb.accountName && coaByName.get(tb.accountName.toLowerCase())) ||
       (tb.accountName?.includes(':') && coaByName.get(tb.accountName.split(':')[0].trim().toLowerCase())) ||
-      (tb.accountName?.includes(':') && coaByName.get(tb.accountName.split(':').pop()!.trim().toLowerCase()));
+      (tb.accountName?.includes(':') && coaByName.get(tb.accountName.split(':').pop()!.trim().toLowerCase())) ||
+      (nameDigits && coaByNumber.get(nameDigits));
 
     
     if (coaMatch) {
