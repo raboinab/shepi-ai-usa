@@ -142,13 +142,36 @@ function findPeriod(dateStr: string, periods: Period[]): Period | undefined {
 function parseColDataRow(rawRow: any): any | null {
   const c = rawRow?.colData;
   if (!c || c.length < 3) return null;
-  const name = c[0]?.value || "";
+  const rawName = c[0]?.value || "";
   const qbId = c[0]?.id ? String(c[0].id) : "";
-  if (!name || name === "Account" || name === "Total") return null;
+  if (!rawName || rawName === "Account" || rawName === "Total") return null;
+
+  // Split "1005 Cash" / "4000 RETAIL:z_Shopify Sales" into number + name.
+  // For sub-accounts (name contains ":"), the leading number belongs to the
+  // *parent*, so drop it from accountNumber to prevent collapsing children
+  // into the parent CoA row. Keep the cleaned FQN as fullyQualifiedName so
+  // the CoA matcher can resolve the true leaf.
+  const leadingNum = extractLeadingAcctNum(rawName);
+  const cleanedName = leadingNum
+    ? rawName.replace(/^\d{4,5}\s*[-:]?\s*/, "").trim() || rawName
+    : rawName;
+  const isSubAccount = cleanedName.includes(":");
+  const accountNumber = isSubAccount ? "" : (leadingNum || "");
+  const fullyQualifiedName = isSubAccount ? cleanedName : undefined;
+
   const debit = parseFloat(String(c[1]?.value ?? "0").replace(/[^0-9.-]/g,"")) || 0;
   const credit = parseFloat(String(c[2]?.value ?? "0").replace(/[^0-9.-]/g,"")) || 0;
-  return { accountNumber: "", accountName: name, qbAccountId: qbId, debit, credit, balance: debit - credit };
+  return {
+    accountNumber,
+    accountName: cleanedName,
+    fullyQualifiedName,
+    qbAccountId: qbId,
+    debit,
+    credit,
+    balance: debit - credit,
+  };
 }
+
 
 function processRows(rows: any[], periodId: string, accountMap: Map<string, TBAccount>) {
   for (const row of rows) {
