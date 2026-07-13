@@ -100,6 +100,13 @@ function getPeriodKeysInRange(
  * Classify a BS account. Account-name overrides catch common GL-derivation errors
  * (e.g. "Accounts Payable" mis-typed as "Other current assets" by upstream parsers).
  */
+function leadingAccountNumber(name: string): number | null {
+  const m = (name || "").trim().match(/^(\d{4,5})\b/);
+  if (!m) return null;
+  const n = parseInt(m[1], 10);
+  return Number.isFinite(n) ? n : null;
+}
+
 function classifyBSAccount(accountName: string, accountType: string): 'asset' | 'liability' | 'equity' | null {
   const name = (accountName || '').toLowerCase();
   const type = (accountType || '').toLowerCase();
@@ -116,6 +123,15 @@ function classifyBSAccount(accountName: string, accountType: string): 'asset' | 
   if (type.includes('liabilit') || type.includes('payable') || type.includes('credit card') || type.includes('loan') || type.includes('debt') || type.includes('accrued') || type.includes('deferred revenue') || type.includes('notes payable')) return 'liability';
   if (type.includes('asset') || type.includes('bank') || type.includes('cash') || type.includes('receivable') || type.includes('inventory') || type.includes('prepaid') || type.includes('fixed') || type.includes('intangible')) return 'asset';
 
+  // Numeric-prefix fallback (1xxx=asset, 2xxx=liability, 3xxx=equity) — QB TB
+  // exports often collapse acctNum + name into accountName with no type column.
+  const num = leadingAccountNumber(accountName);
+  if (num !== null) {
+    if (num >= 1000 && num < 2000) return 'asset';
+    if (num >= 2000 && num < 3000) return 'liability';
+    if (num >= 3000 && num < 4000) return 'equity';
+  }
+
   return null;
 }
 
@@ -123,7 +139,7 @@ function classifyISAccount(accountName: string, accountType: string): 'revenue' 
   const name = (accountName || '').toLowerCase();
   const type = (accountType || '').toLowerCase();
 
-  if (type.includes('cost of goods') || type.includes('cogs') || type.includes('cost of sales') || name.includes('cost of goods') || name.includes('cost of sales')) return 'cogs';
+  if (type.includes('cost of goods') || type.includes('cogs') || type.includes('cost of sales') || name.includes('cost of goods') || name.includes('cost of sales') || name.includes('cogs')) return 'cogs';
 
   // Name-based hard overrides for below-the-line items (catches QB's combined "Other expense (income)" type)
   if (name.includes('interest income') || name.includes('interest earned') || name.includes('dividend income') || name.includes('gain on') || name.includes('portfolio income')) return 'other_income';
@@ -137,6 +153,18 @@ function classifyISAccount(accountName: string, accountType: string): 'revenue' 
   if (type.includes('other expense')) return 'other_expense';
   if (type.includes('income') || type.includes('revenue') || type.includes('sales')) return 'revenue';
   if (type.includes('expense')) return 'expense';
+
+  // Numeric-prefix fallback (4xxx=revenue, 5xxx=cogs, 6xxx-9xxx=expense) —
+  // used when accountType is blank because acctNum was folded into accountName.
+  const num = leadingAccountNumber(accountName);
+  if (num !== null) {
+    if (num >= 4000 && num < 5000) return 'revenue';
+    if (num >= 5000 && num < 6000) return 'cogs';
+    if (num >= 6000 && num < 10000) return 'expense';
+  }
+
+  // Name-keyword fallback for statements without account numbers.
+  if (/\b(sales|revenue|income|fees earned|service income)\b/.test(name)) return 'revenue';
 
   return 'expense';
 }

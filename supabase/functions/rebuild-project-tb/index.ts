@@ -33,13 +33,20 @@ const BS_HINTS = [
 function inferFromAccountNumber(raw: string): FsType | null {
   const s = (raw || "").trim();
   if (!s) return null;
-  const m = s.match(/^(\d{4,5})/);
+  const m = s.match(/^(\d{4,5})\b/);
   if (!m) return null;
   const n = parseInt(m[1], 10);
   if (!Number.isFinite(n)) return null;
   if (n >= 1000 && n < 4000) return "BS";
   if (n >= 4000 && n < 10000) return "IS";
   return null;
+}
+
+function extractLeadingAcctNum(name: string | null | undefined): string | null {
+  const s = (name || "").trim();
+  if (!s) return null;
+  const m = s.match(/^(\d{4,5})\b/);
+  return m ? m[1] : null;
 }
 
 function inferFromName(name: string): FsType | null {
@@ -79,7 +86,10 @@ function inferFsType(input: {
     if (IS_HINTS.some((h) => meta.includes(h))) return "IS";
     if (BS_HINTS.some((h) => meta.includes(h))) return "BS";
   }
-  const fromNumber = inferFromAccountNumber(input.accountNumber || "");
+  const fromNumber =
+    inferFromAccountNumber(input.accountNumber || "") ||
+    inferFromAccountNumber(input.fullyQualifiedName || "") ||
+    inferFromAccountNumber(input.accountName || "");
   if (fromNumber) return fromNumber;
   const nameForInfer = input.fullyQualifiedName || input.accountName || "";
   const fromName = inferFromName(nameForInfer);
@@ -259,27 +269,79 @@ function normalizeClassification(c: string): string | undefined {
   return k in m ? m[k] : undefined;
 }
 
-function crossReferenceCOA(tb: TBAccount[], coa: any[]): { accounts: TBAccount[]; matched: number; unmatched: number } {
+/** Normalize a CoA row from either the client shape (accountName/accountNumber/accountId)
+ *  or the raw qbToJson shape (name/fullyQualifiedName/acctNum/id/accountType/classification/fsType). */
+function normalizeCoaRow(c: any): {
+  accountId?: string;
+  accountNumber?: string;
+  accountName?: string;
+  fullyQualifiedName?: string;
+  category?: string;
+  accountSubtype?: string;
+  classification?: string;
+  fsType?: FsType;
+  _autoNumbered?: boolean;
+} {
+  const accountId = c.accountId ?? c.id ?? c.qbAccountId;
+  const accountNumber = c.accountNumber ?? c.acctNum ?? c.acctnum ?? "";
+  const accountName = c.accountName ?? c.name ?? "";
+  const fullyQualifiedName = c.fullyQualifiedName ?? c.fqn ?? c.FullyQualifiedName ?? accountName;
+  const category = c.category ?? c.accountType ?? c.AccountType ?? "";
+  const accountSubtype = c.accountSubtype ?? c.accountSubType ?? c.AccountSubType ?? "";
+  const classification = c.classification ?? c.Classification ?? "";
+  const fsType = (c.fsType ?? c.fs) as FsType | undefined;
+  return {
+    accountId: accountId ? String(accountId) : undefined,
+    accountNumber: String(accountNumber || ""),
+    accountName: String(accountName || ""),
+    fullyQualifiedName: String(fullyQualifiedName || ""),
+    category: String(category || ""),
+    accountSubtype: String(accountSubtype || ""),
+    classification: String(classification || ""),
+    fsType,
+    _autoNumbered: !!c._autoNumbered,
+  };
+}
+
+function crossReferenceCOA(tb: TBAccount[], coaRaw: any[]): { accounts: TBAccount[]; matched: number; unmatched: number } {
+  const coa = coaRaw.map(normalizeCoaRow);
   const byQbId = new Map<string, any>();
   const byNumber = new Map<string, any>();
   const byNameAll = new Map<string, any[]>();
+  const byFqnAll = new Map<string, any[]>();
   for (const c of coa) {
-    if (c.accountId) byQbId.set(String(c.accountId), c);
+    if (c.accountId) byQbId.set(c.accountId, c);
     if (c.accountNumber && !c._autoNumbered) byNumber.set(c.accountNumber, c);
     if (c.accountName) {
       const k = c.accountName.toLowerCase();
       const list = byNameAll.get(k) || []; list.push(c); byNameAll.set(k, list);
     }
+    if (c.fullyQualifiedName) {
+      const k = c.fullyQualifiedName.toLowerCase();
+      const list = byFqnAll.get(k) || []; list.push(c); byFqnAll.set(k, list);
+    }
   }
   const byName = new Map<string, any>();
   for (const [k, list] of byNameAll) if (list.length === 1) byName.set(k, list[0]);
+  const byFqn = new Map<string, any>();
+  for (const [k, list] of byFqnAll) if (list.length === 1) byFqn.set(k, list[0]);
 
   let matched = 0, unmatched = 0;
   const out = tb.map((t) => {
+    // Extract "1025" from TB accountName like "1025 Fidelity Business Account"
+    // and the residual name "Fidelity Business Account" / "RETAIL:z_Shopify Sales".
+    const leadingNum = extractLeadingAcctNum(t.accountName);
+    const nameSansNum = leadingNum
+      ? (t.accountName || "").replace(/^\d{4,5}\s+/, "").trim()
+      : (t.accountName || "").trim();
+
     const m =
       (t.qbAccountId && byQbId.get(t.qbAccountId)) ||
       (t.accountNumber && byNumber.get(t.accountNumber)) ||
+      (leadingNum && byNumber.get(leadingNum)) ||
       (t.accountName && byName.get(t.accountName.toLowerCase())) ||
+      (nameSansNum && byName.get(nameSansNum.toLowerCase())) ||
+      (nameSansNum && byFqn.get(nameSansNum.toLowerCase())) ||
       (t.accountName?.includes(":") && byName.get(t.accountName.split(":")[0].trim().toLowerCase())) ||
       (t.accountName?.includes(":") && byName.get(t.accountName.split(":").pop()!.trim().toLowerCase()));
     if (m) {
@@ -287,8 +349,9 @@ function crossReferenceCOA(tb: TBAccount[], coa: any[]): { accounts: TBAccount[]
       const fsFromClass = m.classification ? normalizeClassification(m.classification) : undefined;
       return {
         ...t,
-        accountNumber: m.accountNumber || t.accountNumber,
-        fsType: m.fsType, accountType: m.category,
+        accountNumber: m.accountNumber || t.accountNumber || leadingNum || "",
+        fsType: (m.fsType as FsType) || t.fsType,
+        accountType: m.category || t.accountType,
         accountSubtype: m.accountSubtype || "",
         fsLineItem: t.fsLineItem || m.category || fsFromClass || undefined,
         _matchedFromCOA: true,
@@ -303,6 +366,9 @@ function crossReferenceCOA(tb: TBAccount[], coa: any[]): { accounts: TBAccount[]
     else if (/payroll|salary|wage|expense|cost|insurance|rent|utilities/.test(nl)) inferred = "Operating expenses";
     return {
       ...t,
+      // Backfill accountNumber from the "1025 Foo" style name so downstream
+      // classifiers (which key off numeric prefix) work even without a CoA hit.
+      ...(leadingNum && !t.accountNumber ? { accountNumber: leadingNum } : {}),
       ...(inferred && !t.fsLineItem ? { fsLineItem: inferred, fsType: "IS" as FsType } : {}),
       _matchedFromCOA: false,
     };
@@ -348,7 +414,34 @@ Deno.serve(async (req) => {
     }
     const periods: Period[] = Array.isArray(project.periods) ? project.periods as Period[] : [];
     const wizard: any = project.wizard_data || {};
-    const coaAccounts: any[] = wizard?.chartOfAccounts?.accounts || [];
+    let coaAccounts: any[] = wizard?.chartOfAccounts?.accounts || [];
+    let coaSource: "wizard_cache" | "processed_data" | "none" =
+      coaAccounts.length > 0 ? "wizard_cache" : "none";
+
+    // Fallback: pull raw Chart of Accounts from processed_data if the wizard
+    // cache is empty. QB uploads land here in native qbToJson shape
+    // (name/fullyQualifiedName/acctNum/classification/fsType); crossReferenceCOA
+    // normalizes both shapes.
+    if (coaAccounts.length === 0) {
+      const { data: coaRows } = await admin
+        .from("processed_data")
+        .select("data,created_at")
+        .eq("project_id", projectId)
+        .eq("data_type", "chart_of_accounts")
+        .order("created_at", { ascending: false })
+        .limit(1);
+      const row = (coaRows || [])[0]?.data as any;
+      const candidate =
+        (Array.isArray(row) && row) ||
+        (Array.isArray(row?.accounts) && row.accounts) ||
+        (Array.isArray(row?.chartOfAccounts) && row.chartOfAccounts) ||
+        (Array.isArray(row?.data) && row.data) ||
+        [];
+      if (candidate.length > 0) {
+        coaAccounts = candidate;
+        coaSource = "processed_data";
+      }
+    }
 
     // Load processed_data TB rows
     const { data: records, error: pdErr } = await admin
@@ -423,6 +516,7 @@ Deno.serve(async (req) => {
       total_records: records?.length || 0,
       periods: periods.length,
       coa_accounts: coaAccounts.length,
+      coa_source: coaSource,
       tb_accounts: merged.length,
       is_count: isCount,
       bs_count: bsCount,
