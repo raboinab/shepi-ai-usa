@@ -86,8 +86,8 @@ function getLatestPeriodKey(monthlyValues: Record<string, number>): string | nul
   const keys = Object.keys(monthlyValues).filter(k => monthlyValues[k] !== undefined);
   if (keys.length === 0) return null;
   // Period keys are typically like "2024-01", "2024-02", etc.
-  sortPeriodKeys(keys);
-  return keys[keys.length - 1];
+  const sorted = sortPeriodKeys(keys);
+  return sorted[sorted.length - 1];
 }
 
 /** Filter period keys that fall within a date range */
