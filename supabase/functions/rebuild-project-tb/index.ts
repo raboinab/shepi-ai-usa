@@ -414,7 +414,34 @@ Deno.serve(async (req) => {
     }
     const periods: Period[] = Array.isArray(project.periods) ? project.periods as Period[] : [];
     const wizard: any = project.wizard_data || {};
-    const coaAccounts: any[] = wizard?.chartOfAccounts?.accounts || [];
+    let coaAccounts: any[] = wizard?.chartOfAccounts?.accounts || [];
+    let coaSource: "wizard_cache" | "processed_data" | "none" =
+      coaAccounts.length > 0 ? "wizard_cache" : "none";
+
+    // Fallback: pull raw Chart of Accounts from processed_data if the wizard
+    // cache is empty. QB uploads land here in native qbToJson shape
+    // (name/fullyQualifiedName/acctNum/classification/fsType); crossReferenceCOA
+    // normalizes both shapes.
+    if (coaAccounts.length === 0) {
+      const { data: coaRows } = await admin
+        .from("processed_data")
+        .select("data,created_at")
+        .eq("project_id", projectId)
+        .eq("data_type", "chart_of_accounts")
+        .order("created_at", { ascending: false })
+        .limit(1);
+      const row = (coaRows || [])[0]?.data as any;
+      const candidate =
+        (Array.isArray(row) && row) ||
+        (Array.isArray(row?.accounts) && row.accounts) ||
+        (Array.isArray(row?.chartOfAccounts) && row.chartOfAccounts) ||
+        (Array.isArray(row?.data) && row.data) ||
+        [];
+      if (candidate.length > 0) {
+        coaAccounts = candidate;
+        coaSource = "processed_data";
+      }
+    }
 
     // Load processed_data TB rows
     const { data: records, error: pdErr } = await admin
