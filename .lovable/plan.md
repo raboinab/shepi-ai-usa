@@ -1,45 +1,55 @@
-## What's happening
 
-The wizard's TB cache (`wizard_data.trialBalance.accounts`) is empty, so the client re-loads the TB from `processed_data` on every render and runs its own `crossReferenceWithCOA` (client, in `src/lib/trialBalanceUtils.ts`). For this project that client-side match returns ~0 hits, so the TB shows as "unmapped" even though the server-side `rebuild-project-tb` I fixed last round matched 152/183.
+## Why Landscaping worked and VampireFreaks didn't
 
-Why the client match fails on VampireFreaks:
+Both projects load TB from the same `qbtojson` shape: each row's first `colData` cell is a string like `"1005 Cash"` (account number + name). The COA is also `qbtojson`, with each account having `id`, `name`, `acctNum`, and `fullyQualifiedName` (FQN).
 
-1. **TB rows carry the account number inside the name, not in `accountNumber`.** `parseColDataRow` reads `colData[0].value` (`"1005 Cash"`, `"1015 Wells Fargo Business Checking - 7179"`) and hard-codes `accountNumber: ''`. So `coaByNumber.get(tb.accountNumber)` is never even attempted.
-2. **`qbAccountId` on the TB side is not the QB entity Id.** `colData[0].id` in the qbToJson TB output is a row-sequence (`3`, `4`, `5`), but the CoA's `accountId` is the QB entity Id (`200`, `205`, …). They live in different namespaces, so `coaByQbId` never matches.
-3. **Name match fails** because TB names still contain the leading digits (`"1005 Cash"` ≠ CoA `"Cash"` / `"Suspense"`), and the "Parent:Child" fallback doesn't strip the number prefix either.
+The two datasets differ in three ways that all cut against VampireFreaks:
 
-Net result: `matched = 0`, `unmatched = 183`, everything falls to the heuristic bucketing and shows as "no COA mapping." This is the client-side twin of the bug I already fixed in the edge function last round — same root cause (`accountName = "{acctNum} {name}"`, `accountNumber = ""`), just in a second code path.
+**1. Landscaping's COA is flat; VampireFreaks' COA is hierarchical.**
+- Landscaping: 89 accounts, **0 with `acctNum`**, names are unique leaves like `"Cash"`, `"Checking"`. After the matcher strips the leading digits from `"1005 Cash"` → `"Cash"`, it hits the COA by **name**. Every TB row lands on a COA account.
+- VampireFreaks: 141 accounts, only 67 with `acctNum`. The revenue/COGS tree is nested — parents have numbers (`4000 RETAIL`, `5000 COGS-Shopify`), **children/grandchildren don't** (`z_Shopify Sales`, `T-Shirt COGS`, `Shopify Discounts`). TB rows for sub-accounts arrive as `"4000 RETAIL:z_Shopify Sales"` — the FQN with the *parent's* number prefixed. The current matcher:
+  - strips `"4000"` → sets `accountNumber="4000"` and cleans the name to `"RETAIL:z_Shopify Sales"`,
+  - looks up by that number in `coaByNumber` → hits **parent `RETAIL`** (also `acctNum=4000`),
+  - so every Shopify sub-account collapses into `RETAIL`, and the FQN map is only consulted as a fallback when no number match exists. Result: the largest revenue/COGS buckets never map to their real leaf accounts, and the P&L validator has nothing on the TB side to compare against.
+
+**2. Landscaping has a live QuickBooks connection; VampireFreaks doesn't.**
+- Landscaping has 14 `unified_api` monthly TB reports in `processed_data` alongside the qbtojson upload. When the wizard falls back to the API shape, IDs in TB (`AccountRef`) match the COA `id` field 1:1 — no name/number parsing required.
+- VampireFreaks has only the qbtojson upload, so name/number parsing is the only path.
+
+**3. `qbtojson` populated `fsType` on the COA correctly for both, but the TB fanout uses whichever COA rules first match.** With VampireFreaks' sub-accounts being merged into the parent, the classifier is judging inflated buckets, which is why Total Revenue and COGS still show as $0 on the TB side of the P&L validator even after the server rebuild reported 152 matches (those matches counted the parent hit, not the intended leaf).
 
 ## Fix
 
-All changes in `src/lib/trialBalanceUtils.ts` — no schema, no edge function, no data migration.
+Prefer FQN over number when the TB row's cleaned name contains a `:` (i.e. the row is a sub-account), and only fall back to number-only matching for leaves.
 
-### 1. Extract the leading account number during TB parse
-In `parseColDataRow`, after reading `colData[0].value`:
-- Use `extractLeadingAccountNumber` (already exported from `src/lib/inferFsType.ts`) to pull a 4–5 digit prefix off the name.
-- Populate `accountNumber` with that prefix when the QB feed doesn't supply one.
-- Strip the number from `accountName` for display (`"1005 Cash"` → `"Cash"`), preserve the raw string on a new `rawAccountName` field so we don't lose it for debugging.
-- Drop the misleading `qbAccountId` when `colData[0].id` is a bare row-sequence (`< 4` chars and numeric) — the CoA's `accountId` is a different Id space, and keeping it prevents the digit-prefix path from ever being tried.
+### `src/lib/trialBalanceUtils.ts` — parser
 
-### 2. Broaden `crossReferenceWithCOA` matching
-Same file, same function. Once step 1 populates `accountNumber`, `coaByNumber.get(tb.accountNumber)` already matches for the common case. Add these additional matchers, in order, before falling back to unmatched:
-- If TB has a `"Parent:Child"` name and neither leaf matched, try matching the parent name against the CoA `fullyQualifiedName` map.
-- Build a `coaByFqn` map keyed on `fullyQualifiedName.toLowerCase()` and try it after `coaByNumber` — some CoA rows share numbers but have unique FQNs.
-- Last-resort: pull leading digits off the TB name via `extractLeadingAccountNumber` and hit `coaByNumber` again, in case step 1 didn't fire (e.g. legacy cached rows).
+When splitting `"4000 RETAIL:z_Shopify Sales"`:
+- keep the extracted leading number as `parentAcctNum` (not `accountNumber`) when the remainder contains `:`,
+- set `accountName` = the remainder (`"RETAIL:z_Shopify Sales"`), and leave `accountNumber` unset for the child so it can't false-match to the parent.
 
-### 3. Force a client-side re-match after the change
-`loadTrialBalanceFromProcessedData` already accepts `forceCoaRebuild`. Call sites that read the TB for this project won't automatically re-run because rows have `_matchedFromCOA` cached as `false`. Set the default to `forceCoaRebuild: true` at the two call sites for one release (`src/components/wizard/sections/TrialBalanceSection.tsx` and `src/pages/Workbook.tsx`) so the enrichment recomputes with the new matcher; revert the default once we've verified the wizard cache is populating correctly.
+### `src/lib/trialBalanceUtils.ts` — `crossReferenceWithCOA`
 
-### 4. Verify on VampireFreaks
-Open `/project/621a6c9f-1c25-40fa-92fa-6762ae3fe72b` → Trial Balance. Expected after fix: ~150+ of 183 accounts show a green "COA matched" state, revenue/COGS/expense buckets populate, and re-running the P&L validation shows non-zero Revenue/COGS/Gross Profit on the TB side. Remaining unmatched should be genuine orphans (deleted accounts, journal-only entries) — I'll list them so you can decide whether to fold them back into the CoA.
+Reorder the resolution:
+1. If TB row has `qbAccountId` and it exists in `coaById` → use it.
+2. If `accountName` contains `:` → look up by **FQN** (case-insensitive, exact). If hit → use it.
+3. Else if `accountNumber` is set → look up by number.
+4. Else look up by leaf name (last segment after `:`), then full name.
+5. Last resort: leading-digit extraction (existing fallback).
 
-### Out of scope
-- Deeper fix in the `qbtojson` TB parser (it should emit `accountNumber` and `accountName` split) — that's the upstream culprit but affects every ingest and needs its own PR.
-- Backfilling `wizard_data.trialBalance.accounts` for existing projects. The client falls back to `processed_data` correctly; a wizard-cache warm can come after we're confident in the new matcher.
+Also index the COA by `fqn` lowercased and by leaf name (`name` = last `:` segment) so step 2 and step 4 are O(1).
 
-## Technical detail
+### `supabase/functions/rebuild-project-tb/index.ts`
 
-- Files touched: `src/lib/trialBalanceUtils.ts` (parse + match), `src/components/wizard/sections/TrialBalanceSection.tsx` and `src/pages/Workbook.tsx` (pass `forceCoaRebuild: true`).
-- No new dependencies, no DB migration, no edge-function redeploy.
-- `extractLeadingAccountNumber` already exists in `src/lib/inferFsType.ts` and handles both `"1005 Cash"` and `"1005-Cash"` / `"1005:Cash"` shapes.
-- The CoA for this project (`processed_data` id `ffcce17e-…`) has `accountNumber` populated as strings (`"1000"`, `"1025"`, …), so string equality against the extracted prefix will match without normalization.
+Mirror the same precedence inside `crossReferenceCOA` so the server-side rebuild reports honest match counts (today it reports 152 matches while children silently collapse into parents).
+
+### Verification
+
+- Re-run TB rebuild + P&L validation on `621a6c9f-…`. Expected: `Revenue`, `COGS`, `Gross Profit` populate on the TB side; validator match rate jumps from 0% to near-100%.
+- Re-run on `fa0768ca-…` (Landscaping) to confirm no regression — flat COA still resolves by name.
+- Spot-check that `z_Shopify Sales` and `T-Shirt COGS` map to their leaf COA rows, not `RETAIL`/`COGS-Shopify` parents.
+
+### Not in scope
+
+- Rewriting `qbtojson` output to emit the leaf `AccountRef.id` in TB `colData[0].id` (would remove the need for this reconciliation entirely, but requires changes to the external converter).
+- Changing how the P&L validator sums parents vs. children — that logic is already correct once the child rows are mapped.

@@ -365,10 +365,20 @@ function parseColDataRow(rawRow: QbRawRow): QbTrialBalanceRow | null {
   // (e.g. "1005 Cash", "4000 RETAIL:z_Shopify Sales"). Split them apart so
   // downstream COA matching by accountNumber and clean leaf-name lookups work.
   const leadingNum = extractLeadingAccountNumber(rawName);
-  const accountNumber = leadingNum || '';
-  const accountName = leadingNum
+  const cleanedName = leadingNum
     ? rawName.replace(/^\d{4,5}\s*[-:]?\s*/, '').trim() || rawName
     : rawName;
+
+  // Sub-account rows arrive as "<parentAcctNum> Parent:Child" (QB prefixes
+  // the *parent's* acctNum on the FQN). If we keep that number as the row's
+  // accountNumber, the CoA match by-number collides with the parent account
+  // and every sub-account collapses into its parent (Vampire Freaks bug:
+  // "4000 RETAIL:z_Shopify Sales" merged into "RETAIL"). Only trust the
+  // leading number when the cleaned name has no ":" — i.e. it's a true leaf.
+  const isSubAccount = cleanedName.includes(':');
+  const accountNumber = isSubAccount ? '' : (leadingNum || '');
+  const accountName = cleanedName;
+  const fullyQualifiedName = isSubAccount ? cleanedName : undefined;
 
   // colData[0].id in the qbToJson TB feed is a row-sequence (3, 4, 5...),
   // NOT the QB entity Id used in the CoA (200, 205, ...). Treating it as
@@ -382,12 +392,14 @@ function parseColDataRow(rawRow: QbRawRow): QbTrialBalanceRow | null {
   return {
     accountNumber,
     accountName,
+    fullyQualifiedName,
     qbAccountId,
     debit,
     credit,
     balance: debit - credit,
   };
 }
+
 
 // Transform qbToJson trial balance data to TrialBalanceAccount[]
 export function transformQbTrialBalanceData(
@@ -701,15 +713,22 @@ export function crossReferenceWithCOA(
     // didn't populate accountNumber (legacy cached rows from before the fix).
     const nameDigits = extractLeadingAccountNumber(tb.accountName || '');
     const fqnLower = (tb.fullyQualifiedName || '').toLowerCase();
+    const nameLower = (tb.accountName || '').toLowerCase();
+    // TB accountName can itself be the FQN (e.g. "RETAIL:z_Shopify Sales")
+    // when the parser stripped the parent's acctNum prefix. Prefer FQN over
+    // number lookup for sub-accounts so children don't collapse into parents.
+    const nameAsFqn = nameLower.includes(':') ? nameLower : '';
 
     const coaMatch =
       (tb.qbAccountId && coaByQbId.get(tb.qbAccountId)) ||
-      (tb.accountNumber && coaByNumber.get(String(tb.accountNumber))) ||
       (fqnLower && coaByFqn.get(fqnLower)) ||
-      (tb.accountName && coaByName.get(tb.accountName.toLowerCase())) ||
-      (tb.accountName?.includes(':') && coaByName.get(tb.accountName.split(':')[0].trim().toLowerCase())) ||
+      (nameAsFqn && coaByFqn.get(nameAsFqn)) ||
+      (tb.accountNumber && coaByNumber.get(String(tb.accountNumber))) ||
+      (nameLower && coaByName.get(nameLower)) ||
       (tb.accountName?.includes(':') && coaByName.get(tb.accountName.split(':').pop()!.trim().toLowerCase())) ||
+      (tb.accountName?.includes(':') && coaByName.get(tb.accountName.split(':')[0].trim().toLowerCase())) ||
       (nameDigits && coaByNumber.get(nameDigits));
+
 
     
     if (coaMatch) {
