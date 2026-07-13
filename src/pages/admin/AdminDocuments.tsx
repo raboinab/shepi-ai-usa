@@ -58,21 +58,28 @@ export default function AdminDocuments() {
     enabled: !!selectedProjectId,
   });
 
+  const triggerBlobDownload = (blob: Blob, fileName: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
   const handleDownload = async (filePath: string, fileName: string) => {
     setDownloading(filePath);
     try {
       const { data, error } = await supabase.storage
         .from('documents')
-        .createSignedUrl(filePath, 3600);
+        .download(filePath);
       if (error) throw error;
-      if (!data?.signedUrl) throw new Error('No signed URL returned');
-
-      const a = document.createElement('a');
-      a.href = data.signedUrl;
-      a.download = fileName;
-      a.target = '_blank';
-      a.click();
+      if (!data) throw new Error('No file returned');
+      triggerBlobDownload(data, fileName);
     } catch (err: any) {
+      console.error('Download failed', filePath, err);
       toast.error(`Download failed: ${err.message}`);
     } finally {
       setDownloading(null);
@@ -83,46 +90,72 @@ export default function AdminDocuments() {
     if (!documents?.length) return;
     setDownloadingAll(true);
     const zip = new JSZip();
+    const failures: string[] = [];
     let added = 0;
+    let completed = 0;
 
-    for (const doc of documents) {
-      try {
-        setDownloadProgress(`Fetching ${added + 1} / ${documents.length}…`);
-        const { data, error } = await supabase.storage
-          .from('documents')
-          .createSignedUrl(doc.file_path, 3600);
-        if (error || !data?.signedUrl) continue;
+    const CONCURRENCY = 5;
+    const queue = [...documents];
 
-        const resp = await fetch(data.signedUrl);
-        if (!resp.ok) continue;
-        const blob = await resp.blob();
-        zip.file(doc.name, blob);
-        added++;
-      } catch {
-        // continue to next
+    const worker = async () => {
+      while (queue.length) {
+        const doc = queue.shift();
+        if (!doc) break;
+        try {
+          const { data, error } = await supabase.storage
+            .from('documents')
+            .download(doc.file_path);
+          if (error || !data) {
+            failures.push(doc.name);
+          } else {
+            // dedupe names inside zip
+            let entryName = doc.name;
+            let i = 1;
+            while (zip.file(entryName)) {
+              const dot = doc.name.lastIndexOf('.');
+              entryName = dot > 0
+                ? `${doc.name.slice(0, dot)} (${i})${doc.name.slice(dot)}`
+                : `${doc.name} (${i})`;
+              i++;
+            }
+            zip.file(entryName, data);
+            added++;
+          }
+        } catch (err) {
+          console.error('Zip fetch failed', doc.file_path, err);
+          failures.push(doc.name);
+        } finally {
+          completed++;
+          setDownloadProgress(`Fetching ${completed} / ${documents.length}…`);
+        }
       }
-    }
+    };
 
-    if (added === 0) {
-      toast.error('No files could be downloaded');
+    try {
+      await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+
+      if (added === 0) {
+        toast.error('No files could be downloaded');
+        return;
+      }
+
+      setDownloadProgress('Creating zip…');
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const projectName = projects?.find(p => p.id === selectedProjectId)?.name || 'documents';
+      triggerBlobDownload(zipBlob, `${projectName}-documents.zip`);
+
+      if (failures.length) {
+        toast.warning(`Zipped ${added} of ${documents.length}. Failed: ${failures.slice(0, 3).join(', ')}${failures.length > 3 ? '…' : ''}`);
+      } else {
+        toast.success(`Zipped ${added} files`);
+      }
+    } catch (err: any) {
+      console.error('Download all failed', err);
+      toast.error(`Download all failed: ${err.message}`);
+    } finally {
       setDownloadingAll(false);
       setDownloadProgress('');
-      return;
     }
-
-    setDownloadProgress('Creating zip…');
-    const zipBlob = await zip.generateAsync({ type: 'blob' });
-    const url = URL.createObjectURL(zipBlob);
-    const a = document.createElement('a');
-    a.href = url;
-    const projectName = projects?.find(p => p.id === selectedProjectId)?.name || 'documents';
-    a.download = `${projectName}-documents.zip`;
-    a.click();
-    URL.revokeObjectURL(url);
-
-    toast.success(`Zipped ${added} of ${documents.length} files`);
-    setDownloadingAll(false);
-    setDownloadProgress('');
   };
 
   const formatCategory = (doc: any) => {
