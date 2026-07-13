@@ -36,11 +36,14 @@ const BS_HINTS = [
   "equity",
 ];
 
-/** Numeric prefix (e.g. "4000-Sales", "5000 COGS", "1200:Cash") → fsType. */
+/** Numeric prefix (e.g. "4000-Sales", "5000 COGS", "1200:Cash") → fsType.
+ *  Accepts either a bare number or a name that starts with the number
+ *  (e.g. "1025 Fidelity Business Account", "4000 RETAIL:z_Shopify Sales") —
+ *  many QB TB exports collapse acctNum + name into a single field. */
 function inferFromAccountNumber(raw: string): FsType | null {
   const s = (raw || "").trim();
   if (!s) return null;
-  const m = s.match(/^(\d{4,5})/);
+  const m = s.match(/^(\d{4,5})\b/);
   if (!m) return null;
   const n = parseInt(m[1], 10);
   if (!Number.isFinite(n)) return null;
@@ -50,6 +53,14 @@ function inferFromAccountNumber(raw: string): FsType | null {
   if (n >= 1000 && n < 4000) return "BS";
   if (n >= 4000 && n < 10000) return "IS";
   return null;
+}
+
+/** Extract a leading account-number prefix from a "1025 Foo" / "4000 RETAIL:..." style name. */
+export function extractLeadingAccountNumber(name: string | null | undefined): string | null {
+  const s = (name || "").trim();
+  if (!s) return null;
+  const m = s.match(/^(\d{4,5})\b/);
+  return m ? m[1] : null;
 }
 
 /** Broad name-based keyword classifier. Runs after account-number and QB metadata checks. */
