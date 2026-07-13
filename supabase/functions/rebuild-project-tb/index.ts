@@ -33,13 +33,20 @@ const BS_HINTS = [
 function inferFromAccountNumber(raw: string): FsType | null {
   const s = (raw || "").trim();
   if (!s) return null;
-  const m = s.match(/^(\d{4,5})/);
+  const m = s.match(/^(\d{4,5})\b/);
   if (!m) return null;
   const n = parseInt(m[1], 10);
   if (!Number.isFinite(n)) return null;
   if (n >= 1000 && n < 4000) return "BS";
   if (n >= 4000 && n < 10000) return "IS";
   return null;
+}
+
+function extractLeadingAcctNum(name: string | null | undefined): string | null {
+  const s = (name || "").trim();
+  if (!s) return null;
+  const m = s.match(/^(\d{4,5})\b/);
+  return m ? m[1] : null;
 }
 
 function inferFromName(name: string): FsType | null {
