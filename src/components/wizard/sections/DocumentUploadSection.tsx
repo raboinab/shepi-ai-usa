@@ -45,6 +45,8 @@ import { AnalysisRunButton } from "./AnalysisRunButton";
 import { DocumentValidationDialog, type ValidationResult } from "../shared/DocumentValidationDialog";
 import { DocumentChecklistReference } from "../shared/DocumentChecklistReference";
 import { FinancialStatementValidationCard, type FinancialStatementValidationResult } from "../shared/FinancialStatementValidationCard";
+import { RerunFinancialStatementButton } from "../shared/RerunFinancialStatementButton";
+import type { FinancialStatementDocType } from "@/hooks/useRerunFinancialStatement";
 import { Spinner } from "@/components/ui/spinner";
 import { getUploadErrorMessage, logUploadError } from "@/lib/uploadErrorLogger";
 import { resetDocumentArtifacts, describeReset } from "@/lib/documentReset";
@@ -292,6 +294,8 @@ const DOC_TYPE_GROUPS = [
 const FS_PERIOD_TYPES = ['balance_sheet', 'income_statement', 'cash_flow'] as const;
 const isFsPeriodType = (t: string | null | undefined) =>
   !!t && (FS_PERIOD_TYPES as readonly string[]).includes(t);
+const isFinancialStatementDocType = (t: string | null | undefined): t is FinancialStatementDocType =>
+  isFsPeriodType(t);
 
 
 // Coverage configuration by document type
