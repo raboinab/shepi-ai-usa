@@ -449,11 +449,11 @@ export const WizardContent = ({
 
       // Phase 5: Reports (expanded with all spreadsheet tabs)
       case "5-1":
-        return <IncomeStatementSection data={getReportData("incomeStatement")} periods={periods} fiscalYearEnd={fiscalYearEnd} dealData={dealData} />;
+        return <IncomeStatementSection data={getReportData("incomeStatement")} periods={periods} fiscalYearEnd={fiscalYearEnd} dealData={dealData} projectId={project.id} />;
       case "5-2":
         return <GenericReportSection title="Income Statement - Detailed" description="Detailed income statement with account-level breakdown" data={getReportData("incomeStatementDetailed")} dealData={dealData} reportType="incomeStatementDetailed" />;
       case "5-3":
-        return <BalanceSheetSection data={getReportData("balanceSheet")} periods={periods} fiscalYearEnd={fiscalYearEnd} dealData={dealData} />;
+        return <BalanceSheetSection data={getReportData("balanceSheet")} periods={periods} fiscalYearEnd={fiscalYearEnd} dealData={dealData} projectId={project.id} />;
       case "5-4":
         return <GenericReportSection title="Balance Sheet - Detailed" description="Detailed balance sheet with account-level breakdown" data={getReportData("balanceSheetDetailed")} dealData={dealData} reportType="balanceSheetDetailed" />;
       
