@@ -110,7 +110,11 @@ export function inferFsType(input: {
     if (BS_HINTS.some((h) => meta.includes(h))) return "BS";
   }
 
-  const fromNumber = inferFromAccountNumber(input.accountNumber || "");
+  const fromNumber =
+    inferFromAccountNumber(input.accountNumber || "") ||
+    // Fallback: QB TB exports often collapse acctNum + name into accountName.
+    inferFromAccountNumber(input.fullyQualifiedName || "") ||
+    inferFromAccountNumber(input.accountName || "");
   if (fromNumber) return fromNumber;
 
   const nameForInfer = input.fullyQualifiedName || input.accountName || "";
