@@ -713,15 +713,22 @@ export function crossReferenceWithCOA(
     // didn't populate accountNumber (legacy cached rows from before the fix).
     const nameDigits = extractLeadingAccountNumber(tb.accountName || '');
     const fqnLower = (tb.fullyQualifiedName || '').toLowerCase();
+    const nameLower = (tb.accountName || '').toLowerCase();
+    // TB accountName can itself be the FQN (e.g. "RETAIL:z_Shopify Sales")
+    // when the parser stripped the parent's acctNum prefix. Prefer FQN over
+    // number lookup for sub-accounts so children don't collapse into parents.
+    const nameAsFqn = nameLower.includes(':') ? nameLower : '';
 
     const coaMatch =
       (tb.qbAccountId && coaByQbId.get(tb.qbAccountId)) ||
-      (tb.accountNumber && coaByNumber.get(String(tb.accountNumber))) ||
       (fqnLower && coaByFqn.get(fqnLower)) ||
-      (tb.accountName && coaByName.get(tb.accountName.toLowerCase())) ||
-      (tb.accountName?.includes(':') && coaByName.get(tb.accountName.split(':')[0].trim().toLowerCase())) ||
+      (nameAsFqn && coaByFqn.get(nameAsFqn)) ||
+      (tb.accountNumber && coaByNumber.get(String(tb.accountNumber))) ||
+      (nameLower && coaByName.get(nameLower)) ||
       (tb.accountName?.includes(':') && coaByName.get(tb.accountName.split(':').pop()!.trim().toLowerCase())) ||
+      (tb.accountName?.includes(':') && coaByName.get(tb.accountName.split(':')[0].trim().toLowerCase())) ||
       (nameDigits && coaByNumber.get(nameDigits));
+
 
     
     if (coaMatch) {
