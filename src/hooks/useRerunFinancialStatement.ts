@@ -53,7 +53,7 @@ export function useRerunFinancialStatement({
       // Find the most recent document of this type
       const { data: docs, error: docErr } = await supabase
         .from("documents")
-        .select("id, period_start, period_end, storage_path, file_name")
+        .select("id, period_start, period_end, file_name")
         .eq("project_id", projectId)
         .eq("account_type", docType)
         .order("created_at", { ascending: false })
