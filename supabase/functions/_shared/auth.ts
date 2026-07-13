@@ -59,7 +59,14 @@ export async function requireProjectAccess(
     _project_id: projectId,
   });
   if (error || data !== true) {
-    return { ok: false, response: jsonError(403, "Forbidden") };
+    // Fallback: allow platform admins regardless of ownership/share rows.
+    const { data: isAdmin } = await admin.rpc("has_role", {
+      _user_id: auth.user.id,
+      _role: "admin",
+    });
+    if (isAdmin !== true) {
+      return { ok: false, response: jsonError(403, "Forbidden") };
+    }
   }
   return auth;
 }
