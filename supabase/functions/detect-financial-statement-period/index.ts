@@ -98,9 +98,9 @@ function detectByRegex(text: string, accountType?: string, headerText?: string):
   }
 
   // 6b. Balance Sheet: scan HEADER region for bare column-header dates like
-  // "May 31, 2026", "May 31 2025", "12/31/2024". Comparative BS often only
-  // prefixes the FIRST column with "As of", so subsequent columns are missed
-  // by the "as of" regex above.
+  // "May 31, 2026", "May 31 2025", "12/31/2024", or ISO "2026-05-31".
+  // Comparative BS often only prefixes the FIRST column with "As of", so
+  // subsequent columns are missed by the "as of" regex above.
   if (accountType === "balance_sheet" && headerText) {
     const h = headerText.replace(/\s+/g, " ");
     for (const m of h.matchAll(/\b([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})\b/g)) {
@@ -112,6 +112,28 @@ function detectByRegex(text: string, accountType?: string, headerText?: string):
       const mo = parseInt(m[1], 10); const y = parseInt(m[3], 10);
       if (mo < 1 || mo > 12 || y < 1990 || y > 2100) continue;
       pushRange(startOfMonth(y, mo), endOfMonth(y, mo), "bs header numeric date");
+    }
+    for (const m of h.matchAll(/\b(\d{4})-(\d{2})-(\d{2})\b/g)) {
+      const y = parseInt(m[1], 10); const mo = parseInt(m[2], 10);
+      if (y < 1990 || y > 2100 || mo < 1 || mo > 12) continue;
+      pushRange(startOfMonth(y, mo), endOfMonth(y, mo), "bs header iso date");
+    }
+  }
+
+  // 6c. Universal ISO date scan (IS/CF/BS): "2023-01-31", "2026-05-31" etc.
+  // XLSX headers with formatted date cells often stringify as ISO.
+  {
+    const isoDates: Array<{ y: number; m: number; d: number }> = [];
+    for (const m of t.matchAll(/\b(\d{4})-(\d{2})-(\d{2})\b/g)) {
+      const y = parseInt(m[1], 10); const mo = parseInt(m[2], 10); const d = parseInt(m[3], 10);
+      if (y < 1990 || y > 2100 || mo < 1 || mo > 12 || d < 1 || d > 31) continue;
+      isoDates.push({ y, m: mo, d });
+    }
+    if (isoDates.length >= 2) {
+      isoDates.sort((a, b) => a.y - b.y || a.m - b.m || a.d - b.d);
+      const first = isoDates[0];
+      const last = isoDates[isoDates.length - 1];
+      pushRange(startOfMonth(first.y, first.m), endOfMonth(last.y, last.m), `iso date columns (${isoDates.length})`);
     }
   }
 
@@ -167,20 +189,42 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
   }
 }
 
+function formatCell(v: unknown): string {
+  if (v === null || v === undefined || v === "") return "";
+  if (v instanceof Date) {
+    if (isNaN(v.getTime())) return "";
+    const y = v.getUTCFullYear();
+    const m = String(v.getUTCMonth() + 1).padStart(2, "0");
+    const d = String(v.getUTCDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  return String(v);
+}
+
 function extractXlsxText(bytes: Uint8Array): { text: string; header: string } {
   try {
-    const wb = XLSX.read(bytes, { type: "array" });
+    // cellDates: true → Date cells come through as JS Date objects instead of
+    // raw Excel serial numbers, which we then format as ISO YYYY-MM-DD.
+    const wb = XLSX.read(bytes, { type: "array", cellDates: true });
     const chunks: string[] = [];
     const headerChunks: string[] = [];
-    // Scan every sheet — comparative periods often live across sheets or in the header of each.
     for (const name of wb.SheetNames) {
       const sheet = wb.Sheets[name];
       if (!sheet) continue;
-      const rows = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, blankrows: false });
+      const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+        header: 1, blankrows: false, raw: true,
+      });
       chunks.push(`# ${name}`);
-      chunks.push(rows.slice(0, 60).map((r) => (Array.isArray(r) ? r.join(" ") : "")).join("\n"));
-      // Header region — first 15 rows only, used for BS bare-date detection.
-      headerChunks.push(rows.slice(0, 15).map((r) => (Array.isArray(r) ? r.join(" ") : "")).join("\n"));
+      chunks.push(
+        rows.slice(0, 60)
+          .map((r) => (Array.isArray(r) ? r.map(formatCell).join(" ") : ""))
+          .join("\n"),
+      );
+      headerChunks.push(
+        rows.slice(0, 15)
+          .map((r) => (Array.isArray(r) ? r.map(formatCell).join(" ") : ""))
+          .join("\n"),
+      );
     }
     return { text: chunks.join("\n"), header: headerChunks.join("\n") };
   } catch (e) {
