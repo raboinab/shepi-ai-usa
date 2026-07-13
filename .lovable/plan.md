@@ -1,30 +1,52 @@
+## Problem
+
+Journal Entries, General Ledger, and Proof of Cash all have visible "Re-run analysis" buttons in the wizard. The three financial statement sections — **Balance Sheet**, **Income Statement**, and **Cash Flow** (and the combined Financial Reports view) — do not. Today the only way to re-trigger `process-statement` / `detect-financial-statement-period` / `validate-financial-statement` for those docs is to scroll back to Document Upload and click a small per-document button (or re-upload the file).
+
 ## Goal
 
-Confirm the TB → P&L fix works on project `621a6c9f-1c25-40fa-92fa-6762ae3fe72b` without waiting on James to reopen it. Warm the cache server-side, then verify the numbers.
+Add a "Re-run analysis" control on each of the BS / IS / CF report pages that re-processes the uploaded document(s) for that statement type and refreshes the on-page data, matching the UX pattern already used for JE and GL.
 
-## Current state
+## Scope
 
-- Fix is live: `src/lib/inferFsType.ts` + updated `chartOfAccountsUtils.ts` / `trialBalanceUtils.ts` classify accounts by QB metadata → account-number prefix → name keywords (no more blind `fsType: "BS"` default).
-- Project's `wizard_data.trialBalance.accounts` is currently `[]` (cleared last turn).
-- `processed_data` has 41 monthly TB rows (Jan 2023 → May 2026, source `qbtojson`), untouched.
+**In:**
+- Add a re-run button on `BalanceSheetSection`, `IncomeStatementSection`, and the Cash Flow tab of `FinancialReportsSection`.
+- Button re-invokes the existing pipeline for the latest uploaded document of that type:
+  1. `process-statement` (re-extract)
+  2. `detect-financial-statement-period` (re-tag periods)
+  3. `validate-financial-statement` (re-validate against Trial Balance)
+- After completion, refresh the section's data (reload deal data + validation results) and toast success/failure.
+- Empty state (no document uploaded yet): keep current "no data" card, add an inline hint pointing to Document Upload — no re-run button since there's nothing to re-run.
 
-## Plan
+**Out:**
+- No changes to the edge functions themselves.
+- No changes to the underlying calculation/grid logic.
+- No new admin/service-role path — uses the same user-auth invoke pattern as the existing per-document button.
 
-1. **Add a one-off admin edge function** `rebuild-project-tb` (service-role, admin-only) that:
-   - Loads `processed_data` TB rows for a given `project_id`.
-   - Runs the same `transformQbTrialBalanceData` + `inferFsType` pipeline used client-side (shared code imported from `_shared/`).
-   - Cross-references with the project's CoA (`wizard_data.chartOfAccounts.accounts`) using `crossReferenceWithCOA`.
-   - Writes the enriched array back to `wizard_data.trialBalance.accounts` with a fresh `lastUpdated` timestamp.
-2. **If the shared client helpers can't be cleanly imported into Deno**, port only the minimum needed (`inferFsType`, `transformQbTrialBalanceData`, `mergeAccounts`, `crossReferenceWithCOA`) into `supabase/functions/_shared/trial-balance/` and have both sides import from there. No behavior change on the client.
-3. **Invoke it once** for James's project via `supabase--curl_edge_functions`.
-4. **Verify via SQL**:
-   - `jsonb_array_length(wizard_data->'trialBalance'->'accounts')` is ~183.
-   - Count of accounts with `fsType = 'IS'` is > 0 and roughly matches the number of 4xxx/5xxx/6xxx-9xxx rows (expect ~80–120 IS out of 183).
-   - Spot-check that `z_Shopify Sales`, `T-Shirt Sales`, `5000 COGS-Shopify`, `5095 Shipping` are classified `IS` with categories Revenue / Cost of Goods Sold.
-5. **Run the P&L validator** the same way the UI does: call the existing `validate-financial-statement` edge function against James's uploaded `VampireFreaks_Profit and Loss.xlsx` document, using the freshly rebuilt TB. Log the match rate.
-6. **Report the numbers back to you** — TB account count, IS vs BS split, and P&L match rate before/after. If match rate is still 0%, capture the mismatch reasons (name-normalization gaps, period-alignment issues) and open a narrow follow-up plan for just that gap.
+## Implementation
 
-## Notes
+1. **Extract the re-run flow into a small hook** `src/hooks/useRerunFinancialStatement.ts`:
+   - Input: `projectId`, `docType` ('balance_sheet' | 'income_statement' | 'cash_flow')
+   - Looks up the latest `documents` row for that type
+   - Calls the 3 edge functions in sequence, with toast + loading state
+   - Exposes `{ rerun, running }` plus an optional `onComplete` callback for the caller to refresh local state.
 
-- No changes to any UI or client-side classification behavior — the client fix is already in place; this plan only warms the cache and measures the result.
-- The new edge function is admin-only and single-purpose; safe to keep around as an ops tool for future stuck projects, or delete after verification — your call.
+2. **Reuse `AnalysisRunButton`-style UI** — add a compact `<RerunFinancialStatementButton>` (top-right of the section header) that shows:
+   - `Re-run analysis` when a doc + data exist
+   - Disabled with tooltip "Upload a document first" when no doc exists
+
+3. **Wire into three sections:**
+   - `src/components/wizard/sections/BalanceSheetSection.tsx`
+   - `src/components/wizard/sections/IncomeStatementSection.tsx`
+   - `src/components/wizard/sections/FinancialReportsSection.tsx` (one button per tab: P&L, BS, CF)
+   
+   Each passes an `onComplete` that re-fetches deal data / validation results so the grid updates without a page reload.
+
+4. **No DB / migration / edge function changes.**
+
+## Files touched
+
+- `src/hooks/useRerunFinancialStatement.ts` (new)
+- `src/components/wizard/shared/RerunFinancialStatementButton.tsx` (new)
+- `src/components/wizard/sections/BalanceSheetSection.tsx`
+- `src/components/wizard/sections/IncomeStatementSection.tsx`
+- `src/components/wizard/sections/FinancialReportsSection.tsx`

@@ -2,12 +2,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TrendingUp, FileSpreadsheet, Wallet } from "lucide-react";
 import type { DealData } from "@/lib/workbook-types";
 import { WorkbookTabView } from "@/components/workbook/WorkbookTabView";
+import { RerunFinancialStatementButton } from "../shared/RerunFinancialStatementButton";
 
 interface FinancialReportsSectionProps {
   dealData: DealData | null;
+  projectId?: string;
 }
 
-export const FinancialReportsSection = ({ dealData }: FinancialReportsSectionProps) => {
+export const FinancialReportsSection = ({ dealData, projectId }: FinancialReportsSectionProps) => {
   return (
     <div className="space-y-6">
       <div>
@@ -31,15 +33,30 @@ export const FinancialReportsSection = ({ dealData }: FinancialReportsSectionPro
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="pl" className="mt-6">
+        <TabsContent value="pl" className="mt-6 space-y-4">
+          {projectId && (
+            <div className="flex justify-end">
+              <RerunFinancialStatementButton projectId={projectId} docType="income_statement" />
+            </div>
+          )}
           <WorkbookTabView tabId="income-statement" dealData={dealData} />
         </TabsContent>
 
-        <TabsContent value="bs" className="mt-6">
+        <TabsContent value="bs" className="mt-6 space-y-4">
+          {projectId && (
+            <div className="flex justify-end">
+              <RerunFinancialStatementButton projectId={projectId} docType="balance_sheet" />
+            </div>
+          )}
           <WorkbookTabView tabId="balance-sheet" dealData={dealData} />
         </TabsContent>
 
-        <TabsContent value="cf" className="mt-6">
+        <TabsContent value="cf" className="mt-6 space-y-4">
+          {projectId && (
+            <div className="flex justify-end">
+              <RerunFinancialStatementButton projectId={projectId} docType="cash_flow" />
+            </div>
+          )}
           <WorkbookTabView tabId="free-cash-flow" dealData={dealData} />
         </TabsContent>
       </Tabs>
