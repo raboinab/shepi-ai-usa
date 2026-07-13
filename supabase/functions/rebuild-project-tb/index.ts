@@ -516,6 +516,7 @@ Deno.serve(async (req) => {
       total_records: records?.length || 0,
       periods: periods.length,
       coa_accounts: coaAccounts.length,
+      coa_source: coaSource,
       tb_accounts: merged.length,
       is_count: isCount,
       bs_count: bsCount,
