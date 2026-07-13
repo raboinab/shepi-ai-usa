@@ -41,6 +41,10 @@ const RESET_MAP: Record<string, ResetSpec> = {
     processedDataTypes: ["balance_sheet"],
     wizardDataKeys: [],
   },
+  cash_flow: {
+    processedDataTypes: ["cash_flow"],
+    wizardDataKeys: [],
+  },
   tax_return: {
     processedDataTypes: ["tax_return_analysis"],
     wizardDataKeys: [],
@@ -62,6 +66,12 @@ export type DocumentLike = {
   account_type?: string | null;
 };
 
+const DOCUMENT_SCOPED_RESET_TYPES = new Set([
+  "balance_sheet",
+  "income_statement",
+  "cash_flow",
+]);
+
 /**
  * Fully reset a document and every artifact derived from it, so the user
  * can re-upload the same slot cleanly.
@@ -71,14 +81,20 @@ export type DocumentLike = {
  */
 export async function resetDocumentArtifacts(doc: DocumentLike): Promise<void> {
   const spec = doc.account_type ? RESET_MAP[doc.account_type] : undefined;
+  const documentScopedReset = doc.account_type
+    ? DOCUMENT_SCOPED_RESET_TYPES.has(doc.account_type)
+    : false;
 
-  // 1. processed_data — by source link AND by project+type for orphan rows
+  // 1. processed_data — always clear rows tied to this exact source document.
   await supabase
     .from("processed_data")
     .delete()
     .eq("source_document_id", doc.id);
 
-  if (spec && doc.project_id && spec.processedDataTypes.length > 0) {
+  // Source-of-truth uploads (TB/CoA/GL/etc.) can have project-level artifacts.
+  // Optional verification statements can be uploaded multiple times for the same
+  // period, so deleting one must not wipe same-type artifacts for its peers.
+  if (!documentScopedReset && spec && doc.project_id && spec.processedDataTypes.length > 0) {
     await supabase
       .from("processed_data")
       .delete()
@@ -158,9 +174,11 @@ export function describeReset(doc: DocumentLike): string {
       return "This will also clear the GL analysis and any transactions imported from this file.";
     case "profit_and_loss":
     case "income_statement":
-      return "This will also clear the parsed P&L for this period.";
+      return "This will also clear parsed data tied to this P&L document only.";
     case "balance_sheet":
-      return "This will also clear the parsed Balance Sheet for this period.";
+      return "This will also clear parsed data tied to this Balance Sheet document only.";
+    case "cash_flow":
+      return "This will also clear parsed data tied to this Cash Flow document only.";
     case "tax_return":
       return "This will also clear the tax return analysis derived from this document.";
     case "payroll":
