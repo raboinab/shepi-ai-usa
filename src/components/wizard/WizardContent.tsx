@@ -541,7 +541,7 @@ export const WizardContent = ({
       case "6-1":
         return <QoEExecutiveSummarySection dealData={dealData} wizardData={project.wizard_data as Record<string, unknown>} project={project} />;
       case "6-2":
-        return <FinancialReportsSection dealData={dealData} />;
+        return <FinancialReportsSection dealData={dealData} projectId={project.id} />;
       case "6-3":
         return <AnalysisReportsSection dealData={dealData} />;
       case "6-4":
