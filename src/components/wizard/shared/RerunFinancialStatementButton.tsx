@@ -15,16 +15,20 @@ import {
 interface RerunFinancialStatementButtonProps {
   projectId: string;
   docType: FinancialStatementDocType;
+  documentId?: string;
   onComplete?: () => void | Promise<void>;
+  compact?: boolean;
 }
 
 export const RerunFinancialStatementButton = ({
   projectId,
   docType,
+  documentId,
   onComplete,
+  compact = false,
 }: RerunFinancialStatementButtonProps) => {
   const { rerun, running, hasDocument, checkHasDocument } =
-    useRerunFinancialStatement({ projectId, docType, onComplete });
+    useRerunFinancialStatement({ projectId, docType, documentId, onComplete });
 
   useEffect(() => {
     if (projectId) checkHasDocument();
@@ -38,9 +42,10 @@ export const RerunFinancialStatementButton = ({
       size="sm"
       onClick={rerun}
       disabled={disabled}
+      className="gap-1"
     >
-      <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${running ? "animate-spin" : ""}`} />
-      {running ? "Re-running…" : "Re-run analysis"}
+      <RefreshCw className={`w-3.5 h-3.5 ${running ? "animate-spin" : ""}`} />
+      {running ? "Re-running…" : compact ? "Re-run" : "Re-run analysis"}
     </Button>
   );
 

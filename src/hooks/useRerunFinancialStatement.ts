@@ -16,6 +16,7 @@ const LABELS: Record<FinancialStatementDocType, string> = {
 interface UseRerunFinancialStatementOptions {
   projectId: string;
   docType: FinancialStatementDocType;
+  documentId?: string;
   onComplete?: () => void | Promise<void>;
 }
 
@@ -26,6 +27,7 @@ interface UseRerunFinancialStatementOptions {
 export function useRerunFinancialStatement({
   projectId,
   docType,
+  documentId,
   onComplete,
 }: UseRerunFinancialStatementOptions) {
   const [running, setRunning] = useState(false);
@@ -50,8 +52,22 @@ export function useRerunFinancialStatement({
     const label = LABELS[docType];
     const t = toast.loading(`Re-running ${label} analysis…`);
     try {
-      // Find the most recent document of this type
-      const { data: docs, error: docErr } = await supabase
+      let doc: { id: string; period_start: string | null; period_end: string | null } | null = null;
+
+      if (documentId) {
+        const { data: selectedDoc, error: selectedDocErr } = await supabase
+          .from("documents")
+          .select("id, period_start, period_end")
+          .eq("project_id", projectId)
+          .eq("account_type", docType)
+          .eq("id", documentId)
+          .maybeSingle();
+
+        if (selectedDocErr) throw selectedDocErr;
+        doc = selectedDoc;
+      } else {
+        // Find the most recent document of this type
+        const { data: docs, error: docErr } = await supabase
         .from("documents")
         .select("id, period_start, period_end")
         .eq("project_id", projectId)
@@ -59,13 +75,15 @@ export function useRerunFinancialStatement({
         .order("created_at", { ascending: false })
         .limit(1);
 
-      if (docErr) throw docErr;
-      if (!docs || docs.length === 0) {
+        if (docErr) throw docErr;
+        doc = docs?.[0] ?? null;
+      }
+
+      if (!doc) {
         toast.dismiss(t);
         toast.error(`No ${label} document uploaded yet`);
         return;
       }
-      const doc = docs[0];
 
       // 1) Re-extract
       const { error: procErr } = await supabase.functions.invoke("process-statement", {
@@ -127,7 +145,7 @@ export function useRerunFinancialStatement({
     } finally {
       setRunning(false);
     }
-  }, [projectId, docType, onComplete]);
+  }, [projectId, docType, documentId, onComplete]);
 
   return { rerun, running, hasDocument, checkHasDocument };
 }

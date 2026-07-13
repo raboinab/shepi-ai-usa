@@ -45,6 +45,8 @@ import { AnalysisRunButton } from "./AnalysisRunButton";
 import { DocumentValidationDialog, type ValidationResult } from "../shared/DocumentValidationDialog";
 import { DocumentChecklistReference } from "../shared/DocumentChecklistReference";
 import { FinancialStatementValidationCard, type FinancialStatementValidationResult } from "../shared/FinancialStatementValidationCard";
+import { RerunFinancialStatementButton } from "../shared/RerunFinancialStatementButton";
+import type { FinancialStatementDocType } from "@/hooks/useRerunFinancialStatement";
 import { Spinner } from "@/components/ui/spinner";
 import { getUploadErrorMessage, logUploadError } from "@/lib/uploadErrorLogger";
 import { resetDocumentArtifacts, describeReset } from "@/lib/documentReset";
@@ -292,6 +294,8 @@ const DOC_TYPE_GROUPS = [
 const FS_PERIOD_TYPES = ['balance_sheet', 'income_statement', 'cash_flow'] as const;
 const isFsPeriodType = (t: string | null | undefined) =>
   !!t && (FS_PERIOD_TYPES as readonly string[]).includes(t);
+const isFinancialStatementDocType = (t: string | null | undefined): t is FinancialStatementDocType =>
+  isFsPeriodType(t);
 
 
 // Coverage configuration by document type
@@ -546,6 +550,29 @@ export const DocumentUploadSection = ({
     [documents, selectedType]
   );
 
+  const duplicateDocumentIds = useMemo(() => {
+    const groups = new Map<string, string[]>();
+
+    for (const doc of documents) {
+      if (!isOptionalVerificationType(doc.account_type || "")) continue;
+
+      const key = [
+        doc.account_type,
+        doc.name.trim().toLowerCase(),
+        doc.period_start || "no-start",
+        doc.period_end || "no-end",
+      ].join("::");
+
+      groups.set(key, [...(groups.get(key) || []), doc.id]);
+    }
+
+    return new Set(
+      Array.from(groups.values())
+        .filter(ids => ids.length > 1)
+        .flat()
+    );
+  }, [documents]);
+
   // Merge uploaded docs with QB synced periods for unified coverage calculation
   const allCoverageSources = useMemo(() => {
     const uploadedDocs = documents
@@ -763,10 +790,13 @@ export const DocumentUploadSection = ({
         .limit(1000000);
 
       if (error) throw error;
-      setDocuments((docs || []).map(d => ({ ...d, validation_result: d.validation_result as unknown as FinancialStatementValidationResult | null })) as Document[]);
+      const normalizedDocs = (docs || []).map(d => ({ ...d, validation_result: d.validation_result as unknown as FinancialStatementValidationResult | null })) as Document[];
+      setDocuments(normalizedDocs);
+      return normalizedDocs;
     } catch (error) {
       console.error("Error fetching documents:", error);
       toast.error("Failed to load documents");
+      return [];
     } finally {
       setLoading(false);
     }
@@ -1824,6 +1854,9 @@ export const DocumentUploadSection = ({
       });
       toast.success("Document deleted — you can re-upload");
       setPendingDelete(null);
+      if (isFinancialStatementDocType(doc.account_type)) {
+        setFinancialValidationResults(prev => ({ ...prev, [doc.account_type]: null }));
+      }
       fetchDocuments();
     } catch (error) {
       console.error("Delete error:", error);
@@ -2341,7 +2374,7 @@ export const DocumentUploadSection = ({
             {/* Upload Form */}
             <Card>
               <CardHeader>
-                <div className="flex items-start justify-between">
+                <div className="flex items-start justify-between gap-4">
                   <div>
                     <CardTitle className="flex items-center gap-2">
                       Upload {type.label}
@@ -2361,6 +2394,13 @@ export const DocumentUploadSection = ({
                       }
                     </CardDescription>
                   </div>
+                  {isFinancialStatementDocType(type.value) && (
+                    <RerunFinancialStatementButton
+                      projectId={projectId}
+                      docType={type.value}
+                      onComplete={async () => { await fetchDocuments(); }}
+                    />
+                  )}
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -2650,6 +2690,11 @@ export const DocumentUploadSection = ({
                             <div className="flex items-center gap-2">
                               <FileText className="w-4 h-4 text-muted-foreground" />
                               {doc.name}
+                              {duplicateDocumentIds.has(doc.id) && (
+                                <Badge variant="outline" className="text-[10px] font-normal">
+                                  Duplicate
+                                </Badge>
+                              )}
                               {doc.account_type === 'general_ledger' && doc.parsed_summary?.coa_derived && (
                                 <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700 text-xs">
                                   COA Derived
@@ -2782,6 +2827,15 @@ export const DocumentUploadSection = ({
                                   )}
                                   Validate
                                 </Button>
+                              )}
+                              {isFinancialStatementDocType(doc.account_type) && doc.processing_status === 'completed' && (
+                                <RerunFinancialStatementButton
+                                  projectId={projectId}
+                                  docType={doc.account_type}
+                                  documentId={doc.id}
+                                  onComplete={async () => { await fetchDocuments(); }}
+                                  compact
+                                />
                               )}
                               {(doc.processing_status === 'failed' || isStuckProcessing(doc)) && (
                                 <Button
