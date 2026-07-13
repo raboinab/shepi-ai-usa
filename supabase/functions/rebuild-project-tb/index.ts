@@ -269,27 +269,79 @@ function normalizeClassification(c: string): string | undefined {
   return k in m ? m[k] : undefined;
 }
 
-function crossReferenceCOA(tb: TBAccount[], coa: any[]): { accounts: TBAccount[]; matched: number; unmatched: number } {
+/** Normalize a CoA row from either the client shape (accountName/accountNumber/accountId)
+ *  or the raw qbToJson shape (name/fullyQualifiedName/acctNum/id/accountType/classification/fsType). */
+function normalizeCoaRow(c: any): {
+  accountId?: string;
+  accountNumber?: string;
+  accountName?: string;
+  fullyQualifiedName?: string;
+  category?: string;
+  accountSubtype?: string;
+  classification?: string;
+  fsType?: FsType;
+  _autoNumbered?: boolean;
+} {
+  const accountId = c.accountId ?? c.id ?? c.qbAccountId;
+  const accountNumber = c.accountNumber ?? c.acctNum ?? c.acctnum ?? "";
+  const accountName = c.accountName ?? c.name ?? "";
+  const fullyQualifiedName = c.fullyQualifiedName ?? c.fqn ?? c.FullyQualifiedName ?? accountName;
+  const category = c.category ?? c.accountType ?? c.AccountType ?? "";
+  const accountSubtype = c.accountSubtype ?? c.accountSubType ?? c.AccountSubType ?? "";
+  const classification = c.classification ?? c.Classification ?? "";
+  const fsType = (c.fsType ?? c.fs) as FsType | undefined;
+  return {
+    accountId: accountId ? String(accountId) : undefined,
+    accountNumber: String(accountNumber || ""),
+    accountName: String(accountName || ""),
+    fullyQualifiedName: String(fullyQualifiedName || ""),
+    category: String(category || ""),
+    accountSubtype: String(accountSubtype || ""),
+    classification: String(classification || ""),
+    fsType,
+    _autoNumbered: !!c._autoNumbered,
+  };
+}
+
+function crossReferenceCOA(tb: TBAccount[], coaRaw: any[]): { accounts: TBAccount[]; matched: number; unmatched: number } {
+  const coa = coaRaw.map(normalizeCoaRow);
   const byQbId = new Map<string, any>();
   const byNumber = new Map<string, any>();
   const byNameAll = new Map<string, any[]>();
+  const byFqnAll = new Map<string, any[]>();
   for (const c of coa) {
-    if (c.accountId) byQbId.set(String(c.accountId), c);
+    if (c.accountId) byQbId.set(c.accountId, c);
     if (c.accountNumber && !c._autoNumbered) byNumber.set(c.accountNumber, c);
     if (c.accountName) {
       const k = c.accountName.toLowerCase();
       const list = byNameAll.get(k) || []; list.push(c); byNameAll.set(k, list);
     }
+    if (c.fullyQualifiedName) {
+      const k = c.fullyQualifiedName.toLowerCase();
+      const list = byFqnAll.get(k) || []; list.push(c); byFqnAll.set(k, list);
+    }
   }
   const byName = new Map<string, any>();
   for (const [k, list] of byNameAll) if (list.length === 1) byName.set(k, list[0]);
+  const byFqn = new Map<string, any>();
+  for (const [k, list] of byFqnAll) if (list.length === 1) byFqn.set(k, list[0]);
 
   let matched = 0, unmatched = 0;
   const out = tb.map((t) => {
+    // Extract "1025" from TB accountName like "1025 Fidelity Business Account"
+    // and the residual name "Fidelity Business Account" / "RETAIL:z_Shopify Sales".
+    const leadingNum = extractLeadingAcctNum(t.accountName);
+    const nameSansNum = leadingNum
+      ? (t.accountName || "").replace(/^\d{4,5}\s+/, "").trim()
+      : (t.accountName || "").trim();
+
     const m =
       (t.qbAccountId && byQbId.get(t.qbAccountId)) ||
       (t.accountNumber && byNumber.get(t.accountNumber)) ||
+      (leadingNum && byNumber.get(leadingNum)) ||
       (t.accountName && byName.get(t.accountName.toLowerCase())) ||
+      (nameSansNum && byName.get(nameSansNum.toLowerCase())) ||
+      (nameSansNum && byFqn.get(nameSansNum.toLowerCase())) ||
       (t.accountName?.includes(":") && byName.get(t.accountName.split(":")[0].trim().toLowerCase())) ||
       (t.accountName?.includes(":") && byName.get(t.accountName.split(":").pop()!.trim().toLowerCase()));
     if (m) {
@@ -297,8 +349,9 @@ function crossReferenceCOA(tb: TBAccount[], coa: any[]): { accounts: TBAccount[]
       const fsFromClass = m.classification ? normalizeClassification(m.classification) : undefined;
       return {
         ...t,
-        accountNumber: m.accountNumber || t.accountNumber,
-        fsType: m.fsType, accountType: m.category,
+        accountNumber: m.accountNumber || t.accountNumber || leadingNum || "",
+        fsType: (m.fsType as FsType) || t.fsType,
+        accountType: m.category || t.accountType,
         accountSubtype: m.accountSubtype || "",
         fsLineItem: t.fsLineItem || m.category || fsFromClass || undefined,
         _matchedFromCOA: true,
@@ -313,6 +366,9 @@ function crossReferenceCOA(tb: TBAccount[], coa: any[]): { accounts: TBAccount[]
     else if (/payroll|salary|wage|expense|cost|insurance|rent|utilities/.test(nl)) inferred = "Operating expenses";
     return {
       ...t,
+      // Backfill accountNumber from the "1025 Foo" style name so downstream
+      // classifiers (which key off numeric prefix) work even without a CoA hit.
+      ...(leadingNum && !t.accountNumber ? { accountNumber: leadingNum } : {}),
       ...(inferred && !t.fsLineItem ? { fsLineItem: inferred, fsType: "IS" as FsType } : {}),
       _matchedFromCOA: false,
     };
