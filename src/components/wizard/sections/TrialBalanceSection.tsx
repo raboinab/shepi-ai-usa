@@ -12,6 +12,7 @@ import { MultiPeriodTable } from "@/components/wizard/shared/MultiPeriodTable";
 import { TrialBalanceAccount, createEmptyAccount, transformQbTrialBalanceData, mergeAccounts, crossReferenceWithCOA } from "@/lib/trialBalanceUtils";
 import { Period } from "@/lib/periodUtils";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeQuickbooksProcessing } from "@/lib/invokeQuickbooksProcessing";
 import { isTBCacheIncomplete } from "@/lib/loadTrialBalanceFromProcessedData";
 import { CoaAccount } from "@/lib/chartOfAccountsUtils";
 import { CoreDataGuideBanner } from "@/components/wizard/shared/CoreDataGuideBanner";
@@ -585,8 +586,16 @@ export const TrialBalanceSection = ({
         if (docError) throw docError;
         uploadedDocIds.push(docData.id);
 
-        supabase.functions.invoke('process-quickbooks-file', {
-          body: { documentId: docData.id }
+        // Awaited so a failed invoke marks the doc 'failed' (surfacing Retry)
+        // instead of orphaning it at 'pending'.
+        invokeQuickbooksProcessing(docData.id).then((result) => {
+          if (!result.success) {
+            toast({
+              variant: "destructive",
+              title: "Processing failed",
+              description: `${file.name} could not be processed. Use Retry to try again.`,
+            });
+          }
         });
       }
 

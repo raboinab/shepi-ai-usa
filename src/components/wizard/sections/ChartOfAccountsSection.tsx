@@ -9,6 +9,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeQuickbooksProcessing } from "@/lib/invokeQuickbooksProcessing";
 import { CoaAccount, transformCoaData, mergeCoaAccounts, MergeResult } from "@/lib/chartOfAccountsUtils";
 import { DocumentValidationDialog, ValidationResult } from "../shared/DocumentValidationDialog";
 import { CoreDataGuideBanner } from "../shared/CoreDataGuideBanner";
@@ -591,9 +592,16 @@ export const ChartOfAccountsSection = ({ projectId, data, updateData, onAutoImpo
         if (docError) throw docError;
         uploadedDocIds.push(docData.id);
 
-        // Fire off processing (don't await)
-        supabase.functions.invoke('process-quickbooks-file', {
-          body: { documentId: docData.id }
+        // Kick off processing. Awaited so a failed invoke marks the doc 'failed'
+        // (surfacing Retry) instead of orphaning it at 'pending'.
+        invokeQuickbooksProcessing(docData.id).then((result) => {
+          if (!result.success) {
+            toast({
+              variant: "destructive",
+              title: "Processing failed",
+              description: `${file.name} could not be processed. Use Retry to try again.`,
+            });
+          }
         });
       }
 

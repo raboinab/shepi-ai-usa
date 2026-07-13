@@ -17,6 +17,7 @@ import { useCoaReadiness } from "@/hooks/useCoaReadiness";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeQuickbooksProcessing } from "@/lib/invokeQuickbooksProcessing";
 import { toast } from "sonner";
 import { 
   Period, 
@@ -1266,12 +1267,10 @@ export const DocumentUploadSection = ({
                 }
               }).catch((err) => console.warn("Fixed assets processing failed:", err));
             } else if (isQuickBooksType(docType)) {
-              supabase.functions.invoke('process-quickbooks-file', {
-                body: {
-                  documentId: insertedDoc.id,
-                },
-              }).catch((fnError) => {
-                console.warn("QuickBooks processing call failed:", fnError);
+              invokeQuickbooksProcessing(insertedDoc.id).then((result) => {
+                if (!result.success) {
+                  toast.error(`Failed to process ${file.name}. Use Retry to try again.`);
+                }
               });
 
               // Customer/Vendor Concentration QB exports also carry monthly columns.
@@ -1955,6 +1954,12 @@ export const DocumentUploadSection = ({
     }
     if (doc.processing_status === 'reprocessing') {
       return createdAt < Date.now() - 10 * 60 * 1000;
+    }
+    // A doc orphaned at 'pending' means the processing invoke never landed
+    // (e.g. a fire-and-forget call that silently rejected). Surface Retry after
+    // a few minutes so it isn't stuck forever with no way to recover.
+    if (doc.processing_status === 'pending') {
+      return createdAt < Date.now() - 3 * 60 * 1000;
     }
     if (doc.processing_status !== 'processing') return false;
     return createdAt < Date.now() - 10 * 60 * 1000;

@@ -554,20 +554,22 @@ serve(async (req) => {
     // 2. Check if qbToJson API is configured
     if (!qbToJsonApiUrl || !qbToJsonApiKey) {
       console.log("[process-quickbooks-file] qbToJson API not configured");
-      
+
+      // Mark as failed (never leave the document silently 'pending' — a stuck
+      // 'pending' doc spins the processing UI forever and can't be retried).
       await supabase
         .from('documents')
         .update({
-          processing_status: "pending",
+          processing_status: "failed",
           parsed_summary: { note: "qbToJson API not configured" }
         })
         .eq('id', documentId);
 
       return new Response(
-        JSON.stringify({ 
-          success: false, 
+        JSON.stringify({
+          success: false,
           error: "qbToJson API not configured",
-          documentId 
+          documentId
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
