@@ -2398,7 +2398,7 @@ export const DocumentUploadSection = ({
                     <RerunFinancialStatementButton
                       projectId={projectId}
                       docType={type.value}
-                      onComplete={fetchDocuments}
+                      onComplete={async () => { await fetchDocuments(); }}
                     />
                   )}
                 </div>
@@ -2833,7 +2833,7 @@ export const DocumentUploadSection = ({
                                   projectId={projectId}
                                   docType={doc.account_type}
                                   documentId={doc.id}
-                                  onComplete={fetchDocuments}
+                                  onComplete={async () => { await fetchDocuments(); }}
                                   compact
                                 />
                               )}
