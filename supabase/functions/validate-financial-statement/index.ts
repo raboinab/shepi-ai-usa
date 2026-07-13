@@ -69,12 +69,25 @@ interface ValidationLineItem {
 // --- Period helpers ---
 
 /** Sort period keys chronologically and return the latest one */
+function normalizePeriodKey(key: string): string {
+  const m = String(key || '').match(/(\d{4})-(\d{2})/);
+  return m ? `${m[1]}-${m[2]}` : String(key || '');
+}
+
+function sortPeriodKeys(keys: string[]): string[] {
+  return [...keys].sort((a, b) => {
+    const ak = normalizePeriodKey(a);
+    const bk = normalizePeriodKey(b);
+    return ak === bk ? a.localeCompare(b) : ak.localeCompare(bk);
+  });
+}
+
 function getLatestPeriodKey(monthlyValues: Record<string, number>): string | null {
   const keys = Object.keys(monthlyValues).filter(k => monthlyValues[k] !== undefined);
   if (keys.length === 0) return null;
   // Period keys are typically like "2024-01", "2024-02", etc.
-  keys.sort();
-  return keys[keys.length - 1];
+  const sorted = sortPeriodKeys(keys);
+  return sorted[sorted.length - 1];
 }
 
 /** Filter period keys that fall within a date range */
@@ -86,10 +99,13 @@ function getPeriodKeysInRange(
   const keys = Object.keys(monthlyValues);
   if (!periodStart && !periodEnd) return keys;
 
+  const startKey = periodStart ? periodStart.slice(0, 7) : null;
+  const endKey = periodEnd ? periodEnd.slice(0, 7) : null;
   return keys.filter(key => {
     // key format: "2024-01" or similar
-    if (periodStart && key < periodStart.slice(0, 7)) return false;
-    if (periodEnd && key > periodEnd.slice(0, 7)) return false;
+    const normalized = normalizePeriodKey(key);
+    if (startKey && normalized < startKey) return false;
+    if (endKey && normalized > endKey) return false;
     return true;
   });
 }
@@ -192,7 +208,7 @@ function classifyLikelyISAccount(accountName: string, accountType: string): 'rev
 function getPointInTimeValue(monthlyValues: Record<string, number>, periodEnd?: string | null): number {
   if (periodEnd) {
     const targetKey = periodEnd.slice(0, 7);
-    const match = Object.keys(monthlyValues).sort().filter(k => k <= targetKey).pop();
+    const match = sortPeriodKeys(Object.keys(monthlyValues)).filter(k => normalizePeriodKey(k) <= targetKey).pop();
     return match ? (monthlyValues[match] || 0) : 0;
   }
 
@@ -220,12 +236,12 @@ function convertIsYtdToMonthlyActivity(
   monthlyValues: Record<string, number>,
   fiscalYearEndMonth: number
 ): Record<string, number> {
-  const orderedKeys = Object.keys(monthlyValues).sort();
+  const orderedKeys = sortPeriodKeys(Object.keys(monthlyValues));
   if (orderedKeys.length === 0) return {};
 
   const fyStartMonth = (fiscalYearEndMonth % 12) + 1;
   const fyOf = (key: string): number => {
-    const [yStr, mStr] = key.split('-');
+    const [yStr, mStr] = normalizePeriodKey(key).split('-');
     const y = parseInt(yStr, 10);
     const mo = parseInt(mStr, 10);
     return mo >= fyStartMonth ? y : y - 1;
@@ -295,7 +311,8 @@ function deriveTotalsFromTrialBalance(
     if (!referenceEndKey) {
       for (const a of accounts) {
         const k = getLatestPeriodKey(a.monthlyValues);
-        if (k && (!referenceEndKey || k > referenceEndKey)) referenceEndKey = k;
+        const nk = k ? normalizePeriodKey(k) : null;
+        if (nk && (!referenceEndKey || nk > referenceEndKey)) referenceEndKey = nk;
       }
     }
     if (referenceEndKey) {
@@ -380,8 +397,8 @@ function deriveTotalsFromTrialBalance(
         if (documentType === 'balance_sheet' && ytdStartKey) {
           const fallbackBucket = classifyLikelyISAccount(account.accountName, account.accountType);
           if (fallbackBucket === 'revenue') ytdRevenue += -value;
-          else if (fallbackBucket === 'cogs') ytdCogs += Math.abs(value);
-          else if (fallbackBucket === 'expense') ytdExpenses += Math.abs(value);
+          else if (fallbackBucket === 'cogs') ytdCogs += value;
+          else if (fallbackBucket === 'expense') ytdExpenses += value;
         }
         continue;
       }
@@ -393,10 +410,10 @@ function deriveTotalsFromTrialBalance(
         ?? (classifyISAccount(account.accountName, account.accountType) as IsBucket | null);
       let signedTotal = 0;
       if (bucket === 'revenue') { totalRevenue += -value; signedTotal = -value; }
-      else if (bucket === 'cogs') { totalCogs += Math.abs(value); signedTotal = Math.abs(value); }
-      else if (bucket === 'expense') { totalExpenses += Math.abs(value); signedTotal = Math.abs(value); }
+      else if (bucket === 'cogs') { totalCogs += value; signedTotal = value; }
+      else if (bucket === 'expense') { totalExpenses += value; signedTotal = value; }
       else if (bucket === 'other_income') { otherIncome += -value; signedTotal = -value; }
-      else if (bucket === 'other_expense') { otherExpense += Math.abs(value); signedTotal = Math.abs(value); }
+      else if (bucket === 'other_expense') { otherExpense += value; signedTotal = value; }
 
       if (breakdownOut && bucket) {
         breakdownOut.push({
@@ -412,14 +429,17 @@ function deriveTotalsFromTrialBalance(
         const ytdValue = documentType === 'balance_sheet'
           ? value
           : Object.keys(account.monthlyValues)
-            .filter(k => k >= ytdStartKey! && (!ytdEndKey || k <= ytdEndKey))
+            .filter(k => {
+              const nk = normalizePeriodKey(k);
+              return nk >= ytdStartKey! && (!ytdEndKey || nk <= ytdEndKey);
+            })
             .reduce((sum, k) => sum + (account.monthlyValues[k] || 0), 0);
         if (bucket === 'revenue') ytdRevenue += -ytdValue;
-        else if (bucket === 'cogs') ytdCogs += Math.abs(ytdValue);
-        else if (bucket === 'expense') ytdExpenses += Math.abs(ytdValue);
+        else if (bucket === 'cogs') ytdCogs += ytdValue;
+        else if (bucket === 'expense') ytdExpenses += ytdValue;
         // include other_income/other_expense in YTD net income for equity rollup
         else if (bucket === 'other_income') ytdRevenue += -ytdValue;
-        else if (bucket === 'other_expense') ytdExpenses += Math.abs(ytdValue);
+        else if (bucket === 'other_expense') ytdExpenses += ytdValue;
       }
     }
   }
@@ -455,7 +475,8 @@ function deriveTotalsFromTrialBalance(
     if (!endKey) {
       for (const a of accounts) {
         const k = getLatestPeriodKey(a.monthlyValues);
-        if (k && (!endKey || k > endKey)) endKey = k;
+        const nk = k ? normalizePeriodKey(k) : null;
+        if (nk && (!endKey || nk > endKey)) endKey = nk;
       }
     }
     const startKey = periodStart ? periodStart.slice(0, 7) : null;
@@ -469,7 +490,7 @@ function deriveTotalsFromTrialBalance(
 
     const balAt = (mv: Record<string, number>, key: string | null): number => {
       if (!key) return 0;
-      const k = Object.keys(mv).sort().filter(x => x <= key).pop();
+      const k = sortPeriodKeys(Object.keys(mv)).filter(x => normalizePeriodKey(x) <= key).pop();
       return k ? (mv[k] || 0) : 0;
     };
 
@@ -645,6 +666,27 @@ function normalizeAccountLabel(s: string): string {
     .trim();
 }
 
+function stripLeadingAccountNumber(label: string): string {
+  return String(label || '').replace(/^\s*\d{3,6}\s+/, '').trim();
+}
+
+function addTbNameVariants(names: Set<string>, raw: string | undefined | null, accountNumber?: string | undefined | null): void {
+  const value = String(raw || '').trim();
+  const number = String(accountNumber || '').trim();
+  if (!value) return;
+
+  const variants = new Set<string>([value, stripLeadingAccountNumber(value)]);
+  if (number) {
+    variants.add(`${number} ${value}`);
+    variants.add(`${number} ${stripLeadingAccountNumber(value)}`);
+  }
+
+  for (const variant of variants) {
+    const normalized = normalizeAccountLabel(variant);
+    if (normalized) names.add(normalized);
+  }
+}
+
 /** For each uploaded detail row, check whether a TB account (or any path segment) matches by name. */
 function computeMissingAccounts(
   uploadedLines: NonNullable<DerivedTotals['lineDetails']>,
@@ -655,9 +697,9 @@ function computeMissingAccounts(
   for (const a of tbAccounts) {
     if (a.fsType !== 'IS') continue;
     const name = a.accountName || '';
-    tbNames.add(normalizeAccountLabel(name));
+    addTbNameVariants(tbNames, name, a.accountNumber);
     for (const seg of name.split(':')) {
-      tbNames.add(normalizeAccountLabel(seg));
+      addTbNameVariants(tbNames, seg, a.accountNumber);
     }
   }
 
@@ -672,10 +714,11 @@ function computeMissingAccounts(
   for (const row of uploadedLines || []) {
     if (!row?.label || typeof row.amount !== 'number' || row.amount === 0) continue;
     const norm = normalizeAccountLabel(row.label);
+    const strippedNorm = normalizeAccountLabel(stripLeadingAccountNumber(row.label));
     if (!norm) continue;
     // Skip obvious subtotals / headers the AI may have leaked through.
     if (/^(total|gross profit|net (operating |other )?income|net loss|income|expenses|cost of goods sold)$/.test(norm)) continue;
-    if (tbNames.has(norm)) continue;
+    if (tbNames.has(norm) || (strippedNorm && tbNames.has(strippedNorm))) continue;
     // Try last segment in case the AI included an indented sub-path.
     const parts = norm.split(' ');
     if (parts.length > 1 && tbNames.has(parts[parts.length - 1])) continue;
