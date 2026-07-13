@@ -42,9 +42,14 @@ export const BalanceSheetSection = ({ periods = [], dealData, projectId }: Balan
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-serif font-bold">Balance Sheet</h2>
-        <p className="text-muted-foreground">Assets, liabilities, and equity positions by period</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-serif font-bold">Balance Sheet</h2>
+          <p className="text-muted-foreground">Assets, liabilities, and equity positions by period</p>
+        </div>
+        {projectId && (
+          <RerunFinancialStatementButton projectId={projectId} docType="balance_sheet" />
+        )}
       </div>
 
       {dashboard && <ReportDashboardHeader config={dashboard} />}
