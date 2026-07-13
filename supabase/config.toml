@@ -138,3 +138,5 @@ additional_redirect_urls = [
     verify_jwt = false
   [functions.chatgpt-mcp]
     verify_jwt = false
+  [functions.rebuild-project-tb]
+    verify_jwt = false
