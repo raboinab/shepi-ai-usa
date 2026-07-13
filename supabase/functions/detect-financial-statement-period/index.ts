@@ -98,9 +98,9 @@ function detectByRegex(text: string, accountType?: string, headerText?: string):
   }
 
   // 6b. Balance Sheet: scan HEADER region for bare column-header dates like
-  // "May 31, 2026", "May 31 2025", "12/31/2024". Comparative BS often only
-  // prefixes the FIRST column with "As of", so subsequent columns are missed
-  // by the "as of" regex above.
+  // "May 31, 2026", "May 31 2025", "12/31/2024", or ISO "2026-05-31".
+  // Comparative BS often only prefixes the FIRST column with "As of", so
+  // subsequent columns are missed by the "as of" regex above.
   if (accountType === "balance_sheet" && headerText) {
     const h = headerText.replace(/\s+/g, " ");
     for (const m of h.matchAll(/\b([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})\b/g)) {
@@ -112,6 +112,28 @@ function detectByRegex(text: string, accountType?: string, headerText?: string):
       const mo = parseInt(m[1], 10); const y = parseInt(m[3], 10);
       if (mo < 1 || mo > 12 || y < 1990 || y > 2100) continue;
       pushRange(startOfMonth(y, mo), endOfMonth(y, mo), "bs header numeric date");
+    }
+    for (const m of h.matchAll(/\b(\d{4})-(\d{2})-(\d{2})\b/g)) {
+      const y = parseInt(m[1], 10); const mo = parseInt(m[2], 10);
+      if (y < 1990 || y > 2100 || mo < 1 || mo > 12) continue;
+      pushRange(startOfMonth(y, mo), endOfMonth(y, mo), "bs header iso date");
+    }
+  }
+
+  // 6c. Universal ISO date scan (IS/CF/BS): "2023-01-31", "2026-05-31" etc.
+  // XLSX headers with formatted date cells often stringify as ISO.
+  {
+    const isoDates: Array<{ y: number; m: number; d: number }> = [];
+    for (const m of t.matchAll(/\b(\d{4})-(\d{2})-(\d{2})\b/g)) {
+      const y = parseInt(m[1], 10); const mo = parseInt(m[2], 10); const d = parseInt(m[3], 10);
+      if (y < 1990 || y > 2100 || mo < 1 || mo > 12 || d < 1 || d > 31) continue;
+      isoDates.push({ y, m: mo, d });
+    }
+    if (isoDates.length >= 2) {
+      isoDates.sort((a, b) => a.y - b.y || a.m - b.m || a.d - b.d);
+      const first = isoDates[0];
+      const last = isoDates[isoDates.length - 1];
+      pushRange(startOfMonth(first.y, first.m), endOfMonth(last.y, last.m), `iso date columns (${isoDates.length})`);
     }
   }
 
