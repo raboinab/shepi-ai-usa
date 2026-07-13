@@ -86,7 +86,10 @@ function inferFsType(input: {
     if (IS_HINTS.some((h) => meta.includes(h))) return "IS";
     if (BS_HINTS.some((h) => meta.includes(h))) return "BS";
   }
-  const fromNumber = inferFromAccountNumber(input.accountNumber || "");
+  const fromNumber =
+    inferFromAccountNumber(input.accountNumber || "") ||
+    inferFromAccountNumber(input.fullyQualifiedName || "") ||
+    inferFromAccountNumber(input.accountName || "");
   if (fromNumber) return fromNumber;
   const nameForInfer = input.fullyQualifiedName || input.accountName || "";
   const fromName = inferFromName(nameForInfer);
