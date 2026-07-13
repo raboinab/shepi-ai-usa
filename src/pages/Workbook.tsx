@@ -108,7 +108,7 @@ const Workbook = () => {
       const coaRaw = wd.chartOfAccounts as Record<string, unknown> | undefined;
       const coaAccounts = (coaRaw?.accounts as CoaAccount[] | undefined) || [];
 
-      const accounts = await loadTrialBalanceFromProcessedData(id, projectPeriods, coaAccounts);
+      const accounts = await loadTrialBalanceFromProcessedData(id, projectPeriods, coaAccounts, { forceCoaRebuild: true });
       if (accounts.length > 0) {
         project.wizard_data = {
           ...project.wizard_data,
