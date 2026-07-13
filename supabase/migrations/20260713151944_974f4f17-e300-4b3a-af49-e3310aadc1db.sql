@@ -1,0 +1,1 @@
+CREATE POLICY "Admins can read all documents bucket files" ON storage.objects FOR SELECT TO authenticated USING (bucket_id = 'documents' AND has_role(auth.uid(), 'admin'));
