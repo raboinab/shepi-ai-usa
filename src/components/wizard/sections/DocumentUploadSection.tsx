@@ -550,6 +550,29 @@ export const DocumentUploadSection = ({
     [documents, selectedType]
   );
 
+  const duplicateDocumentIds = useMemo(() => {
+    const groups = new Map<string, string[]>();
+
+    for (const doc of documents) {
+      if (!isOptionalVerificationType(doc.account_type || "")) continue;
+
+      const key = [
+        doc.account_type,
+        doc.name.trim().toLowerCase(),
+        doc.period_start || "no-start",
+        doc.period_end || "no-end",
+      ].join("::");
+
+      groups.set(key, [...(groups.get(key) || []), doc.id]);
+    }
+
+    return new Set(
+      Array.from(groups.values())
+        .filter(ids => ids.length > 1)
+        .flat()
+    );
+  }, [documents]);
+
   // Merge uploaded docs with QB synced periods for unified coverage calculation
   const allCoverageSources = useMemo(() => {
     const uploadedDocs = documents
@@ -767,10 +790,13 @@ export const DocumentUploadSection = ({
         .limit(1000000);
 
       if (error) throw error;
-      setDocuments((docs || []).map(d => ({ ...d, validation_result: d.validation_result as unknown as FinancialStatementValidationResult | null })) as Document[]);
+      const normalizedDocs = (docs || []).map(d => ({ ...d, validation_result: d.validation_result as unknown as FinancialStatementValidationResult | null })) as Document[];
+      setDocuments(normalizedDocs);
+      return normalizedDocs;
     } catch (error) {
       console.error("Error fetching documents:", error);
       toast.error("Failed to load documents");
+      return [];
     } finally {
       setLoading(false);
     }
@@ -1828,6 +1854,9 @@ export const DocumentUploadSection = ({
       });
       toast.success("Document deleted — you can re-upload");
       setPendingDelete(null);
+      if (isFinancialStatementDocType(doc.account_type)) {
+        setFinancialValidationResults(prev => ({ ...prev, [doc.account_type]: null }));
+      }
       fetchDocuments();
     } catch (error) {
       console.error("Delete error:", error);
