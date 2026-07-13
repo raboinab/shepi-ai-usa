@@ -397,8 +397,8 @@ function deriveTotalsFromTrialBalance(
         if (documentType === 'balance_sheet' && ytdStartKey) {
           const fallbackBucket = classifyLikelyISAccount(account.accountName, account.accountType);
           if (fallbackBucket === 'revenue') ytdRevenue += -value;
-          else if (fallbackBucket === 'cogs') ytdCogs += Math.abs(value);
-          else if (fallbackBucket === 'expense') ytdExpenses += Math.abs(value);
+          else if (fallbackBucket === 'cogs') ytdCogs += value;
+          else if (fallbackBucket === 'expense') ytdExpenses += value;
         }
         continue;
       }
@@ -410,10 +410,10 @@ function deriveTotalsFromTrialBalance(
         ?? (classifyISAccount(account.accountName, account.accountType) as IsBucket | null);
       let signedTotal = 0;
       if (bucket === 'revenue') { totalRevenue += -value; signedTotal = -value; }
-      else if (bucket === 'cogs') { totalCogs += Math.abs(value); signedTotal = Math.abs(value); }
-      else if (bucket === 'expense') { totalExpenses += Math.abs(value); signedTotal = Math.abs(value); }
+      else if (bucket === 'cogs') { totalCogs += value; signedTotal = value; }
+      else if (bucket === 'expense') { totalExpenses += value; signedTotal = value; }
       else if (bucket === 'other_income') { otherIncome += -value; signedTotal = -value; }
-      else if (bucket === 'other_expense') { otherExpense += Math.abs(value); signedTotal = Math.abs(value); }
+      else if (bucket === 'other_expense') { otherExpense += value; signedTotal = value; }
 
       if (breakdownOut && bucket) {
         breakdownOut.push({
@@ -435,11 +435,11 @@ function deriveTotalsFromTrialBalance(
             })
             .reduce((sum, k) => sum + (account.monthlyValues[k] || 0), 0);
         if (bucket === 'revenue') ytdRevenue += -ytdValue;
-        else if (bucket === 'cogs') ytdCogs += Math.abs(ytdValue);
-        else if (bucket === 'expense') ytdExpenses += Math.abs(ytdValue);
+        else if (bucket === 'cogs') ytdCogs += ytdValue;
+        else if (bucket === 'expense') ytdExpenses += ytdValue;
         // include other_income/other_expense in YTD net income for equity rollup
         else if (bucket === 'other_income') ytdRevenue += -ytdValue;
-        else if (bucket === 'other_expense') ytdExpenses += Math.abs(ytdValue);
+        else if (bucket === 'other_expense') ytdExpenses += ytdValue;
       }
     }
   }
