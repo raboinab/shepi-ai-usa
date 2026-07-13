@@ -2374,7 +2374,7 @@ export const DocumentUploadSection = ({
             {/* Upload Form */}
             <Card>
               <CardHeader>
-                <div className="flex items-start justify-between">
+                <div className="flex items-start justify-between gap-4">
                   <div>
                     <CardTitle className="flex items-center gap-2">
                       Upload {type.label}
@@ -2394,6 +2394,13 @@ export const DocumentUploadSection = ({
                       }
                     </CardDescription>
                   </div>
+                  {isFinancialStatementDocType(type.value) && (
+                    <RerunFinancialStatementButton
+                      projectId={projectId}
+                      docType={type.value}
+                      onComplete={fetchDocuments}
+                    />
+                  )}
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -2683,6 +2690,11 @@ export const DocumentUploadSection = ({
                             <div className="flex items-center gap-2">
                               <FileText className="w-4 h-4 text-muted-foreground" />
                               {doc.name}
+                              {duplicateDocumentIds.has(doc.id) && (
+                                <Badge variant="outline" className="text-[10px] font-normal">
+                                  Duplicate
+                                </Badge>
+                              )}
                               {doc.account_type === 'general_ledger' && doc.parsed_summary?.coa_derived && (
                                 <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700 text-xs">
                                   COA Derived
@@ -2815,6 +2827,15 @@ export const DocumentUploadSection = ({
                                   )}
                                   Validate
                                 </Button>
+                              )}
+                              {isFinancialStatementDocType(doc.account_type) && doc.processing_status === 'completed' && (
+                                <RerunFinancialStatementButton
+                                  projectId={projectId}
+                                  docType={doc.account_type}
+                                  documentId={doc.id}
+                                  onComplete={fetchDocuments}
+                                  compact
+                                />
                               )}
                               {(doc.processing_status === 'failed' || isStuckProcessing(doc)) && (
                                 <Button
