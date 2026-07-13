@@ -358,15 +358,25 @@ function crossReferenceCOA(tb: TBAccount[], coaRaw: any[]): { accounts: TBAccoun
       ? (t.accountName || "").replace(/^\d{4,5}\s+/, "").trim()
       : (t.accountName || "").trim();
 
+    // TB rows for sub-accounts arrive with accountName = "Parent:Child" and
+    // no accountNumber (the parser strips the parent's acctNum). Prefer FQN
+    // lookup before number lookup so children resolve to their leaf CoA row
+    // instead of collapsing into the parent (which shares the same acctNum).
+    const fqnLower = (t.fullyQualifiedName || "").toLowerCase();
+    const nameAsFqn = (t.accountName || "").includes(":") ? (t.accountName || "").toLowerCase() : "";
+
     const m =
       (t.qbAccountId && byQbId.get(t.qbAccountId)) ||
+      (fqnLower && byFqn.get(fqnLower)) ||
+      (nameAsFqn && byFqn.get(nameAsFqn)) ||
       (t.accountNumber && byNumber.get(t.accountNumber)) ||
-      (leadingNum && byNumber.get(leadingNum)) ||
+      (leadingNum && !nameAsFqn && byNumber.get(leadingNum)) ||
       (t.accountName && byName.get(t.accountName.toLowerCase())) ||
       (nameSansNum && byName.get(nameSansNum.toLowerCase())) ||
       (nameSansNum && byFqn.get(nameSansNum.toLowerCase())) ||
-      (t.accountName?.includes(":") && byName.get(t.accountName.split(":")[0].trim().toLowerCase())) ||
-      (t.accountName?.includes(":") && byName.get(t.accountName.split(":").pop()!.trim().toLowerCase()));
+      (t.accountName?.includes(":") && byName.get(t.accountName.split(":").pop()!.trim().toLowerCase())) ||
+      (t.accountName?.includes(":") && byName.get(t.accountName.split(":")[0].trim().toLowerCase()));
+
     if (m) {
       matched++;
       const fsFromClass = m.classification ? normalizeClassification(m.classification) : undefined;
