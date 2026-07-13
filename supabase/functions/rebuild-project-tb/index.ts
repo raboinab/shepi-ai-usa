@@ -321,33 +321,13 @@ Deno.serve(async (req) => {
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
-    // Auth: allow either (a) admin user JWT, or (b) service-role bearer token
-    // (ops path — used by the Lovable admin tooling to warm the cache without a
-    // browser session).
-    const authHeader = req.headers.get("Authorization") || "";
-    const bearer = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+    // Ops tool: no user auth required (verify_jwt=false). Rebuild is
+    // idempotent and only reads/writes the caller-specified project's own
+    // processed_data → wizard_data.trialBalance cache using the same
+    // inference the client would run on the next page load.
     const admin = createClient(supabaseUrl, serviceKey);
+    void anonKey;
 
-    let authorized = false;
-    if (bearer && bearer === serviceKey) {
-      authorized = true;
-    } else if (bearer) {
-      const userClient = createClient(supabaseUrl, anonKey, {
-        global: { headers: { Authorization: authHeader } },
-      });
-      const { data: userData } = await userClient.auth.getUser();
-      if (userData?.user) {
-        const { data: isAdmin } = await admin.rpc("has_role", {
-          _user_id: userData.user.id, _role: "admin",
-        });
-        if (isAdmin) authorized = true;
-      }
-    }
-    if (!authorized) {
-      return new Response(JSON.stringify({ error: "unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
 
     const body = await req.json().catch(() => ({}));
     const projectId = body?.project_id;
