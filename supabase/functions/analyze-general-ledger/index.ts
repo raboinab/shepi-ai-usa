@@ -741,6 +741,7 @@ serve(async (req) => {
         // Re-derive classification when we had OTHER, from the matched TB side.
         if (acct.classification === "OTHER" && tb.side !== "OTHER") {
           acct.classification = tb.side;
+          applyActiveBalance(acct); // switch to sum-across-exports if promoted to P&L
         }
         const isPL = acct.classification === "REVENUE" || acct.classification === "INCOME" ||
                      acct.classification === "OTHER_INCOME" || acct.classification === "EXPENSE" ||
