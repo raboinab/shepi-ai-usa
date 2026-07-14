@@ -166,12 +166,25 @@ serve(async (req) => {
         }
         console.log(`[ANALYZE-GL] Export period_end=${recPeriodEnd}: amountIdx=${metaAmountIdx}, balanceIdx=${metaBalanceIdx}, sections=${sections.length}`);
 
-        for (const section of sections) {
+        // Walk sections recursively so we capture the parent group (Income, Expenses,
+        // COGS, …) that QuickBooks wraps account sections in. `group` on a SECTION is
+        // the authoritative account-class hint from QB; we log it for diagnostics and
+        // will key sign normalization off it in Step 2.
+        const walkSections = (secs: GlRow[], parentGroup: string | null) => {
+        for (const section of secs) {
           if (section.type !== "SECTION") continue;
           const hdr = section.header?.colData || [];
           const acctName = (hdr[0]?.value || "").trim();
           const acctId = (hdr[0]?.id || "").toString().trim() || null;
-          if (!acctName) continue;
+          const secGroup = ((section as unknown as { group?: string }).group) || null;
+          // If this section has no account name in its header, it's a wrapper group
+          // (e.g. "Income"). Recurse into its children carrying the group down.
+          if (!acctName) {
+            const nested = section.rows?.row || [];
+            if (nested.length) walkSections(nested, secGroup || parentGroup);
+            continue;
+          }
+
 
           const childRows = section.rows?.row || [];
           let amountColIdx = -1;
