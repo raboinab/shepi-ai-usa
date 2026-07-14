@@ -17,7 +17,9 @@ interface AccountInfo {
   leaf: string;          // normalized leaf name
   acctNumber: string | null;
   classification: string; // ASSET/LIABILITY/EQUITY/INCOME/EXPENSE/OTHER
-  glBalance: number;
+  glBalance: number;     // active balance — snapshot for BS, sum-across-exports for P&L
+  glBalanceLatest: number; // latest-period-end snapshot (used for BS classes)
+  glBalanceSum: number;    // signed sum across all exports (used for P&L classes)
   glActivity: number;    // sum of |amount_signed| txns in period
   txnCount: number;
   beginningRowSeenButEmpty?: boolean; // QB shipped a "Beginning Balance" row with empty value cells
