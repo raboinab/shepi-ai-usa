@@ -166,12 +166,25 @@ serve(async (req) => {
         }
         console.log(`[ANALYZE-GL] Export period_end=${recPeriodEnd}: amountIdx=${metaAmountIdx}, balanceIdx=${metaBalanceIdx}, sections=${sections.length}`);
 
-        for (const section of sections) {
+        // Walk sections recursively so we capture the parent group (Income, Expenses,
+        // COGS, …) that QuickBooks wraps account sections in. `group` on a SECTION is
+        // the authoritative account-class hint from QB; we log it for diagnostics and
+        // will key sign normalization off it in Step 2.
+        const walkSections = (secs: GlRow[], parentGroup: string | null) => {
+        for (const section of secs) {
           if (section.type !== "SECTION") continue;
           const hdr = section.header?.colData || [];
           const acctName = (hdr[0]?.value || "").trim();
           const acctId = (hdr[0]?.id || "").toString().trim() || null;
-          if (!acctName) continue;
+          const secGroup = ((section as unknown as { group?: string }).group) || null;
+          // If this section has no account name in its header, it's a wrapper group
+          // (e.g. "Income"). Recurse into its children carrying the group down.
+          if (!acctName) {
+            const nested = section.rows?.row || [];
+            if (nested.length) walkSections(nested, secGroup || parentGroup);
+            continue;
+          }
+
 
           const childRows = section.rows?.row || [];
           let amountColIdx = -1;
@@ -186,6 +199,11 @@ serve(async (req) => {
           let txnCount = 0;
           let activity = 0;
           let netSum = 0;
+          // Diagnostic: raw first/last amount cell values (unsigned strings from QB), to
+          // detect column-detection or sign-convention drift per section.
+          let firstRowAmountRaw: string | null = null;
+          let lastRowAmountRaw: string | null = null;
+
 
           if (metaAmountIdx >= 0) {
             amountColIdx = metaAmountIdx;
@@ -254,7 +272,11 @@ serve(async (req) => {
             if (amt !== null) {
               netSum += amt;
               activity += Math.abs(amt);
+              const raw = String(cd[amountColIdx]?.value ?? "");
+              if (firstRowAmountRaw === null) firstRowAmountRaw = raw;
+              lastRowAmountRaw = raw;
             }
+
 
             // Find this row's transaction date.
             let txnDate: string | null = null;
@@ -284,6 +306,7 @@ serve(async (req) => {
           // Cross-check against QB's own "Total for <account>" summary row (net activity).
           const summaryCd = section.summary?.colData || [];
           const summaryNet = amountColIdx >= 0 ? parseMoney(summaryCd[amountColIdx]?.value) : null;
+          const summaryAmountRaw = amountColIdx >= 0 ? String(summaryCd[amountColIdx]?.value ?? "") : "";
 
           // Two independent readings per section:
           //   snapshotBalance = running balance at period end (correct for BS accounts)
@@ -297,12 +320,26 @@ serve(async (req) => {
           else snapshotBalance = beginningBalance + netSum;
           const activityNet = summaryNet !== null ? summaryNet : netSum;
 
-          console.log(`[ANALYZE-GL] ${acctName}: begin=${beginningBalance} end=${endingBalance}(${endingBalanceDate}) sumNet=${summaryNet} rowNet=${netSum} → snap=${snapshotBalance} act=${activityNet}`);
-
           const key = acctId ? `id:${acctId}` : `name:${acctName.toLowerCase()}`;
           const coa = (acctId ? coaByAcctNum.get(acctId) : undefined) ||
                       coaByName.get(acctName.toLowerCase()) ||
                       coaByLeaf.get(normName(acctName));
+          const cls = (coa?.classification || "OTHER").toUpperCase();
+          const picked = (cls === "REVENUE" || cls === "INCOME" || cls === "OTHER_INCOME" ||
+                          cls === "EXPENSE" || cls === "COST_OF_GOODS_SOLD" || cls === "OTHER_EXPENSE")
+                          ? "activityNet" : "snapshotBalance";
+
+          // Diagnostic: one dense line per section covers column detection, raw QB
+          // values, computed readings, classification, and which reading we picked.
+          console.log(
+            `[ANALYZE-GL:DIAG] name="${acctName}" acctId=${acctId || "-"} ` +
+            `group=${parentGroup || "-"} secGroup=${secGroup || "-"} ` +
+            `amtIdx=${amountColIdx} balIdx=${balanceColIdx} ` +
+            `begin=${beginningBalance} end=${endingBalance}(${endingBalanceDate || "-"}) ` +
+            `firstAmt=${JSON.stringify(firstRowAmountRaw)} lastAmt=${JSON.stringify(lastRowAmountRaw)} ` +
+            `summaryRaw=${JSON.stringify(summaryAmountRaw)} summaryNet=${summaryNet} rowNet=${netSum} ` +
+            `→ snap=${snapshotBalance} act=${activityNet} class=${cls} pick=${picked}`
+          );
 
           // Merge across periods: sum activity/txnCount/activityNet; keep latest-wins snapshot.
           const prevSnap = bestSnapshotByKey.get(key);
@@ -330,7 +367,10 @@ serve(async (req) => {
           if (isLatest) bestSnapshotByKey.set(key, { periodEnd: recPeriodEnd, glBalance: snapshotBalance });
           txnCountTotal += txnCount;
         }
+        }; // close walkSections
+        walkSections(sections, null);
       }
+
       console.log(`[ANALYZE-GL] Parsed ${acctMap.size} accounts / ${txnCountTotal} txns from ${glProcessed.length} GL export(s)`);
     }
 
