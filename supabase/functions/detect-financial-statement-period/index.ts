@@ -406,6 +406,7 @@ serve(async (req) => {
     const headerCombined = `${doc.name}\n${headerText}`;
 
     let detection = detectByRegex(combined, doc.account_type, headerCombined);
+    console.log("detect-period:", doc.id, doc.account_type, "->", JSON.stringify(detection), "headerPreview:", headerCombined.slice(0, 500));
     let usedLlm = false;
     if (detection.confidence < 0.7) {
       const llm = await detectByLLM(text.slice(0, 4000), doc.account_type || "financial statement", doc.name);
