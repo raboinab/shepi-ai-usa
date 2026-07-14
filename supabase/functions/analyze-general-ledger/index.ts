@@ -17,7 +17,9 @@ interface AccountInfo {
   leaf: string;          // normalized leaf name
   acctNumber: string | null;
   classification: string; // ASSET/LIABILITY/EQUITY/INCOME/EXPENSE/OTHER
-  glBalance: number;
+  glBalance: number;     // active balance — snapshot for BS, sum-across-exports for P&L
+  glBalanceLatest: number; // latest-period-end snapshot (used for BS classes)
+  glBalanceSum: number;    // signed sum across all exports (used for P&L classes)
   glActivity: number;    // sum of |amount_signed| txns in period
   txnCount: number;
   beginningRowSeenButEmpty?: boolean; // QB shipped a "Beginning Balance" row with empty value cells
@@ -295,20 +297,26 @@ serve(async (req) => {
                       coaByName.get(acctName.toLowerCase()) ||
                       coaByLeaf.get(normName(acctName));
 
-          // Merge across periods: sum activity/txnCount, keep latest-period glBalance.
+          // Merge across periods: sum activity/txnCount, track BOTH latest-wins
+          // snapshot (for BS) AND signed sum (for P&L). Final glBalance is chosen after
+          // classification is resolved during reconciliation — if we picked one here we'd
+          // have to know classification up-front, which we don't (COA may be missing).
           const prevSnap = bestSnapshotByKey.get(key);
           const isLatest = !prevSnap || recPeriodEnd >= prevSnap.periodEnd;
           const prev = acctMap.get(key);
           const mergedActivity = (prev?.glActivity || 0) + activity;
           const mergedTxnCount = (prev?.txnCount || 0) + txnCount;
-          const mergedGlBalance = isLatest ? glBalance : (prev?.glBalance ?? glBalance);
+          const mergedLatest = isLatest ? glBalance : (prev?.glBalanceLatest ?? glBalance);
+          const mergedSum = (prev?.glBalanceSum ?? 0) + glBalance;
 
           acctMap.set(key, {
             name: acctName,
             leaf: normName(acctName),
             acctNumber: acctId || coa?.acctNum || null,
             classification: (coa?.classification || prev?.classification || "OTHER").toUpperCase(),
-            glBalance: mergedGlBalance,
+            glBalance: mergedLatest, // provisional; recomputed after classification below
+            glBalanceLatest: mergedLatest,
+            glBalanceSum: mergedSum,
             glActivity: mergedActivity,
             txnCount: mergedTxnCount,
             beginningRowSeenButEmpty: (prev?.beginningRowSeenButEmpty || false) || (beginningRowSeenButEmpty && balanceColIdx < 0),
@@ -356,10 +364,13 @@ serve(async (req) => {
         let acc = acctMap.get(key);
         if (!acc) {
           acc = { name, leaf: normName(name), acctNumber: (t.account_number as string) || coa?.acctNum || null,
-                  classification: coa?.classification || "OTHER", glBalance: 0, glActivity: 0, txnCount: 0 };
+                  classification: coa?.classification || "OTHER",
+                  glBalance: 0, glBalanceLatest: 0, glBalanceSum: 0, glActivity: 0, txnCount: 0 };
           acctMap.set(key, acc);
         }
         acc.glBalance += signed;
+        acc.glBalanceLatest = acc.glBalance;
+        acc.glBalanceSum = acc.glBalance;
         acc.glActivity += abs;
         acc.txnCount += 1;
       }
@@ -380,9 +391,49 @@ serve(async (req) => {
           acctMap.set(mapKey, {
             name: coa.name, leaf: normName(coa.name),
             acctNumber: coa.acctNum, classification: coa.classification,
-            glBalance: coa.balance, glActivity: 0, txnCount: 0,
+            glBalance: coa.balance, glBalanceLatest: coa.balance, glBalanceSum: coa.balance,
+            glActivity: 0, txnCount: 0,
           });
         }
+      }
+    }
+
+    // ── Collapse key-collision duplicates. Same real account can land under both
+    //    `id:${acctId}` and `name:${acctName}` when one GL export includes an id and
+    //    another doesn't (or COA-injection uses a different key). Merge into the
+    //    id-keyed entry, sum activity/txnCount, take latest snapshot / summed balance
+    //    coherently.
+    {
+      const byName = new Map<string, string[]>();
+      for (const [k, v] of acctMap) {
+        const nk = v.name.toLowerCase().trim();
+        const arr = byName.get(nk) || [];
+        arr.push(k);
+        byName.set(nk, arr);
+      }
+      for (const [, keys] of byName) {
+        if (keys.length < 2) continue;
+        // Prefer the id-keyed entry as the canonical row (falls back to first).
+        const canonicalKey = keys.find(k => k.startsWith("id:")) || keys[0];
+        const canonical = acctMap.get(canonicalKey)!;
+        for (const k of keys) {
+          if (k === canonicalKey) continue;
+          const dup = acctMap.get(k)!;
+          canonical.glActivity += dup.glActivity;
+          canonical.txnCount += dup.txnCount;
+          canonical.glBalanceSum += dup.glBalanceSum;
+          // Latest snapshot: prefer non-zero, else keep canonical.
+          if (Math.abs(canonical.glBalanceLatest) < 0.01 && Math.abs(dup.glBalanceLatest) > 0.01) {
+            canonical.glBalanceLatest = dup.glBalanceLatest;
+          }
+          canonical.beginningRowSeenButEmpty = canonical.beginningRowSeenButEmpty || dup.beginningRowSeenButEmpty;
+          if (canonical.classification === "OTHER" && dup.classification !== "OTHER") {
+            canonical.classification = dup.classification;
+          }
+          if (!canonical.acctNumber && dup.acctNumber) canonical.acctNumber = dup.acctNumber;
+          acctMap.delete(k);
+        }
+        canonical.glBalance = canonical.glBalanceLatest;
       }
     }
 
@@ -405,7 +456,18 @@ serve(async (req) => {
         return !hasChild;
       });
     }
+
+    // Classification → active-balance selector. For P&L accounts, use the sum-across-
+    // exports (each yearly GL export contains only that year's activity, so latest-wins
+    // would report a single year against TB's lifetime yearSum). BS classes use latest.
+    const isPLClass = (c: string) => c === "REVENUE" || c === "INCOME" || c === "OTHER_INCOME" ||
+                                     c === "EXPENSE" || c === "COST_OF_GOODS_SOLD" || c === "OTHER_EXPENSE";
+    const applyActiveBalance = (a: AccountInfo) => {
+      a.glBalance = isPLClass(a.classification) ? a.glBalanceSum : a.glBalanceLatest;
+    };
+    for (const a of accounts) applyActiveBalance(a);
     console.log(`[ANALYZE-GL] Aggregated ${accounts.length} unique accounts (post-rollup dedupe)`);
+
 
     // ── Pull latest TB. Each entry in `monthlyReports` is a single-MONTH QuickBooks TB
     //    (startDate = first of month, endDate = last of month). The values inside behave
@@ -679,6 +741,7 @@ serve(async (req) => {
         // Re-derive classification when we had OTHER, from the matched TB side.
         if (acct.classification === "OTHER" && tb.side !== "OTHER") {
           acct.classification = tb.side;
+          applyActiveBalance(acct); // switch to sum-across-exports if promoted to P&L
         }
         const isPL = acct.classification === "REVENUE" || acct.classification === "INCOME" ||
                      acct.classification === "OTHER_INCOME" || acct.classification === "EXPENSE" ||
@@ -828,6 +891,11 @@ serve(async (req) => {
     // negative asset contributions; take absolute value elsewhere so sign-convention drift
     // between imports doesn't mask real balances.
     const contraAssetRe = /accumulated depreciation|accumulated amortization|allowance for/i;
+    // Owner-draw / distribution accounts are debit-natural equity contras — they reduce
+    // equity. QB GL exports them as negative running balances alongside a negative
+    // retained-earnings row (credit-natural). Blanket Math.abs on Equity treats them
+    // both as additions, inflating equity and busting the identity check.
+    const distributionRe = /owner'?s?\s*(pay|draw)|shareholder\s*distribution|member\s*draw|personal\s*expense|distribution/i;
     let sumAssets = 0, sumLiab = 0, sumEquity = 0, sumRevenue = 0, sumExpense = 0;
     for (const a of accounts) {
       const c = a.classification;
@@ -836,7 +904,10 @@ serve(async (req) => {
         sumAssets += contraAssetRe.test(a.name) ? -Math.abs(v) : Math.abs(v);
       }
       else if (c === "LIABILITY") sumLiab += Math.abs(v);
-      else if (c === "EQUITY") sumEquity += Math.abs(v);
+      else if (c === "EQUITY") {
+        // Distributions subtract from equity; everything else adds its magnitude.
+        sumEquity += distributionRe.test(a.name) ? -Math.abs(v) : Math.abs(v);
+      }
       else if (c === "REVENUE" || c === "INCOME" || c === "OTHER_INCOME") sumRevenue += Math.abs(v);
       else if (c === "EXPENSE" || c === "COST_OF_GOODS_SOLD" || c === "OTHER_EXPENSE") sumExpense += Math.abs(v);
     }
@@ -846,6 +917,8 @@ serve(async (req) => {
     const expenseAbs = sumExpense;
     const netIncome = revenueAbs - expenseAbs;
     const accountingEquationDiff = sumAssets - liabAbs - equityAbs - netIncome;
+
+
 
     // ── Largest accounts by |balance| ──
     const largestAccounts = [...accounts]

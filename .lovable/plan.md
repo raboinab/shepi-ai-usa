@@ -1,44 +1,40 @@
-## Root cause (confirmed from raw data)
+## What the screenshot shows
 
-Sampled the raw `processed_data` for project `621a6c9f…` and the 2026 GL export. QuickBooks GL DATA rows have **8 columns, no prepended account label** (the account name lives in the section header, not the row):
+Three problems, all in `supabase/functions/analyze-general-ledger/index.ts`:
 
-```
-[Date, Type, Num, Name, Memo, Split, Amount(6), Balance(7)]
-```
+### 1. Duplicated account rows (`Account` and `Account*`)
 
-The parser at `supabase/functions/analyze-general-ledger/index.ts:151` adds `+1` to every column index ("prepended account label in DATA rows"). That's true for TrialBalance reports but **wrong for GeneralLedger sections**. Result:
+`1025 Fidelity Business Account`, `1999 Fidelity MM`, `Afterpay Sales`, `Faire Sales`, etc. each appear twice. The `*` is our own marker for "TB-inferred" rows. The duplicates come from **key collisions**: the same real account gets two entries in `acctMap` because we key on `id:${acctId}` when the GL export carries an id and `name:${acctName.toLowerCase()}` when it doesn't. When one export has the id and another doesn't (or COA-injected rows use a different key), the account splits into two independent rows and both survive into reconciliation.
 
-- `amountColIdx = 7` — actually the running **Balance** column
-- `balanceColIdx = 8` — out of bounds, returns `null` every row
+**Fix**: after the parse loop, collapse `acctMap` by normalized-name (leaf + parent path). When a name collision has one entry with `acctId` and one without, merge into the id-keyed one; sum `glActivity`/`txnCount`, pick the latest-`period_end` for `glBalance`.
 
-Consequences visible in your screenshot:
-- `balanceColIdx` invalid → `endingBalance` never set → falls through to `beginningBalance + netSum`
-- `netSum` is the sum of the "amount" col, but that column is really the running balance → summing 2,020 running-balance snapshots for Wells Fargo produces the $975M we see (vs. the real $425K ending on 2026-05-31 that sits in col 7 of the very first DATA row).
-- Same mechanism inflates Undeposited Funds ($870M vs $534K real), Inventory ($190M vs $635K), etc.
-- Rows are **descending** in these exports (2026-05-31 first), and the "Beginning Balance" row is at the TOP with value $424,933.07 — that's actually the true ending running balance for the period, not the opener.
+### 2. Revenue/expense accounts show enormous variances (`z_Shopify Sales` GL $448k vs TB −$17.7M)
 
-## Fix
+For P&L accounts we currently use `mergedGlBalance = isLatest ? glBalance : prev.glBalance` — the latest GL export wins. But you have three GL exports (2024, 2025, 2026 YTD) and each one is a **year's activity**. Latest = 2026 YTD only ≈ $448K. TB side sums each calendar year's YTD-final ≈ $17M lifetime. Of course they don't match.
 
-Single file: `supabase/functions/analyze-general-ledger/index.ts`
+**Fix**: for P&L classifications (REVENUE/INCOME/EXPENSE/COGS/OTHER_INCOME/OTHER_EXPENSE) **sum `glBalance` across exports** instead of taking the latest — matches TB's `yearSumBalance` behavior. Balance-sheet classes keep latest-wins snapshot. Classification isn't always known at parse time (COA might be missing an account) — apply the merge rule after classification is resolved.
 
-1. **Drop the `+1` offset for GL sections.** Use the metadata column indices as-is (amount at 6, balance at 7). The offset was copy-pasta from TB parsing.
-2. **Re-derive beginning vs. ending from row order.** After parsing DATA rows, sort transactions by `txnDate`:
-   - `endingBalance` = balance column of the row with MAX `txnDate`
-   - The "Beginning Balance" label row is order-dependent in QB — in descending exports it holds the period's ending running balance, in ascending exports it holds the opener. Ignore its label; trust chronological max.
-3. **Prefer the `summary` row for net activity.** Each section's `summary.colData[6]` is QB's own "Total for <account>" net — use it directly instead of summing DATA rows (which is what's inflating things). `glBalance = beginningBalanceTrue + summaryNet` when balance col is empty; otherwise `glBalance = endingBalance`.
-4. **Per-account merge across the 3 exports (2024, 2025, 2026 YTD)** stays as-is: winner for `glBalance` is the export with the latest `period_end`, activity sums across exports. This is already implemented correctly — only the per-section numbers were wrong.
-5. **Log a per-section sanity line** (`beginning`, `endingByDate`, `summaryNet`, `chosenGlBalance`) so if a future export has a different shape we can see it in one glance.
+### 3. Identity check double-counts equity
 
-No changes to the reconciliation/matching logic, UI, or downstream identity check — those will produce sensible numbers once the per-section balances are correct.
+`Owner's Pay & Personal Expenses -$1,360,373` (a distribution / draw) and `Retained Earnings -$4,362,905` are both `Math.abs()`'d into `sumEquity`, so distributions inflate equity instead of offsetting it. Combined with revenue being wildly under-counted per issue #2, the identity check reports a $146K miss that isn't a real data problem — it's arithmetic.
+
+**Fix**: sum equity **signed**, not `abs`. Same for liabilities and net income — the sign-convention normalization needs to happen per-account (based on whether QB is exporting debit-positive or true-signed for that class), not by blanket `Math.abs`. Concretely:
+- Assets: keep current logic (abs, minus contra-assets).
+- Liabilities: `sumLiab += Math.abs(v)` stays — QB GL parent totals are debit-positive magnitudes.
+- Equity: split into "capital-like" (retained earnings, capital stock, opening balance = credit-natural positive) vs "distribution-like" (owner's pay, shareholder distributions, member draw = debits reducing equity). Use signed sum with distributions subtracting.
+- Revenue/Expense: unchanged (abs works after fix #2 restores real magnitudes).
 
 ## Verify
 
-After deploy:
-- Re-run analysis on project `621a6c9f…`
-- Expected: Wells Fargo ≈ $425K, Undeposited ≈ $534K, total assets in the low millions, identity check < $1M off.
-- If still off, pull `[ANALYZE-GL]` logs from the sanity line and iterate.
+After redeploy, re-run analysis on `621a6c9f…` and expect:
+- No `*` duplicates in the reconciliation table.
+- `z_Shopify Sales` GL summed across exports lands within a few % of TB $17.7M.
+- Identity check well inside tolerance (equity properly nets distributions against retained earnings).
+- Reconciliation rate rises materially from 37% once revenue/expense stop showing as false variances.
 
 ## Out of scope
 
-- The 20/120 match rate — separate matching issue (sub-account FQN normalization); tackle after the balances are trustworthy so we're not chasing two bugs at once.
-- Rebuilding GL from `canonical_transactions` (fallback path stays).
+- The `*` UI treatment itself stays (it's still meaningful for genuine tb_inferred BS backfills — just shouldn't be producing a second row for the same account).
+- No changes to matching heuristics, TB parsing, UI, or downstream identity check display beyond the numbers it consumes.
+
+Single file touched: `supabase/functions/analyze-general-ledger/index.ts`.
