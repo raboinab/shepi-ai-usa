@@ -371,12 +371,13 @@ serve(async (req) => {
         if (!acc) {
           acc = { name, leaf: normName(name), acctNumber: (t.account_number as string) || coa?.acctNum || null,
                   classification: coa?.classification || "OTHER",
-                  glBalance: 0, glBalanceLatest: 0, glBalanceSum: 0, glActivity: 0, txnCount: 0 };
+                  glBalance: 0, glBalanceLatest: 0, glBalanceSum: 0, glActivityNet: 0, glActivity: 0, txnCount: 0 };
           acctMap.set(key, acc);
         }
         acc.glBalance += signed;
         acc.glBalanceLatest = acc.glBalance;
         acc.glBalanceSum = acc.glBalance;
+        acc.glActivityNet += signed;
         acc.glActivity += abs;
         acc.txnCount += 1;
       }
