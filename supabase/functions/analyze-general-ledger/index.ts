@@ -289,6 +289,8 @@ serve(async (req) => {
           else glBalance = beginningBalance + netSum;
 
           console.log(`[ANALYZE-GL] ${acctName}: begin=${beginningBalance} end=${endingBalance}(${endingBalanceDate}) sumNet=${summaryNet} rowNet=${netSum} → gl=${glBalance}`);
+
+          const key = acctId ? `id:${acctId}` : `name:${acctName.toLowerCase()}`;
           const coa = (acctId ? coaByAcctNum.get(acctId) : undefined) ||
                       coaByName.get(acctName.toLowerCase()) ||
                       coaByLeaf.get(normName(acctName));
