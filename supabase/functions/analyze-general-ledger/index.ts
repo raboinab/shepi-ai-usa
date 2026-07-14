@@ -429,6 +429,7 @@ serve(async (req) => {
           canonical.glActivity += dup.glActivity;
           canonical.txnCount += dup.txnCount;
           canonical.glBalanceSum += dup.glBalanceSum;
+          canonical.glActivityNet += dup.glActivityNet;
           // Latest snapshot: prefer non-zero, else keep canonical.
           if (Math.abs(canonical.glBalanceLatest) < 0.01 && Math.abs(dup.glBalanceLatest) > 0.01) {
             canonical.glBalanceLatest = dup.glBalanceLatest;
