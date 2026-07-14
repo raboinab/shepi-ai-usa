@@ -465,13 +465,16 @@ serve(async (req) => {
       });
     }
 
-    // Classification → active-balance selector. For P&L accounts, use the sum-across-
-    // exports (each yearly GL export contains only that year's activity, so latest-wins
-    // would report a single year against TB's lifetime yearSum). BS classes use latest.
+    // Classification → active-balance selector.
+    //  • Balance-sheet classes → latest-period-end snapshot (running balance is authoritative).
+    //  • P&L classes → net activity summed across all GL exports. QB's running-balance
+    //    column on P&L reports is NOT cumulative-since-inception, so it undercounts
+    //    revenue/expense by 10×+. glActivityNet is Σ transaction amounts and matches
+    //    TB's yearSumBalance behavior.
     const isPLClass = (c: string) => c === "REVENUE" || c === "INCOME" || c === "OTHER_INCOME" ||
                                      c === "EXPENSE" || c === "COST_OF_GOODS_SOLD" || c === "OTHER_EXPENSE";
     const applyActiveBalance = (a: AccountInfo) => {
-      a.glBalance = isPLClass(a.classification) ? a.glBalanceSum : a.glBalanceLatest;
+      a.glBalance = isPLClass(a.classification) ? a.glActivityNet : a.glBalanceLatest;
     };
     for (const a of accounts) applyActiveBalance(a);
     console.log(`[ANALYZE-GL] Aggregated ${accounts.length} unique accounts (post-rollup dedupe)`);
