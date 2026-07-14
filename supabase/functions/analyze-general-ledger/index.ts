@@ -17,9 +17,10 @@ interface AccountInfo {
   leaf: string;          // normalized leaf name
   acctNumber: string | null;
   classification: string; // ASSET/LIABILITY/EQUITY/INCOME/EXPENSE/OTHER
-  glBalance: number;     // active balance — snapshot for BS, sum-across-exports for P&L
-  glBalanceLatest: number; // latest-period-end snapshot (used for BS classes)
-  glBalanceSum: number;    // signed sum across all exports (used for P&L classes)
+  glBalance: number;     // active balance — snapshot for BS, activity-sum for P&L
+  glBalanceLatest: number; // latest-period-end running-balance snapshot (used for BS)
+  glBalanceSum: number;    // signed running-balance sum across exports (legacy fallback)
+  glActivityNet: number;   // net activity (Σ transaction amounts) summed across exports (used for P&L)
   glActivity: number;    // sum of |amount_signed| txns in period
   txnCount: number;
   beginningRowSeenButEmpty?: boolean; // QB shipped a "Beginning Balance" row with empty value cells
@@ -284,30 +285,34 @@ serve(async (req) => {
           const summaryCd = section.summary?.colData || [];
           const summaryNet = amountColIdx >= 0 ? parseMoney(summaryCd[amountColIdx]?.value) : null;
 
-          // glBalance preference: latest running balance > beginning + summaryNet > beginning + netSum
-          let glBalance: number;
-          if (balanceColIdx >= 0 && endingBalanceDate !== null) glBalance = endingBalance;
-          else if (summaryNet !== null) glBalance = beginningBalance + summaryNet;
-          else glBalance = beginningBalance + netSum;
+          // Two independent readings per section:
+          //   snapshotBalance = running balance at period end (correct for BS accounts)
+          //   activityNet     = Σ transaction amounts for the period (correct for P&L)
+          // We used to overload endingBalance into both — but QB's Balance column on P&L
+          // reports is NOT cumulative-since-inception, so using it for revenue undercounted
+          // by ~10× (z_Shopify Sales showed $399K vs true $11M+).
+          let snapshotBalance: number;
+          if (balanceColIdx >= 0 && endingBalanceDate !== null) snapshotBalance = endingBalance;
+          else if (summaryNet !== null) snapshotBalance = beginningBalance + summaryNet;
+          else snapshotBalance = beginningBalance + netSum;
+          const activityNet = summaryNet !== null ? summaryNet : netSum;
 
-          console.log(`[ANALYZE-GL] ${acctName}: begin=${beginningBalance} end=${endingBalance}(${endingBalanceDate}) sumNet=${summaryNet} rowNet=${netSum} → gl=${glBalance}`);
+          console.log(`[ANALYZE-GL] ${acctName}: begin=${beginningBalance} end=${endingBalance}(${endingBalanceDate}) sumNet=${summaryNet} rowNet=${netSum} → snap=${snapshotBalance} act=${activityNet}`);
 
           const key = acctId ? `id:${acctId}` : `name:${acctName.toLowerCase()}`;
           const coa = (acctId ? coaByAcctNum.get(acctId) : undefined) ||
                       coaByName.get(acctName.toLowerCase()) ||
                       coaByLeaf.get(normName(acctName));
 
-          // Merge across periods: sum activity/txnCount, track BOTH latest-wins
-          // snapshot (for BS) AND signed sum (for P&L). Final glBalance is chosen after
-          // classification is resolved during reconciliation — if we picked one here we'd
-          // have to know classification up-front, which we don't (COA may be missing).
+          // Merge across periods: sum activity/txnCount/activityNet; keep latest-wins snapshot.
           const prevSnap = bestSnapshotByKey.get(key);
           const isLatest = !prevSnap || recPeriodEnd >= prevSnap.periodEnd;
           const prev = acctMap.get(key);
           const mergedActivity = (prev?.glActivity || 0) + activity;
           const mergedTxnCount = (prev?.txnCount || 0) + txnCount;
-          const mergedLatest = isLatest ? glBalance : (prev?.glBalanceLatest ?? glBalance);
-          const mergedSum = (prev?.glBalanceSum ?? 0) + glBalance;
+          const mergedLatest = isLatest ? snapshotBalance : (prev?.glBalanceLatest ?? snapshotBalance);
+          const mergedSum = (prev?.glBalanceSum ?? 0) + snapshotBalance;
+          const mergedActivityNet = (prev?.glActivityNet ?? 0) + activityNet;
 
           acctMap.set(key, {
             name: acctName,
@@ -317,11 +322,12 @@ serve(async (req) => {
             glBalance: mergedLatest, // provisional; recomputed after classification below
             glBalanceLatest: mergedLatest,
             glBalanceSum: mergedSum,
+            glActivityNet: mergedActivityNet,
             glActivity: mergedActivity,
             txnCount: mergedTxnCount,
             beginningRowSeenButEmpty: (prev?.beginningRowSeenButEmpty || false) || (beginningRowSeenButEmpty && balanceColIdx < 0),
           });
-          if (isLatest) bestSnapshotByKey.set(key, { periodEnd: recPeriodEnd, glBalance });
+          if (isLatest) bestSnapshotByKey.set(key, { periodEnd: recPeriodEnd, glBalance: snapshotBalance });
           txnCountTotal += txnCount;
         }
       }
@@ -365,12 +371,13 @@ serve(async (req) => {
         if (!acc) {
           acc = { name, leaf: normName(name), acctNumber: (t.account_number as string) || coa?.acctNum || null,
                   classification: coa?.classification || "OTHER",
-                  glBalance: 0, glBalanceLatest: 0, glBalanceSum: 0, glActivity: 0, txnCount: 0 };
+                  glBalance: 0, glBalanceLatest: 0, glBalanceSum: 0, glActivityNet: 0, glActivity: 0, txnCount: 0 };
           acctMap.set(key, acc);
         }
         acc.glBalance += signed;
         acc.glBalanceLatest = acc.glBalance;
         acc.glBalanceSum = acc.glBalance;
+        acc.glActivityNet += signed;
         acc.glActivity += abs;
         acc.txnCount += 1;
       }
@@ -392,7 +399,7 @@ serve(async (req) => {
             name: coa.name, leaf: normName(coa.name),
             acctNumber: coa.acctNum, classification: coa.classification,
             glBalance: coa.balance, glBalanceLatest: coa.balance, glBalanceSum: coa.balance,
-            glActivity: 0, txnCount: 0,
+            glActivityNet: 0, glActivity: 0, txnCount: 0,
           });
         }
       }
@@ -422,6 +429,7 @@ serve(async (req) => {
           canonical.glActivity += dup.glActivity;
           canonical.txnCount += dup.txnCount;
           canonical.glBalanceSum += dup.glBalanceSum;
+          canonical.glActivityNet += dup.glActivityNet;
           // Latest snapshot: prefer non-zero, else keep canonical.
           if (Math.abs(canonical.glBalanceLatest) < 0.01 && Math.abs(dup.glBalanceLatest) > 0.01) {
             canonical.glBalanceLatest = dup.glBalanceLatest;
@@ -457,13 +465,16 @@ serve(async (req) => {
       });
     }
 
-    // Classification → active-balance selector. For P&L accounts, use the sum-across-
-    // exports (each yearly GL export contains only that year's activity, so latest-wins
-    // would report a single year against TB's lifetime yearSum). BS classes use latest.
+    // Classification → active-balance selector.
+    //  • Balance-sheet classes → latest-period-end snapshot (running balance is authoritative).
+    //  • P&L classes → net activity summed across all GL exports. QB's running-balance
+    //    column on P&L reports is NOT cumulative-since-inception, so it undercounts
+    //    revenue/expense by 10×+. glActivityNet is Σ transaction amounts and matches
+    //    TB's yearSumBalance behavior.
     const isPLClass = (c: string) => c === "REVENUE" || c === "INCOME" || c === "OTHER_INCOME" ||
                                      c === "EXPENSE" || c === "COST_OF_GOODS_SOLD" || c === "OTHER_EXPENSE";
     const applyActiveBalance = (a: AccountInfo) => {
-      a.glBalance = isPLClass(a.classification) ? a.glBalanceSum : a.glBalanceLatest;
+      a.glBalance = isPLClass(a.classification) ? a.glActivityNet : a.glBalanceLatest;
     };
     for (const a of accounts) applyActiveBalance(a);
     console.log(`[ANALYZE-GL] Aggregated ${accounts.length} unique accounts (post-rollup dedupe)`);

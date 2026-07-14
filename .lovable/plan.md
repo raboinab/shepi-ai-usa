@@ -1,40 +1,45 @@
-## What the screenshot shows
+## Why numbers still don't tie
 
-Three problems, all in `supabase/functions/analyze-general-ledger/index.ts`:
+The prior fixes (dedup, `glBalanceSum`, distribution offset) shipped, but the reconciliation table still shows:
 
-### 1. Duplicated account rows (`Account` and `Account*`)
+- **Revenue GL << TB** — `z_Shopify Sales` $399K vs TB $17.7M; `T-Shirt Sales` -$24K vs TB -$4.3M; `Shopify COGS` $259K vs TB $10M. This is a ~40× miss, not a rounding issue.
+- **Sign convention drifts row-to-row** — some revenue accounts land positive in GL and negative in TB, others match sign. That points to column detection picking Balance vs Amount differently per section.
+- **Identity check off $1.4M** — most likely a downstream effect of #1: understated revenue → understated net income → equation doesn't close.
 
-`1025 Fidelity Business Account`, `1999 Fidelity MM`, `Afterpay Sales`, `Faire Sales`, etc. each appear twice. The `*` is our own marker for "TB-inferred" rows. The duplicates come from **key collisions**: the same real account gets two entries in `acctMap` because we key on `id:${acctId}` when the GL export carries an id and `name:${acctName.toLowerCase()}` when it doesn't. When one export has the id and another doesn't (or COA-injected rows use a different key), the account splits into two independent rows and both survive into reconciliation.
+I don't want to make another blind edit. I want one round of instrumented diagnostics first, then a targeted fix.
 
-**Fix**: after the parse loop, collapse `acctMap` by normalized-name (leaf + parent path). When a name collision has one entry with `acctId` and one without, merge into the id-keyed one; sum `glActivity`/`txnCount`, pick the latest-`period_end` for `glBalance`.
+## Plan
 
-### 2. Revenue/expense accounts show enormous variances (`z_Shopify Sales` GL $448k vs TB −$17.7M)
+### Step 1 — Read real per-account numbers (no code changes)
+Pull recent `[ANALYZE-GL]` log lines for project `621a6c9f…` from the edge function logs and pick 3 canary accounts:
 
-For P&L accounts we currently use `mergedGlBalance = isLatest ? glBalance : prev.glBalance` — the latest GL export wins. But you have three GL exports (2024, 2025, 2026 YTD) and each one is a **year's activity**. Latest = 2026 YTD only ≈ $448K. TB side sums each calendar year's YTD-final ≈ $17M lifetime. Of course they don't match.
+- `z_Shopify Sales` (huge under-count)
+- `T-Shirt Sales` (sign-flip + under-count)
+- `1015 Wells Fargo Business Checking - 7179` (currently ties, use as control)
 
-**Fix**: for P&L classifications (REVENUE/INCOME/EXPENSE/COGS/OTHER_INCOME/OTHER_EXPENSE) **sum `glBalance` across exports** instead of taking the latest — matches TB's `yearSumBalance` behavior. Balance-sheet classes keep latest-wins snapshot. Classification isn't always known at parse time (COA might be missing an account) — apply the merge rule after classification is resolved.
+For each canary log the current run emits per GL export: `begin`, `end(date)`, `sumNet`, `rowNet`, `→ gl`. That tells us in one glance whether:
+- column detection picked the wrong column (rowNet ≠ summaryNet by orders of magnitude),
+- multi-export sum isn't happening (only one export logged for a P&L account),
+- or QB is emitting revenue in one export with a different sign convention.
 
-### 3. Identity check double-counts equity
+### Step 2 — Fix based on evidence, in `supabase/functions/analyze-general-ledger/index.ts`
 
-`Owner's Pay & Personal Expenses -$1,360,373` (a distribution / draw) and `Retained Earnings -$4,362,905` are both `Math.abs()`'d into `sumEquity`, so distributions inflate equity instead of offsetting it. Combined with revenue being wildly under-counted per issue #2, the identity check reports a $146K miss that isn't a real data problem — it's arithmetic.
+Anticipated fixes (finalized after Step 1):
 
-**Fix**: sum equity **signed**, not `abs`. Same for liabilities and net income — the sign-convention normalization needs to happen per-account (based on whether QB is exporting debit-positive or true-signed for that class), not by blanket `Math.abs`. Concretely:
-- Assets: keep current logic (abs, minus contra-assets).
-- Liabilities: `sumLiab += Math.abs(v)` stays — QB GL parent totals are debit-positive magnitudes.
-- Equity: split into "capital-like" (retained earnings, capital stock, opening balance = credit-natural positive) vs "distribution-like" (owner's pay, shareholder distributions, member draw = debits reducing equity). Use signed sum with distributions subtracting.
-- Revenue/Expense: unchanged (abs works after fix #2 restores real magnitudes).
+- **Prefer `beginning + summaryNet` over running-balance for P&L classes.** For P&L accounts the running balance restarts at 0 each report, but if QB's report is a subset (e.g. a filtered range) the endingBalance is only the visible slice. `summary.colData[amountColIdx]` is authoritative net for the whole section. Change the preference to: `summaryNet` first for P&L, `endingBalance` first for BS.
+- **Sign normalization per section, not per row.** After the section is parsed, detect the natural side from the QB `type`/`detail_type` in the parent header and, if the section's sign contradicts (e.g. Income section with positive summary), flip the whole section's contribution. Removes the row-by-row sign drift.
+- **Verify multi-export merge for P&L keys** — if two exports use different `acctId` presence, the pre-existing dedup pass must run before `glBalanceSum` selection. Confirm order and add a targeted log.
 
-## Verify
+### Step 3 — Verify
 
-After redeploy, re-run analysis on `621a6c9f…` and expect:
-- No `*` duplicates in the reconciliation table.
-- `z_Shopify Sales` GL summed across exports lands within a few % of TB $17.7M.
-- Identity check well inside tolerance (equity properly nets distributions against retained earnings).
-- Reconciliation rate rises materially from 37% once revenue/expense stop showing as false variances.
+Re-run analysis on project `621a6c9f…` and check:
+- `z_Shopify Sales` GL within ~5% of TB $17.7M.
+- No revenue rows with sign-flipped variance greater than a few % once TB match is confirmed.
+- Identity check inside tolerance.
+- Reconciliation rate materially above 36%.
 
 ## Out of scope
 
-- The `*` UI treatment itself stays (it's still meaningful for genuine tb_inferred BS backfills — just shouldn't be producing a second row for the same account).
-- No changes to matching heuristics, TB parsing, UI, or downstream identity check display beyond the numbers it consumes.
-
-Single file touched: `supabase/functions/analyze-general-ledger/index.ts`.
+- No UI changes.
+- No changes to TB parsing or matching heuristics beyond the sign-normalization needed above.
+- One file: `supabase/functions/analyze-general-ledger/index.ts`.
