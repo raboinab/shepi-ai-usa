@@ -123,178 +123,192 @@ serve(async (req) => {
     };
 
     if (glProcessed && glProcessed.length > 0) {
-      const gl = glProcessed[0].data as Record<string, unknown>;
-      const sections = ((gl.rows as { row?: GlRow[] })?.row || []) as GlRow[];
+      // Track per-account best snapshot (winner = latest period_end) plus summed activity.
+      type Snap = { periodEnd: string; glBalance: number };
+      const bestSnapshotByKey = new Map<string, Snap>();
 
-      // ── Resolve Amount / Balance column indices from QB report column metadata.
-      //    Report `columns.column[i]` maps to a section DATA row's `colData[i+1]`
-      //    because each detail row prepends the account label at index 0.
-      //    Without this, the density heuristic confuses numeric doc-num / memo
-      //    columns for money columns and misclassifies the real Amount column as
-      //    Balance — making glBalance equal the last transaction's amount instead
-      //    of the period total. ──
-      let metaAmountIdx = -1;
-      let metaBalanceIdx = -1;
-      {
-        const cols = ((gl.columns as { column?: Array<Record<string, unknown>> })?.column) || [];
-        for (let i = 0; i < cols.length; i++) {
-          const c = cols[i] as Record<string, unknown>;
-          const title = String(c.colTitle || "").toLowerCase().trim();
-          const md = (c.metaData as Array<Record<string, unknown>>) || [];
-          let colKey = "";
-          for (const m of md) {
-            if (String(m.name || "").toLowerCase() === "colkey") {
-              colKey = String(m.value || "").toLowerCase();
-              break;
+      for (const glRec of glProcessed) {
+        const gl = glRec.data as Record<string, unknown>;
+        const sections = ((gl.rows as { row?: GlRow[] })?.row || []) as GlRow[];
+        const recPeriodEnd = String(glRec.period_end || "");
+
+        // ── Resolve Amount / Balance column indices from QB report column metadata. ──
+        let metaAmountIdx = -1;
+        let metaBalanceIdx = -1;
+        {
+          const cols = ((gl.columns as { column?: Array<Record<string, unknown>> })?.column) || [];
+          for (let i = 0; i < cols.length; i++) {
+            const c = cols[i] as Record<string, unknown>;
+            const title = String(c.colTitle || "").toLowerCase().trim();
+            const md = (c.metaData as Array<Record<string, unknown>>) || [];
+            let colKey = "";
+            for (const m of md) {
+              if (String(m.name || "").toLowerCase() === "colkey") {
+                colKey = String(m.value || "").toLowerCase();
+                break;
+              }
+            }
+            const detailIdx = i + 1; // +1 for prepended account label in DATA rows
+            if (colKey === "subt_nat_amount" || (metaAmountIdx < 0 && title === "amount")) {
+              metaAmountIdx = detailIdx;
+            }
+            if (colKey === "rbal_nat_amount" || (metaBalanceIdx < 0 && title === "balance")) {
+              metaBalanceIdx = detailIdx;
             }
           }
-          const detailIdx = i + 1; // +1 for prepended account label in DATA rows
-          if (colKey === "subt_nat_amount" || (metaAmountIdx < 0 && title === "amount")) {
-            metaAmountIdx = detailIdx;
-          }
-          if (colKey === "rbal_nat_amount" || (metaBalanceIdx < 0 && title === "balance")) {
-            metaBalanceIdx = detailIdx;
-          }
         }
-      }
-      console.log(`[ANALYZE-GL] Column metadata: amountIdx=${metaAmountIdx}, balanceIdx=${metaBalanceIdx}`);
+        console.log(`[ANALYZE-GL] Export period_end=${recPeriodEnd}: amountIdx=${metaAmountIdx}, balanceIdx=${metaBalanceIdx}, sections=${sections.length}`);
 
-      for (const section of sections) {
-        if (section.type !== "SECTION") continue;
-        const hdr = section.header?.colData || [];
-        const acctName = (hdr[0]?.value || "").trim();
-        const acctId = (hdr[0]?.id || "").toString().trim() || null;
-        if (!acctName) continue;
+        for (const section of sections) {
+          if (section.type !== "SECTION") continue;
+          const hdr = section.header?.colData || [];
+          const acctName = (hdr[0]?.value || "").trim();
+          const acctId = (hdr[0]?.id || "").toString().trim() || null;
+          if (!acctName) continue;
 
-        const childRows = section.rows?.row || [];
-        let amountColIdx = -1;
-        let balanceColIdx = -1;
-        let beginningBalance = 0;
-        let endingBalance = 0;
-        let txnCount = 0;
-        let activity = 0;
-        let netSum = 0;
+          const childRows = section.rows?.row || [];
+          let amountColIdx = -1;
+          let balanceColIdx = -1;
+          let beginningBalance = 0;
+          // Track ending balance by MAX transaction date, not last-iterated row. QuickBooks
+          // may sort rows ascending OR descending; taking "last iterated" gives the wrong end
+          // when rows are descending (you get the running balance right after the earliest
+          // transaction of the period, not the actual ending).
+          let endingBalance = 0;
+          let endingBalanceDate: string | null = null;
+          let txnCount = 0;
+          let activity = 0;
+          let netSum = 0;
 
-        // Prefer metadata-derived indices. Validate Balance is actually populated
-        // in this section (QB sometimes omits trailing Balance entirely); otherwise
-        // treat balance as unavailable and derive from beginning + net.
-        if (metaAmountIdx >= 0) {
-          amountColIdx = metaAmountIdx;
-          if (metaBalanceIdx >= 0) {
-            let balanceSeen = 0, balSampled = 0;
+          if (metaAmountIdx >= 0) {
+            amountColIdx = metaAmountIdx;
+            if (metaBalanceIdx >= 0) {
+              let balanceSeen = 0, balSampled = 0;
+              for (const r of childRows) {
+                if (r.type !== "DATA") continue;
+                const cd = r.colData || [];
+                if (cd.length > metaBalanceIdx && parseMoney(cd[metaBalanceIdx]?.value) !== null) {
+                  balanceSeen++;
+                }
+                if (++balSampled >= 30) break;
+              }
+              balanceColIdx = balanceSeen >= Math.max(2, Math.ceil(balSampled * 0.3)) ? metaBalanceIdx : -1;
+            }
+          } else {
+            const moneyColFreq = new Map<number, number>();
+            let sampled = 0;
             for (const r of childRows) {
               if (r.type !== "DATA") continue;
               const cd = r.colData || [];
-              if (cd.length > metaBalanceIdx && parseMoney(cd[metaBalanceIdx]?.value) !== null) {
-                balanceSeen++;
+              for (let i = 0; i < cd.length; i++) {
+                if (parseMoney(cd[i]?.value) !== null) {
+                  moneyColFreq.set(i, (moneyColFreq.get(i) || 0) + 1);
+                }
               }
-              if (++balSampled >= 30) break;
+              if (++sampled >= 30) break;
             }
-            balanceColIdx = balanceSeen >= Math.max(2, Math.ceil(balSampled * 0.3)) ? metaBalanceIdx : -1;
+            const minHits = Math.max(3, Math.ceil(sampled * 0.5));
+            let moneyIdxsSorted = [...moneyColFreq.entries()]
+              .filter(([, n]) => n >= minHits)
+              .map(([i]) => i)
+              .sort((a, b) => a - b);
+            if (moneyIdxsSorted.length === 0 && moneyColFreq.size > 0) {
+              moneyIdxsSorted = [...moneyColFreq.keys()].sort((a, b) => a - b);
+            }
+            if (moneyIdxsSorted.length >= 2) {
+              balanceColIdx = moneyIdxsSorted[moneyIdxsSorted.length - 1];
+              amountColIdx = moneyIdxsSorted[moneyIdxsSorted.length - 2];
+            } else if (moneyIdxsSorted.length === 1) {
+              amountColIdx = moneyIdxsSorted[0];
+              balanceColIdx = -1;
+            }
           }
-        } else {
-          // Fallback: density heuristic when column metadata is missing.
-          //   (a) [..., Amount, Balance] — two trailing dense money columns
-          //   (b) [..., Amount]          — one dense money column; derive balance from running sum
-          const moneyColFreq = new Map<number, number>();
-          let sampled = 0;
+
+          let beginningRowSeenButEmpty = false;
           for (const r of childRows) {
             if (r.type !== "DATA") continue;
             const cd = r.colData || [];
-            for (let i = 0; i < cd.length; i++) {
-              if (parseMoney(cd[i]?.value) !== null) {
-                moneyColFreq.set(i, (moneyColFreq.get(i) || 0) + 1);
+            const label = (cd[0]?.value || "").trim().toLowerCase();
+            const isBeginning = label === "beginning balance";
+
+            if (isBeginning) {
+              const bb = balanceColIdx >= 0 ? parseMoney(cd[balanceColIdx]?.value)
+                                            : (amountColIdx >= 0 ? parseMoney(cd[amountColIdx]?.value) : null);
+              if (bb !== null) {
+                beginningBalance = bb;
+              } else {
+                const anyNumeric = cd.some((c: Record<string, unknown>) => parseMoney((c as { value?: string })?.value) !== null);
+                if (!anyNumeric) beginningRowSeenButEmpty = true;
+              }
+              continue;
+            }
+
+            const amt = amountColIdx >= 0 ? parseMoney(cd[amountColIdx]?.value) : null;
+            if (amt !== null) {
+              netSum += amt;
+              activity += Math.abs(amt);
+            }
+
+            // Find this row's transaction date.
+            let txnDate: string | null = null;
+            for (const c of cd) {
+              const d = parseDate(c?.value);
+              if (d) { txnDate = d; break; }
+            }
+            if (txnDate) {
+              if (!periodStart || txnDate < periodStart) periodStart = txnDate;
+              if (!periodEnd || txnDate > periodEnd) periodEnd = txnDate;
+            }
+
+            // Only update endingBalance when this row is CHRONOLOGICALLY LATER than the
+            // previous ending. Robust against descending row sort in QB exports.
+            if (balanceColIdx >= 0) {
+              const rb = parseMoney(cd[balanceColIdx]?.value);
+              if (rb !== null) {
+                if (!endingBalanceDate || (txnDate && txnDate >= endingBalanceDate)) {
+                  endingBalance = rb;
+                  if (txnDate) endingBalanceDate = txnDate;
+                }
               }
             }
-            if (++sampled >= 30) break;
+            txnCount += 1;
           }
-          const minHits = Math.max(3, Math.ceil(sampled * 0.5));
-          let moneyIdxsSorted = [...moneyColFreq.entries()]
-            .filter(([, n]) => n >= minHits)
-            .map(([i]) => i)
-            .sort((a, b) => a - b);
-          if (moneyIdxsSorted.length === 0 && moneyColFreq.size > 0) {
-            moneyIdxsSorted = [...moneyColFreq.keys()].sort((a, b) => a - b);
-          }
-          if (moneyIdxsSorted.length >= 2) {
-            balanceColIdx = moneyIdxsSorted[moneyIdxsSorted.length - 1];
-            amountColIdx = moneyIdxsSorted[moneyIdxsSorted.length - 2];
-          } else if (moneyIdxsSorted.length === 1) {
-            amountColIdx = moneyIdxsSorted[0];
-            balanceColIdx = -1;
-          }
+
+          // glBalance preference: latest running balance > beginning + net > net alone
+          let glBalance: number;
+          if (balanceColIdx >= 0 && endingBalanceDate !== null) glBalance = endingBalance;
+          else glBalance = beginningBalance + netSum;
+
+          const key = acctId ? `id:${acctId}` : `name:${acctName.toLowerCase()}`;
+          const coa = (acctId ? coaByAcctNum.get(acctId) : undefined) ||
+                      coaByName.get(acctName.toLowerCase()) ||
+                      coaByLeaf.get(normName(acctName));
+
+          // Merge across periods: sum activity/txnCount, keep latest-period glBalance.
+          const prevSnap = bestSnapshotByKey.get(key);
+          const isLatest = !prevSnap || recPeriodEnd >= prevSnap.periodEnd;
+          const prev = acctMap.get(key);
+          const mergedActivity = (prev?.glActivity || 0) + activity;
+          const mergedTxnCount = (prev?.txnCount || 0) + txnCount;
+          const mergedGlBalance = isLatest ? glBalance : (prev?.glBalance ?? glBalance);
+
+          acctMap.set(key, {
+            name: acctName,
+            leaf: normName(acctName),
+            acctNumber: acctId || coa?.acctNum || null,
+            classification: (coa?.classification || prev?.classification || "OTHER").toUpperCase(),
+            glBalance: mergedGlBalance,
+            glActivity: mergedActivity,
+            txnCount: mergedTxnCount,
+            beginningRowSeenButEmpty: (prev?.beginningRowSeenButEmpty || false) || (beginningRowSeenButEmpty && balanceColIdx < 0),
+          });
+          if (isLatest) bestSnapshotByKey.set(key, { periodEnd: recPeriodEnd, glBalance });
+          txnCountTotal += txnCount;
         }
-
-        let beginningRowSeenButEmpty = false;
-        for (const r of childRows) {
-          if (r.type !== "DATA") continue;
-          const cd = r.colData || [];
-          const label = (cd[0]?.value || "").trim().toLowerCase();
-          const isBeginning = label === "beginning balance";
-
-          if (isBeginning) {
-            // Beginning balance row: the running balance sits in whichever money col it can find
-            const bb = balanceColIdx >= 0 ? parseMoney(cd[balanceColIdx]?.value)
-                                          : (amountColIdx >= 0 ? parseMoney(cd[amountColIdx]?.value) : null);
-            if (bb !== null) {
-              beginningBalance = bb;
-            } else {
-              // QB sent the row but stripped the value — flag so we can backfill from TB later
-              const anyNumeric = cd.some((c: Record<string, unknown>) => parseMoney((c as { value?: string })?.value) !== null);
-              if (!anyNumeric) beginningRowSeenButEmpty = true;
-            }
-            continue;
-          }
-
-          const amt = amountColIdx >= 0 ? parseMoney(cd[amountColIdx]?.value) : null;
-          if (amt !== null) {
-            netSum += amt;
-            activity += Math.abs(amt);
-          }
-          if (balanceColIdx >= 0) {
-            const rb = parseMoney(cd[balanceColIdx]?.value);
-            if (rb !== null) endingBalance = rb;
-          }
-
-          let txnDate: string | null = null;
-          for (const c of cd) {
-            const d = parseDate(c?.value);
-            if (d) { txnDate = d; break; }
-          }
-          if (txnDate) {
-            if (!periodStart || txnDate < periodStart) periodStart = txnDate;
-            if (!periodEnd || txnDate > periodEnd) periodEnd = txnDate;
-          }
-          txnCount += 1;
-        }
-
-        // glBalance preference: explicit running balance > beginning + net > net alone
-        let glBalance: number;
-        if (balanceColIdx >= 0 && endingBalance !== 0) glBalance = endingBalance;
-        else glBalance = beginningBalance + netSum;
-
-        // Key on stable QB acctId so leaves that exist on both sides of the chart
-        // (e.g. "Decks and Patios" under Income AND under Expenses) stay separate.
-        // Fall back to a name-based key only if QB omitted the id.
-        const key = acctId ? `id:${acctId}` : `name:${acctName.toLowerCase()}`;
-        const coa = (acctId ? coaByAcctNum.get(acctId) : undefined) ||
-                    coaByName.get(acctName.toLowerCase()) ||
-                    coaByLeaf.get(normName(acctName));
-
-        acctMap.set(key, {
-          name: acctName,
-          leaf: normName(acctName),
-          acctNumber: acctId || coa?.acctNum || null,
-          classification: (coa?.classification || "OTHER").toUpperCase(),
-          glBalance,
-          glActivity: activity,
-          txnCount,
-          beginningRowSeenButEmpty: beginningRowSeenButEmpty && balanceColIdx < 0,
-        });
-        txnCountTotal += txnCount;
       }
-      console.log(`[ANALYZE-GL] Parsed ${acctMap.size} accounts / ${txnCountTotal} txns from processed_data GL detail`);
+      console.log(`[ANALYZE-GL] Parsed ${acctMap.size} accounts / ${txnCountTotal} txns from ${glProcessed.length} GL export(s)`);
     }
+
 
     // Fallback: legacy canonical_transactions path
     if (acctMap.size === 0) {
