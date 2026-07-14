@@ -133,6 +133,11 @@ serve(async (req) => {
         const recPeriodEnd = String(glRec.period_end || "");
 
         // ── Resolve Amount / Balance column indices from QB report column metadata. ──
+        // GL DATA rows are nested inside SECTIONs and do NOT have a prepended account
+        // label column (the account name lives in section.header). Use metadata indices
+        // as-is. (The old +1 offset was borrowed from TB parsing and was inflating
+        // per-account balances by summing the running-balance column as if it were
+        // transaction amounts — Wells Fargo showed $975M instead of ~$425K.)
         let metaAmountIdx = -1;
         let metaBalanceIdx = -1;
         {
@@ -148,12 +153,11 @@ serve(async (req) => {
                 break;
               }
             }
-            const detailIdx = i + 1; // +1 for prepended account label in DATA rows
             if (colKey === "subt_nat_amount" || (metaAmountIdx < 0 && title === "amount")) {
-              metaAmountIdx = detailIdx;
+              metaAmountIdx = i;
             }
             if (colKey === "rbal_nat_amount" || (metaBalanceIdx < 0 && title === "balance")) {
-              metaBalanceIdx = detailIdx;
+              metaBalanceIdx = i;
             }
           }
         }
