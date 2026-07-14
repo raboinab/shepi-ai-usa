@@ -297,20 +297,26 @@ serve(async (req) => {
                       coaByName.get(acctName.toLowerCase()) ||
                       coaByLeaf.get(normName(acctName));
 
-          // Merge across periods: sum activity/txnCount, keep latest-period glBalance.
+          // Merge across periods: sum activity/txnCount, track BOTH latest-wins
+          // snapshot (for BS) AND signed sum (for P&L). Final glBalance is chosen after
+          // classification is resolved during reconciliation — if we picked one here we'd
+          // have to know classification up-front, which we don't (COA may be missing).
           const prevSnap = bestSnapshotByKey.get(key);
           const isLatest = !prevSnap || recPeriodEnd >= prevSnap.periodEnd;
           const prev = acctMap.get(key);
           const mergedActivity = (prev?.glActivity || 0) + activity;
           const mergedTxnCount = (prev?.txnCount || 0) + txnCount;
-          const mergedGlBalance = isLatest ? glBalance : (prev?.glBalance ?? glBalance);
+          const mergedLatest = isLatest ? glBalance : (prev?.glBalanceLatest ?? glBalance);
+          const mergedSum = (prev?.glBalanceSum ?? 0) + glBalance;
 
           acctMap.set(key, {
             name: acctName,
             leaf: normName(acctName),
             acctNumber: acctId || coa?.acctNum || null,
             classification: (coa?.classification || prev?.classification || "OTHER").toUpperCase(),
-            glBalance: mergedGlBalance,
+            glBalance: mergedLatest, // provisional; recomputed after classification below
+            glBalanceLatest: mergedLatest,
+            glBalanceSum: mergedSum,
             glActivity: mergedActivity,
             txnCount: mergedTxnCount,
             beginningRowSeenButEmpty: (prev?.beginningRowSeenButEmpty || false) || (beginningRowSeenButEmpty && balanceColIdx < 0),
