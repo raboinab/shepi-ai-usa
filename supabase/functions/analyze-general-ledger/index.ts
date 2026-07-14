@@ -17,9 +17,10 @@ interface AccountInfo {
   leaf: string;          // normalized leaf name
   acctNumber: string | null;
   classification: string; // ASSET/LIABILITY/EQUITY/INCOME/EXPENSE/OTHER
-  glBalance: number;     // active balance — snapshot for BS, sum-across-exports for P&L
-  glBalanceLatest: number; // latest-period-end snapshot (used for BS classes)
-  glBalanceSum: number;    // signed sum across all exports (used for P&L classes)
+  glBalance: number;     // active balance — snapshot for BS, activity-sum for P&L
+  glBalanceLatest: number; // latest-period-end running-balance snapshot (used for BS)
+  glBalanceSum: number;    // signed running-balance sum across exports (legacy fallback)
+  glActivityNet: number;   // net activity (Σ transaction amounts) summed across exports (used for P&L)
   glActivity: number;    // sum of |amount_signed| txns in period
   txnCount: number;
   beginningRowSeenButEmpty?: boolean; // QB shipped a "Beginning Balance" row with empty value cells
