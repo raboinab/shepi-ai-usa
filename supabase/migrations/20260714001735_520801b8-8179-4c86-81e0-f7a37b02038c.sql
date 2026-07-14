@@ -1,0 +1,1 @@
+UPDATE documents SET validation_result = NULL, validated_at = NULL WHERE id='753518ce-6ffe-4af0-b806-906447aaadfc';
