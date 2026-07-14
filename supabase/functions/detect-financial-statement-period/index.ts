@@ -239,7 +239,7 @@ function extractXlsxText(bytes: Uint8Array): { text: string; header: string } {
           .join("\n"),
       );
       headerChunks.push(
-        rows.slice(0, 15)
+        rows.slice(0, 25)
           .map((r) => (Array.isArray(r) ? r.map(formatCell).join(" ") : ""))
           .join("\n"),
       );
