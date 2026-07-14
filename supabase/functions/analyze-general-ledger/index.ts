@@ -94,10 +94,15 @@ serve(async (req) => {
     let txnCountTotal = 0;
     let glDetailSource: "processed_data" | "canonical_transactions" = "processed_data";
 
+    // Fetch ALL GL exports for this project and merge by account. Each per-account snapshot
+    // is keyed by acctId (or name fallback); when multiple exports touch the same account,
+    // the one with the latest period_end wins for `glBalance` (true ending), while activity
+    // and txnCount sum across periods. This gives whole-lifetime coverage rather than just
+    // the last uploaded slice.
     const { data: glProcessed } = await supabase
       .from("processed_data").select("data, period_start, period_end, created_at")
       .eq("project_id", projectId).eq("data_type", "general_ledger")
-      .order("created_at", { ascending: false }).limit(1);
+      .order("period_end", { ascending: true });
 
     type ColData = { value?: string; id?: string | null };
     type GlRow = { type?: string; colData?: ColData[]; rows?: { row?: GlRow[] }; header?: { colData?: ColData[] }; summary?: { colData?: ColData[] } };
