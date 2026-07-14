@@ -886,7 +886,7 @@ serve(async (req) => {
         equity: equityAbs,
         netIncome,
         difference: accountingEquationDiff,
-        balanced: Math.abs(accountingEquationDiff) <= 1000,
+        balanced: Math.abs(accountingEquationDiff) <= identityTolerance,
       },
       largestAccounts,
       reconciliation: reconciliation.slice(0, 60),
