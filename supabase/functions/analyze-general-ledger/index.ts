@@ -399,7 +399,7 @@ serve(async (req) => {
             name: coa.name, leaf: normName(coa.name),
             acctNumber: coa.acctNum, classification: coa.classification,
             glBalance: coa.balance, glBalanceLatest: coa.balance, glBalanceSum: coa.balance,
-            glActivity: 0, txnCount: 0,
+            glActivityNet: 0, glActivity: 0, txnCount: 0,
           });
         }
       }
