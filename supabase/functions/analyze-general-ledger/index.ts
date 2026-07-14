@@ -272,7 +272,11 @@ serve(async (req) => {
             if (amt !== null) {
               netSum += amt;
               activity += Math.abs(amt);
+              const raw = String(cd[amountColIdx]?.value ?? "");
+              if (firstRowAmountRaw === null) firstRowAmountRaw = raw;
+              lastRowAmountRaw = raw;
             }
+
 
             // Find this row's transaction date.
             let txnDate: string | null = null;
