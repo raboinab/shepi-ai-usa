@@ -848,7 +848,8 @@ serve(async (req) => {
     if (varianceCount > 0) flags.push(`${varianceCount} account(s) have GL↔TB variances`);
     if (missingInTB > 5) flags.push(`${missingInTB} GL account(s) missing from Trial Balance`);
     if (missingInGL.length > 5) flags.push(`${missingInGL.length} TB account(s) have no GL activity in canonical ledger`);
-    if (Math.abs(accountingEquationDiff) > 1000 && tbHas) {
+    const identityTolerance = Math.max(1000, Math.abs(sumAssets) * 0.01);
+    if (Math.abs(accountingEquationDiff) > identityTolerance && tbHas) {
       flags.push(`Accounting equation (A − L − E − NI) off by ${new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(Math.abs(accountingEquationDiff))}`);
     }
 
