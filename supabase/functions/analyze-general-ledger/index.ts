@@ -391,9 +391,49 @@ serve(async (req) => {
           acctMap.set(mapKey, {
             name: coa.name, leaf: normName(coa.name),
             acctNumber: coa.acctNum, classification: coa.classification,
-            glBalance: coa.balance, glActivity: 0, txnCount: 0,
+            glBalance: coa.balance, glBalanceLatest: coa.balance, glBalanceSum: coa.balance,
+            glActivity: 0, txnCount: 0,
           });
         }
+      }
+    }
+
+    // ── Collapse key-collision duplicates. Same real account can land under both
+    //    `id:${acctId}` and `name:${acctName}` when one GL export includes an id and
+    //    another doesn't (or COA-injection uses a different key). Merge into the
+    //    id-keyed entry, sum activity/txnCount, take latest snapshot / summed balance
+    //    coherently.
+    {
+      const byName = new Map<string, string[]>();
+      for (const [k, v] of acctMap) {
+        const nk = v.name.toLowerCase().trim();
+        const arr = byName.get(nk) || [];
+        arr.push(k);
+        byName.set(nk, arr);
+      }
+      for (const [, keys] of byName) {
+        if (keys.length < 2) continue;
+        // Prefer the id-keyed entry as the canonical row (falls back to first).
+        const canonicalKey = keys.find(k => k.startsWith("id:")) || keys[0];
+        const canonical = acctMap.get(canonicalKey)!;
+        for (const k of keys) {
+          if (k === canonicalKey) continue;
+          const dup = acctMap.get(k)!;
+          canonical.glActivity += dup.glActivity;
+          canonical.txnCount += dup.txnCount;
+          canonical.glBalanceSum += dup.glBalanceSum;
+          // Latest snapshot: prefer non-zero, else keep canonical.
+          if (Math.abs(canonical.glBalanceLatest) < 0.01 && Math.abs(dup.glBalanceLatest) > 0.01) {
+            canonical.glBalanceLatest = dup.glBalanceLatest;
+          }
+          canonical.beginningRowSeenButEmpty = canonical.beginningRowSeenButEmpty || dup.beginningRowSeenButEmpty;
+          if (canonical.classification === "OTHER" && dup.classification !== "OTHER") {
+            canonical.classification = dup.classification;
+          }
+          if (!canonical.acctNumber && dup.acctNumber) canonical.acctNumber = dup.acctNumber;
+          acctMap.delete(k);
+        }
+        canonical.glBalance = canonical.glBalanceLatest;
       }
     }
 
