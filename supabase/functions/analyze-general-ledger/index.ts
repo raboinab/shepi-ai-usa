@@ -306,6 +306,7 @@ serve(async (req) => {
           // Cross-check against QB's own "Total for <account>" summary row (net activity).
           const summaryCd = section.summary?.colData || [];
           const summaryNet = amountColIdx >= 0 ? parseMoney(summaryCd[amountColIdx]?.value) : null;
+          const summaryAmountRaw = amountColIdx >= 0 ? String(summaryCd[amountColIdx]?.value ?? "") : "";
 
           // Two independent readings per section:
           //   snapshotBalance = running balance at period end (correct for BS accounts)
@@ -319,12 +320,26 @@ serve(async (req) => {
           else snapshotBalance = beginningBalance + netSum;
           const activityNet = summaryNet !== null ? summaryNet : netSum;
 
-          console.log(`[ANALYZE-GL] ${acctName}: begin=${beginningBalance} end=${endingBalance}(${endingBalanceDate}) sumNet=${summaryNet} rowNet=${netSum} → snap=${snapshotBalance} act=${activityNet}`);
-
           const key = acctId ? `id:${acctId}` : `name:${acctName.toLowerCase()}`;
           const coa = (acctId ? coaByAcctNum.get(acctId) : undefined) ||
                       coaByName.get(acctName.toLowerCase()) ||
                       coaByLeaf.get(normName(acctName));
+          const cls = (coa?.classification || "OTHER").toUpperCase();
+          const picked = (cls === "REVENUE" || cls === "INCOME" || cls === "OTHER_INCOME" ||
+                          cls === "EXPENSE" || cls === "COST_OF_GOODS_SOLD" || cls === "OTHER_EXPENSE")
+                          ? "activityNet" : "snapshotBalance";
+
+          // Diagnostic: one dense line per section covers column detection, raw QB
+          // values, computed readings, classification, and which reading we picked.
+          console.log(
+            `[ANALYZE-GL:DIAG] name="${acctName}" acctId=${acctId || "-"} ` +
+            `group=${parentGroup || "-"} secGroup=${secGroup || "-"} ` +
+            `amtIdx=${amountColIdx} balIdx=${balanceColIdx} ` +
+            `begin=${beginningBalance} end=${endingBalance}(${endingBalanceDate || "-"}) ` +
+            `firstAmt=${JSON.stringify(firstRowAmountRaw)} lastAmt=${JSON.stringify(lastRowAmountRaw)} ` +
+            `summaryRaw=${JSON.stringify(summaryAmountRaw)} summaryNet=${summaryNet} rowNet=${netSum} ` +
+            `→ snap=${snapshotBalance} act=${activityNet} class=${cls} pick=${picked}`
+          );
 
           // Merge across periods: sum activity/txnCount/activityNet; keep latest-wins snapshot.
           const prevSnap = bestSnapshotByKey.get(key);
@@ -352,7 +367,10 @@ serve(async (req) => {
           if (isLatest) bestSnapshotByKey.set(key, { periodEnd: recPeriodEnd, glBalance: snapshotBalance });
           txnCountTotal += txnCount;
         }
+        }; // close walkSections
+        walkSections(sections, null);
       }
+
       console.log(`[ANALYZE-GL] Parsed ${acctMap.size} accounts / ${txnCountTotal} txns from ${glProcessed.length} GL export(s)`);
     }
 
