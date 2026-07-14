@@ -285,30 +285,34 @@ serve(async (req) => {
           const summaryCd = section.summary?.colData || [];
           const summaryNet = amountColIdx >= 0 ? parseMoney(summaryCd[amountColIdx]?.value) : null;
 
-          // glBalance preference: latest running balance > beginning + summaryNet > beginning + netSum
-          let glBalance: number;
-          if (balanceColIdx >= 0 && endingBalanceDate !== null) glBalance = endingBalance;
-          else if (summaryNet !== null) glBalance = beginningBalance + summaryNet;
-          else glBalance = beginningBalance + netSum;
+          // Two independent readings per section:
+          //   snapshotBalance = running balance at period end (correct for BS accounts)
+          //   activityNet     = Σ transaction amounts for the period (correct for P&L)
+          // We used to overload endingBalance into both — but QB's Balance column on P&L
+          // reports is NOT cumulative-since-inception, so using it for revenue undercounted
+          // by ~10× (z_Shopify Sales showed $399K vs true $11M+).
+          let snapshotBalance: number;
+          if (balanceColIdx >= 0 && endingBalanceDate !== null) snapshotBalance = endingBalance;
+          else if (summaryNet !== null) snapshotBalance = beginningBalance + summaryNet;
+          else snapshotBalance = beginningBalance + netSum;
+          const activityNet = summaryNet !== null ? summaryNet : netSum;
 
-          console.log(`[ANALYZE-GL] ${acctName}: begin=${beginningBalance} end=${endingBalance}(${endingBalanceDate}) sumNet=${summaryNet} rowNet=${netSum} → gl=${glBalance}`);
+          console.log(`[ANALYZE-GL] ${acctName}: begin=${beginningBalance} end=${endingBalance}(${endingBalanceDate}) sumNet=${summaryNet} rowNet=${netSum} → snap=${snapshotBalance} act=${activityNet}`);
 
           const key = acctId ? `id:${acctId}` : `name:${acctName.toLowerCase()}`;
           const coa = (acctId ? coaByAcctNum.get(acctId) : undefined) ||
                       coaByName.get(acctName.toLowerCase()) ||
                       coaByLeaf.get(normName(acctName));
 
-          // Merge across periods: sum activity/txnCount, track BOTH latest-wins
-          // snapshot (for BS) AND signed sum (for P&L). Final glBalance is chosen after
-          // classification is resolved during reconciliation — if we picked one here we'd
-          // have to know classification up-front, which we don't (COA may be missing).
+          // Merge across periods: sum activity/txnCount/activityNet; keep latest-wins snapshot.
           const prevSnap = bestSnapshotByKey.get(key);
           const isLatest = !prevSnap || recPeriodEnd >= prevSnap.periodEnd;
           const prev = acctMap.get(key);
           const mergedActivity = (prev?.glActivity || 0) + activity;
           const mergedTxnCount = (prev?.txnCount || 0) + txnCount;
-          const mergedLatest = isLatest ? glBalance : (prev?.glBalanceLatest ?? glBalance);
-          const mergedSum = (prev?.glBalanceSum ?? 0) + glBalance;
+          const mergedLatest = isLatest ? snapshotBalance : (prev?.glBalanceLatest ?? snapshotBalance);
+          const mergedSum = (prev?.glBalanceSum ?? 0) + snapshotBalance;
+          const mergedActivityNet = (prev?.glActivityNet ?? 0) + activityNet;
 
           acctMap.set(key, {
             name: acctName,
@@ -318,11 +322,12 @@ serve(async (req) => {
             glBalance: mergedLatest, // provisional; recomputed after classification below
             glBalanceLatest: mergedLatest,
             glBalanceSum: mergedSum,
+            glActivityNet: mergedActivityNet,
             glActivity: mergedActivity,
             txnCount: mergedTxnCount,
             beginningRowSeenButEmpty: (prev?.beginningRowSeenButEmpty || false) || (beginningRowSeenButEmpty && balanceColIdx < 0),
           });
-          if (isLatest) bestSnapshotByKey.set(key, { periodEnd: recPeriodEnd, glBalance });
+          if (isLatest) bestSnapshotByKey.set(key, { periodEnd: recPeriodEnd, glBalance: snapshotBalance });
           txnCountTotal += txnCount;
         }
       }
