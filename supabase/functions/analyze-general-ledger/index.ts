@@ -456,7 +456,18 @@ serve(async (req) => {
         return !hasChild;
       });
     }
+
+    // Classification → active-balance selector. For P&L accounts, use the sum-across-
+    // exports (each yearly GL export contains only that year's activity, so latest-wins
+    // would report a single year against TB's lifetime yearSum). BS classes use latest.
+    const isPLClass = (c: string) => c === "REVENUE" || c === "INCOME" || c === "OTHER_INCOME" ||
+                                     c === "EXPENSE" || c === "COST_OF_GOODS_SOLD" || c === "OTHER_EXPENSE";
+    const applyActiveBalance = (a: AccountInfo) => {
+      a.glBalance = isPLClass(a.classification) ? a.glBalanceSum : a.glBalanceLatest;
+    };
+    for (const a of accounts) applyActiveBalance(a);
     console.log(`[ANALYZE-GL] Aggregated ${accounts.length} unique accounts (post-rollup dedupe)`);
+
 
     // ── Pull latest TB. Each entry in `monthlyReports` is a single-MONTH QuickBooks TB
     //    (startDate = first of month, endDate = last of month). The values inside behave
