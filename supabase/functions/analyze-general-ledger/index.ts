@@ -891,6 +891,11 @@ serve(async (req) => {
     // negative asset contributions; take absolute value elsewhere so sign-convention drift
     // between imports doesn't mask real balances.
     const contraAssetRe = /accumulated depreciation|accumulated amortization|allowance for/i;
+    // Owner-draw / distribution accounts are debit-natural equity contras — they reduce
+    // equity. QB GL exports them as negative running balances alongside a negative
+    // retained-earnings row (credit-natural). Blanket Math.abs on Equity treats them
+    // both as additions, inflating equity and busting the identity check.
+    const distributionRe = /owner'?s?\s*(pay|draw)|shareholder\s*distribution|member\s*draw|personal\s*expense|distribution/i;
     let sumAssets = 0, sumLiab = 0, sumEquity = 0, sumRevenue = 0, sumExpense = 0;
     for (const a of accounts) {
       const c = a.classification;
@@ -899,7 +904,10 @@ serve(async (req) => {
         sumAssets += contraAssetRe.test(a.name) ? -Math.abs(v) : Math.abs(v);
       }
       else if (c === "LIABILITY") sumLiab += Math.abs(v);
-      else if (c === "EQUITY") sumEquity += Math.abs(v);
+      else if (c === "EQUITY") {
+        // Distributions subtract from equity; everything else adds its magnitude.
+        sumEquity += distributionRe.test(a.name) ? -Math.abs(v) : Math.abs(v);
+      }
       else if (c === "REVENUE" || c === "INCOME" || c === "OTHER_INCOME") sumRevenue += Math.abs(v);
       else if (c === "EXPENSE" || c === "COST_OF_GOODS_SOLD" || c === "OTHER_EXPENSE") sumExpense += Math.abs(v);
     }
@@ -909,6 +917,8 @@ serve(async (req) => {
     const expenseAbs = sumExpense;
     const netIncome = revenueAbs - expenseAbs;
     const accountingEquationDiff = sumAssets - liabAbs - equityAbs - netIncome;
+
+
 
     // ── Largest accounts by |balance| ──
     const largestAccounts = [...accounts]
