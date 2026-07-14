@@ -199,6 +199,11 @@ serve(async (req) => {
           let txnCount = 0;
           let activity = 0;
           let netSum = 0;
+          // Diagnostic: raw first/last amount cell values (unsigned strings from QB), to
+          // detect column-detection or sign-convention drift per section.
+          let firstRowAmountRaw: string | null = null;
+          let lastRowAmountRaw: string | null = null;
+
 
           if (metaAmountIdx >= 0) {
             amountColIdx = metaAmountIdx;
