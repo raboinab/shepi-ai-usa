@@ -98,7 +98,8 @@ function detectByRegex(text: string, accountType?: string, headerText?: string):
   }
 
   // 6b. Balance Sheet: scan HEADER region for bare column-header dates like
-  // "May 31, 2026", "May 31 2025", "12/31/2024", or ISO "2026-05-31".
+  // "May 31, 2026", "May 31 2025", "12/31/2024", ISO "2026-05-31",
+  // or bare month-year "May 2026" / "May-26" QBO comparative columns.
   // Comparative BS often only prefixes the FIRST column with "As of", so
   // subsequent columns are missed by the "as of" regex above.
   if (accountType === "balance_sheet" && headerText) {
@@ -108,8 +109,10 @@ function detectByRegex(text: string, accountType?: string, headerText?: string):
       if (!mo || y < 1990 || y > 2100) continue;
       pushRange(startOfMonth(y, mo), endOfMonth(y, mo), "bs header date");
     }
-    for (const m of h.matchAll(/\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\b/g)) {
-      const mo = parseInt(m[1], 10); const y = parseInt(m[3], 10);
+    for (const m of h.matchAll(/\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\b/g)) {
+      const mo = parseInt(m[1], 10);
+      let y = parseInt(m[3], 10);
+      if (y < 100) y = y >= 70 ? 1900 + y : 2000 + y;
       if (mo < 1 || mo > 12 || y < 1990 || y > 2100) continue;
       pushRange(startOfMonth(y, mo), endOfMonth(y, mo), "bs header numeric date");
     }
@@ -117,6 +120,21 @@ function detectByRegex(text: string, accountType?: string, headerText?: string):
       const y = parseInt(m[1], 10); const mo = parseInt(m[2], 10);
       if (y < 1990 || y > 2100 || mo < 1 || mo > 12) continue;
       pushRange(startOfMonth(y, mo), endOfMonth(y, mo), "bs header iso date");
+    }
+    // Bare "Month YYYY" column headers (e.g., "May 2026", "Apr 2026").
+    for (const m of h.matchAll(/\b([A-Za-z]{3,9})\.?\s+(\d{4})\b/g)) {
+      const mo = MONTHS[m[1].toLowerCase()]; const y = parseInt(m[2], 10);
+      if (!mo || y < 1990 || y > 2100) continue;
+      pushRange(startOfMonth(y, mo), endOfMonth(y, mo), "bs header month-year");
+    }
+    // "MMM-YY" or "MMM-YYYY" (e.g., "May-26", "Apr-2026") — common in QBO/Excel exports.
+    for (const m of h.matchAll(/\b([A-Za-z]{3,9})-(\d{2,4})\b/g)) {
+      const mo = MONTHS[m[1].toLowerCase()];
+      let y = parseInt(m[2], 10);
+      if (!mo) continue;
+      if (y < 100) y = y >= 70 ? 1900 + y : 2000 + y;
+      if (y < 1990 || y > 2100) continue;
+      pushRange(startOfMonth(y, mo), endOfMonth(y, mo), "bs header mmm-yy");
     }
   }
 
@@ -221,7 +239,7 @@ function extractXlsxText(bytes: Uint8Array): { text: string; header: string } {
           .join("\n"),
       );
       headerChunks.push(
-        rows.slice(0, 15)
+        rows.slice(0, 25)
           .map((r) => (Array.isArray(r) ? r.map(formatCell).join(" ") : ""))
           .join("\n"),
       );
@@ -388,6 +406,7 @@ serve(async (req) => {
     const headerCombined = `${doc.name}\n${headerText}`;
 
     let detection = detectByRegex(combined, doc.account_type, headerCombined);
+    console.log("detect-period:", doc.id, doc.account_type, "->", JSON.stringify(detection), "headerPreview:", headerCombined.slice(0, 500));
     let usedLlm = false;
     if (detection.confidence < 0.7) {
       const llm = await detectByLLM(text.slice(0, 4000), doc.account_type || "financial statement", doc.name);
