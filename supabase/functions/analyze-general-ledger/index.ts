@@ -278,12 +278,17 @@ serve(async (req) => {
             txnCount += 1;
           }
 
-          // glBalance preference: latest running balance > beginning + net > net alone
+          // Cross-check against QB's own "Total for <account>" summary row (net activity).
+          const summaryCd = section.summary?.colData || [];
+          const summaryNet = amountColIdx >= 0 ? parseMoney(summaryCd[amountColIdx]?.value) : null;
+
+          // glBalance preference: latest running balance > beginning + summaryNet > beginning + netSum
           let glBalance: number;
           if (balanceColIdx >= 0 && endingBalanceDate !== null) glBalance = endingBalance;
+          else if (summaryNet !== null) glBalance = beginningBalance + summaryNet;
           else glBalance = beginningBalance + netSum;
 
-          const key = acctId ? `id:${acctId}` : `name:${acctName.toLowerCase()}`;
+          console.log(`[ANALYZE-GL] ${acctName}: begin=${beginningBalance} end=${endingBalance}(${endingBalanceDate}) sumNet=${summaryNet} rowNet=${netSum} → gl=${glBalance}`);
           const coa = (acctId ? coaByAcctNum.get(acctId) : undefined) ||
                       coaByName.get(acctName.toLowerCase()) ||
                       coaByLeaf.get(normName(acctName));
