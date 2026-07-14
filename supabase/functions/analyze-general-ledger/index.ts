@@ -813,13 +813,17 @@ serve(async (req) => {
     // ── Accounting identity: Assets = Liabilities + Equity + (Revenue − Expense)
     //    Handle both sign conventions: detect whether revenues sum positive (debit-positive
     //    convention common in QB GL exports) or negative (true double-entry signed sum). ──
-    // Apply Math.abs per-account *before* summing so sign-convention drift between
-    // imports (one liability +500, another −300) doesn't net to 200 and mask the real $800.
+    // Treat contra-assets (accumulated depreciation, allowance for doubtful accounts) as
+    // negative asset contributions; take absolute value elsewhere so sign-convention drift
+    // between imports doesn't mask real balances.
+    const contraAssetRe = /accumulated depreciation|accumulated amortization|allowance for/i;
     let sumAssets = 0, sumLiab = 0, sumEquity = 0, sumRevenue = 0, sumExpense = 0;
     for (const a of accounts) {
       const c = a.classification;
       const v = a.glBalance;
-      if (c === "ASSET") sumAssets += v; // assets keep sign so contra-assets net correctly
+      if (c === "ASSET") {
+        sumAssets += contraAssetRe.test(a.name) ? -Math.abs(v) : Math.abs(v);
+      }
       else if (c === "LIABILITY") sumLiab += Math.abs(v);
       else if (c === "EQUITY") sumEquity += Math.abs(v);
       else if (c === "REVENUE" || c === "INCOME" || c === "OTHER_INCOME") sumRevenue += Math.abs(v);
