@@ -19,6 +19,9 @@ const normName = (s: string): string =>
     .replace(/\bdeleted\b/g, " ")
     .replace(/^z+_+/g, "")
     .replace(/\*+$/g, "")
+    // Strip parenthetical qualifiers ("Undeposited Funds (Sales)" → "undeposited funds")
+    // so representation variants collapse onto the same normalized leaf.
+    .replace(/\([^)]*\)/g, " ")
     .replace(/[^\w\s]/g, " ")
     .replace(/_+/g, " ")
     .replace(/\s+/g, " ")
@@ -30,6 +33,19 @@ const normName = (s: string): string =>
     // so "(7179)"-tagged deleted variants match their numbered TB parent.
     .replace(/\s+\d{3,}$/, "")
     .trim();
+
+// Name-pattern classifier for accounts that fail COA and section-group lookup.
+// Catches "(deleted)" contra-revenue variants and orphaned QB accounts.
+const classifyByName = (name: string): string | null => {
+  const n = name.toLowerCase();
+  if (/\b(cogs|cost of goods|cost of sales|merchant\s*fee|processing\s*fee|payment\s*fee|transaction\s*fee)\b/.test(n)) return "EXPENSE";
+  if (/\b(distribution|owner\s*draw|owner\s*withdraw|member\s*draw|shareholder\s*(distribut|withdraw)|contribution)\b/.test(n)) return "EQUITY";
+  // Contra-revenue: shipping/discount/return/refund/fee patterns that aren't cost-side.
+  if (/\b(shipping\s*income|shipping\s*revenue|shipping|discount|return|refund|chargeback|sales?\s*tax|store\s*credit)s?\b/.test(n)) {
+    if (!/\bcost\b|\bexpense\b|\bcogs\b/.test(n)) return "REVENUE";
+  }
+  return null;
+};
 
 interface AccountInfo {
   name: string;          // fully qualified (e.g. "Landscaping Services:Job Materials")
@@ -278,7 +294,11 @@ serve(async (req) => {
           name: acctName,
           leaf: normName(acctName),
           acctNumber: (r.account_number as string | null) || null,
-          classification: String(r.classification || "OTHER").toUpperCase(),
+          classification: (() => {
+            const c = String(r.classification || "OTHER").toUpperCase();
+            if (c !== "OTHER") return c;
+            return (classifyByName(acctName) || "OTHER").toUpperCase();
+          })(),
           glBalance: Number(r.snapshot_balance || 0),
           glBalanceLatest: Number(r.snapshot_balance || 0),
           glBalanceSum: Number(r.snapshot_sum || 0),
@@ -358,7 +378,31 @@ serve(async (req) => {
             continue;
           }
 
-          const childRows = section.rows?.row || [];
+          let childRows = section.rows?.row || [];
+
+          // Detect QB "group by month" GL layout: the account section contains nested
+          // sub-SECTIONs (one per month) rather than flat DATA rows. In this layout QB's
+          // running-Balance column *resets* each sub-section, so it is not cumulative
+          // and cannot be used as a snapshot. Flatten the DATA rows across all months
+          // under this account and force balance-column parsing off.
+          const hasSubSections = childRows.some((r) => r && r.type === "SECTION");
+          let isGroupedMonthly = false;
+          if (hasSubSections) {
+            const flat: GlRow[] = [];
+            const collect = (rows: GlRow[]) => {
+              for (const r of rows) {
+                if (!r) continue;
+                if (r.type === "DATA") flat.push(r);
+                else if (r.type === "SECTION") {
+                  const nested = r.rows?.row || [];
+                  if (nested.length) collect(nested);
+                }
+              }
+            };
+            collect(childRows);
+            childRows = flat;
+            isGroupedMonthly = true;
+          }
           let amountColIdx = -1;
           let balanceColIdx = -1;
           let beginningBalance = 0;
@@ -370,7 +414,7 @@ serve(async (req) => {
 
           if (metaAmountIdx >= 0) {
             amountColIdx = metaAmountIdx;
-            if (metaBalanceIdx >= 0) {
+            if (metaBalanceIdx >= 0 && !isGroupedMonthly) {
               let balanceSeen = 0, balSampled = 0;
               for (const r of childRows) {
                 if (r.type !== "DATA") continue;
@@ -404,8 +448,8 @@ serve(async (req) => {
               moneyIdxsSorted = [...moneyColFreq.keys()].sort((a, b) => a - b);
             }
             if (moneyIdxsSorted.length >= 2) {
-              balanceColIdx = moneyIdxsSorted[moneyIdxsSorted.length - 1];
-              amountColIdx = moneyIdxsSorted[moneyIdxsSorted.length - 2];
+              balanceColIdx = isGroupedMonthly ? -1 : moneyIdxsSorted[moneyIdxsSorted.length - 1];
+              amountColIdx = isGroupedMonthly ? moneyIdxsSorted[moneyIdxsSorted.length - 1] : moneyIdxsSorted[moneyIdxsSorted.length - 2];
             } else if (moneyIdxsSorted.length === 1) {
               amountColIdx = moneyIdxsSorted[0];
               balanceColIdx = -1;
@@ -509,7 +553,7 @@ serve(async (req) => {
             name: acctName,
             leaf: normName(acctName),
             acctNumber: nameNumPrefix || coa?.acctNum || prev?.acctNumber || null,
-            classification: (coa?.classification || groupCls || prev?.classification || "OTHER").toUpperCase(),
+            classification: (coa?.classification || groupCls || classifyByName(acctName) || prev?.classification || "OTHER").toUpperCase(),
             glBalance: mergedLatest,
             glBalanceLatest: mergedLatest,
             glBalanceSum: mergedSum,

@@ -1,43 +1,53 @@
-## Why I want to diagnose before coding
+## Goal
 
-We've done four rounds of reconciliation fixes and moved from 25% → 68%. The remaining variance no longer looks like a single class of bug. Reading the current table, the residuals split into three distinct patterns that need different fixes — and one of them (period coverage) can't be fixed in code at all. Another blind round risks regressing the 68% we have.
+Push GL reconciliation on project `621a6c9f…` from 68% toward >90% by fixing three confirmed code bugs in `supabase/functions/analyze-general-ledger/index.ts`. All fixes are generic and apply to every project.
 
-## What the current numbers actually say
+## Fixes
 
-**Pattern A — "(deleted)" contra-revenue rows are ~10× off, not sign-flipped**
-- Shipping Income (deleted): GL $55K vs TB $574K
-- Discounts (deleted): GL $47K vs TB $444K
-- Returns (deleted): GL $14K vs TB $182K
-- Shopify Fee (deleted): GL $11K vs TB $111K
-- PayPal Fee (deleted): GL $4.5K vs TB $55K
+### 1. Contra-revenue name-pattern classification (Pattern A)
 
-The ~10× ratio across a whole family is a coverage/period signature, not a sign or dedupe signature. These accounts were archived mid-history; if some GL exports covering their live period aren't being ingested (or are ingested but their rows aren't routed to the `(deleted)` key that TB uses), the GL side structurally undershoots by the missing periods.
+Deleted contra-revenue accounts (`Shipping Income (deleted)`, `Discounts (deleted)`, `Returns (deleted)`, `Fees (deleted)`) have no COA match and no numeric prefix, so they fall through to `OTHER` and get routed through the (broken) `glBalanceLatest` path.
 
-**Pattern B — Undeposited Funds still doubles ($1.07M vs $534K)**
-Code already prefers `num:` over `name:` in both child write and orchestrator reload. Still doubling means the two representations aren't landing under keys the merge step recognizes as the same account. Likely the `num:` prefix isn't extracted for some export rows, so both scratch rows are `name:`-keyed under slightly different normalized leaves.
+- Add a name-pattern classifier that runs after COA/group lookup fails:
+  - `/shipping|discount|return|refund|fee|chargeback|sales?tax/i` on an account whose parent chain or sibling context is revenue-like → classify `REVENUE` (contra).
+  - `/cogs|cost of goods|cost of sales|merchant fee|processing fee/i` → `EXPENSE`.
+  - `/distribution|owner draw|contribution|member draw/i` → `EQUITY`.
+- Once reclassified, these accounts use `activityNet` (summed across all exports), which matches how TB rolls them up.
 
-**Pattern C — Inventory Asset $354K vs $635K (BS)**
-BS uses `glBalanceLatest`. Different exports disagree on which is "latest" — probably ordered by filename or ingest time rather than actual period-end date.
+### 2. Grouped-monthly GL balance detection (Pattern A, secondary)
 
-## Proposed diagnostic (read-only, no code changes)
+When QuickBooks exports GL "grouped by month", the `Balance` column resets each month rather than being cumulative-since-inception. `glBalanceLatest` currently picks the max-transaction-date row, which in grouped mode is just December's activity, not YTD.
 
-Query `gl_reconcile_accounts` for project `621a6c9f…` and answer three questions:
+- Detect grouped mode per section: if the section contains multiple monthly subtotal rows or the `Balance` column is non-monotonic across the section, mark `isGroupedMonthly = true`.
+- When `isGroupedMonthly`, ignore `Balance` entirely and derive both `snapshotBalance` and `activityNet` from summed `Amount` values.
 
-1. For `Shipping Income (deleted)`, `Discounts (deleted)`, `Returns (deleted)`: which `export_id` rows have non-zero contributions, and does the sum of those exports' periods cover the full TB horizon (Jan-23 → present)?
-2. For Undeposited Funds: how many distinct scratch rows exist, what are their `account_key` values, and why isn't the orchestrator reload folding them together?
-3. For Inventory Asset: what `glBalanceLatest` did each export contribute, and which export won the "latest" tiebreak?
+### 3. Undeposited Funds double-count (Pattern B)
 
-## Then, targeted fixes only for what the data shows
+Sum across GL exports for `1001 Undeposited Funds` already matches TB (~$534K), but the report shows $1.07M — exactly 2×. The `num:` / `name:` merge is not catching this row.
 
-- If Pattern A is a coverage gap → surface it as a UI warning ("GL covers X of Y months; N accounts under-reported") rather than pretending to reconcile. This is honest and correct.
-- If Pattern A is a keying miss on the deleted-name variant → tighten normalization for the specific TB↔GL pair.
-- If Pattern B is a `num:` extraction miss → widen the numeric-prefix regex in the child parser.
-- If Pattern C is an ordering bug → order exports by TB period-end date (or embedded QB header date), not filename.
+- In child mode, after building the per-export map, run a final pass that folds any `name:` entry whose normalized leaf matches a `num:` entry's normalized name into the `num:` entry, then deletes the `name:` key. Currently the fold happens before all rows are collected in some section-recursion paths.
+- In orchestrator reload, group scratch rows by `COALESCE(account_number, normName(account_name))` and sum within the group instead of treating `num:1001` and `name:undeposited funds` as separate rows.
+- Add a `walkSections` guard: track visited `(sectionId, accountKey)` pairs and skip if already processed in this export to prevent recursion double-visits.
 
-## Out of scope
+### 4. Inventory Asset "latest export" tiebreak (Pattern C)
 
-No further reconciliation code changes until the scratch table has been inspected. No frontend changes. No schema changes.
+`glBalanceLatest` picks per export by max transaction date, but across exports the "winner" is chosen by insertion order, not by period-end. Two exports covering overlapping horizons can flip which one wins.
 
-## Deliverable of this step
+- Track `periodEnd` per export (max transaction date across all sections in that export).
+- Orchestrator selects the export with the greatest `periodEnd` for each BS account's snapshot, deterministically.
 
-A short written diagnosis stating, per pattern, whether it's a code bug (with the specific fix) or a data coverage limitation (with the specific UI disclosure to add). Then I'll come back with a narrow follow-up plan for just those fixes.
+## Verification
+
+After deploy, re-run **Analyze GL** on `621a6c9f…`. Expected:
+- Deleted contra-revenue rows: GL magnitudes match TB within tolerance.
+- Undeposited Funds: single row at ~$534K.
+- Inventory Asset: single deterministic snapshot.
+- Identity check tightens materially; overall reconciliation >90%.
+
+If any row still misses, capture the new table and iterate narrowly on that row only — no further speculative rewrites.
+
+## Technical notes
+
+- All changes are inside `supabase/functions/analyze-general-ledger/index.ts` (both child and orchestrator modes). No schema changes to `gl_reconcile_accounts`.
+- Memory footprint unchanged; the classifier and grouped-mode detector are O(rows) with no additional retained state.
+- No frontend changes.
