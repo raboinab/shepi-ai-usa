@@ -1,82 +1,77 @@
-# Durable bank/CC statement normalization
+## Goal
 
-## Why the first run failed on project 621a6c9f
+Make the Reconciliation tab scannable. Keep the 93% math and all reason codes exactly as they are — this is a presentation-only pass.
 
-`enrich-document` (the function that runs on every new upload) only did two light-touch cleanups:
+## What's wrong today
 
-1. Stripped the target-company name off `institution` (so "Business Checking - ACME" became "Business Checking").
-2. Lowercased/trimmed `account_label`.
+Every section renders as a flat table stacked on the previous one, so the tab reads as one long undifferentiated wall. Specifically:
 
-It never applied the canonical issuer rules or the "{Issuer} {Last4}" label format that `src/lib/bankAccountNormalization.ts` uses on the client. So the DB stored whatever the parser returned:
+- The three "missing" lists (In GL / In TB / material variances) all use the same visual weight, so the eye has no anchor.
+- The "Unreconciled by reason" section shows badges *and* a full table, but the table only opens inside a `<details>` and uses the same row styling as the full reconciliation below it — they look identical.
+- Numbers aren't right-aligned in a consistent column width, so `-$1,000` vs `$0` vs `$574,850` shift horizontally row to row.
+- `(deleted)` account names get truncated mid-word without an ellipsis, so half the column reads "…VampireFreaks Wholesa".
+- The full reconciliation `<details>` dumps 60 rows with no filter, no sort, and no way to see just the non-zero ones.
 
-- Chase card statements came in as "Amazon Prime Visa" on some months and "Chase Amazon Prime Card" on others → two coverage rows.
-- Account labels were raw `xxxx1234` / `****3962` / `3962` variants → collisions and split coverage.
-- When the parser failed to detect a period, the doc was left with NULL period and no fallback used the filename (which usually contains the last-4 and statement date).
-- Some Chase files had the wrong last-4 baked into `account_label` because the parser trusted a header that mentioned a different card on the combined statement; the filename (`...-7187-...pdf`) was ignored.
+## Changes
 
-The client-side normalization we added masks this at read-time for the current project, but new uploads for the next target would repeat the same fragmentation.
+### 1. Summary header at the top of the tab
 
-## Fix: push canonicalization into the enricher, keep it generic
-
-### 1. Share one normalization module between client and edge functions
-
-Move the canonical logic out of `src/lib/bankAccountNormalization.ts` into a Deno-compatible module that both sides import:
+Replace the free-floating "Material Variances" heading with a one-line KPI strip:
 
 ```text
-supabase/functions/_shared/bankAccountNormalization.ts   ← source of truth
-src/lib/bankAccountNormalization.ts                       ← re-exports for the app
+93% reconciled · 43 matched · 13 variance · 3 in GL only · 1 in TB only
 ```
 
-Exports: `canonicalIssuer(raw)`, `extractLast4(...candidates)`, `normalizeAccountLabel(issuer, last4)`, `bankAccountGroupKey(institution, label)`.
+Uses `Badge` variants (green/amber/muted) so the eye lands on the number first. This is the anchor for everything below.
 
-Rules stay generic (Chase, Wells Fargo, Fidelity, Amazon/Amex/Capital One/BofA/Citi/US Bank/etc. via regex table). Nothing project-specific.
+### 2. Collapse the four "not-matched" lists into one card
 
-### 2. Rewrite `cleanInstitution` / `cleanAccountLabel` in `enrich-document`
+Today: four separate sections (Material Variances, Structural, In GL missing TB, In TB missing GL). New: a single "Needs attention" card with a segmented control at the top (`Variances · Structural · GL only · TB only`). Each segment shows the same table shape:
 
-New flow when a bank or credit-card doc finishes parsing:
+```text
+Account                        GL          TB      Variance   Reason
+```
 
-1. Collect last-4 candidates in priority order: `parsed.accountNumber` → filename digits (`(?:^|[^0-9])(\d{4})(?=[^0-9]|$)` scoped to segments like `-7187-`) → existing `doc.account_label`.
-2. Collect issuer candidates: `parsed.bankName` → `doc.institution` → filename brand tokens (e.g. `chase`, `wellsfargo`, `fidelity`, `amazon`, `amex`).
-3. Run both through `canonicalIssuer` / `extractLast4`.
-4. Write `institution = canonicalIssuer(...)`, `account_label = normalizeAccountLabel(issuer, last4)` (e.g. `"Chase 7187"`), so every future doc that shares that account groups on the exact same key.
-5. Only overwrite an existing `account_label` when the new value has a confident last-4 AND the old value's last-4 disagrees with the filename's last-4 (this is what caused the 7187/3962 mislabels — the parser trusted a header line from a combined statement; the filename is the tiebreaker).
+- Column widths are fixed with `tabular-nums`, all money right-aligned, account name gets `truncate` + `title={name}` so the full name shows on hover.
+- Reason column is a small muted `Badge`, not raw text — makes the row scannable at a glance.
+- Header of each segment shows the count so users know what they're looking at without counting rows.
 
-### 3. Period fallback from filename
+### 3. Full reconciliation table gets a proper toolbar
 
-When `parsed.periodStart` / `parsed.periodEnd` come back null:
+The current `<details>Show full reconciliation (60)</details>` becomes a collapsible card with:
 
-- Try filename patterns already common in statements: `YYYYMMDD`, `YYYY-MM`, `MMM-YYYY`, `MM-DD-YYYY`.
-- If a single date is found, set `period_end = that date` and `period_start = first day of that month` (statement convention). Store `parsed_summary.period_source = "filename"` so the UI can show a "verify period" hint.
-- If nothing resolves, leave nulls but write `processing_status = 'needs_review'` (not `completed`) so it surfaces in the Documents wizard for a one-click re-detect.
+- Search box (filter by account name)
+- Toggle: "Hide zero-variance rows" (default ON — makes 43 of 60 rows disappear, leaves the interesting ones)
+- Toggle: "Hide `(deleted)` accounts" (default OFF, but one click removes QBO cruft)
+- Column headers become clickable for sort by |variance| desc / account asc.
 
-### 4. Duplicate detection at upload time
+No new data — pure client-side filter/sort on `analysisData.recon`.
 
-Before insert, `enrich-document` computes a dedupe key: `(project_id, institution_canonical, account_label_canonical, period_start, period_end, file_size)`. If a match already exists with `processing_status = 'completed'`, mark the new row `status = 'duplicate'` and skip processed_data insertion. Prevents the double-row we saw on `20250104-statements-7187-.pdf`.
+### 4. Money formatting
 
-### 5. One-time backfill for existing projects
+- One shared `<Money value={n} />` inline component with `tabular-nums font-mono-ish` and consistent negative styling (parens or red, pick one — planning to use `text-destructive` for negatives, parens for the export).
+- `$0` renders as muted `—` so zero rows stop pulling attention.
 
-A short admin-only edge function `normalize-bank-docs` iterates `documents` where `category IN ('bank_statement','credit_card')` and re-runs steps 1–3 above using only DB fields + filename. Idempotent. Callable per-project from the admin UI.
+### 5. Sticky tab header
 
-### 6. UI hooks (small)
+The Overview/Reconciliation/Flags tabs currently scroll away. Add `sticky top-0 bg-background z-10` to the `TabsList` inside the card so users can jump between tabs from anywhere in the long reconciliation list.
 
-- Documents wizard: for any row with `processing_status = 'needs_review'`, show "Re-detect period" and "Fix account #" inline actions (both already exist as one-off flows — just wire them to this status).
-- Coverage view keeps using `bankAccountGroupKey` from the shared module, so client and server agree.
+## Files touched
 
-## Technical details
+- `src/components/wizard/sections/GeneralLedgerInsightsCard.tsx` — all changes live here. Lines ~214–383 (the Reconciliation `TabsContent`) get restructured. Overview and Flags tabs are unchanged.
+- No new files, no new dependencies (uses existing shadcn `Table`, `Badge`, `Input`, `Toggle`, `Tabs`).
+- No edge function, migration, or reconciliation logic changes.
 
-Files to add/edit:
+## Non-goals
 
-- **new** `supabase/functions/_shared/bankAccountNormalization.ts` — canonical issuer table + helpers (Deno).
-- **edit** `src/lib/bankAccountNormalization.ts` — thin re-export, drop the duplicated table.
-- **edit** `supabase/functions/enrich-document/index.ts` — replace `cleanInstitution` / `cleanAccountLabel` blocks (lines ~374–428) with the shared helpers; add filename-based last-4 and period fallbacks; add dedupe check; set `needs_review` status when applicable.
-- **edit** `supabase/functions/detect-financial-statement-period/index.ts` — call the same filename fallback so re-detect on statements is consistent.
-- **new** `supabase/functions/normalize-bank-docs/index.ts` — admin backfill, guarded by `has_role(auth.uid(),'admin')`.
-- **edit** `src/components/wizard/sections/DocumentUploadSection.tsx` — surface `needs_review` state + wire existing re-detect action.
+- Not touching the reason codes, tolerances, or the 93% number.
+- Not auto-hiding deleted accounts by default (user explicitly picked "Just fix readability", not "auto-suppress cruft").
+- Not adding export/print — separate ask if wanted.
 
-No schema migration needed; `processing_status` already accepts free-form strings and both `institution` / `account_label` are nullable text.
+## Verification
 
-Verification:
-
-- Unit test the shared module against a fixture list of real filenames and parser outputs (Chase combined statements, Amazon Prime Visa, Fidelity CMA, Wells Fargo business checking).
-- Upload one new bank PDF and one new CC PDF to a fresh test project; confirm `institution` = canonical issuer, `account_label` = `"Issuer 1234"`, coverage row appears once.
-- Run `normalize-bank-docs` on 621a6c9f as a smoke test; expect 0 changes since it was already fixed manually.
+- Load `/project/621a6c9f-1c25-40fa-92fa-6762ae3fe72b`, open GL Analysis → Reconciliation tab.
+- Confirm the KPI strip reads `93% · 43 matched · 13 variance · 3 GL only · 1 TB only`.
+- Toggle "Hide zero-variance" and confirm the full table drops to 17 rows.
+- Sort by |variance| desc and confirm PayPal / Discounts / Shipping Income don't appear (they're status=match, variance=0) and the true residuals (Etsy Payout $753, Shopify VF Wholesale $668, etc.) surface at the top.
+- Resize to 1024px width and confirm no column overlaps or horizontal scroll inside the card.
