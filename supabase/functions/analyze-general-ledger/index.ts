@@ -294,7 +294,11 @@ serve(async (req) => {
           name: acctName,
           leaf: normName(acctName),
           acctNumber: (r.account_number as string | null) || null,
-          classification: String(r.classification || "OTHER").toUpperCase(),
+          classification: (() => {
+            const c = String(r.classification || "OTHER").toUpperCase();
+            if (c !== "OTHER") return c;
+            return (classifyByName(acctName) || "OTHER").toUpperCase();
+          })(),
           glBalance: Number(r.snapshot_balance || 0),
           glBalanceLatest: Number(r.snapshot_balance || 0),
           glBalanceSum: Number(r.snapshot_sum || 0),
