@@ -58,7 +58,19 @@ export interface GLAnalysisData {
   structuralVariances?: TBComparison[];
   missingInTBList?: { name: string; balance: number }[];
   missingInGLList?: { name: string; balance: number }[];
-  identityCheck?: { assets: number; liabilities: number; equity: number; netIncome: number; difference: number; balanced: boolean };
+  identityCheck?: {
+    assets: number;
+    liabilities: number;
+    equity: number;
+    netIncome: number;
+    difference: number;
+    balanced: boolean;
+    impliedOpeningRE?: number;
+    bsRetainedEarnings?: number | null;
+    residualVariance?: number;
+    balancedWithRE?: boolean;
+    tolerance?: number;
+  };
   flags?: string[];
   overallScore?: number;
   periodStart?: string;
@@ -177,24 +189,75 @@ export const GeneralLedgerInsightsCard = ({ analysisData, documentName, classNam
                   </div>
                 </div>
               )}
-              {analysisData.identityCheck && (
-                <div className="p-3 bg-muted/50 rounded-lg">
-                  <div className="text-xs text-muted-foreground">A − L − E − NI</div>
-                  <div className={`text-sm font-semibold ${analysisData.identityCheck.balanced ? "text-green-600" : "text-destructive"}`}>
-                    {analysisData.identityCheck.balanced ? "Balanced" : fmt(analysisData.identityCheck.difference)}
+              {analysisData.identityCheck && (() => {
+                const ic = analysisData.identityCheck;
+                const isBalanced = ic.balancedWithRE ?? ic.balanced;
+                return (
+                  <div className="p-3 bg-muted/50 rounded-lg">
+                    <div className="text-xs text-muted-foreground">Books Balance</div>
+                    <div className={`text-sm font-semibold ${isBalanced ? "text-green-600" : "text-destructive"}`}>
+                      {isBalanced
+                        ? "Reconciled"
+                        : fmt(ic.residualVariance ?? ic.difference)}
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
 
-            {analysisData.identityCheck && (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-                <div className="p-2 border rounded"><span className="text-muted-foreground">Assets:</span> <span className="font-medium ml-1">{fmt(analysisData.identityCheck.assets)}</span></div>
-                <div className="p-2 border rounded"><span className="text-muted-foreground">Liabilities:</span> <span className="font-medium ml-1">{fmt(analysisData.identityCheck.liabilities)}</span></div>
-                <div className="p-2 border rounded"><span className="text-muted-foreground">Equity:</span> <span className="font-medium ml-1">{fmt(analysisData.identityCheck.equity)}</span></div>
-                <div className="p-2 border rounded"><span className="text-muted-foreground">Net Income:</span> <span className="font-medium ml-1">{fmt(analysisData.identityCheck.netIncome)}</span></div>
-              </div>
-            )}
+            {analysisData.identityCheck && (() => {
+              const ic = analysisData.identityCheck;
+              const hasRE = ic.impliedOpeningRE != null;
+              const isBalanced = ic.balancedWithRE ?? ic.balanced;
+              return (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                    <div className="p-2 border rounded"><span className="text-muted-foreground">Assets:</span> <span className="font-medium ml-1">{fmt(ic.assets)}</span></div>
+                    <div className="p-2 border rounded"><span className="text-muted-foreground">Liabilities:</span> <span className="font-medium ml-1">{fmt(ic.liabilities)}</span></div>
+                    <div className="p-2 border rounded"><span className="text-muted-foreground">Equity (in-window):</span> <span className="font-medium ml-1">{fmt(ic.equity)}</span></div>
+                    <div className="p-2 border rounded"><span className="text-muted-foreground">Net Income:</span> <span className="font-medium ml-1">{fmt(ic.netIncome)}</span></div>
+                  </div>
+
+                  {hasRE && (
+                    <div className="border rounded-lg p-3 space-y-2 bg-background">
+                      <div className="text-xs font-medium text-muted-foreground">Opening Equity Reconciliation</div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                        <div className="p-2 rounded bg-muted/40">
+                          <div className="text-muted-foreground">Implied Opening RE</div>
+                          <div className="font-semibold tabular-nums">{fmt(ic.impliedOpeningRE!)}</div>
+                          <div className="text-[10px] text-muted-foreground mt-0.5">Derived: A − L − E − NI</div>
+                        </div>
+                        <div className="p-2 rounded bg-muted/40">
+                          <div className="text-muted-foreground">BS Retained Earnings</div>
+                          <div className="font-semibold tabular-nums">
+                            {ic.bsRetainedEarnings != null ? fmt(ic.bsRetainedEarnings) : "—"}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground mt-0.5">
+                            {ic.bsRetainedEarnings != null ? "From Trial Balance" : "Not found in TB"}
+                          </div>
+                        </div>
+                        <div className={`p-2 rounded ${isBalanced ? "bg-green-50 dark:bg-green-950/30" : "bg-destructive/10"}`}>
+                          <div className="text-muted-foreground">Residual Variance</div>
+                          <div className={`font-semibold tabular-nums ${isBalanced ? "text-green-700 dark:text-green-400" : "text-destructive"}`}>
+                            {fmt(ic.residualVariance ?? ic.difference)}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground mt-0.5">
+                            {isBalanced ? "Within tolerance" : "Unexplained gap"}
+                          </div>
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground leading-relaxed">
+                        QuickBooks GL exports typically exclude retained earnings accumulated <em>before</em> the analysis window.
+                        The <strong>Implied Opening RE</strong> is the equity plug required for the books to balance.
+                        {ic.bsRetainedEarnings != null
+                          ? " We compare it to the Retained Earnings / Opening Balance Equity value present in your Trial Balance — the residual is the true unexplained gap."
+                          : " Upload a Balance Sheet or ensure Retained Earnings appears in the Trial Balance to cross-check this value."}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {analysisData.analyzedAt && (
               <div className="text-[11px] text-muted-foreground">Last analyzed {timeAgo(analysisData.analyzedAt)}</div>
