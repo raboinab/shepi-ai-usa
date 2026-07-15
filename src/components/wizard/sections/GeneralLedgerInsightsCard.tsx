@@ -20,8 +20,18 @@ interface TBComparison {
   tbBalance: number | null;
   variance: number | null;
   variancePct?: number | null;
-  status: "match" | "variance" | "structural_variance" | "missing_in_tb";
+  status: "match" | "variance" | "structural_variance" | "missing_in_tb" | "missing_in_gl";
   glBalanceSource?: "gl" | "tb_inferred";
+  reasonCode?: string;
+}
+
+interface UnreconciledRow {
+  name: string;
+  glBalance: number;
+  tbBalance: number | null;
+  variance: number | null;
+  reasonCode: string;
+  status: string;
 }
 
 export interface GLAnalysisData {
@@ -34,6 +44,8 @@ export interface GLAnalysisData {
   largestAccounts?: { name: string; type: string; balance: number }[];
   reconciliation?: TBComparison[];
   reconciliationSummary?: { matched: number; structural?: number; variances: number; missingInTB: number; missingInGL: number };
+  unreconciledByReason?: Record<string, number>;
+  unreconciledList?: UnreconciledRow[];
   materialVariances?: TBComparison[];
   structuralVariances?: TBComparison[];
   missingInTBList?: { name: string; balance: number }[];
