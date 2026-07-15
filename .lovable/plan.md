@@ -1,75 +1,67 @@
-## Goal
 
-Close (or explain) the remaining 7% reconciliation gap on project `621a6c9f…` without special-casing this company. The 93% run is the baseline; the 7% is a mix of accounts we haven't yet inspected line-by-line. We need to see them clearly, categorize each cause, and fix the ones that are code/parser bugs vs. document them as true timing/scope differences.
+# Bank & credit card coverage — diagnosis and fix
 
-## Why a deeper pass is needed
+## What's happening on project 621a6c9f
 
-`gl_reconcile_accounts` (the scratch table) stores per-account GL snapshots and activity but does not persist the TB side of the reconciliation, so we currently can't query "which accounts still vary and by how much" without re-running the analyzer. Every investigation right now requires re-running the edge function and re-reading its JSON output. That's why the remaining variances are opaque.
+Coverage looks fragmented because documents that belong to the **same account** are being split across multiple "institution" strings coming out of the parser, and a handful of last-4 collisions cause the wrong `account_label`. Every doc has `coverage_validated = false`.
 
-## Plan
+Groups the UI is currently showing as distinct (but are actually one account each):
 
-### 1. Persist the reconciliation result
+| Real account | Split into |
+|---|---|
+| WF 7179 operating checking | "DESTRUKTURE CORP DBA VAMPIREFREAKS" (5 mo) + "Optimize Business Checking" (36 mo) |
+| Chase Amazon Visa …3962 | "Amazon Prime Rewards Visa Signature Card" + "Amazon Prime Visa" + "Chase Amazon Prime Card" |
+| Chase Amazon Visa …7187 | Correctly-labeled 12 docs + ~7 docs whose files are `*-7187-.pdf` but got tagged `Chase 3962` |
+| Fidelity …4161 | "Fidelity Rewards Visa Signature Card" + "Fidelity® Rewards Visa Signature® Card" |
+| Fidelity …9831 | Same two variants as 4161 |
+| Chase United …0472 | 4 variants of "United MileagePlus …" |
+| Fidelity 4161 | 1 doc with NULL period_start/period_end |
 
-Extend `gl_reconcile_accounts` (or add a sibling `gl_reconcile_results` table) so each run writes, per account:
+## Fix plan (generic, applies to every project)
 
-- `tb_balance`
-- `gl_balance` (final selected value: snapshot for BS, activity for P&L)
-- `variance`
-- `reconciled` (bool, with threshold)
-- `reason_code` when unreconciled (see step 3)
-- `source_export_ids` array
+### 1. Normalize institution + account_label at read time (frontend)
+`src/lib/bankAccountNormalization.ts` and `PerAccountCoverage.tsx` already group by a normalized key. Extend the normalizer:
+- Strip `®`, `™`, trailing " Card" / " Business Card" / " Signature Card" / " Rewards" / " Award".
+- Collapse "Amazon Prime * Visa*" → "Chase Amazon Prime Visa".
+- Collapse "Fidelity* Rewards Visa*" → "Fidelity Rewards Visa".
+- Collapse "United MileagePlus*" → "Chase United MileagePlus".
+- Collapse "*Optimize Business Checking*" and any legal-entity DBA string to a canonical "Wells Fargo Business Checking" when `account_label` starts with `WF `.
 
-This gives us a queryable audit trail across runs and companies, not just this one.
+Grouping key stays `{normalized institution} + {last-4 from account_label}` so 3962 and 7187 stay separate even under the same institution.
 
-### 2. Add a variance breakdown view in the UI
+### 2. Backend: normalize on write in the parser/enricher
+`supabase/functions/enrich-document/` (and the DocuClipper parse path) should apply the same normalization before writing `institution`, so newly uploaded docs land in the right bucket without frontend reshaping.
 
-On the GL Analysis card, add an expandable "Unreconciled accounts" section listing every account with a variance above the tolerance, sorted by absolute variance. For each row show TB, GL, variance, classification, reason code, and the exports that contributed. This is what will make the remaining 7% visible without SQL.
+### 3. Re-detect period for docs with NULL periods
+Trigger the existing `detect-financial-statement-period` (or the statement-specific extractor) for any bank/credit-card doc where `period_start IS NULL AND processing_status='completed'`. Add a small "Re-detect period" button on the doc row plus a project-level "Re-detect missing periods" action.
 
-### 3. Categorize each residual variance with a `reason_code`
+### 4. Fix the 7187 vs 3962 mislabels
+Add a heuristic in the enricher: when the filename contains `-<4digits>-` and it disagrees with the parsed `account_label` last-4, prefer the filename digits and re-run classification. This is generic — filename last-4 is the most reliable signal on Chase PDFs. Provide a one-time admin action to re-enrich the 6–7 affected docs on this project.
 
-In `analyze-general-ledger`, when an account fails to reconcile, tag it with one of:
+### 5. Backfill this project
+After deploying (1)–(4):
+- Run a one-shot rewrite (edge function or SQL migration) that recomputes `institution` and `account_label` from the new normalizer for all docs where `account_type IN ('bank_statement','credit_card')`.
+- Kick period re-detection for the 1 NULL Fidelity doc.
+- Mark `coverage_validated = true` for groups whose per-month coverage reaches 100% over the project's fiscal periods.
 
-- `MISSING_GL_COVERAGE` — TB period extends beyond any GL export
-- `TB_ONLY_ACCOUNT` — account exists in TB, no matching GL section
-- `GL_ONLY_ACCOUNT` — GL section exists, no TB row
-- `SIGN_MISMATCH_UNRESOLVED` — magnitudes match after sign flip attempts fail
-- `SNAPSHOT_DATE_MISMATCH` — BS snapshot date ≠ TB as-of date
-- `SUMMARY_ROW_MISSING` — no section summary, row sum used, and it disagrees
-- `CLASSIFICATION_AMBIGUOUS` — matched both BS and P&L logic paths
-- `RESIDUAL_LT_1PCT` — variance below materiality
-- `UNKNOWN` — fallback
+### 6. UI: show the merged variants
+`PerAccountCoverage` already surfaces "Merged from N parsed variants" via tooltip — keep that. Add a small warning row above the grid when any doc in the project has `period_start IS NULL` linking to the "Re-detect" action.
 
-Only `MISSING_GL_COVERAGE`, `TB_ONLY_ACCOUNT`, and `RESIDUAL_LT_1PCT` are acceptable. The rest are code bugs to be fixed in the same pass.
+## Technical notes
 
-### 4. Investigate and fix the top residual buckets
+- No schema changes required. `institution`, `account_label`, `period_start`, `period_end`, `coverage_validated` already exist on `documents`.
+- All changes are in:
+  - `src/lib/bankAccountNormalization.ts` (extend regex table)
+  - `supabase/functions/enrich-document/index.ts` (apply same normalization + filename-last-4 override)
+  - `supabase/functions/detect-financial-statement-period/index.ts` (already handles statements — just needs a "single-doc" trigger endpoint we can call from the UI)
+  - `src/components/wizard/shared/PerAccountCoverage.tsx` (period-null warning)
+  - `src/components/wizard/sections/DocumentUploadSection.tsx` (add "Re-detect missing periods" action)
+- One-shot backfill runs through a new admin-only edge function `renormalize-bank-docs` that reads all bank/CC docs for a `project_id`, applies the new normalizer, and updates rows.
 
-Re-run analysis, then for each account bucket:
+## Expected outcome on 621a6c9f
 
-- **`SNAPSHOT_DATE_MISMATCH`** — likely from BS accounts where the latest GL export ends before the TB "as-of" date. Fix by carrying forward the last snapshot + any subsequent activity from any partial export.
-- **`SUMMARY_ROW_MISSING`** — QuickBooks sometimes omits section summaries when a section has zero net activity. Fall back to `beginningBalance` for BS and `0` for P&L instead of `netSum` (which can double-count reversals).
-- **`CLASSIFICATION_AMBIGUOUS`** — an account whose COA type says BS but name matches P&L pattern (or vice versa). Make COA classification win over name inference; name inference is only fallback.
-- **`GL_ONLY_ACCOUNT`** — usually merged/renamed accounts. Add a normalized-name fuzzy match against TB before flagging.
-- **`SIGN_MISMATCH_UNRESOLVED`** — inspect and, if generic, add the missing sign rule (e.g. contra-equity, contra-asset with `*` marker).
-
-Do this narrowly: only fix a bucket if the root cause is generic. Do not hardcode account names.
-
-### 5. Report and threshold
-
-After fixes:
-
-- Re-run GL analysis for `621a6c9f…` and target ≥97% reconciled.
-- Remaining variances must all be `MISSING_GL_COVERAGE`, `TB_ONLY_ACCOUNT`, or `RESIDUAL_LT_1PCT`.
-- Surface those three categories in the UI as "explained gaps" instead of counting them against the reconciliation score.
-
-## Technical details
-
-- Migration: add columns to `gl_reconcile_accounts` (`tb_balance numeric`, `variance numeric`, `reconciled boolean`, `reason_code text`, `source_export_ids uuid[]`) with the required GRANTs already on the table.
-- Edge function: `supabase/functions/analyze-general-ledger/index.ts` — in the final merge step where TB is joined against per-account aggregates, write the reconciliation row for every account (currently only in-memory) and assign `reason_code`.
-- UI: extend `src/components/wizard/sections/GeneralLedgerInsightsCard.tsx` with an accordion listing unreconciled accounts + reason codes; add a "why isn't this 100%?" explainer for the three accepted reason codes.
-- Materiality threshold: reuse the existing reconciliation tolerance; add a `RESIDUAL_LT_1PCT` bucket for anything below 1% of account magnitude AND below $500 absolute.
-
-## What this plan is not
-
-- Not project-specific — no hardcoded account names or IDs for `621a6c9f…`.
-- Not a redesign of the analyzer — the orchestrator/child architecture and existing snapshot/activity logic stay.
-- Not a change to what counts as "reconciled" — only a change to how we categorize and explain what doesn't reconcile.
+- WF 7179: single row, 41-month bar, 100% covered.
+- Chase Amazon 3962: single row, filename-corrected, ~36 mo covered.
+- Chase Amazon 7187: single row, docs previously tagged 3962 move here.
+- Fidelity 4161 & 9831: one row each, 36–39 mo covered, NULL doc re-dated.
+- Chase United 0472: single row, ~10 mo covered.
