@@ -506,8 +506,8 @@ serve(async (req) => {
           source_type: 'docuclipper',
           data_type: dataType,
           source_document_id: doc.id,
-          period_start: parsed.periodStart,
-          period_end: parsed.periodEnd,
+          period_start: periodStart,
+          period_end: periodEnd,
           data: {
             transactions: parsed.transactions,
             summary: {
