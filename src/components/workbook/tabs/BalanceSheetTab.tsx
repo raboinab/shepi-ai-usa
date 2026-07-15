@@ -29,14 +29,35 @@ export function BalanceSheetTab({ dealData }: TabProps) {
 
     const columns = buildStandardColumns(dealData, "");
 
-    // Real balance check: assets + (liab + equity) ≈ 0 in TB convention.
-    // Evaluated across every displayed period (regular + aggregate).
+    // Derived opening RE plug from the GL analysis (positive-equity convention).
+    // Only surface it when the analyzer actually reconciled the identity via the plug
+    // AND the residual noise is small — otherwise it would just add another mystery number.
+    const gl = dealData.glAnalysis;
+    const openingRE = gl && gl.balancedWithRE ? gl.impliedOpeningRE : 0;
+    const showOpeningRE = Math.abs(openingRE) >= 1000;
+    const addOpenRE = (cells: Record<string, string | number | null>) => {
+      if (!showOpeningRE) return cells;
+      const out: Record<string, string | number | null> = { ...cells };
+      for (const k of Object.keys(out)) {
+        const v = out[k];
+        if (typeof v === "number") out[k] = v + openingRE;
+      }
+      return out;
+    };
+    const openREcells = () => {
+      const c: Record<string, number> = {};
+      for (const p of dealData.deal.periods) c[p.id] = openingRE;
+      for (const ap of dealData.deal.aggregatePeriods) c[ap.id] = openingRE;
+      return c;
+    };
+
+    // Real balance check: assets + (liab + equity + derived RE) ≈ 0 in TB convention.
     const allPeriodIds = [
       ...dealData.deal.periods.map(p => p.id),
       ...dealData.deal.aggregatePeriods.map(ap => ap.id),
     ];
     const balanceCheckPassed = allPeriodIds.every(pid =>
-      Math.abs(totalAssets(pid) + totalLE(pid)) < 1
+      Math.abs(totalAssets(pid) + totalLE(pid) - openingRE) < 1
     );
 
     const rows: GridRow[] = [
@@ -62,17 +83,22 @@ export function BalanceSheetTab({ dealData }: TabProps) {
 
       { id: "hdr-eq", type: "section-header", label: "EQUITY", cells: { label: "EQUITY" } },
       // Real equity from TB (credit balance → negate for positive display).
-      { id: "equity", type: "data", indent: 1, cells: { label: "Total Equity", ...nbc(p => totalEquity(p)) } },
+      { id: "equity", type: "data", indent: 1, cells: { label: "Total Equity (per TB)", ...nbc(p => totalEquity(p)) } },
+      ...(showOpeningRE ? [{
+        id: "opening-re-derived" as const,
+        type: "data" as const,
+        indent: 1,
+        cells: { label: "Opening Balance Equity — derived", ...openREcells() },
+      }] : []),
       { id: "s3", type: "spacer", cells: {} },
-      // L&E = displayed liabilities + displayed equity = −(totalLiab + totalEquity)
-      { id: "total-le", type: "total", cells: { label: "TOTAL LIABILITIES & EQUITY", ...nbc(p => totalLE(p)) } },
+      // L&E = displayed liabilities + displayed equity + derived opening RE plug
+      { id: "total-le", type: "total", cells: addOpenRE({ label: "TOTAL LIABILITIES & EQUITY", ...nbc(p => totalLE(p)) }) },
 
-      // Real balance check — can actually fail when TB does not tie.
+      // Real balance check — can actually fail when TB does not tie (net of derived RE).
       { id: "check", type: "check", checkPassed: balanceCheckPassed, cells: {
         label: "Balance Check (Assets − L&E)",
         ...bc(p => {
-          // Displayed assets − displayed L&E = totalAssets − (−totalLE) = totalAssets + totalLE
-          const diff = totalAssets(p) + totalLE(p);
+          const diff = totalAssets(p) + totalLE(p) - openingRE;
           return Math.abs(diff) < 0.01 ? 0 : diff;
         }),
       } },
