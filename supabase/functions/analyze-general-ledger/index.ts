@@ -448,7 +448,75 @@ serve(async (req) => {
         gl = null;
       }
 
-      console.log(`[ANALYZE-GL] Parsed ${acctMap.size} accounts / ${txnCountTotal} txns from ${glIndex.length} GL export(s)`);
+      console.log(`[ANALYZE-GL] Parsed ${acctMap.size} accounts / ${txnCountTotal} txns from ${processableGlMetas.length} GL export(s)`);
+
+      if (isInternalCall) {
+        // Child mode: upsert per-account deltas into scratch table, then return.
+        // The orchestrator merges across children via SQL-side aggregation on conflict.
+        const childPeriodEnd = processableGlMetas[0]?.period_end || "";
+        const rows: Array<Record<string, unknown>> = [];
+        for (const [key, a] of acctMap) {
+          rows.push({
+            project_id: projectId,
+            run_id: runId,
+            account_key: key,
+            account_number: a.acctNumber,
+            account_name: a.name,
+            full_path: a.name,
+            classification: a.classification,
+            snapshot_balance: a.glBalanceLatest,
+            snapshot_period: childPeriodEnd || null,
+            snapshot_sum: a.glBalanceSum,
+            activity_net: a.glActivityNet,
+            activity_abs: a.glActivity,
+            txn_count: a.txnCount,
+            beginning_empty: a.beginningRowSeenButEmpty || false,
+          });
+        }
+        // Fetch existing rows and merge in-app (cross-export "latest snapshot wins", sums accumulate).
+        const keys = rows.map(r => r.account_key as string);
+        const { data: existing } = await supabase
+          .from("gl_reconcile_accounts").select("*")
+          .eq("project_id", projectId).eq("run_id", runId).in("account_key", keys.length > 0 ? keys : ["__none__"]);
+        const existingByKey = new Map<string, Record<string, unknown>>();
+        for (const e of (existing || []) as Array<Record<string, unknown>>) existingByKey.set(String(e.account_key), e);
+        for (const r of rows) {
+          const prev = existingByKey.get(r.account_key as string);
+          if (!prev) continue;
+          const prevPeriod = String(prev.snapshot_period || "");
+          const newPeriod = String(r.snapshot_period || "");
+          if (prevPeriod && (!newPeriod || prevPeriod > newPeriod)) {
+            r.snapshot_balance = prev.snapshot_balance;
+            r.snapshot_period = prev.snapshot_period;
+          }
+          r.snapshot_sum = Number(prev.snapshot_sum || 0) + Number(r.snapshot_sum || 0);
+          r.activity_net = Number(prev.activity_net || 0) + Number(r.activity_net || 0);
+          r.activity_abs = Number(prev.activity_abs || 0) + Number(r.activity_abs || 0);
+          r.txn_count = Number(prev.txn_count || 0) + Number(r.txn_count || 0);
+          r.beginning_empty = (prev.beginning_empty === true) || (r.beginning_empty === true);
+          if (String(prev.classification || "OTHER") !== "OTHER" && String(r.classification || "OTHER") === "OTHER") {
+            r.classification = prev.classification;
+          }
+          if (!r.account_number && prev.account_number) r.account_number = prev.account_number;
+        }
+        if (rows.length > 0) {
+          const { error: upErr } = await supabase
+            .from("gl_reconcile_accounts")
+            .upsert(rows, { onConflict: "project_id,run_id,account_key" });
+          if (upErr) {
+            console.error("[ANALYZE-GL] Scratch upsert failed:", upErr);
+            return new Response(JSON.stringify({ error: `scratch upsert failed: ${upErr.message}` }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          }
+        }
+        return new Response(JSON.stringify({
+          success: true,
+          exportId,
+          accountCount: rows.length,
+          txnCount: txnCountTotal,
+          periodStart,
+          periodEnd,
+        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
     }
 
 
