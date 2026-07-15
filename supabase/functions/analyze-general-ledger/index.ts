@@ -386,7 +386,7 @@ serve(async (req) => {
           acctMap.set(key, {
             name: acctName,
             leaf: normName(acctName),
-            acctNumber: acctId || coa?.acctNum || null,
+            acctNumber: nameNumPrefix || coa?.acctNum || prev?.acctNumber || null,
             classification: (coa?.classification || groupCls || prev?.classification || "OTHER").toUpperCase(),
             glBalance: mergedLatest, // provisional; recomputed after classification below
             glBalanceLatest: mergedLatest,
