@@ -1106,11 +1106,24 @@ serve(async (req) => {
                               acct.classification === "INCOME" ||
                               acct.classification === "OTHER_INCOME" ||
                               acct.classification === "LIABILITY" ||
-                              acct.classification === "EQUITY";
+                              acct.classification === "EQUITY" ||
+                              tb.side === "REVENUE" || tb.side === "LIABILITY" || tb.side === "EQUITY";
         const rawVariance = acct.glBalance - tbBalance;
         const flippedVariance = acct.glBalance + tbBalance; // collapses sign-convention mirror
-        const effectiveVariance = creditNatural &&
-          Math.abs(flippedVariance) < Math.abs(rawVariance)
+        // Use the flipped variance when:
+        //  a) the account is credit-natural and the flip is smaller (classic mirror), or
+        //  b) GL and TB carry opposite signs AND magnitudes are within 3× of each other
+        //     (a strong indicator of a sign-convention mismatch on an otherwise-agreeing
+        //     account — catches deleted-variant contra-revenue accounts we can't classify).
+        const oppositeSigns = (acct.glBalance > 0 && tbBalance < 0) || (acct.glBalance < 0 && tbBalance > 0);
+        const magsClose = (() => {
+          const a = Math.abs(acct.glBalance), b = Math.abs(tbBalance);
+          const mx = Math.max(a, b), mn = Math.min(a, b);
+          return mn > 0 && mx <= mn * 3;
+        })();
+        const flipWins = Math.abs(flippedVariance) < Math.abs(rawVariance);
+        const effectiveVariance =
+          flipWins && (creditNatural || (oppositeSigns && magsClose))
             ? flippedVariance
             : rawVariance;
         const absDiff = Math.abs(effectiveVariance);
