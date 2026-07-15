@@ -58,7 +58,19 @@ export interface GLAnalysisData {
   structuralVariances?: TBComparison[];
   missingInTBList?: { name: string; balance: number }[];
   missingInGLList?: { name: string; balance: number }[];
-  identityCheck?: { assets: number; liabilities: number; equity: number; netIncome: number; difference: number; balanced: boolean };
+  identityCheck?: {
+    assets: number;
+    liabilities: number;
+    equity: number;
+    netIncome: number;
+    difference: number;
+    balanced: boolean;
+    impliedOpeningRE?: number;
+    bsRetainedEarnings?: number | null;
+    residualVariance?: number;
+    balancedWithRE?: boolean;
+    tolerance?: number;
+  };
   flags?: string[];
   overallScore?: number;
   periodStart?: string;
