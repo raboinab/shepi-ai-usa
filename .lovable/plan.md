@@ -1,37 +1,43 @@
-## Why 66% is where we're stuck
+## Why I want to diagnose before coding
 
-The last round of fixes shipped, but three of the four intended behaviors don't produce the expected result on real data. Root causes, one per stuck symptom:
+We've done four rounds of reconciliation fixes and moved from 25% → 68%. The remaining variance no longer looks like a single class of bug. Reading the current table, the residuals split into three distinct patterns that need different fixes — and one of them (period coverage) can't be fixed in code at all. Another blind round risks regressing the 68% we have.
 
-### 1. Contra-revenue signs still opposite between GL and TB
-`Discounts`, `Returns`, `Shipping Income (deleted)`, and the fee lines all have GL and TB signs pointing opposite ways. We added a `contraRevenueRe` path in the *identity equation* (line 1166) but the **reconciliation variance rows** (line 1041's flippedVariance) still compare raw `glBalance` vs `tbBalance` without a class-aware sign policy. On a QuickBooks TB, credits are negative and debits positive; on our GL activity_net we sum signed amounts directly. For contra-revenue that lives on the debit side in GL detail but is netted against revenue as a positive in TB, the two conventions disagree by construction. Fix: normalize signs at the reconciliation layer using COA classification + contra-account regex before computing variance, not just in the identity accumulator.
+## What the current numbers actually say
 
-### 2. Undeposited Funds is still exactly 2× TB
-The scratch reload (lines 218–223) *sums* duplicate keys (`num:1001` + `name:undeposited funds sales`) instead of picking one. Two representations of the same account get added together, producing the 2× reading. The `num:` and `name:` writes both happen when the export has a number-prefixed row and a name-only row. Fix: at scratch upsert time, emit only one canonical key per account per export (precedence: `num:<prefix>` when present, else `name:<leaf>`) and never both; and on reload, if both keys exist, prefer `num:` and drop `name:` for the same underlying account.
+**Pattern A — "(deleted)" contra-revenue rows are ~10× off, not sign-flipped**
+- Shipping Income (deleted): GL $55K vs TB $574K
+- Discounts (deleted): GL $47K vs TB $444K
+- Returns (deleted): GL $14K vs TB $182K
+- Shopify Fee (deleted): GL $11K vs TB $111K
+- PayPal Fee (deleted): GL $4.5K vs TB $55K
 
-### 3. `(deleted)` and `z_` orphans not collapsing to their TB counterparts
-`Wells Fargo Business Checking (7179) (deleted)` GL $423K sits opposite `1015 Wells Fargo Business Checking - 7179` TB $425K — clearly one account. `normName` strips `(deleted)` on the GL side but the TB side still carries the `1015 ` prefix and ` - 7179` suffix, so leaf keys don't match. Fix: apply the same normalization to TB names — strip leading account numbers, trailing ` - <digits>` register suffixes, and `(deleted)`/`z_` markers — before building `coaByLeaf` and before the orphan-collapse pass.
+The ~10× ratio across a whole family is a coverage/period signature, not a sign or dedupe signature. These accounts were archived mid-history; if some GL exports covering their live period aren't being ingested (or are ingested but their rows aren't routed to the `(deleted)` key that TB uses), the GL side structurally undershoots by the missing periods.
 
-### 4. Distributions still off by ~$350K
-`3100 Shareholder Distributions` GL −$759K vs TB $1.11M. Not just a sign issue — magnitudes differ. Two plausible causes: (a) the 2023 GL still isn't contributing equity activity because equity path uses `snapshot_balance` (BS-latest) but distributions in QB post as running debits to an equity account and TB may reflect a period-summed rollup; (b) `distributionRe` never fires because the account name is `3100 Shareholder Distributions` and the regex expects "Distribution" without the number prefix in some code path. Fix: for equity accounts specifically, prefer `activity_net` summed across all exports (like P&L) rather than the latest snapshot, and let sign fall out naturally. Verify the regex matches numbered names.
+**Pattern B — Undeposited Funds still doubles ($1.07M vs $534K)**
+Code already prefers `num:` over `name:` in both child write and orchestrator reload. Still doubling means the two representations aren't landing under keys the merge step recognizes as the same account. Likely the `num:` prefix isn't extracted for some export rows, so both scratch rows are `name:`-keyed under slightly different normalized leaves.
 
-## Changes (all in `supabase/functions/analyze-general-ledger/index.ts`, still generic)
+**Pattern C — Inventory Asset $354K vs $635K (BS)**
+BS uses `glBalanceLatest`. Different exports disagree on which is "latest" — probably ordered by filename or ingest time rather than actual period-end date.
 
-1. **Reconciliation-layer sign policy.** Before computing variance for each account, apply: revenues/contra-revenues → compare as `-signedGL` vs `signedTB` if credit-natural; assets → signed as-is; equity → signed as-is; expenses → signed as-is. Drop the ad-hoc `flippedVariance` heuristic in favor of a deterministic class + contra-regex table.
+## Proposed diagnostic (read-only, no code changes)
 
-2. **Scratch write dedupe.** In the child parser, resolve one canonical key per account per export before the upsert loop; never write both `num:` and `name:` for the same account. In the orchestrator reload, when a canonical account has both keys, prefer `num:` and skip the `name:` row entirely (do not sum).
+Query `gl_reconcile_accounts` for project `621a6c9f…` and answer three questions:
 
-3. **TB-side name normalization.** Extend `normName` (or add a second pass) to also strip: leading `^\d{3,6}[\s\-:]+` account numbers, trailing ` - \d{3,}` register suffixes, `(deleted)`, `*`, `z_`/`zz_`. Rebuild `coaByLeaf` with these keys and rerun the orphan-collapse pass so GL-deleted variants match their numbered TB parent.
+1. For `Shipping Income (deleted)`, `Discounts (deleted)`, `Returns (deleted)`: which `export_id` rows have non-zero contributions, and does the sum of those exports' periods cover the full TB horizon (Jan-23 → present)?
+2. For Undeposited Funds: how many distinct scratch rows exist, what are their `account_key` values, and why isn't the orchestrator reload folding them together?
+3. For Inventory Asset: what `glBalanceLatest` did each export contribute, and which export won the "latest" tiebreak?
 
-4. **Equity treatment.** Route equity accounts through the activity-summed path (same as P&L) instead of latest-snapshot, and remove any residual `Math.abs` on the equity contribution to the identity check. Confirm `distributionRe` fires on numbered names like `3100 Shareholder Distributions`.
+## Then, targeted fixes only for what the data shows
 
-5. **Identity block reporting.** Emit `sumRevenue`, `sumExpense`, `sumEquity` under the same signed convention used in the reconciliation table so users see consistent numbers on both views.
-
-## Verification
-
-- Redeploy, re-run **Analyze GL** on `621a6c9f…`.
-- Expected: Undeposited Funds collapses to ~1× TB; `(deleted)` fee/discount/returns rows either match or drop out via TB-side normalization; Wells Fargo `(deleted)` orphan merges with `1015`; identity check within 1% of assets; reconciled % > 90%.
-- Sanity check on `fa0768ca…` (small project) to confirm no regression.
+- If Pattern A is a coverage gap → surface it as a UI warning ("GL covers X of Y months; N accounts under-reported") rather than pretending to reconcile. This is honest and correct.
+- If Pattern A is a keying miss on the deleted-name variant → tighten normalization for the specific TB↔GL pair.
+- If Pattern B is a `num:` extraction miss → widen the numeric-prefix regex in the child parser.
+- If Pattern C is an ordering bug → order exports by TB period-end date (or embedded QB header date), not filename.
 
 ## Out of scope
 
-No schema changes, no frontend changes, no orchestrator/child architecture changes.
+No further reconciliation code changes until the scratch table has been inspected. No frontend changes. No schema changes.
+
+## Deliverable of this step
+
+A short written diagnosis stating, per pattern, whether it's a code bug (with the specific fix) or a data coverage limitation (with the specific UI disclosure to add). Then I'll come back with a narrow follow-up plan for just those fixes.
