@@ -1,77 +1,59 @@
 ## Root cause
 
-`supabase/functions/process-quickbooks-file/index.ts` marks a document `completed` even when the `processed_data` insert fails.
+`analyze-general-ledger` treats `header.colData[0].id` as a stable QuickBooks account identifier and keys the aggregation map on `id:${acctId}`. In this project's exports (and in general for qbToJson output on this account) that field is actually a **per-export sequential row number** — the same numeric id points to completely different accounts across the four yearly GL files.
 
-Lines 785–805:
-```ts
-const { error: saveError } = await supabase.from('processed_data').insert({...});
-if (saveError) {
-  console.error(...);
-  // Don't throw - we still want to update the document status
-} else {
-  console.log("Successfully saved to processed_data");
-}
-```
+Verified from the raw JSON:
 
-Execution falls through to line 866, which unconditionally sets `processing_status: "completed"` and writes a full `parsed_summary` (record_count, period, `processed_at`). The user sees a green checkmark, the document row looks healthy, but `processed_data` has no matching row.
+| `id` | 2023            | 2024                 | 2025                            | 2026                 |
+|------|-----------------|----------------------|---------------------------------|----------------------|
+| 75   | z_Shopify Sales | T-Shirt Sales        | 6085 Office Supplies & Software | 6140 Phone/Internet  |
+| 78   | Sezzle Refund   | Shopify Sales – WS   | 6140 Phone/Internet             | 6503 Wages           |
+| 102  | AfterPay Fee    | 6140 Phone/Internet  | –                               | –                    |
+| 129  | 6140 Phone/Internet | –                | –                               | –                    |
 
-That is exactly the state of `VampireFreaks_General Ledger 2023.xlsx` (doc `d57ba143`):
+So per-year Phone/Internet activity (real totals $1,678 / $2,262 / $1,890 / $696 = $6,527) lands in **four different key buckets**, each of which also collects a chunk of z_Shopify Sales, T-Shirt Sales, Office Supplies, Wages, AfterPay Fees, and Sezzle Refunds from other years. The later name-collision merge only re-unites rows that already share a name, so it can't unwind this pollution.
 
-- `documents`: `processing_status = completed`, `record_count = 143`, `processed_at = 2026-07-12T17:17:21Z`
-- `processed_data`: no `general_ledger` row for 2023 (2024, 2025, 2026-YTD are all present, created 17:17:09 / 17:17:20 / 17:16:54 — 2023 was the largest file and the only one that failed to persist)
+That single bug produces:
 
-The four GL files were processed in parallel; the 2023 insert most likely hit a transient PostgREST/Storage error, which the current code swallows. Any future GL/BS/P&L/COA/TB upload that trips a transient insert failure will have the same invisible outcome.
+- $8.5M "Phone/Internet", $3.7M "Rent & Lease", $5.2M "TikTok Sales", $3.2M "Interest Income", etc.
+- Cross-class contamination (revenue amounts leaking into expense accounts and vice versa) which is why classifications look reasonable but magnitudes and signs don't match TB.
+- The $17.3M A−L−E−NI identity gap.
+
+TB is fine (already keyed on `acctId`, which in the TB feed *is* stable), so once GL is keyed correctly the reconciliation table should snap into place.
 
 ## Fix
 
-### Step 1 — stop swallowing insert errors (generic, all data types)
+Single file: `supabase/functions/analyze-general-ledger/index.ts`.
 
-In `supabase/functions/process-quickbooks-file/index.ts`, when `processed_data` insert fails:
+1. **Stop using GL `acctId` as the aggregation key.** Where the per-section key is built today:
+   ```ts
+   const key = acctId ? `id:${acctId}` : `name:${acctName.toLowerCase()}`;
+   ```
+   Replace with a key derived from the account *name / number*, which is stable across exports:
+   - Extract a leading account-number prefix (`/^(\d{3,})/`) from `acctName` when present → `num:${prefix}` (e.g. `num:6140`).
+   - Otherwise fall back to a normalized name key: `name:${normName(acctName)}`.
+   - Do NOT include `acctId` in the key at all.
+2. **Keep COA lookup working.** COA is currently matched by `acctNum` and by `name` — no change needed there. The section still records `acctNumber` from the leading numeric prefix (already implemented via `coaByAcctNum` fallback) so classification stays authoritative.
+3. **Drop the id-preferring branch in the name-collision merge.** After step 1, key collisions between `id:` and `name:` entries won't exist, so the `keys.find(k => k.startsWith("id:"))` preference at lines 484–517 becomes dead code. Simplify by picking the first key as canonical; behaviour is unchanged when only one key per name exists.
+4. **Same fix for the fallback `canonical_transactions` path** if it currently uses any per-row id as a key (it already keys on `name.toLowerCase()` — verify, no change expected).
+5. **Bump per-export DIAG.** Add one `console.log` per export listing the count of DISTINCT names parsed vs. total sections, so we can catch a future qbToJson change that emits real stable ids and revisit the strategy.
 
-1. Set `documents.processing_status = 'failed'` with `parsed_summary.error` describing the DB error (do NOT overwrite with `completed` afterward).
-2. Return a 500 with the error so the caller's Retry button surfaces it — matches the pattern already used for storage-download / qbToJson-API failures elsewhere in this function.
-3. Guard the "update document to completed" block (line 866) behind a `savedOk` flag so it only runs on successful persistence.
+No changes to TB parsing, matching (leaf/fullPath), classification, sign normalization, or the identity math. Those were already correct once the aggregation isn't polluted.
 
-The fallback-COA insert on line 835 has the same swallow pattern — log-only. Leave the document status alone there (COA is a secondary artifact), but ensure the primary insert result is the gate for `completed`.
+## Verify
 
-### Step 2 — re-ingest the 2023 GL
+After deploy, re-run **Analyze GL** on project `621a6c9f-1c25-40fa-92fa-6762ae3fe72b` and check:
 
-Once Step 1 is deployed:
+- `6140 Phone/Internet` GL ≈ **$6,527**, matches TB ($6,527).
+- `6105 Rent & Lease` GL ≈ **$224,291**, matches TB ($224,291).
+- `TikTok Sales` GL magnitude drops to a plausible annual × 4 figure and its sign flips to credit-natural after normalization.
+- `A − L − E − NI` collapses toward ~$0 (some residual is expected until specific structural rollups clear, but not $17M).
+- Reconciliation rate rises well above 34%.
 
-1. Reset doc `d57ba143-2d34-4c97-88ec-8f041270a0e4`: `processing_status = 'pending'`, clear `parsed_summary`.
-2. Invoke `process-quickbooks-file` with `{ documentId: 'd57ba143-…' }` from the edge-function console (or use the existing Retry button on the wizard).
-3. Verify a new `processed_data` row appears with `data_type='general_ledger'`, `period_start='2023-01-01'`, `period_end='2023-12-31'`, `record_count ≈ 143`.
-
-If the insert fails again, we'll now see the real error in logs + the document status (rather than a fake "completed"), and can address the underlying cause (row size, timeout, etc.).
-
-### Step 3 — verify GL reconciliation
-
-Re-run "Analyze GL" on project `621a6c9f-…`. With 2023 back on the GL side, `activityNet` sums will finally cover the same 41-month window as TB and P&L variances on `z_Shopify Sales`, `TikTok Sales`, etc. should collapse. Any remaining variance is a real reconciliation issue, not a data-gap artifact — and we already have `[ANALYZE-GL:DIAG]` logging staged for those.
+If any of the above still misbehaves, the diagnosis will now be visible against clean per-account numbers instead of pollution-masked ones.
 
 ## Out of scope
 
-- No changes to `analyze-general-ledger` this turn. Sign-normalization / QB-metadata-classification fixes were previously staged there and can be revisited only if variances persist after 2023 is re-ingested.
 - No UI changes.
 - No migrations.
-
-## Technical notes
-
-Files edited: `supabase/functions/process-quickbooks-file/index.ts` only.
-
-Shape of the change around line 800:
-
-```ts
-let savedOk = false;
-const { error: saveError } = await supabase.from('processed_data').insert({...});
-if (saveError) {
-  await supabase.from('documents').update({
-    processing_status: 'failed',
-    parsed_summary: { error: `Failed to save processed data: ${saveError.message}` },
-  }).eq('id', documentId);
-  return new Response(JSON.stringify({ error: saveError.message, documentId }),
-    { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-}
-savedOk = true;
-```
-
-Then only run the `completed` update + fallback-COA block when `savedOk` is true.
+- No touch to `process-quickbooks-file`, TB parser, or COA ingestion.
