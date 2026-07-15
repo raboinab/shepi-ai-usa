@@ -1,62 +1,37 @@
-## Goal
+## Why 66% is where we're stuck
 
-Push GL reconciliation on `621a6c9f…` from 66% toward >90% by fixing three related bugs in `supabase/functions/analyze-general-ledger/index.ts`. All fixes are generic — they apply to any project.
+The last round of fixes shipped, but three of the four intended behaviors don't produce the expected result on real data. Root causes, one per stuck symptom:
 
-## Observations from the current report
+### 1. Contra-revenue signs still opposite between GL and TB
+`Discounts`, `Returns`, `Shipping Income (deleted)`, and the fee lines all have GL and TB signs pointing opposite ways. We added a `contraRevenueRe` path in the *identity equation* (line 1166) but the **reconciliation variance rows** (line 1041's flippedVariance) still compare raw `glBalance` vs `tbBalance` without a class-aware sign policy. On a QuickBooks TB, credits are negative and debits positive; on our GL activity_net we sum signed amounts directly. For contra-revenue that lives on the debit side in GL detail but is netted against revenue as a positive in TB, the two conventions disagree by construction. Fix: normalize signs at the reconciliation layer using COA classification + contra-account regex before computing variance, not just in the identity accumulator.
 
-- Assets $2.57M, Liab $155K, Equity −$2.12M, NI $7.54M → identity off by −$3.0M. Net income at $7.5M against Assets of $2.5M is implausible and drives most of the gap.
-- Largest revenue line `z_Shopify Sales` = $17.7M and `T‑Shirt Sales` = $4.3M — inflated vs anything TB shows.
-- Material variances are dominated by revenue-contra / clearing accounts with opposite signs on GL vs TB:
-  - `Shipping Income (deleted)` GL $55K vs TB −$575K
-  - `Discounts (deleted)` GL −$47K vs TB $444K
-  - `Returns (deleted)` GL −$14K vs TB $183K
-  - `Undeposited Funds (Sales)` GL $1.07M vs TB $534K (exact 2×) → aggregation double-count.
-- `Shareholder Distributions` GL −$759K vs TB $1.11M — sign convention mismatch survives the distribution regex path.
-- Orphans: `PayPal Hold`, `Shop Pay Sales`, `Wells Fargo Business Checking (7179)` in GL but not TB; `Capital Stock −$1,000` in TB but not GL.
+### 2. Undeposited Funds is still exactly 2× TB
+The scratch reload (lines 218–223) *sums* duplicate keys (`num:1001` + `name:undeposited funds sales`) instead of picking one. Two representations of the same account get added together, producing the 2× reading. The `num:` and `name:` writes both happen when the export has a number-prefixed row and a name-only row. Fix: at scratch upsert time, emit only one canonical key per account per export (precedence: `num:<prefix>` when present, else `name:<leaf>`) and never both; and on reload, if both keys exist, prefer `num:` and drop `name:` for the same underlying account.
 
-## Fixes in `supabase/functions/analyze-general-ledger/index.ts`
+### 3. `(deleted)` and `z_` orphans not collapsing to their TB counterparts
+`Wells Fargo Business Checking (7179) (deleted)` GL $423K sits opposite `1015 Wells Fargo Business Checking - 7179` TB $425K — clearly one account. `normName` strips `(deleted)` on the GL side but the TB side still carries the `1015 ` prefix and ` - 7179` suffix, so leaf keys don't match. Fix: apply the same normalization to TB names — strip leading account numbers, trailing ` - <digits>` register suffixes, and `(deleted)`/`z_` markers — before building `coaByLeaf` and before the orphan-collapse pass.
 
-### 1. Revenue / expense sign convention (biggest lever)
+### 4. Distributions still off by ~$350K
+`3100 Shareholder Distributions` GL −$759K vs TB $1.11M. Not just a sign issue — magnitudes differ. Two plausible causes: (a) the 2023 GL still isn't contributing equity activity because equity path uses `snapshot_balance` (BS-latest) but distributions in QB post as running debits to an equity account and TB may reflect a period-summed rollup; (b) `distributionRe` never fires because the account name is `3100 Shareholder Distributions` and the regex expects "Distribution" without the number prefix in some code path. Fix: for equity accounts specifically, prefer `activity_net` summed across all exports (like P&L) rather than the latest snapshot, and let sign fall out naturally. Verify the regex matches numbered names.
 
-Replace `Math.abs(v)` inside the identity accumulator with a signed rule keyed off the *sign majority* of P&L accounts, not per-account absolute value:
+## Changes (all in `supabase/functions/analyze-general-ledger/index.ts`, still generic)
 
-- Compute `sumRevenueSigned` and `sumExpenseSigned` from `glActivityNet` (already signed) instead of `glBalance` after abs-collapsing.
-- If revenues are credit-natural (sum ≤ 0), take `revenue = -sumRevenueSigned`; if debit-natural (sum > 0), take `revenue = sumRevenueSigned`. Same rule per-account for expenses (contra-revenue like Discounts/Returns should net *against* revenue, not be summed as positive magnitudes into Revenue).
-- Recognize revenue contra accounts (`Discounts`, `Returns`, `Refund*`) and subtract them from revenue instead of treating them as positive revenue. That alone flips ~$1M of the variance table.
+1. **Reconciliation-layer sign policy.** Before computing variance for each account, apply: revenues/contra-revenues → compare as `-signedGL` vs `signedTB` if credit-natural; assets → signed as-is; equity → signed as-is; expenses → signed as-is. Drop the ad-hoc `flippedVariance` heuristic in favor of a deterministic class + contra-regex table.
 
-### 2. Aggregation double‑count on clearing / undeposited accounts
+2. **Scratch write dedupe.** In the child parser, resolve one canonical key per account per export before the upsert loop; never write both `num:` and `name:` for the same account. In the orchestrator reload, when a canonical account has both keys, prefer `num:` and skip the `name:` row entirely (do not sum).
 
-Undeposited Funds landing at exactly 2× TB means the same account is being upserted under two scratch keys across exports (once by `num:1001` and once by `name:undeposited funds sales`) and then both rows are loaded back into `acctMap` in the orchestrator's scratch reload.
+3. **TB-side name normalization.** Extend `normName` (or add a second pass) to also strip: leading `^\d{3,6}[\s\-:]+` account numbers, trailing ` - \d{3,}` register suffixes, `(deleted)`, `*`, `z_`/`zz_`. Rebuild `coaByLeaf` with these keys and rerun the orphan-collapse pass so GL-deleted variants match their numbered TB parent.
 
-- In the scratch upsert path, resolve to a *single canonical key per export* using this precedence: `num:<prefix>` → else `name:<normName>`. Never emit both.
-- In the orchestrator scratch reload, dedupe by `(account_number || normName)` after fetch, summing `activity_*` and picking `snapshot_balance` from the row with the latest `snapshot_period`.
+4. **Equity treatment.** Route equity accounts through the activity-summed path (same as P&L) instead of latest-snapshot, and remove any residual `Math.abs` on the equity contribution to the identity check. Confirm `distributionRe` fires on numbered names like `3100 Shareholder Distributions`.
 
-### 3. Orphan collapse: `(deleted)` variants and `z_` prefixes
-
-`z_Shopify Sales` in GL vs `Shopify Sales` in TB, and `Foo (deleted)` on both sides, should reconcile as one account.
-
-- Extend `normName` used only for matching (not for display) to strip:
-  - trailing ` (deleted)` / `*` markers
-  - leading `z_` / `zz_` archival prefixes
-  - QBO auto-suffix ` - <CompanyName>` when a company_info company_name is available.
-- Re-run leaf matching with this normalized key before falling back to `missing_in_tb` / `missing_in_gl`.
-
-### 4. Distributions sign
-
-`3100 Shareholder Distributions` GL −$759K, TB $1.11M. The current `distributionRe` applies `-Math.abs(v)` which loses the sign entirely.
-
-- For EQUITY accounts, use signed `glBalanceLatest` directly (BS snapshot). Do not apply `Math.abs`. Distributions naturally carry a debit (negative) balance under credit-natural equity, which is already the correct contribution.
-
-### 5. Report the identity components on the same basis
-
-- Show `sumRevenue`/`sumExpense` in the identity block using the signed convention above so users see a coherent A − L − E − NI decomposition rather than absolute-value sums.
+5. **Identity block reporting.** Emit `sumRevenue`, `sumExpense`, `sumEquity` under the same signed convention used in the reconciliation table so users see consistent numbers on both views.
 
 ## Verification
 
-- Redeploy `analyze-general-ledger`, click **Re‑run analysis** on `621a6c9f…`.
-- Expected: Reconciled % rises materially (target > 90%); `z_Shopify Sales`, `T‑Shirt Sales`, `Shipping Income`, `Discounts`, `Returns` variances collapse; identity check within tolerance; `Undeposited Funds` matches TB.
-- Spot-check the small project `fa0768ca…` to confirm no regression.
+- Redeploy, re-run **Analyze GL** on `621a6c9f…`.
+- Expected: Undeposited Funds collapses to ~1× TB; `(deleted)` fee/discount/returns rows either match or drop out via TB-side normalization; Wells Fargo `(deleted)` orphan merges with `1015`; identity check within 1% of assets; reconciled % > 90%.
+- Sanity check on `fa0768ca…` (small project) to confirm no regression.
 
 ## Out of scope
 
-No schema change, no frontend change, no change to the orchestrator/child memory architecture (that fix stays).
+No schema changes, no frontend changes, no orchestrator/child architecture changes.
