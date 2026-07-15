@@ -332,16 +332,19 @@ serve(async (req) => {
           else snapshotBalance = beginningBalance + netSum;
           const activityNet = summaryNet !== null ? summaryNet : netSum;
 
-          const key = acctId ? `id:${acctId}` : `name:${acctName.toLowerCase()}`;
-          // QB GL section headers embed the internal Id (not the AcctNum) — but the
-          // display name is often "<acctNum> <name>" (e.g. "6105 Rent & Lease"). Extract
-          // the leading numeric prefix so we can hit COA's acctNum index; also try the
-          // name with the prefix stripped for a leaf match.
+          // NOTE: `header.colData[0].id` in qbToJson GL output is a per-export sequential
+          // row index — NOT a stable QB account id. Keying on it merged unrelated accounts
+          // across yearly exports (e.g. id=75 → z_Shopify Sales in 2023, Phone/Internet
+          // in 2026, etc.), which inflated balances 100–1000×. Key on account-number
+          // prefix when the display name carries one (e.g. "6140 Phone/Internet" → 6140),
+          // otherwise on the normalized name.
           const numPrefixMatch = acctName.match(/^(\d+)\s+(.+)$/);
           const nameNumPrefix = numPrefixMatch ? numPrefixMatch[1] : null;
           const nameNoPrefix = numPrefixMatch ? numPrefixMatch[2] : acctName;
-          const coa = (acctId ? coaByAcctNum.get(acctId) : undefined) ||
-                      (nameNumPrefix ? coaByAcctNum.get(nameNumPrefix) : undefined) ||
+          const key = nameNumPrefix
+            ? `num:${nameNumPrefix}`
+            : `name:${acctName.toLowerCase()}`;
+          const coa = (nameNumPrefix ? coaByAcctNum.get(nameNumPrefix) : undefined) ||
                       coaByName.get(acctName.toLowerCase()) ||
                       coaByName.get(nameNoPrefix.toLowerCase()) ||
                       coaByLeaf.get(normName(acctName)) ||
@@ -383,7 +386,7 @@ serve(async (req) => {
           acctMap.set(key, {
             name: acctName,
             leaf: normName(acctName),
-            acctNumber: acctId || coa?.acctNum || null,
+            acctNumber: nameNumPrefix || coa?.acctNum || prev?.acctNumber || null,
             classification: (coa?.classification || groupCls || prev?.classification || "OTHER").toUpperCase(),
             glBalance: mergedLatest, // provisional; recomputed after classification below
             glBalanceLatest: mergedLatest,
