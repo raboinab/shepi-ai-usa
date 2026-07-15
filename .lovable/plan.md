@@ -1,53 +1,79 @@
 ## Goal
 
-Push GL reconciliation on project `621a6c9f…` from 68% toward >90% by fixing three confirmed code bugs in `supabase/functions/analyze-general-ledger/index.ts`. All fixes are generic and apply to every project.
+Improve General Ledger reconciliation for project `621a6c9f-1c25-40fa-92fa-6762ae3fe72b` by fixing the remaining generic parser/classification bugs in `analyze-general-ledger`, not by special-casing this company.
 
-## Fixes
+## Diagnosis
 
-### 1. Contra-revenue name-pattern classification (Pattern A)
+The 74% result is now concentrated in two real code issues:
 
-Deleted contra-revenue accounts (`Shipping Income (deleted)`, `Discounts (deleted)`, `Returns (deleted)`, `Fees (deleted)`) have no COA match and no numeric prefix, so they fall through to `OTHER` and get routed through the (broken) `glBalanceLatest` path.
+1. **Balance-sheet ending balance selection is wrong for reverse-chronological QuickBooks GL exports**
+   - QuickBooks exports rows newest-first.
+   - The analyzer currently picks a row from the max transaction date as the ending balance.
+   - In these files, the correct ending balance is `Beginning Balance + Summary Amount`.
+   - This explains:
+     - `1001 Undeposited Funds (Sales)` showing `$1,067,904` instead of `$534,331`
+     - `1175 Inventory Asset` showing `$354,416` instead of `$635,082`
+     - Fidelity, PayPal, A/P, Sales Tax, and other BS variances.
 
-- Add a name-pattern classifier that runs after COA/group lookup fails:
-  - `/shipping|discount|return|refund|fee|chargeback|sales?tax/i` on an account whose parent chain or sibling context is revenue-like → classify `REVENUE` (contra).
-  - `/cogs|cost of goods|cost of sales|merchant fee|processing fee/i` → `EXPENSE`.
-  - `/distribution|owner draw|contribution|member draw/i` → `EQUITY`.
-- Once reclassified, these accounts use `activityNet` (summed across all exports), which matches how TB rolls them up.
+2. **Deleted marketplace fee accounts are still classified as `OTHER`**
+   - Accounts like `Shopify Fee - VampireFreaks (deleted)`, `PayPal Fee - USD (deleted)`, `Shop Pay Fee (deleted)`, `Amazon Fee - US (deleted)` are expense accounts.
+   - Because they miss COA classification and fall through as `OTHER`, the analyzer uses the latest running-balance row instead of full-period activity.
+   - Their GL summaries already match TB; the wrong balance selector is what creates the variance.
 
-### 2. Grouped-monthly GL balance detection (Pattern A, secondary)
+## Implementation Plan
 
-When QuickBooks exports GL "grouped by month", the `Balance` column resets each month rather than being cumulative-since-inception. `glBalanceLatest` currently picks the max-transaction-date row, which in grouped mode is just December's activity, not YTD.
+### 1. Fix BS snapshot logic in the GL parser
 
-- Detect grouped mode per section: if the section contains multiple monthly subtotal rows or the `Balance` column is non-monotonic across the section, mark `isGroupedMonthly = true`.
-- When `isGroupedMonthly`, ignore `Balance` entirely and derive both `snapshotBalance` and `activityNet` from summed `Amount` values.
+Update the per-account snapshot calculation so that when a section has a valid beginning balance and summary amount, the snapshot uses:
 
-### 3. Undeposited Funds double-count (Pattern B)
+```text
+snapshotBalance = beginningBalance + summaryNet
+```
 
-Sum across GL exports for `1001 Undeposited Funds` already matches TB (~$534K), but the report shows $1.07M — exactly 2×. The `num:` / `name:` merge is not catching this row.
+This should take precedence over selecting a balance from the latest transaction date for normal balance-sheet sections.
 
-- In child mode, after building the per-export map, run a final pass that folds any `name:` entry whose normalized leaf matches a `num:` entry's normalized name into the `num:` entry, then deletes the `name:` key. Currently the fold happens before all rows are collected in some section-recursion paths.
-- In orchestrator reload, group scratch rows by `COALESCE(account_number, normName(account_name))` and sum within the group instead of treating `num:1001` and `name:undeposited funds` as separate rows.
-- Add a `walkSections` guard: track visited `(sectionId, accountKey)` pairs and skip if already processed in this export to prevent recursion double-visits.
+Keep the existing balance-column fallback only for cases where summary data is missing.
 
-### 4. Inventory Asset "latest export" tiebreak (Pattern C)
+### 2. Detect reverse-chronological GL row ordering defensively
 
-`glBalanceLatest` picks per export by max transaction date, but across exports the "winner" is chosen by insertion order, not by period-end. Two exports covering overlapping horizons can flip which one wins.
+Add a lightweight detector per account section:
 
-- Track `periodEnd` per export (max transaction date across all sections in that export).
-- Orchestrator selects the export with the greatest `periodEnd` for each BS account's snapshot, deterministically.
+- Track the first and last real transaction dates in row order.
+- If first date is later than last date, mark the section as reverse chronological.
+- In reverse chronological sections, never use the max-date row as the ending snapshot when a section summary is available.
 
-## Verification
+This makes the fix robust for future QuickBooks exports with the same ordering.
 
-After deploy, re-run **Analyze GL** on `621a6c9f…`. Expected:
-- Deleted contra-revenue rows: GL magnitudes match TB within tolerance.
-- Undeposited Funds: single row at ~$534K.
-- Inventory Asset: single deterministic snapshot.
-- Identity check tightens materially; overall reconciliation >90%.
+### 3. Expand name-pattern classification for platform fees
 
-If any row still misses, capture the new table and iterate narrowly on that row only — no further speculative rewrites.
+Update the fallback classifier so deleted/orphaned fee accounts classify as `EXPENSE`, including common marketplace/payment processor fee names:
 
-## Technical notes
+```text
+paypal fee, shopify fee, shop pay fee, amazon fee, afterpay fee,
+klarna fee, sezzle fee, ebay fee, etsy fee, tiktok fee,
+market pro fee, foreign currency fees, rate difference
+```
 
-- All changes are inside `supabase/functions/analyze-general-ledger/index.ts` (both child and orchestrator modes). No schema changes to `gl_reconcile_accounts`.
-- Memory footprint unchanged; the classifier and grouped-mode detector are O(rows) with no additional retained state.
-- No frontend changes.
+Keep revenue-specific patterns like `shipping income`, `refund`, `return`, and `discount` classified as revenue/contra-revenue.
+
+### 4. Preserve generic behavior
+
+Do not hardcode this project ID or account names as one-off overrides. The changes should operate on:
+
+- QuickBooks GL structure
+- section summary math
+- row ordering
+- general account-name patterns
+
+### 5. Verification
+
+After deployment:
+
+1. Re-run **General Ledger Analysis** on `621a6c9f…`.
+2. Confirm expected changes:
+   - `1001 Undeposited Funds (Sales)` drops to about `$534,331` and matches TB.
+   - `1175 Inventory Asset` rises to about `$635,082` and matches TB.
+   - deleted platform fee accounts match their TB amounts.
+   - BS variances from reverse-row ordering materially shrink.
+   - Reconciliation should move well above 74%.
+3. If remaining variances exist, inspect only the new residual rows and iterate narrowly.

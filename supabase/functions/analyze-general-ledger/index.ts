@@ -39,10 +39,15 @@ const normName = (s: string): string =>
 const classifyByName = (name: string): string | null => {
   const n = name.toLowerCase();
   if (/\b(cogs|cost of goods|cost of sales|merchant\s*fee|processing\s*fee|payment\s*fee|transaction\s*fee)\b/.test(n)) return "EXPENSE";
+  // Marketplace / processor fee accounts often arrive as deleted/orphaned accounts
+  // with no COA match. They are operating expenses, not contra-revenue.
+  if (/\b(paypal|pay\s*pal|shopify|shop\s*pay|amazon|after\s*pay|afterpay|klarna|sezzle|ebay|etsy|tiktok|tik\s*tok|market\s*pro|markets\s*pro)\b.*\bfee(s)?\b/.test(n)) return "EXPENSE";
+  if (/\b(foreign\s*currency\s*fee(s)?|rate\s*difference)\b/.test(n)) return "EXPENSE";
   if (/\b(distribution|owner\s*draw|owner\s*withdraw|member\s*draw|shareholder\s*(distribut|withdraw)|contribution)\b/.test(n)) return "EQUITY";
-  // Contra-revenue: shipping/discount/return/refund/fee patterns that aren't cost-side.
-  if (/\b(shipping\s*income|shipping\s*revenue|shipping|discount|return|refund|chargeback|sales?\s*tax|store\s*credit)s?\b/.test(n)) {
-    if (!/\bcost\b|\bexpense\b|\bcogs\b/.test(n)) return "REVENUE";
+  // Contra-revenue: revenue-side discounts/returns/refunds/shipping-income patterns.
+  // Do not classify generic "fee" here; processor/platform fees are expenses above.
+  if (/\b(shipping\s*income|shipping\s*revenue|discount|return|refund|chargeback|sales?\s*tax|store\s*credit)s?\b/.test(n)) {
+    if (!/\bcost\b|\bexpense\b|\bcogs\b|\bfee(s)?\b/.test(n)) return "REVENUE";
   }
   return null;
 };
@@ -408,6 +413,8 @@ serve(async (req) => {
           let beginningBalance = 0;
           let endingBalance = 0;
           let endingBalanceDate: string | null = null;
+          let firstTxnDateInRowOrder: string | null = null;
+          let lastTxnDateInRowOrder: string | null = null;
           let txnCount = 0;
           let activity = 0;
           let netSum = 0;
@@ -489,6 +496,8 @@ serve(async (req) => {
               if (d) { txnDate = d; break; }
             }
             if (txnDate) {
+              if (!firstTxnDateInRowOrder) firstTxnDateInRowOrder = txnDate;
+              lastTxnDateInRowOrder = txnDate;
               if (!periodStart || txnDate < periodStart) periodStart = txnDate;
               if (!periodEnd || txnDate > periodEnd) periodEnd = txnDate;
             }
@@ -508,10 +517,11 @@ serve(async (req) => {
 
           const summaryCd = section.summary?.colData || [];
           const summaryNet = amountColIdx >= 0 ? parseMoney(summaryCd[amountColIdx]?.value) : null;
+          const isReverseChronological = !!firstTxnDateInRowOrder && !!lastTxnDateInRowOrder && firstTxnDateInRowOrder > lastTxnDateInRowOrder;
 
           let snapshotBalance: number;
-          if (balanceColIdx >= 0 && endingBalanceDate !== null) snapshotBalance = endingBalance;
-          else if (summaryNet !== null) snapshotBalance = beginningBalance + summaryNet;
+          if (summaryNet !== null) snapshotBalance = beginningBalance + summaryNet;
+          else if (balanceColIdx >= 0 && endingBalanceDate !== null && !isReverseChronological) snapshotBalance = endingBalance;
           else snapshotBalance = beginningBalance + netSum;
           const activityNet = summaryNet !== null ? summaryNet : netSum;
 
