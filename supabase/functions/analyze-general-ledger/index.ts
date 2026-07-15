@@ -40,23 +40,32 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { projectId } = await req.json() as { projectId: string };
+    const body = await req.json() as { projectId: string; mode?: string; runId?: string; exportId?: string };
+    const { projectId, mode, runId: bodyRunId, exportId } = body;
     if (!projectId) {
       return new Response(JSON.stringify({ error: "projectId is required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    console.log(`[ANALYZE-GL] Starting analysis for project: ${projectId}`);
-    const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+    const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
 
-    // Auth + project access
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    const { data: { user }, error: authErr } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
-    if (authErr || !user) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    const { data: hasAccess, error: accessErr } = await supabase.rpc('has_project_access', { _user_id: user.id, _project_id: projectId });
-    if (accessErr || hasAccess !== true) return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    const authHeader = req.headers.get('Authorization') || '';
+    const bearerToken = authHeader.replace('Bearer ', '');
+    const isInternalCall = mode === "process_export" && bearerToken === SERVICE_KEY;
+
+    if (!isInternalCall) {
+      // External caller: require user auth + project access
+      if (!authHeader) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      const { data: { user }, error: authErr } = await supabase.auth.getUser(bearerToken);
+      if (authErr || !user) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      const { data: hasAccess, error: accessErr } = await supabase.rpc('has_project_access', { _user_id: user.id, _project_id: projectId });
+      if (accessErr || hasAccess !== true) return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    console.log(`[ANALYZE-GL] ${mode === "process_export" ? "Child export" : "Starting analysis"} for project: ${projectId}${exportId ? ` export=${exportId}` : ""}`);
 
     // ── Pull COA (preferred classification source) ──
     const { data: coaRecords } = await supabase

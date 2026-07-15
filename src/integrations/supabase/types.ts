@@ -1766,12 +1766,16 @@ export type Database = {
           account_key: string
           account_name: string | null
           account_number: string | null
+          activity_abs: number
           activity_net: number
+          beginning_empty: boolean
           classification: string | null
+          full_path: string | null
           project_id: string
           run_id: string
           snapshot_balance: number | null
           snapshot_period: string | null
+          snapshot_sum: number
           txn_count: number
           updated_at: string
         }
@@ -1779,12 +1783,16 @@ export type Database = {
           account_key: string
           account_name?: string | null
           account_number?: string | null
+          activity_abs?: number
           activity_net?: number
+          beginning_empty?: boolean
           classification?: string | null
+          full_path?: string | null
           project_id: string
           run_id: string
           snapshot_balance?: number | null
           snapshot_period?: string | null
+          snapshot_sum?: number
           txn_count?: number
           updated_at?: string
         }
@@ -1792,12 +1800,16 @@ export type Database = {
           account_key?: string
           account_name?: string | null
           account_number?: string | null
+          activity_abs?: number
           activity_net?: number
+          beginning_empty?: boolean
           classification?: string | null
+          full_path?: string | null
           project_id?: string
           run_id?: string
           snapshot_balance?: number | null
           snapshot_period?: string | null
+          snapshot_sum?: number
           txn_count?: number
           updated_at?: string
         }
