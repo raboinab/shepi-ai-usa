@@ -321,10 +321,35 @@ serve(async (req) => {
           const activityNet = summaryNet !== null ? summaryNet : netSum;
 
           const key = acctId ? `id:${acctId}` : `name:${acctName.toLowerCase()}`;
+          // QB GL section headers embed the internal Id (not the AcctNum) — but the
+          // display name is often "<acctNum> <name>" (e.g. "6105 Rent & Lease"). Extract
+          // the leading numeric prefix so we can hit COA's acctNum index; also try the
+          // name with the prefix stripped for a leaf match.
+          const numPrefixMatch = acctName.match(/^(\d+)\s+(.+)$/);
+          const nameNumPrefix = numPrefixMatch ? numPrefixMatch[1] : null;
+          const nameNoPrefix = numPrefixMatch ? numPrefixMatch[2] : acctName;
           const coa = (acctId ? coaByAcctNum.get(acctId) : undefined) ||
+                      (nameNumPrefix ? coaByAcctNum.get(nameNumPrefix) : undefined) ||
                       coaByName.get(acctName.toLowerCase()) ||
-                      coaByLeaf.get(normName(acctName));
-          const cls = (coa?.classification || "OTHER").toUpperCase();
+                      coaByName.get(nameNoPrefix.toLowerCase()) ||
+                      coaByLeaf.get(normName(acctName)) ||
+                      coaByLeaf.get(normName(nameNoPrefix));
+          // Fall back to QB's section `group` metadata when COA missed — it's the
+          // authoritative bucket ("Income", "Expenses", "COGS", etc.).
+          const groupHint = (secGroup || parentGroup || "").toLowerCase();
+          const groupCls = (() => {
+            if (!groupHint) return null;
+            if (groupHint === "income") return "REVENUE";
+            if (groupHint === "otherincome" || groupHint.includes("other income")) return "OTHER_INCOME";
+            if (groupHint === "cogs" || groupHint.includes("costofgoodssold") || groupHint.includes("cost of goods")) return "COST_OF_GOODS_SOLD";
+            if (groupHint === "expenses" || groupHint === "expense") return "EXPENSE";
+            if (groupHint === "otherexpense" || groupHint.includes("other expense")) return "OTHER_EXPENSE";
+            if (groupHint.includes("asset")) return "ASSET";
+            if (groupHint.includes("liab")) return "LIABILITY";
+            if (groupHint.includes("equity")) return "EQUITY";
+            return null;
+          })();
+          const cls = (coa?.classification || groupCls || "OTHER").toUpperCase();
           const picked = (cls === "REVENUE" || cls === "INCOME" || cls === "OTHER_INCOME" ||
                           cls === "EXPENSE" || cls === "COST_OF_GOODS_SOLD" || cls === "OTHER_EXPENSE")
                           ? "activityNet" : "snapshotBalance";
@@ -355,7 +380,7 @@ serve(async (req) => {
             name: acctName,
             leaf: normName(acctName),
             acctNumber: acctId || coa?.acctNum || null,
-            classification: (coa?.classification || prev?.classification || "OTHER").toUpperCase(),
+            classification: (coa?.classification || groupCls || prev?.classification || "OTHER").toUpperCase(),
             glBalance: mergedLatest, // provisional; recomputed after classification below
             glBalanceLatest: mergedLatest,
             glBalanceSum: mergedSum,
