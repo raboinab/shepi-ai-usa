@@ -1123,32 +1123,50 @@ serve(async (req) => {
     const accountTypeBreakdown: Record<string, number> = {};
     for (const a of accounts) accountTypeBreakdown[a.classification] = (accountTypeBreakdown[a.classification] || 0) + 1;
 
-    // ── Accounting identity: Assets = Liabilities + Equity + (Revenue − Expense)
-    //    Handle both sign conventions: detect whether revenues sum positive (debit-positive
-    //    convention common in QB GL exports) or negative (true double-entry signed sum). ──
-    // Treat contra-assets (accumulated depreciation, allowance for doubtful accounts) as
-    // negative asset contributions; take absolute value elsewhere so sign-convention drift
-    // between imports doesn't mask real balances.
+    // ── Accounting identity: Assets = Liabilities + Equity + (Revenue − Expense) ──
+    // Sign conventions vary per export; we normalize per-class using signed values so
+    // that debit-natural (asset/expense) and credit-natural (liability/equity/revenue)
+    // accounts each contribute with a coherent sign to the identity.
     const contraAssetRe = /accumulated depreciation|accumulated amortization|allowance for/i;
-    // Owner-draw / distribution accounts are debit-natural equity contras — they reduce
-    // equity. QB GL exports them as negative running balances alongside a negative
-    // retained-earnings row (credit-natural). Blanket Math.abs on Equity treats them
-    // both as additions, inflating equity and busting the identity check.
-    const distributionRe = /owner'?s?\s*(pay|draw)|shareholder\s*distribution|member\s*draw|personal\s*expense|distribution/i;
+    const contraRevenueRe = /\b(discount|return|refund|chargeback|allowance)s?\b/i;
     let sumAssets = 0, sumLiab = 0, sumEquity = 0, sumRevenue = 0, sumExpense = 0;
+    // First pass: choose sign polarity per class using the signed sum majority.
+    let revSignedSum = 0, expSignedSum = 0, liabSignedSum = 0, eqSignedSum = 0;
     for (const a of accounts) {
       const c = a.classification;
-      const v = a.glBalance;
+      const bs = a.glBalanceLatest;
+      const pl = a.glActivityNet;
+      if (c === "REVENUE" || c === "INCOME" || c === "OTHER_INCOME") revSignedSum += pl;
+      else if (c === "EXPENSE" || c === "COST_OF_GOODS_SOLD" || c === "OTHER_EXPENSE") expSignedSum += pl;
+      else if (c === "LIABILITY") liabSignedSum += bs;
+      else if (c === "EQUITY") eqSignedSum += bs;
+    }
+    // If majority is negative (credit-natural double-entry sum), flip sign so revenue
+    // and liability come out positive; expense/asset remain debit-positive.
+    const revFlip = revSignedSum < 0 ? -1 : 1;
+    const liabFlip = liabSignedSum < 0 ? -1 : 1;
+    const eqFlip = eqSignedSum < 0 ? -1 : 1;
+    const expFlip = expSignedSum < 0 ? -1 : 1;
+
+    for (const a of accounts) {
+      const c = a.classification;
       if (c === "ASSET") {
-        sumAssets += contraAssetRe.test(a.name) ? -Math.abs(v) : Math.abs(v);
+        // Signed BS balance; contra-assets flip.
+        const v = a.glBalanceLatest;
+        sumAssets += contraAssetRe.test(a.name) ? -Math.abs(v) : v;
+      } else if (c === "LIABILITY") {
+        sumLiab += liabFlip * a.glBalanceLatest;
+      } else if (c === "EQUITY") {
+        // Preserve the sign for equity: distributions and owner draws already carry
+        // a debit (negative) contribution in the signed balance — no Math.abs.
+        sumEquity += eqFlip * a.glBalanceLatest;
+      } else if (c === "REVENUE" || c === "INCOME" || c === "OTHER_INCOME") {
+        const v = revFlip * a.glActivityNet;
+        // Contra-revenue accounts (Discounts, Returns, Refunds) net against revenue.
+        sumRevenue += contraRevenueRe.test(a.name) ? -Math.abs(v) : v;
+      } else if (c === "EXPENSE" || c === "COST_OF_GOODS_SOLD" || c === "OTHER_EXPENSE") {
+        sumExpense += expFlip * a.glActivityNet;
       }
-      else if (c === "LIABILITY") sumLiab += Math.abs(v);
-      else if (c === "EQUITY") {
-        // Distributions subtract from equity; everything else adds its magnitude.
-        sumEquity += distributionRe.test(a.name) ? -Math.abs(v) : Math.abs(v);
-      }
-      else if (c === "REVENUE" || c === "INCOME" || c === "OTHER_INCOME") sumRevenue += Math.abs(v);
-      else if (c === "EXPENSE" || c === "COST_OF_GOODS_SOLD" || c === "OTHER_EXPENSE") sumExpense += Math.abs(v);
     }
     const liabAbs = sumLiab;
     const equityAbs = sumEquity;
