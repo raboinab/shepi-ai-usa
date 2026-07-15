@@ -366,17 +366,9 @@ serve(async (req) => {
                           cls === "EXPENSE" || cls === "COST_OF_GOODS_SOLD" || cls === "OTHER_EXPENSE")
                           ? "activityNet" : "snapshotBalance";
 
-          // Diagnostic: one dense line per section covers column detection, raw QB
-          // values, computed readings, classification, and which reading we picked.
-          console.log(
-            `[ANALYZE-GL:DIAG] name="${acctName}" acctId=${acctId || "-"} ` +
-            `group=${parentGroup || "-"} secGroup=${secGroup || "-"} ` +
-            `amtIdx=${amountColIdx} balIdx=${balanceColIdx} ` +
-            `begin=${beginningBalance} end=${endingBalance}(${endingBalanceDate || "-"}) ` +
-            `firstAmt=${JSON.stringify(firstRowAmountRaw)} lastAmt=${JSON.stringify(lastRowAmountRaw)} ` +
-            `summaryRaw=${JSON.stringify(summaryAmountRaw)} summaryNet=${summaryNet} rowNet=${netSum} ` +
-            `→ snap=${snapshotBalance} act=${activityNet} class=${cls} pick=${picked}`
-          );
+          // Per-section DIAG log removed — with 4 GL exports × hundreds of sections
+          // the log volume itself was contributing to the memory-limit trip. Re-enable
+          // selectively by wrapping in `if (Deno.env.get("ANALYZE_GL_DIAG"))` if needed.
 
           // Merge across periods: sum activity/txnCount/activityNet; keep latest-wins snapshot.
           const prevSnap = bestSnapshotByKey.get(key);
