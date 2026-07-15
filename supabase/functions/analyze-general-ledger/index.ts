@@ -1202,6 +1202,10 @@ serve(async (req) => {
     });
     if (insertError) console.error("[ANALYZE-GL] Failed to store:", insertError);
 
+    // Clean up scratch rows for this run.
+    await supabase.from("gl_reconcile_accounts")
+      .delete().eq("project_id", projectId).eq("run_id", runId);
+
     console.log(`[ANALYZE-GL] Complete: ${accounts.length} accounts, ${analysisResult.flags.length} flags, score=${overallScore}, matched=${matchCount}/${comparable}`);
 
     return new Response(JSON.stringify({ success: true, ...analysisResult }), {
