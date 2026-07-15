@@ -116,7 +116,8 @@ export function normalizeAccountLabel(label: string | null | undefined): string 
   const m = raw.match(/(\d{3,5})(?!.*\d)/);
   if (m) {
     const prefix = raw.replace(/[^a-z ]/g, " ").trim().split(/\s+/)[0] || "";
-    return prefix ? `${prefix} ${m[1]}` : m[1];
+    const cap = prefix ? prefix.charAt(0).toUpperCase() + prefix.slice(1) : "";
+    return cap ? `${cap} ${m[1]}` : m[1];
   }
   return raw;
 }
