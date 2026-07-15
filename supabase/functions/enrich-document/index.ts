@@ -1,5 +1,14 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.87.1";
+import {
+  canonicalIssuer,
+  extractLast4,
+  issuerFromFilename,
+  last4FromFilename,
+  normalizeAccountLabel,
+  normalizeInstitution,
+  parsePeriodFromFilename,
+} from "../_shared/bankAccountNormalization.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -302,7 +311,7 @@ serve(async (req) => {
     // Fetch the document
     const { data: doc, error: docError } = await supabase
       .from('documents')
-      .select('id, project_id, user_id, extracted_data, account_label, account_type, period_start, period_end, parsed_summary, institution, job_id')
+      .select('id, project_id, user_id, name, file_size, category, status, processing_status, extracted_data, account_label, account_type, period_start, period_end, parsed_summary, institution, job_id')
       .eq('id', documentId)
       .maybeSingle();
 
@@ -322,9 +331,10 @@ serve(async (req) => {
       );
     }
 
-    // Skip if already enriched (has account_label AND period_start AND parsed_summary)
-    if (doc.account_label && doc.period_start && doc.parsed_summary) {
-      console.log('[ENRICH-DOCUMENT] Already enriched, skipping');
+    // Skip only when a prior run already applied the v2 canonical normalization.
+    const summaryVer = (doc.parsed_summary as { normalization_version?: number } | null)?.normalization_version ?? 0;
+    if (doc.account_label && doc.period_start && doc.parsed_summary && summaryVer >= 2) {
+      console.log('[ENRICH-DOCUMENT] Already enriched (v2), skipping');
       return new Response(
         JSON.stringify({ skipped: true, reason: 'already enriched' }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -371,41 +381,64 @@ serve(async (req) => {
       targetCompany = (proj?.target_company as string | null) ?? null;
     }
 
-    const cleanInstitution = (raw: string | null | undefined): string | null => {
-      if (!raw) return null;
-      let s = raw.replace(/\s+/g, ' ').trim();
-      if (!s) return null;
-      if (targetCompany) {
-        const co = targetCompany.replace(/\s+/g, ' ').trim().replace(/[.,]/g, '');
-        if (co) {
-          const esc = co.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          // Strip "<inst> - <company>" or trailing "<inst> <company>"
-          s = s.replace(new RegExp(`\\s*[-–—:]\\s*${esc}\\s*$`, 'i'), '').trim();
-          s = s.replace(new RegExp(`\\s+${esc}\\s*$`, 'i'), '').trim() || s;
-          // Strip leading "<company> <inst>"
-          s = s.replace(new RegExp(`^${esc}\\s*[-–—:]?\\s+`, 'i'), '').trim() || s;
-          // If after stripping the only thing left is the company itself, drop it
-          if (s.replace(/[.,]/g, '').toLowerCase() === co.toLowerCase()) return null;
-        }
+    // --- Canonical normalization (shared with the client) --------------------
+    // Order matters: parser output first, existing DB value second, filename
+    // hint last. This lets a confident filename tail override a wrong parser
+    // header (combined statements with sibling card numbers).
+    const fileName = (doc as { name?: string | null }).name ?? null;
+
+    const filenameIssuer = issuerFromFilename(fileName);
+    const filenameLast4 = last4FromFilename(fileName);
+
+    const rawIssuerCandidates = [parsed.bankName, doc.institution, filenameIssuer]
+      .map((v) => (v ? String(v) : ""))
+      .map((v) => v.replace(new RegExp(`\\s*[-–—:]\\s*${(targetCompany || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`, "i"), "").trim())
+      .filter(Boolean);
+
+    let canonicalInstitution = "";
+    for (const c of rawIssuerCandidates) {
+      const canon = canonicalIssuer(c);
+      if (canon) { canonicalInstitution = canon; break; }
+    }
+    if (!canonicalInstitution) {
+      canonicalInstitution = normalizeInstitution(parsed.bankName || doc.institution, targetCompany);
+      if (canonicalInstitution === "Unknown") canonicalInstitution = "";
+    }
+
+    // Resolve last-4: parser first, but let the filename override when the
+    // parser value looks like it came from a combined statement header (parser
+    // returns a number that disagrees with a bounded filename segment).
+    const parserLast4 = extractLast4(parsed.accountNumber);
+    const existingLast4 = extractLast4(doc.account_label);
+    let resolvedLast4 = parserLast4 || existingLast4 || filenameLast4 || null;
+    if (filenameLast4 && parserLast4 && filenameLast4 !== parserLast4) {
+      // filename is bounded (`-7187-`) and the parser disagrees → trust filename
+      resolvedLast4 = filenameLast4;
+      console.warn('[ENRICH-DOCUMENT] Last-4 override: parser=%s filename=%s', parserLast4, filenameLast4);
+    }
+
+    const canonicalLabel = normalizeAccountLabel(canonicalInstitution, resolvedLast4);
+
+    // Period fallback from filename when the parser couldn't detect one.
+    let periodStart = parsed.periodStart;
+    let periodEnd = parsed.periodEnd;
+    let periodSource: 'parser' | 'filename' = 'parser';
+    if ((!periodStart || !periodEnd) && fileName) {
+      const fromName = parsePeriodFromFilename(fileName);
+      if (fromName) {
+        periodStart = periodStart || fromName.periodStart;
+        periodEnd = periodEnd || fromName.periodEnd;
+        periodSource = 'filename';
       }
-      return s || null;
-    };
+    }
 
-    const cleanAccountLabel = (raw: string | null | undefined): string | null => {
-      if (!raw) return null;
-      const s = String(raw).replace(/\s+/g, ' ').trim().toLowerCase();
-      return s || null;
-    };
+    const hasFullEnrichment = Boolean(canonicalLabel && periodStart && periodEnd);
 
-    const normalizedInstitution =
-      cleanInstitution(parsed.bankName) || cleanInstitution(doc.institution) || null;
-
-    // Update the document
     const docUpdate: Record<string, unknown> = {
-      processing_status: 'completed',
-      period_start: parsed.periodStart,
-      period_end: parsed.periodEnd,
-      institution: normalizedInstitution,
+      processing_status: hasFullEnrichment ? 'completed' : 'needs_review',
+      period_start: periodStart,
+      period_end: periodEnd,
+      institution: canonicalInstitution || null,
       parsed_summary: {
         transactionCount: parsed.transactionCount,
         totalDebits: parsed.totalDebits,
@@ -414,18 +447,37 @@ serve(async (req) => {
         closingBalance: parsed.closingBalance,
         accountNumber: parsed.accountNumber,
         isReconciled: parsed.isReconciled,
+        canonical_last4: resolvedLast4,
+        period_source: periodSource,
+        normalization_version: 2,
       },
     };
+    if (canonicalLabel) {
+      docUpdate.account_label = canonicalLabel;
+    }
 
-    // Auto-populate account_label if not set
-    if (parsed.accountNumber && !doc.account_label) {
-      docUpdate.account_label = cleanAccountLabel(parsed.accountNumber);
-    } else if (doc.account_label) {
-      const cleaned = cleanAccountLabel(doc.account_label);
-      if (cleaned && cleaned !== doc.account_label) {
-        docUpdate.account_label = cleaned;
+    // Dedupe: skip processed_data insert (below) when another completed doc for
+    // the same canonical account+period+size already exists.
+    let isDuplicate = false;
+    if (canonicalInstitution && canonicalLabel && periodStart && periodEnd) {
+      const { data: dupes } = await supabase
+        .from('documents')
+        .select('id')
+        .eq('project_id', doc.project_id)
+        .eq('institution', canonicalInstitution)
+        .eq('account_label', canonicalLabel)
+        .eq('period_start', periodStart)
+        .eq('period_end', periodEnd)
+        .eq('processing_status', 'completed')
+        .neq('id', doc.id)
+        .limit(1);
+      if (dupes && dupes.length > 0) {
+        isDuplicate = true;
+        docUpdate.status = 'duplicate';
+        console.log('[ENRICH-DOCUMENT] Duplicate of', dupes[0].id, '- flagging');
       }
     }
+
 
     const { error: updateDocError } = await supabase
       .from('documents')
@@ -444,7 +496,7 @@ serve(async (req) => {
       .eq('source_document_id', doc.id)
       .limit(1);
 
-    if (!existingPD || existingPD.length === 0) {
+    if (!isDuplicate && (!existingPD || existingPD.length === 0)) {
       const dataType = doc.account_type === 'credit_card' ? 'credit_card_transactions' : 'bank_transactions';
 
       const { error: pdError } = await supabase
@@ -455,8 +507,8 @@ serve(async (req) => {
           source_type: 'docuclipper',
           data_type: dataType,
           source_document_id: doc.id,
-          period_start: parsed.periodStart,
-          period_end: parsed.periodEnd,
+          period_start: periodStart,
+          period_end: periodEnd,
           data: {
             transactions: parsed.transactions,
             summary: {
@@ -502,8 +554,8 @@ serve(async (req) => {
         success: true,
         document_id: doc.id,
         account_label: docUpdate.account_label || doc.account_label,
-        period_start: parsed.periodStart,
-        period_end: parsed.periodEnd,
+        period_start: periodStart,
+        period_end: periodEnd,
         transaction_count: parsed.transactionCount,
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
