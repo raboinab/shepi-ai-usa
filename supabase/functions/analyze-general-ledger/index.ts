@@ -444,8 +444,8 @@ serve(async (req) => {
               moneyIdxsSorted = [...moneyColFreq.keys()].sort((a, b) => a - b);
             }
             if (moneyIdxsSorted.length >= 2) {
-              balanceColIdx = moneyIdxsSorted[moneyIdxsSorted.length - 1];
-              amountColIdx = moneyIdxsSorted[moneyIdxsSorted.length - 2];
+              balanceColIdx = isGroupedMonthly ? -1 : moneyIdxsSorted[moneyIdxsSorted.length - 1];
+              amountColIdx = isGroupedMonthly ? moneyIdxsSorted[moneyIdxsSorted.length - 1] : moneyIdxsSorted[moneyIdxsSorted.length - 2];
             } else if (moneyIdxsSorted.length === 1) {
               amountColIdx = moneyIdxsSorted[0];
               balanceColIdx = -1;
