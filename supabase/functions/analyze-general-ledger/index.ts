@@ -1406,6 +1406,28 @@ serve(async (req) => {
     const comparable = matchCount + varianceCount;
     const overallScore = comparable > 0 ? Math.round((matchCount / comparable) * 100) : -1;
 
+    // Break down unreconciled accounts by reason code so we can drive an audit UI.
+    const unreconciledByReason: Record<string, number> = {};
+    const unreconciledList: {
+      name: string; glBalance: number; tbBalance: number | null;
+      variance: number | null; reasonCode: string; status: string;
+    }[] = [];
+    for (const r of reconciliation) {
+      if (r.status === "match") continue;
+      const code = r.reasonCode || "UNKNOWN";
+      unreconciledByReason[code] = (unreconciledByReason[code] || 0) + 1;
+      unreconciledList.push({
+        name: r.accountName,
+        glBalance: r.glBalance,
+        tbBalance: r.tbBalance,
+        variance: r.variance,
+        reasonCode: code,
+        status: r.status,
+      });
+    }
+    // Sort unreconciled by |variance| desc for the audit view.
+    unreconciledList.sort((a, b) => Math.abs(b.variance ?? b.tbBalance ?? b.glBalance) - Math.abs(a.variance ?? a.tbBalance ?? a.glBalance));
+
     const analysisResult = {
       accountCount: accounts.length,
       txnCount: txnCountTotal,
@@ -1428,6 +1450,8 @@ serve(async (req) => {
         missingInTB,
         missingInGL: missingInGL.length,
       },
+      unreconciledByReason,
+      unreconciledList: unreconciledList.slice(0, 80),
       materialVariances: materialVariances.sort((a, b) => Math.abs(b.variance!) - Math.abs(a.variance!)).slice(0, 20),
       structuralVariances: structuralVariances.sort((a, b) => Math.abs(b.tbBalance!) - Math.abs(a.tbBalance!)).slice(0, 20),
       missingInTBList: reconciliation.filter(r => r.status === "missing_in_tb").slice(0, 30).map(r => ({ name: r.accountName, balance: r.glBalance })),
@@ -1453,9 +1477,72 @@ serve(async (req) => {
     });
     if (insertError) console.error("[ANALYZE-GL] Failed to store:", insertError);
 
-    // Clean up scratch rows for this run.
-    await supabase.from("gl_reconcile_accounts")
-      .delete().eq("project_id", projectId).eq("run_id", runId);
+    // Persist reconciliation audit into gl_reconcile_accounts (keyed by account_key)
+    // so the audit view can be inspected without re-running the analyzer. Scratch rows
+    // written during aggregation for this run are updated in-place with tb_balance,
+    // variance, reconciled flag, and reason code. Any residual TB-only rows are inserted
+    // fresh. We deliberately no longer DELETE at exit — the run's data is now the report.
+    try {
+      const glKeys = new Set<string>();
+      for (const r of reconciliation) {
+        if (!r.accountKey) continue;
+        if (r.status === "missing_in_gl") continue;
+        glKeys.add(r.accountKey);
+      }
+      // Bulk-update the GL side, one row per account (Supabase batch upsert).
+      const updates: Record<string, unknown>[] = [];
+      for (const r of reconciliation) {
+        if (!r.accountKey) continue;
+        if (r.status === "missing_in_gl") continue;
+        updates.push({
+          project_id: projectId,
+          run_id: runId,
+          account_key: r.accountKey,
+          account_name: r.accountName,
+          tb_balance: r.tbBalance,
+          variance: r.variance,
+          variance_pct: r.variancePct,
+          reconciled: r.status === "match" || r.status === "structural_variance",
+          reason_code: r.reasonCode || null,
+        });
+      }
+      // Upsert in chunks to stay well under the row limit.
+      for (let i = 0; i < updates.length; i += 500) {
+        const chunk = updates.slice(i, i + 500);
+        const { error: upErr } = await supabase
+          .from("gl_reconcile_accounts")
+          .upsert(chunk, { onConflict: "project_id,run_id,account_key" });
+        if (upErr) console.error("[ANALYZE-GL] Recon persist error:", upErr);
+      }
+      // Insert TB-only rows (accounts that had no GL scratch row from aggregation).
+      const tbOnly = reconciliation
+        .filter(r => r.status === "missing_in_gl" && r.accountKey)
+        .map(r => ({
+          project_id: projectId,
+          run_id: runId,
+          account_key: r.accountKey!,
+          account_name: r.accountName,
+          classification: "OTHER",
+          snapshot_balance: 0,
+          activity_net: 0,
+          tb_balance: r.tbBalance,
+          variance: r.variance,
+          variance_pct: r.variancePct,
+          reconciled: false,
+          reason_code: r.reasonCode || "MISSING_IN_GL",
+        }));
+      for (let i = 0; i < tbOnly.length; i += 500) {
+        const chunk = tbOnly.slice(i, i + 500);
+        const { error: insErr } = await supabase
+          .from("gl_reconcile_accounts")
+          .upsert(chunk, { onConflict: "project_id,run_id,account_key" });
+        if (insErr) console.error("[ANALYZE-GL] TB-only persist error:", insErr);
+      }
+    } catch (e) {
+      console.error("[ANALYZE-GL] Failed to persist reconciliation audit:", e);
+    }
+
+
 
     console.log(`[ANALYZE-GL] Complete: ${accounts.length} accounts, ${analysisResult.flags.length} flags, score=${overallScore}, matched=${matchCount}/${comparable}`);
 
