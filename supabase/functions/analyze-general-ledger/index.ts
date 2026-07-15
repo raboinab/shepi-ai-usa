@@ -102,8 +102,12 @@ serve(async (req) => {
     // the one with the latest period_end wins for `glBalance` (true ending), while activity
     // and txnCount sum across periods. This gives whole-lifetime coverage rather than just
     // the last uploaded slice.
-    const { data: glProcessed } = await supabase
-      .from("processed_data").select("data, period_start, period_end, created_at")
+    // Fetch GL record IDs first — we then load each `data` payload one at a time
+    // and null the reference after processing so the Deno edge function does not
+    // hold all GL exports (multi-MB each) in memory simultaneously. Loading them
+    // all at once was tripping the 256MB memory limit ("Memory limit exceeded").
+    const { data: glIndex } = await supabase
+      .from("processed_data").select("id, period_start, period_end, created_at")
       .eq("project_id", projectId).eq("data_type", "general_ledger")
       .order("period_end", { ascending: true });
 
@@ -125,15 +129,23 @@ serve(async (req) => {
       return null;
     };
 
-    if (glProcessed && glProcessed.length > 0) {
+    if (glIndex && glIndex.length > 0) {
       // Track per-account best snapshot (winner = latest period_end) plus summed activity.
       type Snap = { periodEnd: string; glBalance: number };
       const bestSnapshotByKey = new Map<string, Snap>();
 
-      for (const glRec of glProcessed) {
-        const gl = glRec.data as Record<string, unknown>;
+      for (const glMeta of glIndex) {
+        // Load one GL export at a time; drop the parsed tree at end of iteration.
+        const { data: glRecArr, error: glLoadErr } = await supabase
+          .from("processed_data").select("data")
+          .eq("id", glMeta.id).limit(1);
+        if (glLoadErr || !glRecArr || glRecArr.length === 0) {
+          console.error(`[ANALYZE-GL] Failed to load GL record ${glMeta.id}:`, glLoadErr);
+          continue;
+        }
+        let gl: Record<string, unknown> | null = glRecArr[0].data as Record<string, unknown>;
         const sections = ((gl.rows as { row?: GlRow[] })?.row || []) as GlRow[];
-        const recPeriodEnd = String(glRec.period_end || "");
+        const recPeriodEnd = String(glMeta.period_end || "");
 
         // ── Resolve Amount / Balance column indices from QB report column metadata. ──
         // GL DATA rows are nested inside SECTIONs and do NOT have a prepended account
@@ -354,17 +366,9 @@ serve(async (req) => {
                           cls === "EXPENSE" || cls === "COST_OF_GOODS_SOLD" || cls === "OTHER_EXPENSE")
                           ? "activityNet" : "snapshotBalance";
 
-          // Diagnostic: one dense line per section covers column detection, raw QB
-          // values, computed readings, classification, and which reading we picked.
-          console.log(
-            `[ANALYZE-GL:DIAG] name="${acctName}" acctId=${acctId || "-"} ` +
-            `group=${parentGroup || "-"} secGroup=${secGroup || "-"} ` +
-            `amtIdx=${amountColIdx} balIdx=${balanceColIdx} ` +
-            `begin=${beginningBalance} end=${endingBalance}(${endingBalanceDate || "-"}) ` +
-            `firstAmt=${JSON.stringify(firstRowAmountRaw)} lastAmt=${JSON.stringify(lastRowAmountRaw)} ` +
-            `summaryRaw=${JSON.stringify(summaryAmountRaw)} summaryNet=${summaryNet} rowNet=${netSum} ` +
-            `→ snap=${snapshotBalance} act=${activityNet} class=${cls} pick=${picked}`
-          );
+          // Per-section DIAG log removed — with 4 GL exports × hundreds of sections
+          // the log volume itself was contributing to the memory-limit trip. Re-enable
+          // selectively by wrapping in `if (Deno.env.get("ANALYZE_GL_DIAG"))` if needed.
 
           // Merge across periods: sum activity/txnCount/activityNet; keep latest-wins snapshot.
           const prevSnap = bestSnapshotByKey.get(key);
@@ -394,9 +398,11 @@ serve(async (req) => {
         }
         }; // close walkSections
         walkSections(sections, null);
+        // Release the parsed GL tree before loading the next export.
+        gl = null;
       }
 
-      console.log(`[ANALYZE-GL] Parsed ${acctMap.size} accounts / ${txnCountTotal} txns from ${glProcessed.length} GL export(s)`);
+      console.log(`[ANALYZE-GL] Parsed ${acctMap.size} accounts / ${txnCountTotal} txns from ${glIndex.length} GL export(s)`);
     }
 
 
