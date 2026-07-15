@@ -275,3 +275,325 @@ export const GeneralLedgerInsightsCard = ({ analysisData, documentName, classNam
     </Card>
   );
 };
+
+// ============================================================================
+// ReconciliationView — presentation-only refactor of the Reconciliation tab.
+// No math changes; consumes the same analysisData shape.
+// ============================================================================
+
+type ReconRow = NonNullable<GLAnalysisData["reconciliation"]>[number];
+
+type NeedsSegment = "variances" | "structural" | "gl_only" | "tb_only";
+
+const ReconciliationView = ({ data, recon }: { data: GLAnalysisData; recon: ReconRow[] }) => {
+  const summary = data.reconciliationSummary;
+  const material = data.materialVariances || [];
+  const structural = data.structuralVariances || [];
+  const missingTB = data.missingInTBList || [];
+  const missingGL = data.missingInGLList || [];
+  const unreconciledRows = data.unreconciledList || [];
+  const reasons = data.unreconciledByReason || {};
+
+  // Prefer the summary counts when present; fall back to derived values.
+  const matched = summary?.matched ?? recon.filter(r => r.status === "match").length;
+  const variancesCount = summary?.variances ?? material.length;
+  const structuralCount = summary?.structural ?? structural.length;
+  const glOnlyCount = summary?.missingInTB ?? missingTB.length;
+  const tbOnlyCount = summary?.missingInGL ?? missingGL.length;
+
+  // Default segment: whichever has the most rows.
+  const initialSegment: NeedsSegment = useMemo(() => {
+    const options: [NeedsSegment, number][] = [
+      ["variances", variancesCount],
+      ["structural", structuralCount],
+      ["gl_only", glOnlyCount],
+      ["tb_only", tbOnlyCount],
+    ];
+    options.sort((a, b) => b[1] - a[1]);
+    return options[0][1] > 0 ? options[0][0] : "variances";
+  }, [variancesCount, structuralCount, glOnlyCount, tbOnlyCount]);
+
+  const [segment, setSegment] = useState<NeedsSegment>(initialSegment);
+  const [showFull, setShowFull] = useState(false);
+  const [search, setSearch] = useState("");
+  const [hideZeroVariance, setHideZeroVariance] = useState(true);
+  const [hideDeleted, setHideDeleted] = useState(false);
+  const [sortKey, setSortKey] = useState<"variance" | "name">("variance");
+
+  const filteredFull = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const rows = recon.filter(r => {
+      if (hideDeleted && /\(deleted\)/i.test(r.accountName)) return false;
+      if (hideZeroVariance) {
+        const v = r.variance;
+        if (v == null || Math.abs(v) < 0.5) return false;
+      }
+      if (q && !r.accountName.toLowerCase().includes(q)) return false;
+      return true;
+    });
+    rows.sort((a, b) => {
+      if (sortKey === "name") return a.accountName.localeCompare(b.accountName);
+      const av = Math.abs(a.variance ?? 0);
+      const bv = Math.abs(b.variance ?? 0);
+      return bv - av;
+    });
+    return rows;
+  }, [recon, search, hideZeroVariance, hideDeleted, sortKey]);
+
+  const reasonEntries = Object.entries(reasons).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
+
+  // Rows for the "Needs attention" segment
+  const segmentRows = useMemo(() => {
+    if (segment === "variances") {
+      return material.map(r => ({
+        name: r.accountName,
+        gl: r.glBalance,
+        tb: r.tbBalance,
+        variance: r.variance,
+        reason: r.reasonCode || "UNKNOWN",
+      }));
+    }
+    if (segment === "structural") {
+      return structural.map(r => ({
+        name: r.accountName,
+        gl: r.glBalance,
+        tb: r.tbBalance,
+        variance: r.variance,
+        reason: "STRUCTURAL_ROLLUP",
+      }));
+    }
+    if (segment === "gl_only") {
+      return missingTB.map(r => ({ name: r.name, gl: r.balance, tb: null, variance: null, reason: "MISSING_IN_TB" }));
+    }
+    return missingGL.map(r => ({ name: r.name, gl: null, tb: r.balance, variance: r.balance != null ? -r.balance : null, reason: "MISSING_IN_GL" }));
+  }, [segment, material, structural, missingTB, missingGL]);
+
+  return (
+    <div className="space-y-4">
+      {/* KPI strip */}
+      <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/30 px-3 py-2">
+        {data.overallScore != null && (
+          <Badge variant={data.overallScore >= 80 ? "default" : data.overallScore >= 50 ? "secondary" : "destructive"} className="text-xs">
+            {data.overallScore}% reconciled
+          </Badge>
+        )}
+        <span className="text-xs text-muted-foreground">·</span>
+        <span className="text-xs"><span className="font-semibold text-foreground">{matched}</span> matched</span>
+        <span className="text-xs text-muted-foreground">·</span>
+        <span className="text-xs"><span className="font-semibold text-foreground">{variancesCount}</span> variance</span>
+        {structuralCount > 0 && (<>
+          <span className="text-xs text-muted-foreground">·</span>
+          <span className="text-xs"><span className="font-semibold text-foreground">{structuralCount}</span> structural</span>
+        </>)}
+        <span className="text-xs text-muted-foreground">·</span>
+        <span className="text-xs"><span className="font-semibold text-foreground">{glOnlyCount}</span> in GL only</span>
+        <span className="text-xs text-muted-foreground">·</span>
+        <span className="text-xs"><span className="font-semibold text-foreground">{tbOnlyCount}</span> in TB only</span>
+      </div>
+
+      {/* Reason chips */}
+      {reasonEntries.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {reasonEntries.map(([code, n]) => (
+            <Badge key={code} variant="outline" className="text-[11px] font-normal">
+              {REASON_LABEL[code] || code}
+              <span className="ml-1 font-semibold text-foreground">{n}</span>
+            </Badge>
+          ))}
+        </div>
+      )}
+
+      {/* Needs attention card */}
+      {(variancesCount + structuralCount + glOnlyCount + tbOnlyCount) > 0 && (
+        <div className="rounded-md border">
+          <div className="flex items-center justify-between border-b px-3 py-2">
+            <div className="text-sm font-medium">Needs attention</div>
+          </div>
+          <div className="flex flex-wrap gap-1 border-b px-2 py-1.5 bg-muted/20">
+            <SegmentButton active={segment === "variances"} onClick={() => setSegment("variances")} label="Variances" count={variancesCount} />
+            <SegmentButton active={segment === "structural"} onClick={() => setSegment("structural")} label="Structural" count={structuralCount} />
+            <SegmentButton active={segment === "gl_only"} onClick={() => setSegment("gl_only")} label="GL only" count={glOnlyCount} />
+            <SegmentButton active={segment === "tb_only"} onClick={() => setSegment("tb_only")} label="TB only" count={tbOnlyCount} />
+          </div>
+          {segmentRows.length === 0 ? (
+            <div className="p-6 text-center text-xs text-muted-foreground">Nothing here — pick another segment.</div>
+          ) : (
+            <div className="max-h-[420px] overflow-auto">
+              <Table>
+                <TableHeader className="sticky top-0 bg-background">
+                  <TableRow>
+                    <TableHead className="w-[42%]">Account</TableHead>
+                    <TableHead className="text-right w-[14%]">GL</TableHead>
+                    <TableHead className="text-right w-[14%]">TB</TableHead>
+                    <TableHead className="text-right w-[14%]">Variance</TableHead>
+                    <TableHead className="w-[16%]">Reason</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {segmentRows.map((r, i) => (
+                    <TableRow key={i}>
+                      <TableCell className="text-sm max-w-0">
+                        <span className="block truncate" title={r.name}>{r.name}</span>
+                      </TableCell>
+                      <TableCell className="text-right text-sm"><Money value={r.gl} /></TableCell>
+                      <TableCell className="text-right text-sm"><Money value={r.tb} /></TableCell>
+                      <TableCell className="text-right text-sm font-medium"><Money value={r.variance} /></TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-[10px] font-normal whitespace-nowrap">
+                          {REASON_LABEL[r.reason] || r.reason}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Unreconciled account detail (from server's unreconciledList — may include reasons not surfaced above) */}
+      {unreconciledRows.length > 0 && (
+        <details className="rounded-md border">
+          <summary className="cursor-pointer list-none px-3 py-2 text-sm font-medium flex items-center justify-between hover:bg-muted/30">
+            <span>Unreconciled accounts ({unreconciledRows.length})</span>
+            <ChevronRight className="w-4 h-4 text-muted-foreground [details[open]_&]:rotate-90 transition-transform" />
+          </summary>
+          <div className="max-h-[360px] overflow-auto border-t">
+            <Table>
+              <TableHeader className="sticky top-0 bg-background">
+                <TableRow>
+                  <TableHead className="w-[42%]">Account</TableHead>
+                  <TableHead className="text-right w-[14%]">GL</TableHead>
+                  <TableHead className="text-right w-[14%]">TB</TableHead>
+                  <TableHead className="text-right w-[14%]">Variance</TableHead>
+                  <TableHead className="w-[16%]">Reason</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {unreconciledRows.map((r, i) => (
+                  <TableRow key={i}>
+                    <TableCell className="text-sm max-w-0">
+                      <span className="block truncate" title={r.name}>{r.name}</span>
+                    </TableCell>
+                    <TableCell className="text-right text-sm"><Money value={r.glBalance} /></TableCell>
+                    <TableCell className="text-right text-sm"><Money value={r.tbBalance} /></TableCell>
+                    <TableCell className="text-right text-sm font-medium"><Money value={r.variance} /></TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="text-[10px] font-normal whitespace-nowrap">
+                        {REASON_LABEL[r.reasonCode] || r.reasonCode}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </details>
+      )}
+
+      {/* Full reconciliation, filterable */}
+      <div className="rounded-md border">
+        <button
+          type="button"
+          onClick={() => setShowFull(v => !v)}
+          className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium hover:bg-muted/30"
+        >
+          <span>Full reconciliation ({recon.length})</span>
+          {showFull ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+        </button>
+        {showFull && (
+          <div className="border-t">
+            <div className="flex flex-wrap items-center gap-3 px-3 py-2 bg-muted/20 border-b">
+              <div className="relative flex-1 min-w-[180px]">
+                <Search className="w-3.5 h-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Filter account…"
+                  className="h-8 pl-7 text-xs"
+                />
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Switch id="hide-zero" checked={hideZeroVariance} onCheckedChange={setHideZeroVariance} />
+                <Label htmlFor="hide-zero" className="text-xs cursor-pointer">Hide $0 variance</Label>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Switch id="hide-deleted" checked={hideDeleted} onCheckedChange={setHideDeleted} />
+                <Label htmlFor="hide-deleted" className="text-xs cursor-pointer">Hide (deleted)</Label>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs gap-1"
+                onClick={() => setSortKey(k => (k === "variance" ? "name" : "variance"))}
+              >
+                <ArrowUpDown className="w-3 h-3" />
+                Sort: {sortKey === "variance" ? "|Variance|" : "Account"}
+              </Button>
+              <span className="text-xs text-muted-foreground ml-auto">{filteredFull.length} shown</span>
+            </div>
+            {filteredFull.length === 0 ? (
+              <div className="p-6 text-center text-xs text-muted-foreground">No accounts match these filters.</div>
+            ) : (
+              <div className="max-h-[500px] overflow-auto">
+                <Table>
+                  <TableHeader className="sticky top-0 bg-background">
+                    <TableRow>
+                      <TableHead className="w-[46%]">Account</TableHead>
+                      <TableHead className="text-right w-[15%]">GL</TableHead>
+                      <TableHead className="text-right w-[15%]">TB</TableHead>
+                      <TableHead className="text-right w-[15%]">Variance</TableHead>
+                      <TableHead className="text-center w-[9%]">Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredFull.map((r, i) => (
+                      <TableRow key={i}>
+                        <TableCell className="text-sm max-w-0">
+                          <span className="block truncate" title={r.accountName}>
+                            {r.accountName}
+                            {r.glBalanceSource === "tb_inferred" && (
+                              <span
+                                className="ml-1 text-muted-foreground cursor-help"
+                                title="GL opening balance was missing from the QuickBooks export; ending balance taken from Trial Balance."
+                              >*</span>
+                            )}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right text-sm"><Money value={r.glBalance} /></TableCell>
+                        <TableCell className="text-right text-sm"><Money value={r.tbBalance} /></TableCell>
+                        <TableCell className="text-right text-sm"><Money value={r.variance} /></TableCell>
+                        <TableCell className="text-center">
+                          {r.status === "match" && <CheckCircle2 className="w-4 h-4 text-green-600 mx-auto" />}
+                          {r.status === "variance" && <XCircle className="w-4 h-4 text-destructive mx-auto" />}
+                          {r.status === "structural_variance" && <Scale className="w-4 h-4 text-muted-foreground mx-auto" />}
+                          {(r.status === "missing_in_tb" || r.status === "missing_in_gl") && <Scale className="w-4 h-4 text-muted-foreground mx-auto" />}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const SegmentButton = ({ active, onClick, label, count }: { active: boolean; onClick: () => void; label: string; count: number }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    disabled={count === 0}
+    className={`px-2.5 py-1 rounded text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+      active ? "bg-background border border-border shadow-sm" : "text-muted-foreground hover:text-foreground"
+    }`}
+  >
+    {label}
+    <span className={`ml-1.5 tabular-nums ${active ? "text-foreground" : "text-muted-foreground"}`}>{count}</span>
+  </button>
+);
+
