@@ -374,7 +374,31 @@ serve(async (req) => {
             continue;
           }
 
-          const childRows = section.rows?.row || [];
+          let childRows = section.rows?.row || [];
+
+          // Detect QB "group by month" GL layout: the account section contains nested
+          // sub-SECTIONs (one per month) rather than flat DATA rows. In this layout QB's
+          // running-Balance column *resets* each sub-section, so it is not cumulative
+          // and cannot be used as a snapshot. Flatten the DATA rows across all months
+          // under this account and force balance-column parsing off.
+          const hasSubSections = childRows.some((r) => r && r.type === "SECTION");
+          let isGroupedMonthly = false;
+          if (hasSubSections) {
+            const flat: GlRow[] = [];
+            const collect = (rows: GlRow[]) => {
+              for (const r of rows) {
+                if (!r) continue;
+                if (r.type === "DATA") flat.push(r);
+                else if (r.type === "SECTION") {
+                  const nested = r.rows?.row || [];
+                  if (nested.length) collect(nested);
+                }
+              }
+            };
+            collect(childRows);
+            childRows = flat;
+            isGroupedMonthly = true;
+          }
           let amountColIdx = -1;
           let balanceColIdx = -1;
           let beginningBalance = 0;
