@@ -798,11 +798,34 @@ serve(async (req) => {
       });
 
     if (saveError) {
+      // Do NOT fall through to the "completed" update below — a swallowed
+      // insert error is exactly how the 2023 GL export ended up with a green
+      // document row and no processed_data row. Mark the document failed with
+      // the real DB error so Retry surfaces it.
       console.error("[process-quickbooks-file] Failed to save to processed_data:", saveError);
-      // Don't throw - we still want to update the document status
-    } else {
-      console.log("[process-quickbooks-file] Successfully saved to processed_data");
+      await supabase
+        .from('documents')
+        .update({
+          processing_status: "failed",
+          parsed_summary: {
+            error: `Failed to save processed data: ${saveError.message}`,
+            code: saveError.code ?? null,
+            details: saveError.details ?? null,
+          },
+        })
+        .eq('id', documentId);
+
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `Failed to save processed data: ${saveError.message}`,
+          documentId,
+        }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
+
+    console.log("[process-quickbooks-file] Successfully saved to processed_data");
 
     // Log if COA was auto-derived by qbToJson API
     if (coaDerived) {

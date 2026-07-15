@@ -1,72 +1,77 @@
-## What we're actually comparing
+## Root cause
 
-Two independent views of the same accounts, both stored in `processed_data` for project `621a6c9f…`:
+`supabase/functions/process-quickbooks-file/index.ts` marks a document `completed` even when the `processed_data` insert fails.
 
-- **General Ledger (GL)** — 4 XLSX exports uploaded (2023, 2024, 2025, 2026 YTD). For each account we compute:
-  - `snapshotBalance` — the running Balance column at the last transaction (correct for Assets / Liabilities / Equity)
-  - `activityNet` — Σ of transaction amounts across all exports (correct for Revenue / Expense / COGS)
-  - Selector: BS classes → snapshot, P&L classes → activityNet
-- **Trial Balance (TB)** — one row in `processed_data` containing 41 monthly QuickBooks TBs (Jan 2023 → May 2026). Per account we compute:
-  - `snapshotBalance` — debit − credit in the last populated month (for BS)
-  - `yearSumBalance` — for each calendar year, take that year's last populated YTD-final and sum across years (for P&L, because QB TB YTD resets every January)
-
-Reconciliation walks every GL account, matches by fully-qualified path first then by leaf name, and compares `glBalance` (BS: snapshot / P&L: activityNet) against `tbBalance` (BS: snapshot / P&L: yearSum).
-
-## What the current 32% number is telling us — four separate problems
-
-**1. The 2023 GL export was uploaded but never landed in `processed_data`.**
+Lines 785–805:
+```ts
+const { error: saveError } = await supabase.from('processed_data').insert({...});
+if (saveError) {
+  console.error(...);
+  // Don't throw - we still want to update the document status
+} else {
+  console.log("Successfully saved to processed_data");
+}
 ```
-documents:      2023, 2024, 2025, 2026 YTD  (all "completed")
-processed_data: 2024, 2025, 2026 YTD        (2023 missing)
-```
-TB includes 2023 in `yearSumBalance`, GL doesn't. This alone deletes an entire year of activity from every P&L comparison.
 
-**2. Sign convention mismatch on P&L.**
-GL activityNet comes out **positive** on revenue (`TikTok Sales +$5.16M`, `z_Shopify +$1.53M`). TB `yearSumBalance = debit − credit` is **negative** on revenue (credit balance). The reconciler subtracts them directly, so every revenue account books a variance ~= 2× the smaller number. Same accounts, opposite conventions.
+Execution falls through to line 866, which unconditionally sets `processing_status: "completed"` and writes a full `parsed_summary` (record_count, period, `processed_at`). The user sees a green checkmark, the document row looks healthy, but `processed_data` has no matching row.
 
-**3. Magnitude gap beyond just missing 2023.**
-`z_Shopify Sales`: GL $1.5M vs TB $17.7M (~12×). Missing 2023 alone can't explain this. Either the section walker is skipping rows in that account across the three parsed years, or `activityNet` is being read from the wrong column / netted against something. We don't yet know which — the diagnostic log lines added last turn haven't been read.
+That is exactly the state of `VampireFreaks_General Ledger 2023.xlsx` (doc `d57ba143`):
 
-**4. Classification leak on numeric-prefixed accounts.**
-`6105 Rent & Lease`, `6140 Phone/Internet` are tagged REVENUE. Both are expenses with a leading account number. This is a name-inference bug (numeric prefix defeats the "starts with revenue|sales|…" regex, then falls through to REVENUE default). Consequence: net income is inflated → identity check A − L − E − NI = −$10.9M.
+- `documents`: `processing_status = completed`, `record_count = 143`, `processed_at = 2026-07-12T17:17:21Z`
+- `processed_data`: no `general_ledger` row for 2023 (2024, 2025, 2026-YTD are all present, created 17:17:09 / 17:17:20 / 17:16:54 — 2023 was the largest file and the only one that failed to persist)
 
-## The plan
+The four GL files were processed in parallel; the 2023 insert most likely hit a transient PostgREST/Storage error, which the current code swallows. Any future GL/BS/P&L/COA/TB upload that trips a transient insert failure will have the same invisible outcome.
 
-### Step A — read the diagnostic lines we already emitted
+## Fix
 
-`analyze-general-ledger` currently logs a `[ANALYZE-GL:DIAG]`-style line per account (added last turn, not yet inspected). Trigger one re-run and pull the log lines for six canary accounts: `TikTok Sales`, `z_Shopify Sales`, `T-Shirt Sales`, `Shopify Discounts`, `6105 Rent & Lease`, `1015 Wells Fargo … 7179`. That resolves problem 3 (magnitude gap) without more guessing.
+### Step 1 — stop swallowing insert errors (generic, all data types)
 
-### Step B — re-ingest the 2023 GL
+In `supabase/functions/process-quickbooks-file/index.ts`, when `processed_data` insert fails:
 
-Its `documents` row is `completed` but no `general_ledger` `processed_data` row exists. Root cause is likely in the GL upload/parse edge function — a silent failure on that file. Re-trigger parsing and confirm a 4th `general_ledger` row appears.
+1. Set `documents.processing_status = 'failed'` with `parsed_summary.error` describing the DB error (do NOT overwrite with `completed` afterward).
+2. Return a 500 with the error so the caller's Retry button surfaces it — matches the pattern already used for storage-download / qbToJson-API failures elsewhere in this function.
+3. Guard the "update document to completed" block (line 866) behind a `savedOk` flag so it only runs on successful persistence.
 
-### Step C — targeted code fixes in `supabase/functions/analyze-general-ledger/index.ts`
+The fallback-COA insert on line 835 has the same swallow pattern — log-only. Leave the document status alone there (COA is a secondary artifact), but ensure the primary insert result is the gate for `completed`.
 
-Only after Step A tells us what's actually wrong. Anticipated shape:
+### Step 2 — re-ingest the 2023 GL
 
-1. **Sign normalization keyed off QB metadata, not names.** Use the SECTION `group` (Income / CostOfGoodsSold / Expense / OtherIncome / OtherExpense) captured by the recursive `walkSections` added last turn to force `activityNet` onto TB's debit-minus-credit convention. Revenue → negative, Expense → positive. That eliminates the reconciler's sign flip in one place.
-2. **Trust QB's summary row.** For each account section, prefer the `sum_amount` on the "Total for <account>" row (QB's own net) over hand-summing DATA rows. Log the delta when they disagree.
-3. **Classification priority: QB metadata > numeric prefix > name regex > OTHER.** `acctType` / `detailType` from the section header wins. Only fall back to name inference when metadata is absent. Fixes `6105 Rent & Lease`, `6140 Phone/Internet`.
-4. **Confirm dedup order.** The `id:` vs `name:` collapse must run **before** the classification-based balance selector, so revenue accounts with different `acctId`s across years merge before `activityNet` is chosen.
+Once Step 1 is deployed:
 
-### Step D — verify
+1. Reset doc `d57ba143-2d34-4c97-88ec-8f041270a0e4`: `processing_status = 'pending'`, clear `parsed_summary`.
+2. Invoke `process-quickbooks-file` with `{ documentId: 'd57ba143-…' }` from the edge-function console (or use the existing Retry button on the wizard).
+3. Verify a new `processed_data` row appears with `data_type='general_ledger'`, `period_start='2023-01-01'`, `period_end='2023-12-31'`, `record_count ≈ 143`.
 
-Re-run analysis. Success criteria:
+If the insert fails again, we'll now see the real error in logs + the document status (rather than a fake "completed"), and can address the underlying cause (row size, timeout, etc.).
 
-- `z_Shopify Sales` within ~5% of TB's yearSum, correct sign
-- `6105 Rent & Lease` classified EXPENSE
-- Identity check `|A − L − E − NI|` inside `max($1K, 1% of assets)`
-- Reconciliation rate materially above 36%
-- No revenue row with a sign-flipped variance
+### Step 3 — verify GL reconciliation
+
+Re-run "Analyze GL" on project `621a6c9f-…`. With 2023 back on the GL side, `activityNet` sums will finally cover the same 41-month window as TB and P&L variances on `z_Shopify Sales`, `TikTok Sales`, etc. should collapse. Any remaining variance is a real reconciliation issue, not a data-gap artifact — and we already have `[ANALYZE-GL:DIAG]` logging staged for those.
 
 ## Out of scope
 
-- UI or copy changes on `/project/…/general-ledger`
-- TB parsing changes (TB side is behaving correctly)
-- Any project-specific hardcoding — every fix keys off QB metadata or generic rules that apply to all projects
+- No changes to `analyze-general-ledger` this turn. Sign-normalization / QB-metadata-classification fixes were previously staged there and can be revisited only if variances persist after 2023 is re-ingested.
+- No UI changes.
+- No migrations.
 
 ## Technical notes
 
-- File touched in Step C: `supabase/functions/analyze-general-ledger/index.ts` only.
-- Step B may also touch the GL upload/parse function once we identify which one silently dropped the 2023 file.
-- No migrations. No frontend changes.
+Files edited: `supabase/functions/process-quickbooks-file/index.ts` only.
+
+Shape of the change around line 800:
+
+```ts
+let savedOk = false;
+const { error: saveError } = await supabase.from('processed_data').insert({...});
+if (saveError) {
+  await supabase.from('documents').update({
+    processing_status: 'failed',
+    parsed_summary: { error: `Failed to save processed data: ${saveError.message}` },
+  }).eq('id', documentId);
+  return new Response(JSON.stringify({ error: saveError.message, documentId }),
+    { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+}
+savedOk = true;
+```
+
+Then only run the `completed` update + fallback-COA block when `savedOk` is true.
