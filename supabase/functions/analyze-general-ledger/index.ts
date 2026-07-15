@@ -66,14 +66,30 @@ interface AccountInfo {
   beginningRowSeenButEmpty?: boolean; // QB shipped a "Beginning Balance" row with empty value cells
 }
 
+// Reason codes for the audit trail on unreconciled or explained-gap rows.
+// See analyzer notes at the top of this file for the taxonomy definition.
+type ReconReason =
+  | "MATCH"
+  | "TB_INFERRED"
+  | "STRUCTURAL_ROLLUP"
+  | "RESIDUAL_LT_1PCT"
+  | "MISSING_IN_TB"
+  | "MISSING_IN_GL"
+  | "SIGN_MISMATCH_UNRESOLVED"
+  | "SNAPSHOT_DATE_MISMATCH"
+  | "BEGINNING_EMPTY_NO_TB"
+  | "UNKNOWN";
+
 interface TBComparison {
   accountName: string;
   glBalance: number;
   tbBalance: number | null;
   variance: number | null;
   variancePct: number | null;
-  status: "match" | "variance" | "structural_variance" | "missing_in_tb";
+  status: "match" | "variance" | "structural_variance" | "missing_in_tb" | "missing_in_gl";
   glBalanceSource?: "gl" | "tb_inferred"; // "tb_inferred" = backfilled from TB because GL opening row was empty
+  reasonCode?: ReconReason;
+  accountKey?: string; // scratch-table key for persistence
 }
 
 serve(async (req) => {
