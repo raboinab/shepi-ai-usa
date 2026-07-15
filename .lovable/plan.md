@@ -1,79 +1,75 @@
 ## Goal
 
-Improve General Ledger reconciliation for project `621a6c9f-1c25-40fa-92fa-6762ae3fe72b` by fixing the remaining generic parser/classification bugs in `analyze-general-ledger`, not by special-casing this company.
+Close (or explain) the remaining 7% reconciliation gap on project `621a6c9f…` without special-casing this company. The 93% run is the baseline; the 7% is a mix of accounts we haven't yet inspected line-by-line. We need to see them clearly, categorize each cause, and fix the ones that are code/parser bugs vs. document them as true timing/scope differences.
 
-## Diagnosis
+## Why a deeper pass is needed
 
-The 74% result is now concentrated in two real code issues:
+`gl_reconcile_accounts` (the scratch table) stores per-account GL snapshots and activity but does not persist the TB side of the reconciliation, so we currently can't query "which accounts still vary and by how much" without re-running the analyzer. Every investigation right now requires re-running the edge function and re-reading its JSON output. That's why the remaining variances are opaque.
 
-1. **Balance-sheet ending balance selection is wrong for reverse-chronological QuickBooks GL exports**
-   - QuickBooks exports rows newest-first.
-   - The analyzer currently picks a row from the max transaction date as the ending balance.
-   - In these files, the correct ending balance is `Beginning Balance + Summary Amount`.
-   - This explains:
-     - `1001 Undeposited Funds (Sales)` showing `$1,067,904` instead of `$534,331`
-     - `1175 Inventory Asset` showing `$354,416` instead of `$635,082`
-     - Fidelity, PayPal, A/P, Sales Tax, and other BS variances.
+## Plan
 
-2. **Deleted marketplace fee accounts are still classified as `OTHER`**
-   - Accounts like `Shopify Fee - VampireFreaks (deleted)`, `PayPal Fee - USD (deleted)`, `Shop Pay Fee (deleted)`, `Amazon Fee - US (deleted)` are expense accounts.
-   - Because they miss COA classification and fall through as `OTHER`, the analyzer uses the latest running-balance row instead of full-period activity.
-   - Their GL summaries already match TB; the wrong balance selector is what creates the variance.
+### 1. Persist the reconciliation result
 
-## Implementation Plan
+Extend `gl_reconcile_accounts` (or add a sibling `gl_reconcile_results` table) so each run writes, per account:
 
-### 1. Fix BS snapshot logic in the GL parser
+- `tb_balance`
+- `gl_balance` (final selected value: snapshot for BS, activity for P&L)
+- `variance`
+- `reconciled` (bool, with threshold)
+- `reason_code` when unreconciled (see step 3)
+- `source_export_ids` array
 
-Update the per-account snapshot calculation so that when a section has a valid beginning balance and summary amount, the snapshot uses:
+This gives us a queryable audit trail across runs and companies, not just this one.
 
-```text
-snapshotBalance = beginningBalance + summaryNet
-```
+### 2. Add a variance breakdown view in the UI
 
-This should take precedence over selecting a balance from the latest transaction date for normal balance-sheet sections.
+On the GL Analysis card, add an expandable "Unreconciled accounts" section listing every account with a variance above the tolerance, sorted by absolute variance. For each row show TB, GL, variance, classification, reason code, and the exports that contributed. This is what will make the remaining 7% visible without SQL.
 
-Keep the existing balance-column fallback only for cases where summary data is missing.
+### 3. Categorize each residual variance with a `reason_code`
 
-### 2. Detect reverse-chronological GL row ordering defensively
+In `analyze-general-ledger`, when an account fails to reconcile, tag it with one of:
 
-Add a lightweight detector per account section:
+- `MISSING_GL_COVERAGE` — TB period extends beyond any GL export
+- `TB_ONLY_ACCOUNT` — account exists in TB, no matching GL section
+- `GL_ONLY_ACCOUNT` — GL section exists, no TB row
+- `SIGN_MISMATCH_UNRESOLVED` — magnitudes match after sign flip attempts fail
+- `SNAPSHOT_DATE_MISMATCH` — BS snapshot date ≠ TB as-of date
+- `SUMMARY_ROW_MISSING` — no section summary, row sum used, and it disagrees
+- `CLASSIFICATION_AMBIGUOUS` — matched both BS and P&L logic paths
+- `RESIDUAL_LT_1PCT` — variance below materiality
+- `UNKNOWN` — fallback
 
-- Track the first and last real transaction dates in row order.
-- If first date is later than last date, mark the section as reverse chronological.
-- In reverse chronological sections, never use the max-date row as the ending snapshot when a section summary is available.
+Only `MISSING_GL_COVERAGE`, `TB_ONLY_ACCOUNT`, and `RESIDUAL_LT_1PCT` are acceptable. The rest are code bugs to be fixed in the same pass.
 
-This makes the fix robust for future QuickBooks exports with the same ordering.
+### 4. Investigate and fix the top residual buckets
 
-### 3. Expand name-pattern classification for platform fees
+Re-run analysis, then for each account bucket:
 
-Update the fallback classifier so deleted/orphaned fee accounts classify as `EXPENSE`, including common marketplace/payment processor fee names:
+- **`SNAPSHOT_DATE_MISMATCH`** — likely from BS accounts where the latest GL export ends before the TB "as-of" date. Fix by carrying forward the last snapshot + any subsequent activity from any partial export.
+- **`SUMMARY_ROW_MISSING`** — QuickBooks sometimes omits section summaries when a section has zero net activity. Fall back to `beginningBalance` for BS and `0` for P&L instead of `netSum` (which can double-count reversals).
+- **`CLASSIFICATION_AMBIGUOUS`** — an account whose COA type says BS but name matches P&L pattern (or vice versa). Make COA classification win over name inference; name inference is only fallback.
+- **`GL_ONLY_ACCOUNT`** — usually merged/renamed accounts. Add a normalized-name fuzzy match against TB before flagging.
+- **`SIGN_MISMATCH_UNRESOLVED`** — inspect and, if generic, add the missing sign rule (e.g. contra-equity, contra-asset with `*` marker).
 
-```text
-paypal fee, shopify fee, shop pay fee, amazon fee, afterpay fee,
-klarna fee, sezzle fee, ebay fee, etsy fee, tiktok fee,
-market pro fee, foreign currency fees, rate difference
-```
+Do this narrowly: only fix a bucket if the root cause is generic. Do not hardcode account names.
 
-Keep revenue-specific patterns like `shipping income`, `refund`, `return`, and `discount` classified as revenue/contra-revenue.
+### 5. Report and threshold
 
-### 4. Preserve generic behavior
+After fixes:
 
-Do not hardcode this project ID or account names as one-off overrides. The changes should operate on:
+- Re-run GL analysis for `621a6c9f…` and target ≥97% reconciled.
+- Remaining variances must all be `MISSING_GL_COVERAGE`, `TB_ONLY_ACCOUNT`, or `RESIDUAL_LT_1PCT`.
+- Surface those three categories in the UI as "explained gaps" instead of counting them against the reconciliation score.
 
-- QuickBooks GL structure
-- section summary math
-- row ordering
-- general account-name patterns
+## Technical details
 
-### 5. Verification
+- Migration: add columns to `gl_reconcile_accounts` (`tb_balance numeric`, `variance numeric`, `reconciled boolean`, `reason_code text`, `source_export_ids uuid[]`) with the required GRANTs already on the table.
+- Edge function: `supabase/functions/analyze-general-ledger/index.ts` — in the final merge step where TB is joined against per-account aggregates, write the reconciliation row for every account (currently only in-memory) and assign `reason_code`.
+- UI: extend `src/components/wizard/sections/GeneralLedgerInsightsCard.tsx` with an accordion listing unreconciled accounts + reason codes; add a "why isn't this 100%?" explainer for the three accepted reason codes.
+- Materiality threshold: reuse the existing reconciliation tolerance; add a `RESIDUAL_LT_1PCT` bucket for anything below 1% of account magnitude AND below $500 absolute.
 
-After deployment:
+## What this plan is not
 
-1. Re-run **General Ledger Analysis** on `621a6c9f…`.
-2. Confirm expected changes:
-   - `1001 Undeposited Funds (Sales)` drops to about `$534,331` and matches TB.
-   - `1175 Inventory Asset` rises to about `$635,082` and matches TB.
-   - deleted platform fee accounts match their TB amounts.
-   - BS variances from reverse-row ordering materially shrink.
-   - Reconciliation should move well above 74%.
-3. If remaining variances exist, inspect only the new residual rows and iterate narrowly.
+- Not project-specific — no hardcoded account names or IDs for `621a6c9f…`.
+- Not a redesign of the analyzer — the orchestrator/child architecture and existing snapshot/activity logic stay.
+- Not a change to what counts as "reconciled" — only a change to how we categorize and explain what doesn't reconcile.
