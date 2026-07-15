@@ -410,7 +410,7 @@ serve(async (req) => {
 
           if (metaAmountIdx >= 0) {
             amountColIdx = metaAmountIdx;
-            if (metaBalanceIdx >= 0) {
+            if (metaBalanceIdx >= 0 && !isGroupedMonthly) {
               let balanceSeen = 0, balSampled = 0;
               for (const r of childRows) {
                 if (r.type !== "DATA") continue;
