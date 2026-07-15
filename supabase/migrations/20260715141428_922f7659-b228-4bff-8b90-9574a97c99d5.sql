@@ -1,0 +1,1 @@
+UPDATE public.documents SET processing_status='pending', parsed_summary=NULL WHERE id='d57ba143-2d34-4c97-88ec-8f041270a0e4';
