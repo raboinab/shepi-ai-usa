@@ -9,8 +9,20 @@ const corsHeaders = {
 
 // Normalize an account name for hierarchical leaf matching:
 // "Operating Expenses:Marketing:Ads" → "ads"
+// Also strips archival prefixes ("z_", "zz_") and QuickBooks "(deleted)" / trailing
+// "*" markers so archived variants collapse onto their canonical account.
 const normName = (s: string): string =>
-  (s || "").split(":").pop()!.toLowerCase().trim().replace(/\s+/g, " ").replace(/[^\w\s]/g, "");
+  (s || "")
+    .split(":").pop()!
+    .toLowerCase()
+    .trim()
+    .replace(/\bdeleted\b/g, " ")
+    .replace(/^z+_+/g, "")
+    .replace(/\*+$/g, "")
+    .replace(/[^\w\s]/g, " ")
+    .replace(/_+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 
 interface AccountInfo {
   name: string;          // fully qualified (e.g. "Landscaping Services:Job Materials")
@@ -185,9 +197,40 @@ serve(async (req) => {
         .from("gl_reconcile_accounts").select("*")
         .eq("project_id", projectId).eq("run_id", runId);
       if (scratchErr) console.error("[ANALYZE-GL] Failed to load scratch aggregates:", scratchErr);
+
+      // Dedupe: the same account can land under multiple scratch keys across exports
+      // when QB emits a numeric prefix in one file ("1001 Undeposited Funds") and drops
+      // it in another ("Undeposited Funds (Sales)"). Merge rows whose canonical identity
+      // (account_number if present, else normalized leaf name) matches.
+      const canonicalOf = (r: Record<string, unknown>): string => {
+        const num = r.account_number ? String(r.account_number).trim() : "";
+        if (num) return `num:${num}`;
+        return `name:${normName(String(r.account_name || r.full_path || ""))}`;
+      };
+      const mergedByCanonical = new Map<string, Record<string, unknown>>();
       for (const r of (scratchRows || []) as Array<Record<string, unknown>>) {
+        const canon = canonicalOf(r);
+        const prev = mergedByCanonical.get(canon);
+        if (!prev) { mergedByCanonical.set(canon, { ...r }); continue; }
+        const prevPeriod = String(prev.snapshot_period || "");
+        const newPeriod = String(r.snapshot_period || "");
+        if (newPeriod && (!prevPeriod || newPeriod > prevPeriod)) {
+          prev.snapshot_balance = r.snapshot_balance;
+          prev.snapshot_period = r.snapshot_period;
+        }
+        prev.snapshot_sum = Number(prev.snapshot_sum || 0) + Number(r.snapshot_sum || 0);
+        prev.activity_net = Number(prev.activity_net || 0) + Number(r.activity_net || 0);
+        prev.activity_abs = Number(prev.activity_abs || 0) + Number(r.activity_abs || 0);
+        prev.txn_count = Number(prev.txn_count || 0) + Number(r.txn_count || 0);
+        prev.beginning_empty = (prev.beginning_empty === true) || (r.beginning_empty === true);
+        if (String(prev.classification || "OTHER") === "OTHER" && String(r.classification || "OTHER") !== "OTHER") {
+          prev.classification = r.classification;
+        }
+        if (!prev.account_number && r.account_number) prev.account_number = r.account_number;
+      }
+      for (const [canon, r] of mergedByCanonical) {
         const acctName = String(r.account_name || r.full_path || "");
-        acctMap.set(String(r.account_key), {
+        acctMap.set(canon, {
           name: acctName,
           leaf: normName(acctName),
           acctNumber: (r.account_number as string | null) || null,
@@ -201,7 +244,7 @@ serve(async (req) => {
           beginningRowSeenButEmpty: r.beginning_empty === true,
         });
       }
-      console.log(`[ANALYZE-GL] Orchestrator loaded ${acctMap.size} accounts from scratch (runId=${runId})`);
+      console.log(`[ANALYZE-GL] Orchestrator loaded ${acctMap.size} accounts from ${(scratchRows||[]).length} scratch rows (runId=${runId})`);
     }
 
     if (processableGlMetas.length > 0) {
@@ -1080,32 +1123,50 @@ serve(async (req) => {
     const accountTypeBreakdown: Record<string, number> = {};
     for (const a of accounts) accountTypeBreakdown[a.classification] = (accountTypeBreakdown[a.classification] || 0) + 1;
 
-    // ── Accounting identity: Assets = Liabilities + Equity + (Revenue − Expense)
-    //    Handle both sign conventions: detect whether revenues sum positive (debit-positive
-    //    convention common in QB GL exports) or negative (true double-entry signed sum). ──
-    // Treat contra-assets (accumulated depreciation, allowance for doubtful accounts) as
-    // negative asset contributions; take absolute value elsewhere so sign-convention drift
-    // between imports doesn't mask real balances.
+    // ── Accounting identity: Assets = Liabilities + Equity + (Revenue − Expense) ──
+    // Sign conventions vary per export; we normalize per-class using signed values so
+    // that debit-natural (asset/expense) and credit-natural (liability/equity/revenue)
+    // accounts each contribute with a coherent sign to the identity.
     const contraAssetRe = /accumulated depreciation|accumulated amortization|allowance for/i;
-    // Owner-draw / distribution accounts are debit-natural equity contras — they reduce
-    // equity. QB GL exports them as negative running balances alongside a negative
-    // retained-earnings row (credit-natural). Blanket Math.abs on Equity treats them
-    // both as additions, inflating equity and busting the identity check.
-    const distributionRe = /owner'?s?\s*(pay|draw)|shareholder\s*distribution|member\s*draw|personal\s*expense|distribution/i;
+    const contraRevenueRe = /\b(discount|return|refund|chargeback|allowance)s?\b/i;
     let sumAssets = 0, sumLiab = 0, sumEquity = 0, sumRevenue = 0, sumExpense = 0;
+    // First pass: choose sign polarity per class using the signed sum majority.
+    let revSignedSum = 0, expSignedSum = 0, liabSignedSum = 0, eqSignedSum = 0;
     for (const a of accounts) {
       const c = a.classification;
-      const v = a.glBalance;
+      const bs = a.glBalanceLatest;
+      const pl = a.glActivityNet;
+      if (c === "REVENUE" || c === "INCOME" || c === "OTHER_INCOME") revSignedSum += pl;
+      else if (c === "EXPENSE" || c === "COST_OF_GOODS_SOLD" || c === "OTHER_EXPENSE") expSignedSum += pl;
+      else if (c === "LIABILITY") liabSignedSum += bs;
+      else if (c === "EQUITY") eqSignedSum += bs;
+    }
+    // If majority is negative (credit-natural double-entry sum), flip sign so revenue
+    // and liability come out positive; expense/asset remain debit-positive.
+    const revFlip = revSignedSum < 0 ? -1 : 1;
+    const liabFlip = liabSignedSum < 0 ? -1 : 1;
+    const eqFlip = eqSignedSum < 0 ? -1 : 1;
+    const expFlip = expSignedSum < 0 ? -1 : 1;
+
+    for (const a of accounts) {
+      const c = a.classification;
       if (c === "ASSET") {
-        sumAssets += contraAssetRe.test(a.name) ? -Math.abs(v) : Math.abs(v);
+        // Signed BS balance; contra-assets flip.
+        const v = a.glBalanceLatest;
+        sumAssets += contraAssetRe.test(a.name) ? -Math.abs(v) : v;
+      } else if (c === "LIABILITY") {
+        sumLiab += liabFlip * a.glBalanceLatest;
+      } else if (c === "EQUITY") {
+        // Preserve the sign for equity: distributions and owner draws already carry
+        // a debit (negative) contribution in the signed balance — no Math.abs.
+        sumEquity += eqFlip * a.glBalanceLatest;
+      } else if (c === "REVENUE" || c === "INCOME" || c === "OTHER_INCOME") {
+        const v = revFlip * a.glActivityNet;
+        // Contra-revenue accounts (Discounts, Returns, Refunds) net against revenue.
+        sumRevenue += contraRevenueRe.test(a.name) ? -Math.abs(v) : v;
+      } else if (c === "EXPENSE" || c === "COST_OF_GOODS_SOLD" || c === "OTHER_EXPENSE") {
+        sumExpense += expFlip * a.glActivityNet;
       }
-      else if (c === "LIABILITY") sumLiab += Math.abs(v);
-      else if (c === "EQUITY") {
-        // Distributions subtract from equity; everything else adds its magnitude.
-        sumEquity += distributionRe.test(a.name) ? -Math.abs(v) : Math.abs(v);
-      }
-      else if (c === "REVENUE" || c === "INCOME" || c === "OTHER_INCOME") sumRevenue += Math.abs(v);
-      else if (c === "EXPENSE" || c === "COST_OF_GOODS_SOLD" || c === "OTHER_EXPENSE") sumExpense += Math.abs(v);
     }
     const liabAbs = sumLiab;
     const equityAbs = sumEquity;

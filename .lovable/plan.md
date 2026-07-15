@@ -1,71 +1,62 @@
-# Why GL works on one project and not the other
+## Goal
 
-Both projects have 4 GL exports. The difference is size:
+Push GL reconciliation on `621a6c9f…` from 66% toward >90% by fixing three related bugs in `supabase/functions/analyze-general-ledger/index.ts`. All fixes are generic — they apply to any project.
 
-| Project | GL exports | Raw JSON | Transactions |
-|---|---|---|---|
-| `fa0768ca…` (works) | 4 | ~478 KB total | ~76 rows/summary lines |
-| `621a6c9f…` (fails) | 4 | ~7.0 MB total (≈2 MB each) | ~431 rows/summary lines, ~116k underlying txns |
+## Observations from the current report
 
-The reconciler was rewritten to load exports one at a time, but it still builds a **single in-memory `accountMap`** across all exports, and each export's parsed JSON explodes 5–10× in memory once QuickBooks' nested `Rows → Rows → Rows` structure is walked. On VampireFreaks (621a6c9f) that pushes the Deno edge worker over the 256 MB cap → `Memory limit exceeded`. On the smaller project it fits comfortably, so it succeeds.
+- Assets $2.57M, Liab $155K, Equity −$2.12M, NI $7.54M → identity off by −$3.0M. Net income at $7.5M against Assets of $2.5M is implausible and drives most of the gap.
+- Largest revenue line `z_Shopify Sales` = $17.7M and `T‑Shirt Sales` = $4.3M — inflated vs anything TB shows.
+- Material variances are dominated by revenue-contra / clearing accounts with opposite signs on GL vs TB:
+  - `Shipping Income (deleted)` GL $55K vs TB −$575K
+  - `Discounts (deleted)` GL −$47K vs TB $444K
+  - `Returns (deleted)` GL −$14K vs TB $183K
+  - `Undeposited Funds (Sales)` GL $1.07M vs TB $534K (exact 2×) → aggregation double-count.
+- `Shareholder Distributions` GL −$759K vs TB $1.11M — sign convention mismatch survives the distribution regex path.
+- Orphans: `PayPal Hold`, `Shop Pay Sales`, `Wells Fargo Business Checking (7179)` in GL but not TB; `Capital Stock −$1,000` in TB but not GL.
 
-The recent "null things between exports" fix helped but isn't enough: the aggregate map itself, plus one fully expanded ~2 MB export at a time, still peaks over the limit.
+## Fixes in `supabase/functions/analyze-general-ledger/index.ts`
 
-# Fix plan
+### 1. Revenue / expense sign convention (biggest lever)
 
-Stop holding the whole reconciliation in RAM. Persist per-account aggregates to Postgres between exports, then compute the final report from the DB.
+Replace `Math.abs(v)` inside the identity accumulator with a signed rule keyed off the *sign majority* of P&L accounts, not per-account absolute value:
 
-## 1. New scratch table
+- Compute `sumRevenueSigned` and `sumExpenseSigned` from `glActivityNet` (already signed) instead of `glBalance` after abs-collapsing.
+- If revenues are credit-natural (sum ≤ 0), take `revenue = -sumRevenueSigned`; if debit-natural (sum > 0), take `revenue = sumRevenueSigned`. Same rule per-account for expenses (contra-revenue like Discounts/Returns should net *against* revenue, not be summed as positive magnitudes into Revenue).
+- Recognize revenue contra accounts (`Discounts`, `Returns`, `Refund*`) and subtract them from revenue instead of treating them as positive revenue. That alone flips ~$1M of the variance table.
 
-```
-gl_reconcile_accounts (
-  project_id uuid,
-  run_id     uuid,
-  account_key text,          -- num:XXXX or name:normalized
-  account_number text,
-  account_name text,
-  classification text,        -- ASSET/LIABILITY/EQUITY/REVENUE/EXPENSE/UNKNOWN
-  snapshot_balance numeric,   -- latest BS snapshot wins
-  snapshot_period date,
-  activity_net numeric,       -- summed for P&L
-  txn_count int,
-  primary key (project_id, run_id, account_key)
-)
-```
+### 2. Aggregation double‑count on clearing / undeposited accounts
 
-Standard grants + RLS (project owner + admin/cpa via `has_project_access`). Service role writes from the edge function.
+Undeposited Funds landing at exactly 2× TB means the same account is being upserted under two scratch keys across exports (once by `num:1001` and once by `name:undeposited funds sales`) and then both rows are loaded back into `acctMap` in the orchestrator's scratch reload.
 
-## 2. Refactor `analyze-general-ledger`
+- In the scratch upsert path, resolve to a *single canonical key per export* using this precedence: `num:<prefix>` → else `name:<normName>`. Never emit both.
+- In the orchestrator scratch reload, dedupe by `(account_number || normName)` after fetch, summing `activity_*` and picking `snapshot_balance` from the row with the latest `snapshot_period`.
 
-- Generate `run_id`, delete any prior rows for the project.
-- For each GL export (already sequential):
-  - Parse, walk sections, build a **small per-export** account delta map.
-  - `upsert` deltas into `gl_reconcile_accounts` using SQL `on conflict … do update`:
-    - `snapshot_balance` = winner by `snapshot_period` (BS accounts)
-    - `activity_net` = existing + delta (P&L accounts)
-    - `txn_count` = existing + delta
-  - Null out parsed JSON, delta map, and record ref. Force loop-scoped scope so GC can reclaim.
-- After all exports processed, `select` the aggregated rows back (much smaller: ~a few hundred rows) and:
-  - Join to Trial Balance in memory (TB is already compact).
-  - Compute variances, identity check, reconciliation %.
-  - Write the final report to `processed_data` as today.
-- Delete scratch rows for that `run_id` at the end (or keep for debugging behind a flag).
+### 3. Orphan collapse: `(deleted)` variants and `z_` prefixes
 
-Peak memory becomes: one parsed export + one small delta map + final compact join. Independent of how many exports/years.
+`z_Shopify Sales` in GL vs `Shopify Sales` in TB, and `Foo (deleted)` on both sides, should reconcile as one account.
 
-## 3. Safety net
+- Extend `normName` used only for matching (not for display) to strip:
+  - trailing ` (deleted)` / `*` markers
+  - leading `z_` / `zz_` archival prefixes
+  - QBO auto-suffix ` - <CompanyName>` when a company_info company_name is available.
+- Re-run leaf matching with this normalized key before falling back to `missing_in_tb` / `missing_in_gl`.
 
-- Wrap the per-export block in try/catch; on parse error mark that export as skipped in the report rather than failing the whole run.
-- Add a hard cap: if a single export's parsed size (via `JSON.stringify(data).length` before walking) exceeds e.g. 8 MB, stream sections one at a time using a shallow walker that yields section by section instead of building the full array first.
+### 4. Distributions sign
 
-## 4. Verification
+`3100 Shareholder Distributions` GL −$759K, TB $1.11M. The current `distributionRe` applies `-Math.abs(v)` which loses the sign entirely.
 
-- Re-run Analyze GL on `621a6c9f…` — expect completion, no OOM, and the previously-fixed classification/keying logic to now apply consistently across all 4 years.
-- Re-run on `fa0768ca…` to confirm no regression on the small project.
-- Spot-check identity check comes near zero and Phone/Internet, Rent & Lease reconcile against TB.
+- For EQUITY accounts, use signed `glBalanceLatest` directly (BS snapshot). Do not apply `Math.abs`. Distributions naturally carry a debit (negative) balance under credit-natural equity, which is already the correct contribution.
 
-## Technical notes
+### 5. Report the identity components on the same basis
 
-- The scratch-table approach is preferable to "spawn N sub-invocations" because it keeps a single user-facing job with progress and avoids orchestration complexity.
-- No change to the parser's account-keying or classification logic — those bugs are already fixed; this plan only changes *where* aggregates live during the run.
-- No frontend changes required.
+- Show `sumRevenue`/`sumExpense` in the identity block using the signed convention above so users see a coherent A − L − E − NI decomposition rather than absolute-value sums.
+
+## Verification
+
+- Redeploy `analyze-general-ledger`, click **Re‑run analysis** on `621a6c9f…`.
+- Expected: Reconciled % rises materially (target > 90%); `z_Shopify Sales`, `T‑Shirt Sales`, `Shipping Income`, `Discounts`, `Returns` variances collapse; identity check within tolerance; `Undeposited Funds` matches TB.
+- Spot-check the small project `fa0768ca…` to confirm no regression.
+
+## Out of scope
+
+No schema change, no frontend change, no change to the orchestrator/child memory architecture (that fix stays).
