@@ -553,8 +553,8 @@ serve(async (req) => {
         success: true,
         document_id: doc.id,
         account_label: docUpdate.account_label || doc.account_label,
-        period_start: parsed.periodStart,
-        period_end: parsed.periodEnd,
+        period_start: periodStart,
+        period_end: periodEnd,
         transaction_count: parsed.transactionCount,
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
