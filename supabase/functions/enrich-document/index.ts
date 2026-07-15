@@ -331,9 +331,10 @@ serve(async (req) => {
       );
     }
 
-    // Skip if already enriched (has account_label AND period_start AND parsed_summary)
-    if (doc.account_label && doc.period_start && doc.parsed_summary) {
-      console.log('[ENRICH-DOCUMENT] Already enriched, skipping');
+    // Skip only when a prior run already applied the v2 canonical normalization.
+    const summaryVer = (doc.parsed_summary as { normalization_version?: number } | null)?.normalization_version ?? 0;
+    if (doc.account_label && doc.period_start && doc.parsed_summary && summaryVer >= 2) {
+      console.log('[ENRICH-DOCUMENT] Already enriched (v2), skipping');
       return new Response(
         JSON.stringify({ skipped: true, reason: 'already enriched' }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
