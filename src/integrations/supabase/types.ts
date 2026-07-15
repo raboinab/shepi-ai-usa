@@ -1772,12 +1772,17 @@ export type Database = {
           classification: string | null
           full_path: string | null
           project_id: string
+          reason_code: string | null
+          reconciled: boolean | null
           run_id: string
           snapshot_balance: number | null
           snapshot_period: string | null
           snapshot_sum: number
+          tb_balance: number | null
           txn_count: number
           updated_at: string
+          variance: number | null
+          variance_pct: number | null
         }
         Insert: {
           account_key: string
@@ -1789,12 +1794,17 @@ export type Database = {
           classification?: string | null
           full_path?: string | null
           project_id: string
+          reason_code?: string | null
+          reconciled?: boolean | null
           run_id: string
           snapshot_balance?: number | null
           snapshot_period?: string | null
           snapshot_sum?: number
+          tb_balance?: number | null
           txn_count?: number
           updated_at?: string
+          variance?: number | null
+          variance_pct?: number | null
         }
         Update: {
           account_key?: string
@@ -1806,12 +1816,17 @@ export type Database = {
           classification?: string | null
           full_path?: string | null
           project_id?: string
+          reason_code?: string | null
+          reconciled?: boolean | null
           run_id?: string
           snapshot_balance?: number | null
           snapshot_period?: string | null
           snapshot_sum?: number
+          tb_balance?: number | null
           txn_count?: number
           updated_at?: string
+          variance?: number | null
+          variance_pct?: number | null
         }
         Relationships: []
       }

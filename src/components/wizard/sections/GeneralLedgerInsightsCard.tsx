@@ -20,8 +20,18 @@ interface TBComparison {
   tbBalance: number | null;
   variance: number | null;
   variancePct?: number | null;
-  status: "match" | "variance" | "structural_variance" | "missing_in_tb";
+  status: "match" | "variance" | "structural_variance" | "missing_in_tb" | "missing_in_gl";
   glBalanceSource?: "gl" | "tb_inferred";
+  reasonCode?: string;
+}
+
+interface UnreconciledRow {
+  name: string;
+  glBalance: number;
+  tbBalance: number | null;
+  variance: number | null;
+  reasonCode: string;
+  status: string;
 }
 
 export interface GLAnalysisData {
@@ -34,6 +44,8 @@ export interface GLAnalysisData {
   largestAccounts?: { name: string; type: string; balance: number }[];
   reconciliation?: TBComparison[];
   reconciliationSummary?: { matched: number; structural?: number; variances: number; missingInTB: number; missingInGL: number };
+  unreconciledByReason?: Record<string, number>;
+  unreconciledList?: UnreconciledRow[];
   materialVariances?: TBComparison[];
   structuralVariances?: TBComparison[];
   missingInTBList?: { name: string; balance: number }[];
@@ -267,6 +279,67 @@ export const GeneralLedgerInsightsCard = ({ analysisData, documentName, classNam
                     </div>
                   </div>
                 )}
+                {(() => {
+                  const reasons = analysisData.unreconciledByReason || {};
+                  const rows = analysisData.unreconciledList || [];
+                  const reasonEntries = Object.entries(reasons).filter(([, n]) => n > 0);
+                  if (reasonEntries.length === 0 && rows.length === 0) return null;
+                  const REASON_LABEL: Record<string, string> = {
+                    MISSING_IN_TB: "In GL, not in TB",
+                    MISSING_IN_GL: "In TB, not in GL",
+                    STRUCTURAL_ROLLUP: "Parent-vs-child rollup",
+                    RESIDUAL_LT_1PCT: "Residual under 1% (accepted)",
+                    SIGN_MISMATCH_UNRESOLVED: "Sign convention mismatch",
+                    SNAPSHOT_DATE_MISMATCH: "Snapshot date mismatch",
+                    BEGINNING_EMPTY_NO_TB: "Missing opening balance, no TB",
+                    UNKNOWN: "Unclassified variance",
+                  };
+                  return (
+                    <div className="space-y-2">
+                      <div className="text-sm font-medium">Unreconciled by reason</div>
+                      <div className="flex flex-wrap gap-2">
+                        {reasonEntries
+                          .sort((a, b) => b[1] - a[1])
+                          .map(([code, n]) => (
+                            <Badge key={code} variant="outline" className="text-xs">
+                              {REASON_LABEL[code] || code}: {n}
+                            </Badge>
+                          ))}
+                      </div>
+                      {rows.length > 0 && (
+                        <details>
+                          <summary className="text-xs text-muted-foreground cursor-pointer">
+                            Show unreconciled accounts ({rows.length})
+                          </summary>
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Account</TableHead>
+                                <TableHead className="text-right">GL</TableHead>
+                                <TableHead className="text-right">TB</TableHead>
+                                <TableHead className="text-right">Variance</TableHead>
+                                <TableHead>Reason</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {rows.map((r, i) => (
+                                <TableRow key={i}>
+                                  <TableCell className="text-sm">{r.name}</TableCell>
+                                  <TableCell className="text-right text-sm">{fmt(r.glBalance)}</TableCell>
+                                  <TableCell className="text-right text-sm">{fmt(r.tbBalance)}</TableCell>
+                                  <TableCell className="text-right text-sm">{r.variance != null ? fmt(r.variance) : "-"}</TableCell>
+                                  <TableCell className="text-xs text-muted-foreground">
+                                    {REASON_LABEL[r.reasonCode] || r.reasonCode}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </details>
+                      )}
+                    </div>
+                  );
+                })()}
                 <details>
                   <summary className="text-xs text-muted-foreground cursor-pointer">Show full reconciliation ({recon.length})</summary>
                   <Table>
