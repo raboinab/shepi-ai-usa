@@ -1,5 +1,14 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.87.1";
+import {
+  canonicalIssuer,
+  extractLast4,
+  issuerFromFilename,
+  last4FromFilename,
+  normalizeAccountLabel,
+  normalizeInstitution,
+  parsePeriodFromFilename,
+} from "../_shared/bankAccountNormalization.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
