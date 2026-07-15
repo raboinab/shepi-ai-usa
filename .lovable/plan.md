@@ -1,77 +1,66 @@
 ## Goal
 
-Make the Reconciliation tab scannable. Keep the 93% math and all reason codes exactly as they are — this is a presentation-only pass.
+Close the `A − L − E − NI = -$4,169,125` gap by deriving the missing beginning Retained Earnings (RE) / Opening Balance Equity (OBE) plug, instead of showing a raw imbalance to the user.
 
-## What's wrong today
+## Why this works
 
-Every section renders as a flat table stacked on the previous one, so the tab reads as one long undifferentiated wall. Specifically:
+The accounting identity `A − L − E − NI = 0` only holds when Equity already contains **prior-period retained earnings**. QuickBooks GL exports for a mid-life company almost always understate Equity because:
 
-- The three "missing" lists (In GL / In TB / material variances) all use the same visual weight, so the eye has no anchor.
-- The "Unreconciled by reason" section shows badges *and* a full table, but the table only opens inside a `<details>` and uses the same row styling as the full reconciliation below it — they look identical.
-- Numbers aren't right-aligned in a consistent column width, so `-$1,000` vs `$0` vs `$574,850` shift horizontally row to row.
-- `(deleted)` account names get truncated mid-word without an ellipsis, so half the column reads "…VampireFreaks Wholesa".
-- The full reconciliation `<details>` dumps 60 rows with no filter, no sort, and no way to see just the non-zero ones.
+- The GL activity we ingest is for the analysis window only (e.g., 2023–2026), so it excludes all retained earnings accumulated before the window.
+- QBO's auto-generated "Retained Earnings" account often has $0 activity in the window and no snapshot balance in the export — it lives only on the Balance Sheet report.
+- "Opening Balance Equity" from QBO setup may never have been closed to RE.
 
-## Changes
+So the `-$4.17M` isn't a books error — it's a **known missing opening equity component**. We can back into it: `Implied Beginning RE = A − L − E_current − NI`.
 
-### 1. Summary header at the top of the tab
+## Plan
 
-Replace the free-floating "Material Variances" heading with a one-line KPI strip:
+### 1. Compute the implied opening equity plug in `analyze-general-ledger`
 
-```text
-93% reconciled · 43 matched · 13 variance · 3 in GL only · 1 in TB only
-```
+In the reconciliation rollup step (`supabase/functions/analyze-general-ledger/`), after we compute A, L, E, NI:
 
-Uses `Badge` variants (green/amber/muted) so the eye lands on the number first. This is the anchor for everything below.
+- `impliedOpeningEquity = A − L − E − NI`
+- Also try to pull the **Balance Sheet retained earnings** value from `processed_data` (financial statements already parsed) for the earliest period in scope. If it exists, compare `impliedOpeningEquity` vs BS RE and report the delta separately (that residual is the true unexplained variance).
+- Persist both values on the reconciliation summary row (new columns: `implied_opening_equity`, `bs_retained_earnings`, `residual_variance`).
 
-### 2. Collapse the four "not-matched" lists into one card
+### 2. Reclassify the identity display
 
-Today: four separate sections (Material Variances, Structural, In GL missing TB, In TB missing GL). New: a single "Needs attention" card with a segmented control at the top (`Variances · Structural · GL only · TB only`). Each segment shows the same table shape:
+In `GeneralLedgerInsightsCard.tsx`:
 
-```text
-Account                        GL          TB      Variance   Reason
-```
+- Replace the single `A − L − E − NI` number with a small ledger:
+  ```
+  Assets                 $X
+  − Liabilities          $Y
+  − Equity (in-window)   $Z
+  − Net Income           $N
+  ─────────────────────────
+  Implied Opening RE     $4,169,125   ← was the "imbalance"
+  BS Retained Earnings   $4,150,000   (from uploaded BS, if available)
+  ─────────────────────────
+  Residual Variance      $19,125      (<1% — reconciled)
+  ```
+- If no BS RE is available, label the plug as *"Implied Beginning Retained Earnings (no BS to confirm)"* and mark it informational, not an error.
 
-- Column widths are fixed with `tabular-nums`, all money right-aligned, account name gets `truncate` + `title={name}` so the full name shows on hover.
-- Reason column is a small muted `Badge`, not raw text — makes the row scannable at a glance.
-- Header of each segment shows the count so users know what they're looking at without counting rows.
+### 3. Tooltip / explainer
 
-### 3. Full reconciliation table gets a proper toolbar
+Short inline note next to the number: *"QuickBooks GL exports typically exclude retained earnings accumulated before the analysis window. This is the implied opening RE required for the books to balance. If a Balance Sheet was uploaded, we compare it to that value."*
 
-The current `<details>Show full reconciliation (60)</details>` becomes a collapsible card with:
+### 4. Fold into the 93% reconciliation headline
 
-- Search box (filter by account name)
-- Toggle: "Hide zero-variance rows" (default ON — makes 43 of 60 rows disappear, leaves the interesting ones)
-- Toggle: "Hide `(deleted)` accounts" (default OFF, but one click removes QBO cruft)
-- Column headers become clickable for sort by |variance| desc / account asc.
-
-No new data — pure client-side filter/sort on `analysisData.recon`.
-
-### 4. Money formatting
-
-- One shared `<Money value={n} />` inline component with `tabular-nums font-mono-ish` and consistent negative styling (parens or red, pick one — planning to use `text-destructive` for negatives, parens for the export).
-- `$0` renders as muted `—` so zero rows stop pulling attention.
-
-### 5. Sticky tab header
-
-The Overview/Reconciliation/Flags tabs currently scroll away. Add `sticky top-0 bg-background z-10` to the `TabsList` inside the card so users can jump between tabs from anywhere in the long reconciliation list.
+- Once the residual is <1%, the reconciliation status treats the identity as **reconciled** (green), rather than showing a scary red $4.17M imbalance.
+- Add a `RECONCILED_VIA_IMPLIED_RE` reason code alongside the other `ReconReason` codes for auditability.
 
 ## Files touched
 
-- `src/components/wizard/sections/GeneralLedgerInsightsCard.tsx` — all changes live here. Lines ~214–383 (the Reconciliation `TabsContent`) get restructured. Overview and Flags tabs are unchanged.
-- No new files, no new dependencies (uses existing shadcn `Table`, `Badge`, `Input`, `Toggle`, `Tabs`).
-- No edge function, migration, or reconciliation logic changes.
+- `supabase/functions/analyze-general-ledger/index.ts` — compute plug, compare to BS RE, persist.
+- Migration on `gl_reconcile_accounts` (or the summary row it writes to): add `implied_opening_equity`, `bs_retained_earnings`, `residual_variance` numeric columns.
+- `src/components/wizard/sections/GeneralLedgerInsightsCard.tsx` — new identity breakdown block, tooltip, green state when residual < 1%.
 
-## Non-goals
+## What this is NOT
 
-- Not touching the reason codes, tolerances, or the 93% number.
-- Not auto-hiding deleted accounts by default (user explicitly picked "Just fix readability", not "auto-suppress cruft").
-- Not adding export/print — separate ask if wanted.
+- Not changing any GL activity numbers.
+- Not fabricating equity — the plug is explicitly labeled as *implied* and cross-checked against the uploaded BS when possible.
+- Not touching the Reconciliation account list or the 93% number (those already work).
 
-## Verification
+## Open question before I build
 
-- Load `/project/621a6c9f-1c25-40fa-92fa-6762ae3fe72b`, open GL Analysis → Reconciliation tab.
-- Confirm the KPI strip reads `93% · 43 matched · 13 variance · 3 GL only · 1 TB only`.
-- Toggle "Hide zero-variance" and confirm the full table drops to 17 rows.
-- Sort by |variance| desc and confirm PayPal / Discounts / Shipping Income don't appear (they're status=match, variance=0) and the true residuals (Etsy Payout $753, Shopify VF Wholesale $668, etc.) surface at the top.
-- Resize to 1024px width and confirm no column overlaps or horizontal scroll inside the card.
+Do you want me to also **write the implied RE back into the Balance Sheet workbook** as an "Opening Balance Equity — derived" line so downstream tabs (NWC, FCF, Proof of Cash) see a balanced BS? Or keep it read-only inside the GL insights card for now?
