@@ -406,9 +406,11 @@ serve(async (req) => {
         }
         }; // close walkSections
         walkSections(sections, null);
+        // Release the parsed GL tree before loading the next export.
+        gl = null;
       }
 
-      console.log(`[ANALYZE-GL] Parsed ${acctMap.size} accounts / ${txnCountTotal} txns from ${glProcessed.length} GL export(s)`);
+      console.log(`[ANALYZE-GL] Parsed ${acctMap.size} accounts / ${txnCountTotal} txns from ${glIndex.length} GL export(s)`);
     }
 
 
