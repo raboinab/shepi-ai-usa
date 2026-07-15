@@ -380,7 +380,7 @@ serve(async (req) => {
             name: acctName,
             leaf: normName(acctName),
             acctNumber: acctId || coa?.acctNum || null,
-            classification: (coa?.classification || prev?.classification || "OTHER").toUpperCase(),
+            classification: (coa?.classification || groupCls || prev?.classification || "OTHER").toUpperCase(),
             glBalance: mergedLatest, // provisional; recomputed after classification below
             glBalanceLatest: mergedLatest,
             glBalanceSum: mergedSum,
