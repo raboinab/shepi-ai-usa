@@ -1,59 +1,71 @@
-## Root cause
+# Why GL works on one project and not the other
 
-`analyze-general-ledger` treats `header.colData[0].id` as a stable QuickBooks account identifier and keys the aggregation map on `id:${acctId}`. In this project's exports (and in general for qbToJson output on this account) that field is actually a **per-export sequential row number** — the same numeric id points to completely different accounts across the four yearly GL files.
+Both projects have 4 GL exports. The difference is size:
 
-Verified from the raw JSON:
+| Project | GL exports | Raw JSON | Transactions |
+|---|---|---|---|
+| `fa0768ca…` (works) | 4 | ~478 KB total | ~76 rows/summary lines |
+| `621a6c9f…` (fails) | 4 | ~7.0 MB total (≈2 MB each) | ~431 rows/summary lines, ~116k underlying txns |
 
-| `id` | 2023            | 2024                 | 2025                            | 2026                 |
-|------|-----------------|----------------------|---------------------------------|----------------------|
-| 75   | z_Shopify Sales | T-Shirt Sales        | 6085 Office Supplies & Software | 6140 Phone/Internet  |
-| 78   | Sezzle Refund   | Shopify Sales – WS   | 6140 Phone/Internet             | 6503 Wages           |
-| 102  | AfterPay Fee    | 6140 Phone/Internet  | –                               | –                    |
-| 129  | 6140 Phone/Internet | –                | –                               | –                    |
+The reconciler was rewritten to load exports one at a time, but it still builds a **single in-memory `accountMap`** across all exports, and each export's parsed JSON explodes 5–10× in memory once QuickBooks' nested `Rows → Rows → Rows` structure is walked. On VampireFreaks (621a6c9f) that pushes the Deno edge worker over the 256 MB cap → `Memory limit exceeded`. On the smaller project it fits comfortably, so it succeeds.
 
-So per-year Phone/Internet activity (real totals $1,678 / $2,262 / $1,890 / $696 = $6,527) lands in **four different key buckets**, each of which also collects a chunk of z_Shopify Sales, T-Shirt Sales, Office Supplies, Wages, AfterPay Fees, and Sezzle Refunds from other years. The later name-collision merge only re-unites rows that already share a name, so it can't unwind this pollution.
+The recent "null things between exports" fix helped but isn't enough: the aggregate map itself, plus one fully expanded ~2 MB export at a time, still peaks over the limit.
 
-That single bug produces:
+# Fix plan
 
-- $8.5M "Phone/Internet", $3.7M "Rent & Lease", $5.2M "TikTok Sales", $3.2M "Interest Income", etc.
-- Cross-class contamination (revenue amounts leaking into expense accounts and vice versa) which is why classifications look reasonable but magnitudes and signs don't match TB.
-- The $17.3M A−L−E−NI identity gap.
+Stop holding the whole reconciliation in RAM. Persist per-account aggregates to Postgres between exports, then compute the final report from the DB.
 
-TB is fine (already keyed on `acctId`, which in the TB feed *is* stable), so once GL is keyed correctly the reconciliation table should snap into place.
+## 1. New scratch table
 
-## Fix
+```
+gl_reconcile_accounts (
+  project_id uuid,
+  run_id     uuid,
+  account_key text,          -- num:XXXX or name:normalized
+  account_number text,
+  account_name text,
+  classification text,        -- ASSET/LIABILITY/EQUITY/REVENUE/EXPENSE/UNKNOWN
+  snapshot_balance numeric,   -- latest BS snapshot wins
+  snapshot_period date,
+  activity_net numeric,       -- summed for P&L
+  txn_count int,
+  primary key (project_id, run_id, account_key)
+)
+```
 
-Single file: `supabase/functions/analyze-general-ledger/index.ts`.
+Standard grants + RLS (project owner + admin/cpa via `has_project_access`). Service role writes from the edge function.
 
-1. **Stop using GL `acctId` as the aggregation key.** Where the per-section key is built today:
-   ```ts
-   const key = acctId ? `id:${acctId}` : `name:${acctName.toLowerCase()}`;
-   ```
-   Replace with a key derived from the account *name / number*, which is stable across exports:
-   - Extract a leading account-number prefix (`/^(\d{3,})/`) from `acctName` when present → `num:${prefix}` (e.g. `num:6140`).
-   - Otherwise fall back to a normalized name key: `name:${normName(acctName)}`.
-   - Do NOT include `acctId` in the key at all.
-2. **Keep COA lookup working.** COA is currently matched by `acctNum` and by `name` — no change needed there. The section still records `acctNumber` from the leading numeric prefix (already implemented via `coaByAcctNum` fallback) so classification stays authoritative.
-3. **Drop the id-preferring branch in the name-collision merge.** After step 1, key collisions between `id:` and `name:` entries won't exist, so the `keys.find(k => k.startsWith("id:"))` preference at lines 484–517 becomes dead code. Simplify by picking the first key as canonical; behaviour is unchanged when only one key per name exists.
-4. **Same fix for the fallback `canonical_transactions` path** if it currently uses any per-row id as a key (it already keys on `name.toLowerCase()` — verify, no change expected).
-5. **Bump per-export DIAG.** Add one `console.log` per export listing the count of DISTINCT names parsed vs. total sections, so we can catch a future qbToJson change that emits real stable ids and revisit the strategy.
+## 2. Refactor `analyze-general-ledger`
 
-No changes to TB parsing, matching (leaf/fullPath), classification, sign normalization, or the identity math. Those were already correct once the aggregation isn't polluted.
+- Generate `run_id`, delete any prior rows for the project.
+- For each GL export (already sequential):
+  - Parse, walk sections, build a **small per-export** account delta map.
+  - `upsert` deltas into `gl_reconcile_accounts` using SQL `on conflict … do update`:
+    - `snapshot_balance` = winner by `snapshot_period` (BS accounts)
+    - `activity_net` = existing + delta (P&L accounts)
+    - `txn_count` = existing + delta
+  - Null out parsed JSON, delta map, and record ref. Force loop-scoped scope so GC can reclaim.
+- After all exports processed, `select` the aggregated rows back (much smaller: ~a few hundred rows) and:
+  - Join to Trial Balance in memory (TB is already compact).
+  - Compute variances, identity check, reconciliation %.
+  - Write the final report to `processed_data` as today.
+- Delete scratch rows for that `run_id` at the end (or keep for debugging behind a flag).
 
-## Verify
+Peak memory becomes: one parsed export + one small delta map + final compact join. Independent of how many exports/years.
 
-After deploy, re-run **Analyze GL** on project `621a6c9f-1c25-40fa-92fa-6762ae3fe72b` and check:
+## 3. Safety net
 
-- `6140 Phone/Internet` GL ≈ **$6,527**, matches TB ($6,527).
-- `6105 Rent & Lease` GL ≈ **$224,291**, matches TB ($224,291).
-- `TikTok Sales` GL magnitude drops to a plausible annual × 4 figure and its sign flips to credit-natural after normalization.
-- `A − L − E − NI` collapses toward ~$0 (some residual is expected until specific structural rollups clear, but not $17M).
-- Reconciliation rate rises well above 34%.
+- Wrap the per-export block in try/catch; on parse error mark that export as skipped in the report rather than failing the whole run.
+- Add a hard cap: if a single export's parsed size (via `JSON.stringify(data).length` before walking) exceeds e.g. 8 MB, stream sections one at a time using a shallow walker that yields section by section instead of building the full array first.
 
-If any of the above still misbehaves, the diagnosis will now be visible against clean per-account numbers instead of pollution-masked ones.
+## 4. Verification
 
-## Out of scope
+- Re-run Analyze GL on `621a6c9f…` — expect completion, no OOM, and the previously-fixed classification/keying logic to now apply consistently across all 4 years.
+- Re-run on `fa0768ca…` to confirm no regression on the small project.
+- Spot-check identity check comes near zero and Phone/Internet, Rent & Lease reconcile against TB.
 
-- No UI changes.
-- No migrations.
-- No touch to `process-quickbooks-file`, TB parser, or COA ingestion.
+## Technical notes
+
+- The scratch-table approach is preferable to "spawn N sub-invocations" because it keeps a single user-facing job with progress and avoids orchestration complexity.
+- No change to the parser's account-keying or classification logic — those bugs are already fixed; this plan only changes *where* aggregates live during the run.
+- No frontend changes required.
