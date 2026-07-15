@@ -22,6 +22,13 @@ const normName = (s: string): string =>
     .replace(/[^\w\s]/g, " ")
     .replace(/_+/g, " ")
     .replace(/\s+/g, " ")
+    .trim()
+    // Strip a leading account-number token (e.g. "1015 wells fargo..." → "wells fargo...")
+    // so TB rows with QB numeric prefixes collapse onto GL leaves that lack them.
+    .replace(/^\d{3,6}\s+/, "")
+    // Strip a trailing bare-digit register suffix (e.g. "wells fargo 7179" → "wells fargo")
+    // so "(7179)"-tagged deleted variants match their numbered TB parent.
+    .replace(/\s+\d{3,}$/, "")
     .trim();
 
 interface AccountInfo {
