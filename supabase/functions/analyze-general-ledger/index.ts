@@ -214,11 +214,48 @@ serve(async (req) => {
         if (num) return `num:${num}`;
         return `name:${normName(String(r.account_name || r.full_path || ""))}`;
       };
+      // Two-pass merge. Pass 1 groups by canonicalOf (num: vs name:). Pass 2 collapses
+      // any `name:<leaf>` row into the matching `num:<n>` row when their normalized
+      // leaf names agree — this prevents Undeposited Funds showing 2× when one export
+      // ships it numbered and another drops the prefix.
+      const rawRows = (scratchRows || []) as Array<Record<string, unknown>>;
+      // Build leaf → num lookup from rows that carry an account_number.
+      const numByLeaf = new Map<string, string>();
+      for (const r of rawRows) {
+        const num = r.account_number ? String(r.account_number).trim() : "";
+        if (!num) continue;
+        const leaf = normName(String(r.account_name || r.full_path || ""));
+        if (leaf) numByLeaf.set(leaf, num);
+      }
       const mergedByCanonical = new Map<string, Record<string, unknown>>();
-      for (const r of (scratchRows || []) as Array<Record<string, unknown>>) {
-        const canon = canonicalOf(r);
+      for (const r of rawRows) {
+        // Rewrite canonical: if this is a `name:` row but a `num:` twin exists, adopt num.
+        let canon = canonicalOf(r);
+        if (canon.startsWith("name:")) {
+          const leaf = normName(String(r.account_name || r.full_path || ""));
+          const numTwin = numByLeaf.get(leaf);
+          if (numTwin) canon = `num:${numTwin}`;
+        }
         const prev = mergedByCanonical.get(canon);
         if (!prev) { mergedByCanonical.set(canon, { ...r }); continue; }
+        // If we already have a num-anchored row and this is a name-only duplicate of
+        // it, DROP the duplicate (do not sum) — same account, two representations.
+        const prevIsNum = !!prev.account_number;
+        const curIsNum = !!r.account_number;
+        if (prevIsNum && !curIsNum) continue;                   // keep prev, drop this
+        if (!prevIsNum && curIsNum) {                            // swap in num-anchored
+          const merged: Record<string, unknown> = { ...r };
+          // Preserve latest snapshot across the two if the incoming row is older.
+          const prevPeriod = String(prev.snapshot_period || "");
+          const newPeriod = String(r.snapshot_period || "");
+          if (prevPeriod && (!newPeriod || prevPeriod > newPeriod)) {
+            merged.snapshot_balance = prev.snapshot_balance;
+            merged.snapshot_period = prev.snapshot_period;
+          }
+          mergedByCanonical.set(canon, merged);
+          continue;
+        }
+        // Same-shape rows across exports: preserve latest snapshot, sum activity.
         const prevPeriod = String(prev.snapshot_period || "");
         const newPeriod = String(r.snapshot_period || "");
         if (newPeriod && (!prevPeriod || newPeriod > prevPeriod)) {
