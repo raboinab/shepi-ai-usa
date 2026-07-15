@@ -9,8 +9,20 @@ const corsHeaders = {
 
 // Normalize an account name for hierarchical leaf matching:
 // "Operating Expenses:Marketing:Ads" → "ads"
+// Also strips archival prefixes ("z_", "zz_") and QuickBooks "(deleted)" / trailing
+// "*" markers so archived variants collapse onto their canonical account.
 const normName = (s: string): string =>
-  (s || "").split(":").pop()!.toLowerCase().trim().replace(/\s+/g, " ").replace(/[^\w\s]/g, "");
+  (s || "")
+    .split(":").pop()!
+    .toLowerCase()
+    .trim()
+    .replace(/\bdeleted\b/g, " ")
+    .replace(/^z+_+/g, "")
+    .replace(/\*+$/g, "")
+    .replace(/[^\w\s]/g, " ")
+    .replace(/_+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 
 interface AccountInfo {
   name: string;          // fully qualified (e.g. "Landscaping Services:Job Materials")
