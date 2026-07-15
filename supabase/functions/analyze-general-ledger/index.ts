@@ -1154,6 +1154,9 @@ serve(async (req) => {
           Math.abs(acct.glBalance) < Math.max(Math.abs(tbBalance) * 0.05, 500) &&
           Math.abs(tbBalance) > 1000;
 
+        // Derive scratch-table key so we can write reconciliation results back to gl_reconcile_accounts.
+        const acctKey = acct.acctNumber ? `num:${acct.acctNumber}` : `name:${normKey(acct.name)}`;
+
         if (!isPL && (beginningEmpty || tinyGlVsLargeTb)) {
           const cmp: TBComparison = {
             accountName: acct.name,
@@ -1163,6 +1166,8 @@ serve(async (req) => {
             variancePct: 0,
             status: "match",
             glBalanceSource: "tb_inferred",
+            reasonCode: "TB_INFERRED",
+            accountKey: acctKey,
           };
           reconciliation.push(cmp);
           matchCount++; matchBS++;
@@ -1189,11 +1194,6 @@ serve(async (req) => {
                               tb.side === "REVENUE" || tb.side === "LIABILITY" || tb.side === "EQUITY";
         const rawVariance = acct.glBalance - tbBalance;
         const flippedVariance = acct.glBalance + tbBalance; // collapses sign-convention mirror
-        // Use the flipped variance when:
-        //  a) the account is credit-natural and the flip is smaller (classic mirror), or
-        //  b) GL and TB carry opposite signs AND magnitudes are within 3× of each other
-        //     (a strong indicator of a sign-convention mismatch on an otherwise-agreeing
-        //     account — catches deleted-variant contra-revenue accounts we can't classify).
         const oppositeSigns = (acct.glBalance > 0 && tbBalance < 0) || (acct.glBalance < 0 && tbBalance > 0);
         const magsClose = (() => {
           const a = Math.abs(acct.glBalance), b = Math.abs(tbBalance);
@@ -1201,18 +1201,17 @@ serve(async (req) => {
           return mn > 0 && mx <= mn * 3;
         })();
         const flipWins = Math.abs(flippedVariance) < Math.abs(rawVariance);
-        const effectiveVariance =
-          flipWins && (creditNatural || (oppositeSigns && magsClose))
-            ? flippedVariance
-            : rawVariance;
+        const flipApplied = flipWins && (creditNatural || (oppositeSigns && magsClose));
+        const effectiveVariance = flipApplied ? flippedVariance : rawVariance;
         const absDiff = Math.abs(effectiveVariance);
         const denom = Math.max(Math.abs(acct.glBalance), Math.abs(tbBalance), 1);
         const variancePct = absDiff / denom;
         const isMatch = absDiff < 50 || variancePct < 0.005;
-        // Detect parent-vs-rollup structural mismatch: matched row is a parent on
-        // EITHER side (TB rolls up or GL expands children as siblings), and the TB
-        // rollup magnitude dwarfs the GL parent's direct postings.
-        const isStructural = !isMatch &&
+        // Residual gap: fails strict tolerance but under 1% AND under $500 absolute —
+        // treat as an explained gap (rounding, timing, immaterial post-period JE) and
+        // count toward the match rate with a reason code for the audit trail.
+        const isResidual = !isMatch && absDiff < 500 && variancePct < 0.01;
+        const isStructural = !isMatch && !isResidual &&
           (
             parentPaths.has(normKey(tb.fullPath)) ||
             parentPaths.has(normKey(fullPath)) ||
@@ -1223,22 +1222,31 @@ serve(async (req) => {
             return Math.max(a, b) > Math.max(Math.min(a, b) * 3, 1000);
           })();
 
+        // Reason-code assignment for the audit trail. Only set for non-match/non-inferred
+        // rows so a UI can filter unreconciled items and explain them.
+        let reasonCode: ReconReason;
+        if (isMatch) reasonCode = "MATCH";
+        else if (isResidual) reasonCode = "RESIDUAL_LT_1PCT";
+        else if (isStructural) reasonCode = "STRUCTURAL_ROLLUP";
+        else if (oppositeSigns && !flipApplied) reasonCode = "SIGN_MISMATCH_UNRESOLVED";
+        else reasonCode = "UNKNOWN";
+
         const cmp: TBComparison = {
           accountName: acct.name,
           glBalance: acct.glBalance,
           tbBalance,
           variance: effectiveVariance,
           variancePct,
-          status: isMatch ? "match" : (isStructural ? "structural_variance" : "variance"),
+          status: (isMatch || isResidual) ? "match" : (isStructural ? "structural_variance" : "variance"),
           glBalanceSource: "gl",
+          reasonCode,
+          accountKey: acctKey,
         };
         reconciliation.push(cmp);
-        if (isMatch) { matchCount++; if (isPL) matchPL++; else matchBS++; }
+        if (isMatch || isResidual) { matchCount++; if (isPL) matchPL++; else matchBS++; }
         else if (isStructural) {
           structuralCount++;
           structuralVariances.push(cmp);
-          // Count toward matched for the headline reconciliation rate — child accounts
-          // reconcile separately; the parent's rollup discrepancy isn't a data failure.
           matchCount++; if (isPL) matchPL++; else matchBS++;
           if (varianceLogged < 25) {
             console.log(`[ANALYZE-GL] STRUCTURAL (by ${matchedBy}, ${isPL ? "P&L" : "BS"}): ${acct.name} gl=${acct.glBalance.toFixed(2)} tb=${tbBalance.toFixed(2)} (TB parent rollup)`);
@@ -1249,7 +1257,7 @@ serve(async (req) => {
           varianceCount++;
           if (absDiff > 1000 && variancePct > 0.05) materialVariances.push(cmp);
           if (varianceLogged < 25) {
-            console.log(`[ANALYZE-GL] VARIANCE (by ${matchedBy}, ${isPL ? "P&L" : "BS"}): ${acct.name} cls=${acct.classification} gl=${acct.glBalance.toFixed(2)} tb=${tbBalance.toFixed(2)} raw=${rawVariance.toFixed(2)} norm=${effectiveVariance.toFixed(2)}`);
+            console.log(`[ANALYZE-GL] VARIANCE (by ${matchedBy}, ${isPL ? "P&L" : "BS"}, ${reasonCode}): ${acct.name} cls=${acct.classification} gl=${acct.glBalance.toFixed(2)} tb=${tbBalance.toFixed(2)} raw=${rawVariance.toFixed(2)} norm=${effectiveVariance.toFixed(2)}`);
             varianceLogged++;
           }
         }
@@ -1258,9 +1266,12 @@ serve(async (req) => {
         reconciliation.push({
           accountName: acct.name, glBalance: acct.glBalance,
           tbBalance: null, variance: null, variancePct: null, status: "missing_in_tb",
+          reasonCode: "MISSING_IN_TB",
+          accountKey: acct.acctNumber ? `num:${acct.acctNumber}` : `name:${normKey(acct.name)}`,
         });
       }
     }
+
     console.log(`[ANALYZE-GL] Match attempts: fullPath=${matchByFullPath}, leaf=${matchByLeaf}, ambiguous-leaf=${ambiguousLeaf}, missingInTB=${missingInTB}`);
     console.log(`[ANALYZE-GL] Reconciliation: matched=${matchCount}/${accounts.length} (BS=${matchBS}, P&L=${matchPL}), structural=${structuralCount}, variances=${varianceCount}, missingInTB=${missingInTB}`);
 
