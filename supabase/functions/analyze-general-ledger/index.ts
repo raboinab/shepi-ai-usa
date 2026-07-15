@@ -102,8 +102,12 @@ serve(async (req) => {
     // the one with the latest period_end wins for `glBalance` (true ending), while activity
     // and txnCount sum across periods. This gives whole-lifetime coverage rather than just
     // the last uploaded slice.
-    const { data: glProcessed } = await supabase
-      .from("processed_data").select("data, period_start, period_end, created_at")
+    // Fetch GL record IDs first — we then load each `data` payload one at a time
+    // and null the reference after processing so the Deno edge function does not
+    // hold all GL exports (multi-MB each) in memory simultaneously. Loading them
+    // all at once was tripping the 256MB memory limit ("Memory limit exceeded").
+    const { data: glIndex } = await supabase
+      .from("processed_data").select("id, period_start, period_end, created_at")
       .eq("project_id", projectId).eq("data_type", "general_ledger")
       .order("period_end", { ascending: true });
 
