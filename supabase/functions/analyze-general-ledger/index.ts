@@ -773,8 +773,14 @@ serve(async (req) => {
     //    TB's yearSumBalance behavior.
     const isPLClass = (c: string) => c === "REVENUE" || c === "INCOME" || c === "OTHER_INCOME" ||
                                      c === "EXPENSE" || c === "COST_OF_GOODS_SOLD" || c === "OTHER_EXPENSE";
+    // Equity accounts that move each period (distributions, owner draws) behave more
+    // like P&L flows than BS snapshots — QB's latest running-balance in GL misses
+    // earlier-period activity across multi-year exports. Use summed activity for these.
+    const flowEquityRe = /distribut|owner\s*draw|owner\s*withdraw|shareholder\s*(withdraw|distribut)|dividend/i;
     const applyActiveBalance = (a: AccountInfo) => {
-      a.glBalance = isPLClass(a.classification) ? a.glActivityNet : a.glBalanceLatest;
+      if (isPLClass(a.classification)) a.glBalance = a.glActivityNet;
+      else if (a.classification === "EQUITY" && flowEquityRe.test(a.name)) a.glBalance = a.glActivityNet;
+      else a.glBalance = a.glBalanceLatest;
     };
     for (const a of accounts) applyActiveBalance(a);
     console.log(`[ANALYZE-GL] Aggregated ${accounts.length} unique accounts (post-rollup dedupe)`);
