@@ -19,6 +19,9 @@ const normName = (s: string): string =>
     .replace(/\bdeleted\b/g, " ")
     .replace(/^z+_+/g, "")
     .replace(/\*+$/g, "")
+    // Strip parenthetical qualifiers ("Undeposited Funds (Sales)" → "undeposited funds")
+    // so representation variants collapse onto the same normalized leaf.
+    .replace(/\([^)]*\)/g, " ")
     .replace(/[^\w\s]/g, " ")
     .replace(/_+/g, " ")
     .replace(/\s+/g, " ")
@@ -30,6 +33,19 @@ const normName = (s: string): string =>
     // so "(7179)"-tagged deleted variants match their numbered TB parent.
     .replace(/\s+\d{3,}$/, "")
     .trim();
+
+// Name-pattern classifier for accounts that fail COA and section-group lookup.
+// Catches "(deleted)" contra-revenue variants and orphaned QB accounts.
+const classifyByName = (name: string): string | null => {
+  const n = name.toLowerCase();
+  if (/\b(cogs|cost of goods|cost of sales|merchant\s*fee|processing\s*fee|payment\s*fee|transaction\s*fee)\b/.test(n)) return "EXPENSE";
+  if (/\b(distribution|owner\s*draw|owner\s*withdraw|member\s*draw|shareholder\s*(distribut|withdraw)|contribution)\b/.test(n)) return "EQUITY";
+  // Contra-revenue: shipping/discount/return/refund/fee patterns that aren't cost-side.
+  if (/\b(shipping\s*income|shipping\s*revenue|shipping|discount|return|refund|chargeback|sales?\s*tax|store\s*credit)s?\b/.test(n)) {
+    if (!/\bcost\b|\bexpense\b|\bcogs\b/.test(n)) return "REVENUE";
+  }
+  return null;
+};
 
 interface AccountInfo {
   name: string;          // fully qualified (e.g. "Landscaping Services:Job Materials")
