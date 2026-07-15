@@ -181,13 +181,40 @@ export function projectToDealData(project: ProjectRecord): DealData {
  */
 export async function loadDealDataWithPriorBalances(project: ProjectRecord): Promise<DealData> {
   const dealData = projectToDealData(project);
-  const [priorBalances, payrollFallback, fixedAssetsFallback, debtFallback] = await Promise.all([
+  const [priorBalances, payrollFallback, fixedAssetsFallback, debtFallback, glAnalysis] = await Promise.all([
     // Lazy import to keep the adapter import-safe in non-browser environments.
     import("./derivePriorBalances").then(m => m.derivePriorBalances(project.id, dealData.trialBalance, dealData.deal.periods)).catch(() => ({} as Record<string, number>)),
     // Lazy import to avoid a static cycle with payrollFallback → workbook-types
     import("./payrollFallback").then(m => m.fetchLatestPayrollFallback(project.id)).catch(() => null),
     import("./fixedAssetsFallback").then(m => m.fetchLatestFixedAssetsFallback(project.id)).catch(() => []),
     import("./debtFallback").then(m => m.fetchLatestDebtFallback(project.id)).catch(() => []),
+    // Latest general-ledger analysis — used to surface the implied opening RE plug on the BS.
+    (async () => {
+      try {
+        const { supabase } = await import("@/integrations/supabase/client");
+        const { data } = await supabase
+          .from("processed_data")
+          .select("data, created_at")
+          .eq("project_id", project.id)
+          .eq("data_type", "general_ledger_analysis")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const ic = (data?.data as { identityCheck?: Record<string, unknown> } | null)?.identityCheck;
+        if (!ic) return null;
+        const impliedOpeningRE = Number(ic.impliedOpeningRE);
+        if (!Number.isFinite(impliedOpeningRE)) return null;
+        return {
+          impliedOpeningRE,
+          bsRetainedEarnings: ic.bsRetainedEarnings == null ? null : Number(ic.bsRetainedEarnings),
+          residualVariance: Number(ic.residualVariance ?? 0),
+          balancedWithRE: Boolean(ic.balancedWithRE),
+          analyzedAt: data?.created_at || undefined,
+        };
+      } catch {
+        return null;
+      }
+    })(),
   ]);
   if (Object.keys(priorBalances).length > 0) {
     dealData.deal.priorBalances = priorBalances;
@@ -206,6 +233,9 @@ export async function loadDealDataWithPriorBalances(project: ProjectRecord): Pro
       debtSchedule: debtFallback,
       leaseObligations: dealData.supplementary?.leaseObligations ?? [],
     };
+  }
+  if (glAnalysis) {
+    dealData.glAnalysis = glAnalysis;
   }
   return dealData;
 }
