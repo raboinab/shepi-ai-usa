@@ -1365,7 +1365,27 @@ serve(async (req) => {
     const netIncome = revenueAbs - expenseAbs;
     const accountingEquationDiff = sumAssets - liabAbs - equityAbs - netIncome;
 
-
+    // ── Implied Opening Retained Earnings plug ──
+    // QuickBooks GL exports for a mid-life company typically exclude retained earnings
+    // accumulated BEFORE the analysis window. That missing opening equity shows up as
+    // an imbalance in A − L − E − NI. Derive the plug and compare it against any
+    // Retained Earnings / Opening Balance Equity value present in the Trial Balance.
+    const impliedOpeningRE = -accountingEquationDiff;
+    const reNameRe = /(retained earnings|opening balance equity|prior period)/i;
+    let bsRetainedEarnings = 0;
+    let bsRESource: "tb" | null = null;
+    for (const r of reconciliation) {
+      if (r.tbBalance == null) continue;
+      if (!reNameRe.test(r.accountName)) continue;
+      // TB credit-natural equity → normalize to positive.
+      bsRetainedEarnings += Math.abs(r.tbBalance) * (r.tbBalance < 0 ? -1 : 1);
+      bsRESource = "tb";
+    }
+    // If we have a BS RE value, residual is the true unexplained gap;
+    // otherwise the residual equals the implied plug itself.
+    const residualVariance = bsRESource
+      ? impliedOpeningRE - bsRetainedEarnings
+      : impliedOpeningRE;
 
     // ── Largest accounts by |balance| ──
     const largestAccounts = [...accounts]
@@ -1380,8 +1400,9 @@ serve(async (req) => {
     if (missingInTB > 5) flags.push(`${missingInTB} GL account(s) missing from Trial Balance`);
     if (missingInGL.length > 5) flags.push(`${missingInGL.length} TB account(s) have no GL activity in canonical ledger`);
     const identityTolerance = Math.max(1000, Math.abs(sumAssets) * 0.01);
-    if (Math.abs(accountingEquationDiff) > identityTolerance && tbHas) {
-      flags.push(`Accounting equation (A − L − E − NI) off by ${new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(Math.abs(accountingEquationDiff))}`);
+    const balancedWithRE = Math.abs(residualVariance) <= identityTolerance;
+    if (Math.abs(accountingEquationDiff) > identityTolerance && tbHas && !balancedWithRE) {
+      flags.push(`Accounting equation (A − L − E − NI) off by ${new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(Math.abs(residualVariance))} after implied opening RE`);
     }
 
     // Suspense / clearing accounts with non-zero balance
