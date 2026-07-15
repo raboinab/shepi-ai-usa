@@ -418,6 +418,7 @@ serve(async (req) => {
           let txnCount = 0;
           let activity = 0;
           let netSum = 0;
+          let beginningBalanceValueSeen = false;
 
           if (metaAmountIdx >= 0) {
             amountColIdx = metaAmountIdx;
@@ -476,6 +477,7 @@ serve(async (req) => {
                                             : (amountColIdx >= 0 ? parseMoney(cd[amountColIdx]?.value) : null);
               if (bb !== null) {
                 beginningBalance = bb;
+                beginningBalanceValueSeen = true;
               } else {
                 const anyNumeric = cd.some((c: Record<string, unknown>) => parseMoney((c as { value?: string })?.value) !== null);
                 if (!anyNumeric) beginningRowSeenButEmpty = true;
@@ -520,8 +522,9 @@ serve(async (req) => {
           const isReverseChronological = !!firstTxnDateInRowOrder && !!lastTxnDateInRowOrder && firstTxnDateInRowOrder > lastTxnDateInRowOrder;
 
           let snapshotBalance: number;
-          if (summaryNet !== null) snapshotBalance = beginningBalance + summaryNet;
+          if (summaryNet !== null && (beginningBalanceValueSeen || isReverseChronological || balanceColIdx < 0)) snapshotBalance = beginningBalance + summaryNet;
           else if (balanceColIdx >= 0 && endingBalanceDate !== null && !isReverseChronological) snapshotBalance = endingBalance;
+          else if (summaryNet !== null) snapshotBalance = beginningBalance + summaryNet;
           else snapshotBalance = beginningBalance + netSum;
           const activityNet = summaryNet !== null ? summaryNet : netSum;
 
