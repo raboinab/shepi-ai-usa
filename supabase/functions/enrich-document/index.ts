@@ -495,7 +495,7 @@ serve(async (req) => {
       .eq('source_document_id', doc.id)
       .limit(1);
 
-    if (!existingPD || existingPD.length === 0) {
+    if (!isDuplicate && (!existingPD || existingPD.length === 0)) {
       const dataType = doc.account_type === 'credit_card' ? 'credit_card_transactions' : 'bank_transactions';
 
       const { error: pdError } = await supabase
