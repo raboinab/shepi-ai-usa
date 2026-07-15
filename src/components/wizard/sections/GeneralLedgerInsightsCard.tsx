@@ -133,7 +133,7 @@ export const GeneralLedgerInsightsCard = ({ analysisData, documentName, classNam
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="overview" className="w-full">
-          <TabsList className="w-full grid grid-cols-3">
+          <TabsList className="w-full grid grid-cols-3 sticky top-0 z-10 bg-background">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="reconciliation">Reconciliation</TabsTrigger>
             <TabsTrigger value="flags">
