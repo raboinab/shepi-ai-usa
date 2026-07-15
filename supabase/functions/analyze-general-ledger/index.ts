@@ -540,6 +540,34 @@ serve(async (req) => {
       if (isInternalCall) {
         // Child mode: upsert per-account deltas into scratch table, then return.
         // The orchestrator merges across children via SQL-side aggregation on conflict.
+        //
+        // First consolidate within this export: if the same real account was keyed
+        // once as `num:1001` and once as `name:undeposited funds sales`, fold the
+        // name-only entry into the num-anchored one so we don't upsert two rows for
+        // the same underlying account.
+        {
+          const numByLeaf = new Map<string, string>();
+          for (const [k, a] of acctMap) {
+            if (k.startsWith("num:") && a.leaf) numByLeaf.set(a.leaf, k);
+          }
+          for (const [k, a] of Array.from(acctMap.entries())) {
+            if (!k.startsWith("name:")) continue;
+            const target = numByLeaf.get(a.leaf);
+            if (!target || target === k) continue;
+            const dst = acctMap.get(target)!;
+            dst.glActivity += a.glActivity;
+            dst.glActivityNet += a.glActivityNet;
+            dst.glBalanceSum += a.glBalanceSum;
+            dst.txnCount += a.txnCount;
+            if (Math.abs(dst.glBalanceLatest) < 0.01 && Math.abs(a.glBalanceLatest) > 0.01) {
+              dst.glBalanceLatest = a.glBalanceLatest;
+            }
+            dst.beginningRowSeenButEmpty = dst.beginningRowSeenButEmpty || a.beginningRowSeenButEmpty;
+            if (dst.classification === "OTHER" && a.classification !== "OTHER") dst.classification = a.classification;
+            if (!dst.acctNumber && a.acctNumber) dst.acctNumber = a.acctNumber;
+            acctMap.delete(k);
+          }
+        }
         const childPeriodEnd = processableGlMetas[0]?.period_end || "";
         const rows: Array<Record<string, unknown>> = [];
         for (const [key, a] of acctMap) {
