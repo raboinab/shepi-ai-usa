@@ -129,15 +129,23 @@ serve(async (req) => {
       return null;
     };
 
-    if (glProcessed && glProcessed.length > 0) {
+    if (glIndex && glIndex.length > 0) {
       // Track per-account best snapshot (winner = latest period_end) plus summed activity.
       type Snap = { periodEnd: string; glBalance: number };
       const bestSnapshotByKey = new Map<string, Snap>();
 
-      for (const glRec of glProcessed) {
-        const gl = glRec.data as Record<string, unknown>;
+      for (const glMeta of glIndex) {
+        // Load one GL export at a time; drop the parsed tree at end of iteration.
+        const { data: glRecArr, error: glLoadErr } = await supabase
+          .from("processed_data").select("data")
+          .eq("id", glMeta.id).limit(1);
+        if (glLoadErr || !glRecArr || glRecArr.length === 0) {
+          console.error(`[ANALYZE-GL] Failed to load GL record ${glMeta.id}:`, glLoadErr);
+          continue;
+        }
+        let gl: Record<string, unknown> | null = glRecArr[0].data as Record<string, unknown>;
         const sections = ((gl.rows as { row?: GlRow[] })?.row || []) as GlRow[];
-        const recPeriodEnd = String(glRec.period_end || "");
+        const recPeriodEnd = String(glMeta.period_end || "");
 
         // ── Resolve Amount / Balance column indices from QB report column metadata. ──
         // GL DATA rows are nested inside SECTIONs and do NOT have a prepended account
