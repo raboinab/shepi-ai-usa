@@ -197,9 +197,40 @@ serve(async (req) => {
         .from("gl_reconcile_accounts").select("*")
         .eq("project_id", projectId).eq("run_id", runId);
       if (scratchErr) console.error("[ANALYZE-GL] Failed to load scratch aggregates:", scratchErr);
+
+      // Dedupe: the same account can land under multiple scratch keys across exports
+      // when QB emits a numeric prefix in one file ("1001 Undeposited Funds") and drops
+      // it in another ("Undeposited Funds (Sales)"). Merge rows whose canonical identity
+      // (account_number if present, else normalized leaf name) matches.
+      const canonicalOf = (r: Record<string, unknown>): string => {
+        const num = r.account_number ? String(r.account_number).trim() : "";
+        if (num) return `num:${num}`;
+        return `name:${normName(String(r.account_name || r.full_path || ""))}`;
+      };
+      const mergedByCanonical = new Map<string, Record<string, unknown>>();
       for (const r of (scratchRows || []) as Array<Record<string, unknown>>) {
+        const canon = canonicalOf(r);
+        const prev = mergedByCanonical.get(canon);
+        if (!prev) { mergedByCanonical.set(canon, { ...r }); continue; }
+        const prevPeriod = String(prev.snapshot_period || "");
+        const newPeriod = String(r.snapshot_period || "");
+        if (newPeriod && (!prevPeriod || newPeriod > prevPeriod)) {
+          prev.snapshot_balance = r.snapshot_balance;
+          prev.snapshot_period = r.snapshot_period;
+        }
+        prev.snapshot_sum = Number(prev.snapshot_sum || 0) + Number(r.snapshot_sum || 0);
+        prev.activity_net = Number(prev.activity_net || 0) + Number(r.activity_net || 0);
+        prev.activity_abs = Number(prev.activity_abs || 0) + Number(r.activity_abs || 0);
+        prev.txn_count = Number(prev.txn_count || 0) + Number(r.txn_count || 0);
+        prev.beginning_empty = (prev.beginning_empty === true) || (r.beginning_empty === true);
+        if (String(prev.classification || "OTHER") === "OTHER" && String(r.classification || "OTHER") !== "OTHER") {
+          prev.classification = r.classification;
+        }
+        if (!prev.account_number && r.account_number) prev.account_number = r.account_number;
+      }
+      for (const [canon, r] of mergedByCanonical) {
         const acctName = String(r.account_name || r.full_path || "");
-        acctMap.set(String(r.account_key), {
+        acctMap.set(canon, {
           name: acctName,
           leaf: normName(acctName),
           acctNumber: (r.account_number as string | null) || null,
@@ -213,7 +244,7 @@ serve(async (req) => {
           beginningRowSeenButEmpty: r.beginning_empty === true,
         });
       }
-      console.log(`[ANALYZE-GL] Orchestrator loaded ${acctMap.size} accounts from scratch (runId=${runId})`);
+      console.log(`[ANALYZE-GL] Orchestrator loaded ${acctMap.size} accounts from ${(scratchRows||[]).length} scratch rows (runId=${runId})`);
     }
 
     if (processableGlMetas.length > 0) {
