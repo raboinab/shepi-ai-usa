@@ -1761,6 +1761,48 @@ export type Database = {
           },
         ]
       }
+      gl_reconcile_accounts: {
+        Row: {
+          account_key: string
+          account_name: string | null
+          account_number: string | null
+          activity_net: number
+          classification: string | null
+          project_id: string
+          run_id: string
+          snapshot_balance: number | null
+          snapshot_period: string | null
+          txn_count: number
+          updated_at: string
+        }
+        Insert: {
+          account_key: string
+          account_name?: string | null
+          account_number?: string | null
+          activity_net?: number
+          classification?: string | null
+          project_id: string
+          run_id: string
+          snapshot_balance?: number | null
+          snapshot_period?: string | null
+          txn_count?: number
+          updated_at?: string
+        }
+        Update: {
+          account_key?: string
+          account_name?: string | null
+          account_number?: string | null
+          activity_net?: number
+          classification?: string | null
+          project_id?: string
+          run_id?: string
+          snapshot_balance?: number | null
+          snapshot_period?: string | null
+          txn_count?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       hypotheses: {
         Row: {
           alternative_explanations: string[] | null
