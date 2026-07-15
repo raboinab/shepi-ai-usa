@@ -213,6 +213,15 @@ export interface DealData {
     };
     analyzedAt: string;
   };
+  /** Persisted result from analyze-general-ledger — surfaces the implied opening
+   *  RE plug so the Balance Sheet can display "Opening Balance Equity — derived". */
+  glAnalysis?: {
+    impliedOpeningRE: number;
+    bsRetainedEarnings: number | null;
+    residualVariance: number;
+    balancedWithRE: boolean;
+    analyzedAt?: string;
+  };
 }
 
 // ============================================
