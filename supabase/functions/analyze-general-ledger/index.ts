@@ -22,6 +22,13 @@ const normName = (s: string): string =>
     .replace(/[^\w\s]/g, " ")
     .replace(/_+/g, " ")
     .replace(/\s+/g, " ")
+    .trim()
+    // Strip a leading account-number token (e.g. "1015 wells fargo..." → "wells fargo...")
+    // so TB rows with QB numeric prefixes collapse onto GL leaves that lack them.
+    .replace(/^\d{3,6}\s+/, "")
+    // Strip a trailing bare-digit register suffix (e.g. "wells fargo 7179" → "wells fargo")
+    // so "(7179)"-tagged deleted variants match their numbered TB parent.
+    .replace(/\s+\d{3,}$/, "")
     .trim();
 
 interface AccountInfo {
@@ -207,11 +214,48 @@ serve(async (req) => {
         if (num) return `num:${num}`;
         return `name:${normName(String(r.account_name || r.full_path || ""))}`;
       };
+      // Two-pass merge. Pass 1 groups by canonicalOf (num: vs name:). Pass 2 collapses
+      // any `name:<leaf>` row into the matching `num:<n>` row when their normalized
+      // leaf names agree — this prevents Undeposited Funds showing 2× when one export
+      // ships it numbered and another drops the prefix.
+      const rawRows = (scratchRows || []) as Array<Record<string, unknown>>;
+      // Build leaf → num lookup from rows that carry an account_number.
+      const numByLeaf = new Map<string, string>();
+      for (const r of rawRows) {
+        const num = r.account_number ? String(r.account_number).trim() : "";
+        if (!num) continue;
+        const leaf = normName(String(r.account_name || r.full_path || ""));
+        if (leaf) numByLeaf.set(leaf, num);
+      }
       const mergedByCanonical = new Map<string, Record<string, unknown>>();
-      for (const r of (scratchRows || []) as Array<Record<string, unknown>>) {
-        const canon = canonicalOf(r);
+      for (const r of rawRows) {
+        // Rewrite canonical: if this is a `name:` row but a `num:` twin exists, adopt num.
+        let canon = canonicalOf(r);
+        if (canon.startsWith("name:")) {
+          const leaf = normName(String(r.account_name || r.full_path || ""));
+          const numTwin = numByLeaf.get(leaf);
+          if (numTwin) canon = `num:${numTwin}`;
+        }
         const prev = mergedByCanonical.get(canon);
         if (!prev) { mergedByCanonical.set(canon, { ...r }); continue; }
+        // If we already have a num-anchored row and this is a name-only duplicate of
+        // it, DROP the duplicate (do not sum) — same account, two representations.
+        const prevIsNum = !!prev.account_number;
+        const curIsNum = !!r.account_number;
+        if (prevIsNum && !curIsNum) continue;                   // keep prev, drop this
+        if (!prevIsNum && curIsNum) {                            // swap in num-anchored
+          const merged: Record<string, unknown> = { ...r };
+          // Preserve latest snapshot across the two if the incoming row is older.
+          const prevPeriod = String(prev.snapshot_period || "");
+          const newPeriod = String(r.snapshot_period || "");
+          if (prevPeriod && (!newPeriod || prevPeriod > newPeriod)) {
+            merged.snapshot_balance = prev.snapshot_balance;
+            merged.snapshot_period = prev.snapshot_period;
+          }
+          mergedByCanonical.set(canon, merged);
+          continue;
+        }
+        // Same-shape rows across exports: preserve latest snapshot, sum activity.
         const prevPeriod = String(prev.snapshot_period || "");
         const newPeriod = String(r.snapshot_period || "");
         if (newPeriod && (!prevPeriod || newPeriod > prevPeriod)) {
@@ -496,6 +540,34 @@ serve(async (req) => {
       if (isInternalCall) {
         // Child mode: upsert per-account deltas into scratch table, then return.
         // The orchestrator merges across children via SQL-side aggregation on conflict.
+        //
+        // First consolidate within this export: if the same real account was keyed
+        // once as `num:1001` and once as `name:undeposited funds sales`, fold the
+        // name-only entry into the num-anchored one so we don't upsert two rows for
+        // the same underlying account.
+        {
+          const numByLeaf = new Map<string, string>();
+          for (const [k, a] of acctMap) {
+            if (k.startsWith("num:") && a.leaf) numByLeaf.set(a.leaf, k);
+          }
+          for (const [k, a] of Array.from(acctMap.entries())) {
+            if (!k.startsWith("name:")) continue;
+            const target = numByLeaf.get(a.leaf);
+            if (!target || target === k) continue;
+            const dst = acctMap.get(target)!;
+            dst.glActivity += a.glActivity;
+            dst.glActivityNet += a.glActivityNet;
+            dst.glBalanceSum += a.glBalanceSum;
+            dst.txnCount += a.txnCount;
+            if (Math.abs(dst.glBalanceLatest) < 0.01 && Math.abs(a.glBalanceLatest) > 0.01) {
+              dst.glBalanceLatest = a.glBalanceLatest;
+            }
+            dst.beginningRowSeenButEmpty = dst.beginningRowSeenButEmpty || a.beginningRowSeenButEmpty;
+            if (dst.classification === "OTHER" && a.classification !== "OTHER") dst.classification = a.classification;
+            if (!dst.acctNumber && a.acctNumber) dst.acctNumber = a.acctNumber;
+            acctMap.delete(k);
+          }
+        }
         const childPeriodEnd = processableGlMetas[0]?.period_end || "";
         const rows: Array<Record<string, unknown>> = [];
         for (const [key, a] of acctMap) {
@@ -701,8 +773,14 @@ serve(async (req) => {
     //    TB's yearSumBalance behavior.
     const isPLClass = (c: string) => c === "REVENUE" || c === "INCOME" || c === "OTHER_INCOME" ||
                                      c === "EXPENSE" || c === "COST_OF_GOODS_SOLD" || c === "OTHER_EXPENSE";
+    // Equity accounts that move each period (distributions, owner draws) behave more
+    // like P&L flows than BS snapshots — QB's latest running-balance in GL misses
+    // earlier-period activity across multi-year exports. Use summed activity for these.
+    const flowEquityRe = /distribut|owner\s*draw|owner\s*withdraw|shareholder\s*(withdraw|distribut)|dividend/i;
     const applyActiveBalance = (a: AccountInfo) => {
-      a.glBalance = isPLClass(a.classification) ? a.glActivityNet : a.glBalanceLatest;
+      if (isPLClass(a.classification)) a.glBalance = a.glActivityNet;
+      else if (a.classification === "EQUITY" && flowEquityRe.test(a.name)) a.glBalance = a.glActivityNet;
+      else a.glBalance = a.glBalanceLatest;
     };
     for (const a of accounts) applyActiveBalance(a);
     console.log(`[ANALYZE-GL] Aggregated ${accounts.length} unique accounts (post-rollup dedupe)`);
@@ -1034,11 +1112,24 @@ serve(async (req) => {
                               acct.classification === "INCOME" ||
                               acct.classification === "OTHER_INCOME" ||
                               acct.classification === "LIABILITY" ||
-                              acct.classification === "EQUITY";
+                              acct.classification === "EQUITY" ||
+                              tb.side === "REVENUE" || tb.side === "LIABILITY" || tb.side === "EQUITY";
         const rawVariance = acct.glBalance - tbBalance;
         const flippedVariance = acct.glBalance + tbBalance; // collapses sign-convention mirror
-        const effectiveVariance = creditNatural &&
-          Math.abs(flippedVariance) < Math.abs(rawVariance)
+        // Use the flipped variance when:
+        //  a) the account is credit-natural and the flip is smaller (classic mirror), or
+        //  b) GL and TB carry opposite signs AND magnitudes are within 3× of each other
+        //     (a strong indicator of a sign-convention mismatch on an otherwise-agreeing
+        //     account — catches deleted-variant contra-revenue accounts we can't classify).
+        const oppositeSigns = (acct.glBalance > 0 && tbBalance < 0) || (acct.glBalance < 0 && tbBalance > 0);
+        const magsClose = (() => {
+          const a = Math.abs(acct.glBalance), b = Math.abs(tbBalance);
+          const mx = Math.max(a, b), mn = Math.min(a, b);
+          return mn > 0 && mx <= mn * 3;
+        })();
+        const flipWins = Math.abs(flippedVariance) < Math.abs(rawVariance);
+        const effectiveVariance =
+          flipWins && (creditNatural || (oppositeSigns && magsClose))
             ? flippedVariance
             : rawVariance;
         const absDiff = Math.abs(effectiveVariance);
