@@ -311,7 +311,7 @@ serve(async (req) => {
     // Fetch the document
     const { data: doc, error: docError } = await supabase
       .from('documents')
-      .select('id, project_id, user_id, extracted_data, account_label, account_type, period_start, period_end, parsed_summary, institution, job_id')
+      .select('id, project_id, user_id, name, file_size, category, status, processing_status, extracted_data, account_label, account_type, period_start, period_end, parsed_summary, institution, job_id')
       .eq('id', documentId)
       .maybeSingle();
 
