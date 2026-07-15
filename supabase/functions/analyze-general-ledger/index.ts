@@ -40,23 +40,32 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { projectId } = await req.json() as { projectId: string };
+    const body = await req.json() as { projectId: string; mode?: string; runId?: string; exportId?: string };
+    const { projectId, mode, runId: bodyRunId, exportId } = body;
     if (!projectId) {
       return new Response(JSON.stringify({ error: "projectId is required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    console.log(`[ANALYZE-GL] Starting analysis for project: ${projectId}`);
-    const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+    const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
 
-    // Auth + project access
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    const { data: { user }, error: authErr } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
-    if (authErr || !user) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    const { data: hasAccess, error: accessErr } = await supabase.rpc('has_project_access', { _user_id: user.id, _project_id: projectId });
-    if (accessErr || hasAccess !== true) return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    const authHeader = req.headers.get('Authorization') || '';
+    const bearerToken = authHeader.replace('Bearer ', '');
+    const isInternalCall = mode === "process_export" && bearerToken === SERVICE_KEY;
+
+    if (!isInternalCall) {
+      // External caller: require user auth + project access
+      if (!authHeader) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      const { data: { user }, error: authErr } = await supabase.auth.getUser(bearerToken);
+      if (authErr || !user) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      const { data: hasAccess, error: accessErr } = await supabase.rpc('has_project_access', { _user_id: user.id, _project_id: projectId });
+      if (accessErr || hasAccess !== true) return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    console.log(`[ANALYZE-GL] ${mode === "process_export" ? "Child export" : "Starting analysis"} for project: ${projectId}${exportId ? ` export=${exportId}` : ""}`);
 
     // ── Pull COA (preferred classification source) ──
     const { data: coaRecords } = await supabase
@@ -129,12 +138,78 @@ serve(async (req) => {
       return null;
     };
 
-    if (glIndex && glIndex.length > 0) {
+    // The GL parsing step is very memory-intensive (each QB GL export parses to ~50MB in V8).
+    // Multiple exports back-to-back overflowed the 256MB Deno edge worker cap. We therefore
+    // process each export in a *separate* invocation of this function via self-fetch,
+    // streaming per-account aggregates to the `gl_reconcile_accounts` scratch table. The
+    // orchestrator (this main invocation) does not parse any GL JSON itself.
+    const runId = isInternalCall ? bodyRunId! : crypto.randomUUID();
+    let processableGlMetas: Array<{ id: string; period_start: string | null; period_end: string | null; created_at: string }> = [];
+
+    if (isInternalCall) {
+      // Child mode: process exactly the export the orchestrator requested.
+      const target = (glIndex || []).find(g => g.id === exportId);
+      if (!target) {
+        return new Response(JSON.stringify({ error: `exportId ${exportId} not found` }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      processableGlMetas = [target];
+    } else if (glIndex && glIndex.length > 0) {
+      // Orchestrator mode: fan out to N child invocations, one per export.
+      const { error: delErr } = await supabase
+        .from("gl_reconcile_accounts").delete().eq("project_id", projectId);
+      if (delErr) console.error("[ANALYZE-GL] Failed to clear scratch:", delErr);
+
+      const fnUrl = `${SUPABASE_URL}/functions/v1/analyze-general-ledger`;
+      for (const glMeta of glIndex) {
+        console.log(`[ANALYZE-GL] Dispatching child for export ${glMeta.id} (period_end=${glMeta.period_end})`);
+        const resp = await fetch(fnUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE_KEY}` },
+          body: JSON.stringify({ projectId, mode: "process_export", runId, exportId: glMeta.id }),
+        });
+        const txt = await resp.text();
+        if (!resp.ok) {
+          console.error(`[ANALYZE-GL] Child failed for export ${glMeta.id}: ${resp.status} ${txt.slice(0, 300)}`);
+          throw new Error(`Child failed for export ${glMeta.id}: HTTP ${resp.status}`);
+        }
+        try {
+          const j = JSON.parse(txt);
+          if (j.periodStart && (!periodStart || j.periodStart < periodStart)) periodStart = j.periodStart;
+          if (j.periodEnd && (!periodEnd || j.periodEnd > periodEnd)) periodEnd = j.periodEnd;
+          txnCountTotal += Number(j.txnCount || 0);
+        } catch { /* ignore */ }
+      }
+
+      // Load scratch aggregates back into acctMap for downstream reconciliation.
+      const { data: scratchRows, error: scratchErr } = await supabase
+        .from("gl_reconcile_accounts").select("*")
+        .eq("project_id", projectId).eq("run_id", runId);
+      if (scratchErr) console.error("[ANALYZE-GL] Failed to load scratch aggregates:", scratchErr);
+      for (const r of (scratchRows || []) as Array<Record<string, unknown>>) {
+        const acctName = String(r.account_name || r.full_path || "");
+        acctMap.set(String(r.account_key), {
+          name: acctName,
+          leaf: normName(acctName),
+          acctNumber: (r.account_number as string | null) || null,
+          classification: String(r.classification || "OTHER").toUpperCase(),
+          glBalance: Number(r.snapshot_balance || 0),
+          glBalanceLatest: Number(r.snapshot_balance || 0),
+          glBalanceSum: Number(r.snapshot_sum || 0),
+          glActivityNet: Number(r.activity_net || 0),
+          glActivity: Number(r.activity_abs || 0),
+          txnCount: Number(r.txn_count || 0),
+          beginningRowSeenButEmpty: r.beginning_empty === true,
+        });
+      }
+      console.log(`[ANALYZE-GL] Orchestrator loaded ${acctMap.size} accounts from scratch (runId=${runId})`);
+    }
+
+    if (processableGlMetas.length > 0) {
       // Track per-account best snapshot (winner = latest period_end) plus summed activity.
       type Snap = { periodEnd: string; glBalance: number };
       const bestSnapshotByKey = new Map<string, Snap>();
 
-      for (const glMeta of glIndex) {
+      for (const glMeta of processableGlMetas) {
         // Load one GL export at a time; drop the parsed tree at end of iteration.
         const { data: glRecArr, error: glLoadErr } = await supabase
           .from("processed_data").select("data")
@@ -373,7 +448,75 @@ serve(async (req) => {
         gl = null;
       }
 
-      console.log(`[ANALYZE-GL] Parsed ${acctMap.size} accounts / ${txnCountTotal} txns from ${glIndex.length} GL export(s)`);
+      console.log(`[ANALYZE-GL] Parsed ${acctMap.size} accounts / ${txnCountTotal} txns from ${processableGlMetas.length} GL export(s)`);
+
+      if (isInternalCall) {
+        // Child mode: upsert per-account deltas into scratch table, then return.
+        // The orchestrator merges across children via SQL-side aggregation on conflict.
+        const childPeriodEnd = processableGlMetas[0]?.period_end || "";
+        const rows: Array<Record<string, unknown>> = [];
+        for (const [key, a] of acctMap) {
+          rows.push({
+            project_id: projectId,
+            run_id: runId,
+            account_key: key,
+            account_number: a.acctNumber,
+            account_name: a.name,
+            full_path: a.name,
+            classification: a.classification,
+            snapshot_balance: a.glBalanceLatest,
+            snapshot_period: childPeriodEnd || null,
+            snapshot_sum: a.glBalanceSum,
+            activity_net: a.glActivityNet,
+            activity_abs: a.glActivity,
+            txn_count: a.txnCount,
+            beginning_empty: a.beginningRowSeenButEmpty || false,
+          });
+        }
+        // Fetch existing rows and merge in-app (cross-export "latest snapshot wins", sums accumulate).
+        const keys = rows.map(r => r.account_key as string);
+        const { data: existing } = await supabase
+          .from("gl_reconcile_accounts").select("*")
+          .eq("project_id", projectId).eq("run_id", runId).in("account_key", keys.length > 0 ? keys : ["__none__"]);
+        const existingByKey = new Map<string, Record<string, unknown>>();
+        for (const e of (existing || []) as Array<Record<string, unknown>>) existingByKey.set(String(e.account_key), e);
+        for (const r of rows) {
+          const prev = existingByKey.get(r.account_key as string);
+          if (!prev) continue;
+          const prevPeriod = String(prev.snapshot_period || "");
+          const newPeriod = String(r.snapshot_period || "");
+          if (prevPeriod && (!newPeriod || prevPeriod > newPeriod)) {
+            r.snapshot_balance = prev.snapshot_balance;
+            r.snapshot_period = prev.snapshot_period;
+          }
+          r.snapshot_sum = Number(prev.snapshot_sum || 0) + Number(r.snapshot_sum || 0);
+          r.activity_net = Number(prev.activity_net || 0) + Number(r.activity_net || 0);
+          r.activity_abs = Number(prev.activity_abs || 0) + Number(r.activity_abs || 0);
+          r.txn_count = Number(prev.txn_count || 0) + Number(r.txn_count || 0);
+          r.beginning_empty = (prev.beginning_empty === true) || (r.beginning_empty === true);
+          if (String(prev.classification || "OTHER") !== "OTHER" && String(r.classification || "OTHER") === "OTHER") {
+            r.classification = prev.classification;
+          }
+          if (!r.account_number && prev.account_number) r.account_number = prev.account_number;
+        }
+        if (rows.length > 0) {
+          const { error: upErr } = await supabase
+            .from("gl_reconcile_accounts")
+            .upsert(rows, { onConflict: "project_id,run_id,account_key" });
+          if (upErr) {
+            console.error("[ANALYZE-GL] Scratch upsert failed:", upErr);
+            return new Response(JSON.stringify({ error: `scratch upsert failed: ${upErr.message}` }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          }
+        }
+        return new Response(JSON.stringify({
+          success: true,
+          exportId,
+          accountCount: rows.length,
+          txnCount: txnCountTotal,
+          periodStart,
+          periodEnd,
+        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
     }
 
 
@@ -1058,6 +1201,10 @@ serve(async (req) => {
       validation_status: "validated",
     });
     if (insertError) console.error("[ANALYZE-GL] Failed to store:", insertError);
+
+    // Clean up scratch rows for this run.
+    await supabase.from("gl_reconcile_accounts")
+      .delete().eq("project_id", projectId).eq("run_id", runId);
 
     console.log(`[ANALYZE-GL] Complete: ${accounts.length} accounts, ${analysisResult.flags.length} flags, score=${overallScore}, matched=${matchCount}/${comparable}`);
 
