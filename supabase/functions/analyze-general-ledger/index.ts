@@ -138,12 +138,78 @@ serve(async (req) => {
       return null;
     };
 
-    if (glIndex && glIndex.length > 0) {
+    // The GL parsing step is very memory-intensive (each QB GL export parses to ~50MB in V8).
+    // Multiple exports back-to-back overflowed the 256MB Deno edge worker cap. We therefore
+    // process each export in a *separate* invocation of this function via self-fetch,
+    // streaming per-account aggregates to the `gl_reconcile_accounts` scratch table. The
+    // orchestrator (this main invocation) does not parse any GL JSON itself.
+    const runId = isInternalCall ? bodyRunId! : crypto.randomUUID();
+    let processableGlMetas: Array<{ id: string; period_start: string | null; period_end: string | null; created_at: string }> = [];
+
+    if (isInternalCall) {
+      // Child mode: process exactly the export the orchestrator requested.
+      const target = (glIndex || []).find(g => g.id === exportId);
+      if (!target) {
+        return new Response(JSON.stringify({ error: `exportId ${exportId} not found` }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      processableGlMetas = [target];
+    } else if (glIndex && glIndex.length > 0) {
+      // Orchestrator mode: fan out to N child invocations, one per export.
+      const { error: delErr } = await supabase
+        .from("gl_reconcile_accounts").delete().eq("project_id", projectId);
+      if (delErr) console.error("[ANALYZE-GL] Failed to clear scratch:", delErr);
+
+      const fnUrl = `${SUPABASE_URL}/functions/v1/analyze-general-ledger`;
+      for (const glMeta of glIndex) {
+        console.log(`[ANALYZE-GL] Dispatching child for export ${glMeta.id} (period_end=${glMeta.period_end})`);
+        const resp = await fetch(fnUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE_KEY}` },
+          body: JSON.stringify({ projectId, mode: "process_export", runId, exportId: glMeta.id }),
+        });
+        const txt = await resp.text();
+        if (!resp.ok) {
+          console.error(`[ANALYZE-GL] Child failed for export ${glMeta.id}: ${resp.status} ${txt.slice(0, 300)}`);
+          throw new Error(`Child failed for export ${glMeta.id}: HTTP ${resp.status}`);
+        }
+        try {
+          const j = JSON.parse(txt);
+          if (j.periodStart && (!periodStart || j.periodStart < periodStart)) periodStart = j.periodStart;
+          if (j.periodEnd && (!periodEnd || j.periodEnd > periodEnd)) periodEnd = j.periodEnd;
+          txnCountTotal += Number(j.txnCount || 0);
+        } catch { /* ignore */ }
+      }
+
+      // Load scratch aggregates back into acctMap for downstream reconciliation.
+      const { data: scratchRows, error: scratchErr } = await supabase
+        .from("gl_reconcile_accounts").select("*")
+        .eq("project_id", projectId).eq("run_id", runId);
+      if (scratchErr) console.error("[ANALYZE-GL] Failed to load scratch aggregates:", scratchErr);
+      for (const r of (scratchRows || []) as Array<Record<string, unknown>>) {
+        const acctName = String(r.account_name || r.full_path || "");
+        acctMap.set(String(r.account_key), {
+          name: acctName,
+          leaf: normName(acctName),
+          acctNumber: (r.account_number as string | null) || null,
+          classification: String(r.classification || "OTHER").toUpperCase(),
+          glBalance: Number(r.snapshot_balance || 0),
+          glBalanceLatest: Number(r.snapshot_balance || 0),
+          glBalanceSum: Number(r.snapshot_sum || 0),
+          glActivityNet: Number(r.activity_net || 0),
+          glActivity: Number(r.activity_abs || 0),
+          txnCount: Number(r.txn_count || 0),
+          beginningRowSeenButEmpty: r.beginning_empty === true,
+        });
+      }
+      console.log(`[ANALYZE-GL] Orchestrator loaded ${acctMap.size} accounts from scratch (runId=${runId})`);
+    }
+
+    if (processableGlMetas.length > 0) {
       // Track per-account best snapshot (winner = latest period_end) plus summed activity.
       type Snap = { periodEnd: string; glBalance: number };
       const bestSnapshotByKey = new Map<string, Snap>();
 
-      for (const glMeta of glIndex) {
+      for (const glMeta of processableGlMetas) {
         // Load one GL export at a time; drop the parsed tree at end of iteration.
         const { data: glRecArr, error: glLoadErr } = await supabase
           .from("processed_data").select("data")
