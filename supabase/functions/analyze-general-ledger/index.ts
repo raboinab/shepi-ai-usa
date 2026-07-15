@@ -183,39 +183,28 @@ serve(async (req) => {
         // the authoritative account-class hint from QB; we log it for diagnostics and
         // will key sign normalization off it in Step 2.
         const walkSections = (secs: GlRow[], parentGroup: string | null) => {
-        for (const section of secs) {
-          if (section.type !== "SECTION") continue;
+        for (let secIdx = 0; secIdx < secs.length; secIdx++) {
+          const section = secs[secIdx];
+          if (!section || section.type !== "SECTION") { secs[secIdx] = null as unknown as GlRow; continue; }
           const hdr = section.header?.colData || [];
           const acctName = (hdr[0]?.value || "").trim();
-          const acctId = (hdr[0]?.id || "").toString().trim() || null;
           const secGroup = ((section as unknown as { group?: string }).group) || null;
-          // If this section has no account name in its header, it's a wrapper group
-          // (e.g. "Income"). Recurse into its children carrying the group down.
           if (!acctName) {
             const nested = section.rows?.row || [];
             if (nested.length) walkSections(nested, secGroup || parentGroup);
+            secs[secIdx] = null as unknown as GlRow;
             continue;
           }
-
 
           const childRows = section.rows?.row || [];
           let amountColIdx = -1;
           let balanceColIdx = -1;
           let beginningBalance = 0;
-          // Track ending balance by MAX transaction date, not last-iterated row. QuickBooks
-          // may sort rows ascending OR descending; taking "last iterated" gives the wrong end
-          // when rows are descending (you get the running balance right after the earliest
-          // transaction of the period, not the actual ending).
           let endingBalance = 0;
           let endingBalanceDate: string | null = null;
           let txnCount = 0;
           let activity = 0;
           let netSum = 0;
-          // Diagnostic: raw first/last amount cell values (unsigned strings from QB), to
-          // detect column-detection or sign-convention drift per section.
-          let firstRowAmountRaw: string | null = null;
-          let lastRowAmountRaw: string | null = null;
-
 
           if (metaAmountIdx >= 0) {
             amountColIdx = metaAmountIdx;
@@ -262,8 +251,9 @@ serve(async (req) => {
           }
 
           let beginningRowSeenButEmpty = false;
-          for (const r of childRows) {
-            if (r.type !== "DATA") continue;
+          for (let rIdx = 0; rIdx < childRows.length; rIdx++) {
+            const r = childRows[rIdx];
+            if (!r || r.type !== "DATA") { childRows[rIdx] = null as unknown as GlRow; continue; }
             const cd = r.colData || [];
             const label = (cd[0]?.value || "").trim().toLowerCase();
             const isBeginning = label === "beginning balance";
@@ -277,6 +267,7 @@ serve(async (req) => {
                 const anyNumeric = cd.some((c: Record<string, unknown>) => parseMoney((c as { value?: string })?.value) !== null);
                 if (!anyNumeric) beginningRowSeenButEmpty = true;
               }
+              childRows[rIdx] = null as unknown as GlRow;
               continue;
             }
 
@@ -284,13 +275,8 @@ serve(async (req) => {
             if (amt !== null) {
               netSum += amt;
               activity += Math.abs(amt);
-              const raw = String(cd[amountColIdx]?.value ?? "");
-              if (firstRowAmountRaw === null) firstRowAmountRaw = raw;
-              lastRowAmountRaw = raw;
             }
 
-
-            // Find this row's transaction date.
             let txnDate: string | null = null;
             for (const c of cd) {
               const d = parseDate(c?.value);
@@ -301,8 +287,6 @@ serve(async (req) => {
               if (!periodEnd || txnDate > periodEnd) periodEnd = txnDate;
             }
 
-            // Only update endingBalance when this row is CHRONOLOGICALLY LATER than the
-            // previous ending. Robust against descending row sort in QB exports.
             if (balanceColIdx >= 0) {
               const rb = parseMoney(cd[balanceColIdx]?.value);
               if (rb !== null) {
@@ -313,31 +297,18 @@ serve(async (req) => {
               }
             }
             txnCount += 1;
+            childRows[rIdx] = null as unknown as GlRow;
           }
 
-          // Cross-check against QB's own "Total for <account>" summary row (net activity).
           const summaryCd = section.summary?.colData || [];
           const summaryNet = amountColIdx >= 0 ? parseMoney(summaryCd[amountColIdx]?.value) : null;
-          const summaryAmountRaw = amountColIdx >= 0 ? String(summaryCd[amountColIdx]?.value ?? "") : "";
 
-          // Two independent readings per section:
-          //   snapshotBalance = running balance at period end (correct for BS accounts)
-          //   activityNet     = Σ transaction amounts for the period (correct for P&L)
-          // We used to overload endingBalance into both — but QB's Balance column on P&L
-          // reports is NOT cumulative-since-inception, so using it for revenue undercounted
-          // by ~10× (z_Shopify Sales showed $399K vs true $11M+).
           let snapshotBalance: number;
           if (balanceColIdx >= 0 && endingBalanceDate !== null) snapshotBalance = endingBalance;
           else if (summaryNet !== null) snapshotBalance = beginningBalance + summaryNet;
           else snapshotBalance = beginningBalance + netSum;
           const activityNet = summaryNet !== null ? summaryNet : netSum;
 
-          // NOTE: `header.colData[0].id` in qbToJson GL output is a per-export sequential
-          // row index — NOT a stable QB account id. Keying on it merged unrelated accounts
-          // across yearly exports (e.g. id=75 → z_Shopify Sales in 2023, Phone/Internet
-          // in 2026, etc.), which inflated balances 100–1000×. Key on account-number
-          // prefix when the display name carries one (e.g. "6140 Phone/Internet" → 6140),
-          // otherwise on the normalized name.
           const numPrefixMatch = acctName.match(/^(\d+)\s+(.+)$/);
           const nameNumPrefix = numPrefixMatch ? numPrefixMatch[1] : null;
           const nameNoPrefix = numPrefixMatch ? numPrefixMatch[2] : acctName;
@@ -349,8 +320,6 @@ serve(async (req) => {
                       coaByName.get(nameNoPrefix.toLowerCase()) ||
                       coaByLeaf.get(normName(acctName)) ||
                       coaByLeaf.get(normName(nameNoPrefix));
-          // Fall back to QB's section `group` metadata when COA missed — it's the
-          // authoritative bucket ("Income", "Expenses", "COGS", etc.).
           const groupHint = (secGroup || parentGroup || "").toLowerCase();
           const groupCls = (() => {
             if (!groupHint) return null;
@@ -364,16 +333,7 @@ serve(async (req) => {
             if (groupHint.includes("equity")) return "EQUITY";
             return null;
           })();
-          const cls = (coa?.classification || groupCls || "OTHER").toUpperCase();
-          const picked = (cls === "REVENUE" || cls === "INCOME" || cls === "OTHER_INCOME" ||
-                          cls === "EXPENSE" || cls === "COST_OF_GOODS_SOLD" || cls === "OTHER_EXPENSE")
-                          ? "activityNet" : "snapshotBalance";
 
-          // Per-section DIAG log removed — with 4 GL exports × hundreds of sections
-          // the log volume itself was contributing to the memory-limit trip. Re-enable
-          // selectively by wrapping in `if (Deno.env.get("ANALYZE_GL_DIAG"))` if needed.
-
-          // Merge across periods: sum activity/txnCount/activityNet; keep latest-wins snapshot.
           const prevSnap = bestSnapshotByKey.get(key);
           const isLatest = !prevSnap || recPeriodEnd >= prevSnap.periodEnd;
           const prev = acctMap.get(key);
@@ -388,7 +348,7 @@ serve(async (req) => {
             leaf: normName(acctName),
             acctNumber: nameNumPrefix || coa?.acctNum || prev?.acctNumber || null,
             classification: (coa?.classification || groupCls || prev?.classification || "OTHER").toUpperCase(),
-            glBalance: mergedLatest, // provisional; recomputed after classification below
+            glBalance: mergedLatest,
             glBalanceLatest: mergedLatest,
             glBalanceSum: mergedSum,
             glActivityNet: mergedActivityNet,
@@ -398,10 +358,18 @@ serve(async (req) => {
           });
           if (isLatest) bestSnapshotByKey.set(key, { periodEnd: recPeriodEnd, glBalance: snapshotBalance });
           txnCountTotal += txnCount;
+
+          // Detach processed section so children/header/summary can be GC'd immediately.
+          // Without this, 4× 30k-row GL exports blow past the 256MB edge-function cap.
+          if (section.rows) (section.rows as { row?: unknown }).row = undefined;
+          section.header = undefined;
+          section.summary = undefined;
+          secs[secIdx] = null as unknown as GlRow;
         }
         }; // close walkSections
         walkSections(sections, null);
-        // Release the parsed GL tree before loading the next export.
+        // Release parsed GL tree before loading the next export.
+        (glRecArr[0] as { data?: unknown }).data = null;
         gl = null;
       }
 
