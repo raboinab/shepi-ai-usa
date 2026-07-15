@@ -78,6 +78,27 @@ const fmt = (v: number | null | undefined): string => {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
 };
 
+/** Right-aligned money cell with tabular numerals; zero renders as muted em-dash and negatives are destructive. */
+const Money = ({ value, className = "" }: { value: number | null | undefined; className?: string }) => {
+  if (value == null) return <span className={`text-muted-foreground ${className}`}>—</span>;
+  if (Math.abs(value) < 0.5) return <span className={`text-muted-foreground tabular-nums ${className}`}>—</span>;
+  const negative = value < 0;
+  return (
+    <span className={`tabular-nums ${negative ? "text-destructive" : ""} ${className}`}>{fmt(value)}</span>
+  );
+};
+
+const REASON_LABEL: Record<string, string> = {
+  MISSING_IN_TB: "In GL, not in TB",
+  MISSING_IN_GL: "In TB, not in GL",
+  STRUCTURAL_ROLLUP: "Parent-vs-child rollup",
+  RESIDUAL_LT_1PCT: "Residual <1%",
+  SIGN_MISMATCH_UNRESOLVED: "Sign mismatch",
+  SNAPSHOT_DATE_MISMATCH: "Snapshot date mismatch",
+  BEGINNING_EMPTY_NO_TB: "No opening balance",
+  UNKNOWN: "Unclassified",
+};
+
 const timeAgo = (iso?: string): string => {
   if (!iso) return "";
   const diff = Date.now() - new Date(iso).getTime();
