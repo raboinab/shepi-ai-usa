@@ -1290,9 +1290,24 @@ serve(async (req) => {
         if (matchedTbKeys.has(t.fullPath)) continue;
         if (matchedLeavesInAgreement.has(normKey(leafOf(t.fullPath)))) continue;
         const bal = Math.abs(t.snapshotBalance) > 0.01 ? t.snapshotBalance : t.yearSumBalance;
-        if (Math.abs(bal) > 0.01) missingInGL.push({ name: t.fullPath, balance: bal });
+        if (Math.abs(bal) > 0.01) {
+          missingInGL.push({ name: t.fullPath, balance: bal });
+          // Also add to the full reconciliation stream so the audit UI can categorize
+          // TB-only accounts alongside GL variances.
+          reconciliation.push({
+            accountName: t.fullPath,
+            glBalance: 0,
+            tbBalance: bal,
+            variance: -bal,
+            variancePct: 1,
+            status: "missing_in_gl",
+            reasonCode: "MISSING_IN_GL",
+            accountKey: `tb:${normKey(t.fullPath)}`,
+          });
+        }
       }
     }
+
 
     // ── Account-type breakdown ──
     const accountTypeBreakdown: Record<string, number> = {};
